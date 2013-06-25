@@ -29,6 +29,7 @@ void DPARALLEL_process(CIRCLE_handle* handle)
             LOG(DPARALLEL_LOG_DBG, "Enqueueing command `%s'.", new_cmd);
             handle->enqueue(new_cmd);
             free(new_cmd);
+            return;
         }
     }
 
