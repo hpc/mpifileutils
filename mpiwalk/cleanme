@@ -2,19 +2,4 @@
 
 set -x
 
-installdir=`pwd`/install
-
-pushd libcircle.git
-  make clean
-popd
-
-pushd lwgrp.git
-  make clean
-popd
-
-pushd dtcmp.git
-  make clean
-popd
-
-installdir=`pwd`/install
-rm -rf mpiwalk $installdir
+rm -rf mpiwalk drm
