@@ -16,5 +16,4 @@ pushd dtcmp.git
   make clean
 popd
 
-installdir=`pwd`/install
-rm -rf mpiwalk $installdir
+rm -rf $installdir

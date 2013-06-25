@@ -60,6 +60,3 @@ pushd dtcmp.git
   make
   make install
 popd
-
-mpicxx ${OPT} -o mpiwalk mpiwalk.cpp \
-  -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp
