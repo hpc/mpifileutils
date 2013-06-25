@@ -9,12 +9,14 @@ enum DPARALLEL_loglevel DPARALLEL_debug_level;
 /** The rank value of the current node. */
 int32_t DPARALLEL_global_rank;
 
-char* DPARALLEL_readline() {
-    char *buf = (char*) malloc(sizeof(char)*CIRCLE_MAX_STRING_LEN);
+char* DPARALLEL_readline()
+{
+    char* buf = (char*) malloc(sizeof(char) * CIRCLE_MAX_STRING_LEN);
 
-    if (fgets(buf, CIRCLE_MAX_STRING_LEN, stdin) != NULL) {
-        return buf;    
-    } else {
+    if(fgets(buf, CIRCLE_MAX_STRING_LEN, stdin) != NULL) {
+        return buf;
+    }
+    else {
         free(buf);
         return 0;
     }
@@ -22,7 +24,7 @@ char* DPARALLEL_readline() {
 
 void DPARALLEL_process(CIRCLE_handle* handle)
 {
-    if( DPARALLEL_global_rank == 0) {
+    if(DPARALLEL_global_rank == 0) {
         char* new_cmd = DPARALLEL_readline();
 
         if(new_cmd != 0) {
