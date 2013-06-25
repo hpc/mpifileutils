@@ -1,0 +1,23 @@
+mpiwalk is a prototype tool to execute a directory walk and then optionally sort the output.
+It executes a walk starting from a top-level directory and it calls stat for every file and directory.
+It can also execute a "lite walk" in which it avoids calling stat and distinguishes directories from files using the d_type returned in readdir().
+It can write the results of its walk to a file, and these files may be specified as input in order to avoid the walk.
+It can sort file information by a number of fields, e.g., by filename, size, or access time.
+It uses libcircle to implement the parallel file walk, and it uses dtcmp for parallel sorting.
+
+To build:
+  1) modify the buildme script to load MPI depending on your environment
+  2) run the buildme script, which will download and build the dependent libs and the mpiwalk command
+
+Example run commands:
+  1) Walk current working directory
+    mpirun -np 2 ./mpiwalk -v -w `pwd`
+
+  2) Walk current working directory, sort by ascending filename, print results
+    mpirun -np 2 ./mpiwalk -v -w -p -s name `pwd`
+
+  3) Walk current working directory and write list to cache.out file
+    mpirun -np 2 ./mpiwalk -v -w -c cache.out `pwd`
+
+  4) Read list from cache.out, sort by descending atime
+    mpirun -np 2 ./mpiwalk -v -s -atime -c cache.out
