@@ -46,8 +46,12 @@ void DPARALLEL_process(CIRCLE_handle* handle)
 
 int main(void)
 {
+    DPARALLEL_debug_level = DPARALLEL_LOG_DBG;
+    DPARALLEL_debug_stream = stderr;
+
     CIRCLE_init(0, NULL, CIRCLE_DEFAULT_FLAGS);
     CIRCLE_cb_process(&DPARALLEL_process);
+
     CIRCLE_begin();
     CIRCLE_finalize();
 }
