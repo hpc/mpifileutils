@@ -15,6 +15,8 @@
 #include <errno.h>
 #include <string.h>
 
+#include <libgen.h> /* dirname */
+
 #include "libcircle.h"
 #include "dtcmp.h"
 
@@ -1450,6 +1452,544 @@ static void free_list()
   rm_tail = NULL;
 }
 
+static int rm_depth;      /* tracks current level at which to remove items */
+static uint64_t rm_count; /* tracks number of items local process has removed */
+
+static void remove_process(CIRCLE_handle* handle)
+{
+  char path[CIRCLE_MAX_STRING_LEN];
+  handle->dequeue(path);
+  
+  char item = path[0];
+  char* name = &path[1];
+  if (item == 'd') {
+    int rc = rmdir(name);
+    if (rc != 0) {
+      printf("Failed to rmdir `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+    }
+  } else if (item == 'f') {
+    int rc = unlink(name);
+    if (rc != 0) {
+      printf("Failed to unlink `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+    }
+  } else if (item == 'u') {
+    int rc = remove(name);
+    if (rc != 0) {
+      printf("Failed to remove `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+    }
+  } else {
+    /* print error */
+  }
+
+  rm_count++;
+
+  return;
+}
+
+static void remove_create(CIRCLE_handle* handle)
+{
+  char path[CIRCLE_MAX_STRING_LEN];
+
+  /* enqueues all items at rm_depth to be deleted */
+  const rm_elem_t* elem = rm_head;
+  while (elem != NULL) {
+    if (elem->depth == rm_depth) {
+      if (elem->type == TYPE_DIR) {
+        path[0] = 'd';
+      } else if (elem->type == TYPE_FILE || elem->type == TYPE_LINK) {
+        path[0] = 'f';
+      } else {
+        path[0] = 'u';
+      }
+      size_t len = strlen(elem->name) + 2;
+      if (len <= CIRCLE_MAX_STRING_LEN) {
+        strcpy(&path[1], elem->name);
+        handle->enqueue(path);
+      } else {
+        printf("Filename longer than %lu\n", (unsigned long)CIRCLE_MAX_STRING_LEN);
+      }
+    }
+    elem = elem->next;
+  }
+
+
+  return;
+}
+
+static void remove_libcirlce()
+{
+  /* initialize libcircle */
+  CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
+
+  /* set libcircle verbosity level */
+  enum CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
+  if (verbose) {
+//    loglevel = CIRCLE_LOG_INFO;
+  }
+  CIRCLE_enable_logging(loglevel);
+
+  /* register callbacks */
+  CIRCLE_cb_create(&remove_create);
+  CIRCLE_cb_process(&remove_process);
+
+  /* run the libcircle job */
+  CIRCLE_begin();
+  CIRCLE_finalize();
+
+  return;
+}
+
+static void remove_direct()
+{
+  /* each process directly removes its elements */
+  const rm_elem_t* elem = rm_head;
+  while (elem != NULL) {
+      if (elem->depth == rm_depth) {
+          if (elem->type == TYPE_DIR) {
+            int rc = rmdir(elem->name);
+            if (rc != 0) {
+              printf("Failed to rmdir `%s' (errno=%d %s)\n", elem->name, errno, strerror(errno));
+            }
+          } else if (elem->type == TYPE_FILE || elem->type == TYPE_LINK) {
+            int rc = unlink(elem->name);
+            if (rc != 0) {
+              printf("Failed to unlink `%s' (errno=%d %s)\n", elem->name, errno, strerror(errno));
+            }
+          } else {
+            int rc = remove(elem->name);
+            if (rc != 0) {
+              printf("Failed to remove `%s' (errno=%d %s)\n", elem->name, errno, strerror(errno));
+            }
+          }
+          rm_count++;
+      }
+      elem = elem->next;
+  }
+  return;
+}
+
+  /* allreduce to get total count of items */
+
+  /* sort by name */
+
+  /* alltoall to determine which processes to send / recv from */
+
+  /* alltoallv to exchange data */
+
+  /* pt2pt with left and right neighbors to determine if they have the same dirname */
+
+  /* delete what we can witout waiting */
+
+  /* if my right neighbor has same dirname, send him msg when we're done */
+
+  /* if my left neighbor has same dirname, wait for msg */
+
+/* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
+static uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len)
+{
+  uint32_t hash, i;
+  for(hash = i = 0; i < len; ++i) {
+      hash += key[i];
+      hash += (hash << 10);
+      hash ^= (hash >> 6);
+  }
+  hash += (hash << 3);
+  hash ^= (hash >> 11);
+  hash += (hash << 15);
+  return hash;
+}
+
+static void bayer_free(void* p)
+{
+    void** pptr = (void**) p;
+    if (pptr != NULL) {
+        void* ptr = *pptr;
+        if (ptr != NULL) {
+            free(ptr);
+        }
+        *pptr = NULL;
+    }
+}
+
+static int get_first_nonzero(const int* buf, int size)
+{
+  int i;
+  for (i = 0; i < size; i++) {
+    if (buf[i] != 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+static void remove_spread()
+{
+    /* get our rank and number of ranks in job */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+  
+    int* sendcounts = (int*) malloc(ranks * sizeof(int));
+    int* sendsizes  = (int*) malloc(ranks * sizeof(int));
+    int* senddisps  = (int*) malloc(ranks * sizeof(int));
+    int* recvsizes  = (int*) malloc(ranks * sizeof(int));
+    int* recvdisps  = (int*) malloc(ranks * sizeof(int));
+
+    /* compute number of items we have for this depth */
+    uint64_t my_count = 0;
+    size_t sendbytes = 0;
+    const rm_elem_t* elem = rm_head;
+    while (elem != NULL) {
+        if (elem->depth == rm_depth) {
+            size_t len = strlen(elem->name) + 2;
+            sendbytes += len;
+            my_count++;
+        }
+        elem = elem->next;
+    }
+
+    /* compute total number of items */
+    uint64_t all_count;
+    MPI_Allreduce(&my_count, &all_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* get our global offset */
+    uint64_t offset;
+    MPI_Exscan(&my_count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    if (rank == 0) {
+        offset = 0;
+    }
+
+    /* compute the number that each rank should have */
+    uint64_t low = all_count / (uint64_t)ranks;
+    uint64_t extra = all_count - low * (uint64_t)ranks;
+
+    /* compute number that we'll send to each rank and initialize sendsizes and offsets */
+    int i;
+    for (i = 0; i < ranks; i++) {
+        /* compute starting element id and count for given rank */
+        uint64_t start, num;
+        if (i < extra) {
+            num = low + 1;
+            start = i * num;
+        } else {
+            num = low;
+            start = (i - extra) * num + extra * (low + 1);
+        }
+
+        /* compute the number of items we'll send to this task */
+        uint64_t sendcnt = 0;
+        if (my_count > 0) {
+            if (start <= offset && offset < start + num) {
+                /* this rank overlaps our range,
+                 * and its first element comes at or before our first element */
+                sendcnt = num - (offset - start);
+                if (my_count < sendcnt) {
+                    /* the number the rank could receive from us
+                     * is more than we have left */
+                    sendcnt = my_count;
+                }
+            } else if (offset < start && start < offset + my_count) {
+                /* this rank overlaps our range,
+                 * and our first element comes strictly before its first element */
+                sendcnt = my_count - (start - offset);
+                if (num < sendcnt) {
+                    /* the number the rank can receive from us
+                     * is less than we have left */
+                    sendcnt = num;
+                }
+            }
+        }
+
+        /* record the number of items we'll send to this task */
+        sendcounts[i]  = (int) sendcnt;
+
+        /* set sizes and displacements to 0, we'll fix this later */
+        sendsizes[i] = 0;
+        senddisps[i] = 0;
+    }
+
+    /* allocate space */
+    char* sendbuf = NULL;
+    if (sendbytes > 0) {
+        sendbuf = (char*) malloc(sendbytes);
+    }
+
+    /* copy data into buffer */
+    elem = rm_head;
+    int dest = -1;
+    int disp = 0;
+    while (elem != NULL) {
+        if (elem->depth == rm_depth) {
+            /* get rank that we're packing data for */
+            if (dest == -1) {
+              dest = get_first_nonzero(sendcounts, ranks);
+              if (dest == -1) {
+                /* error */
+              }
+              /* about to copy first item for this rank,
+               * record its displacement */
+              senddisps[dest] = disp;
+            }
+
+            /* identify region to be sent to rank */
+            char* path = sendbuf + disp;
+
+            /* first character encodes item type */
+            if (elem->type == TYPE_DIR) {
+                path[0] = 'd';
+            } else if (elem->type == TYPE_FILE || elem->type == TYPE_LINK) {
+                path[0] = 'f';
+            } else {
+                path[0] = 'u';
+            }
+
+            /* now copy in the path */
+            strcpy(&path[1], elem->name);
+
+            /* add bytes to sendsizes and increase displacement */
+            size_t count = strlen(elem->name) + 2;
+            sendsizes[dest] += count;
+            disp += count;
+
+            /* decrement the count for this rank */
+            sendcounts[dest]--;
+            if (sendcounts[dest] == 0) {
+              dest = -1;
+            }
+        }
+        elem = elem->next;
+    }
+
+    /* compute displacements */
+    senddisps[0] = 0;
+    for (i = 1; i < ranks; i++) {
+        senddisps[i] = senddisps[i-1] + sendsizes[i-1];
+    }
+
+    /* alltoall to specify incoming counts */
+    MPI_Alltoall(sendsizes, 1, MPI_INT, recvsizes, 1, MPI_INT, MPI_COMM_WORLD);
+
+    /* compute size of recvbuf and displacements */
+    size_t recvbytes = 0;
+    recvdisps[0] = 0;
+    for (i = 0; i < ranks; i++) {
+        recvbytes += recvsizes[i];
+        if (i > 0) {
+            recvdisps[i] = recvdisps[i-1] + recvsizes[i-1];
+        }
+    }
+
+    /* allocate recvbuf */
+    char* recvbuf = NULL;
+    if (recvbytes > 0) {
+        recvbuf = (char*) malloc(recvbytes);
+    }
+
+    /* alltoallv to send data */
+    MPI_Alltoallv(sendbuf, sendsizes, senddisps, MPI_CHAR, recvbuf, recvsizes, recvdisps, MPI_CHAR, MPI_COMM_WORLD);
+
+    /* delete data */
+    char* item = recvbuf;
+    while (item < recvbuf + recvbytes) {
+        /* get item name and type */
+        char type = item[0];
+        char* name = &item[1];
+
+        /* delete item */
+        if (type == 'd') {
+          int rc = rmdir(name);
+          if (rc != 0) {
+            printf("Failed to rmdir `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+          }
+        } else if (type == 'f') {
+          int rc = unlink(name);
+          if (rc != 0) {
+            printf("Failed to unlink `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+          }
+        } else if (type == 'u') {
+          int rc = remove(name);
+          if (rc != 0) {
+            printf("Failed to remove `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+          }
+        } else {
+          /* print error */
+        }
+
+        rm_count++;
+
+        /* go to next item */
+        size_t item_size = strlen(item) + 1;
+        item += item_size;
+    }
+
+    /* free memory */
+    bayer_free(&recvbuf);
+    bayer_free(&recvdisps);
+    bayer_free(&recvsizes);
+    bayer_free(&sendbuf);
+    bayer_free(&senddisps);
+    bayer_free(&sendsizes);
+    bayer_free(&sendcounts);
+
+    return;
+}
+
+static void remove_map()
+{
+    /* get our rank and number of ranks in job */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+  
+    int* sendsizes  = (int*) malloc(ranks * sizeof(int));
+    int* senddisps  = (int*) malloc(ranks * sizeof(int));
+    int* sendoffset = (int*) malloc(ranks * sizeof(int));
+    int* recvsizes  = (int*) malloc(ranks * sizeof(int));
+    int* recvdisps  = (int*) malloc(ranks * sizeof(int));
+
+    /* initialize sendsizes and offsets */
+    int i;
+    for (i = 0; i < ranks; i++) {
+        sendsizes[i]  = 0;
+        sendoffset[i] = 0;
+    }
+
+    /* compute number of bytes we'll send to each rank */
+    size_t sendbytes = 0;
+    const rm_elem_t* elem = rm_head;
+    while (elem != NULL) {
+        if (elem->depth == rm_depth) {
+            /* identify a rank responsible for this item */
+            char* dir = strdup(elem->name);
+            dirname(dir);
+            size_t dir_len = strlen(dir);
+            uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
+            int rank = (int) (hash % (uint32_t)ranks);
+            free(dir);
+
+            /* total number of bytes we'll send to each rank and the total overall */
+            size_t count = strlen(elem->name) + 2;
+            sendsizes[rank] += count;
+            sendbytes += count;
+        }
+        elem = elem->next;
+    }
+
+    /* compute displacements */
+    senddisps[0] = 0;
+    for (i = 1; i < ranks; i++) {
+        senddisps[i] = senddisps[i-1] + sendsizes[i-1];
+    }
+
+    /* allocate space */
+    char* sendbuf = NULL;
+    if (sendbytes > 0) {
+        sendbuf = (char*) malloc(sendbytes);
+    }
+
+    /* TODO: cache results from above */
+    /* copy data into buffer */
+    elem = rm_head;
+    while (elem != NULL) {
+        if (elem->depth == rm_depth) {
+            /* identify a rank responsible for this item */
+            char* dir = strdup(elem->name);
+            dirname(dir);
+            size_t dir_len = strlen(dir);
+            uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
+            int rank = (int) (hash % (uint32_t)ranks);
+            free(dir);
+
+            /* identify region to be sent to rank */
+            size_t count = strlen(elem->name) + 2;
+            char* path = sendbuf + senddisps[rank] + sendoffset[rank];
+
+            /* first character encodes item type */
+            if (elem->type == TYPE_DIR) {
+                path[0] = 'd';
+            } else if (elem->type == TYPE_FILE || elem->type == TYPE_LINK) {
+                path[0] = 'f';
+            } else {
+                path[0] = 'u';
+            }
+
+            /* now copy in the path */
+            strcpy(&path[1], elem->name);
+
+            /* bump up the offset for this rank */
+            sendoffset[rank] += count;
+        }
+        elem = elem->next;
+    }
+
+    /* alltoall to specify incoming counts */
+    MPI_Alltoall(sendsizes, 1, MPI_INT, recvsizes, 1, MPI_INT, MPI_COMM_WORLD);
+
+    /* compute size of recvbuf and displacements */
+    size_t recvbytes = 0;
+    recvdisps[0] = 0;
+    for (i = 0; i < ranks; i++) {
+        recvbytes += recvsizes[i];
+        if (i > 0) {
+            recvdisps[i] = recvdisps[i-1] + recvsizes[i-1];
+        }
+    }
+
+    /* allocate recvbuf */
+    char* recvbuf = NULL;
+    if (recvbytes > 0) {
+        recvbuf = (char*) malloc(recvbytes);
+    }
+
+    /* alltoallv to send data */
+    MPI_Alltoallv(sendbuf, sendsizes, senddisps, MPI_CHAR, recvbuf, recvsizes, recvdisps, MPI_CHAR, MPI_COMM_WORLD);
+
+    /* delete data */
+    char* item = recvbuf;
+    while (item < recvbuf + recvbytes) {
+        /* get item name and type */
+        char type = item[0];
+        char* name = &item[1];
+
+        /* delete item */
+        if (type == 'd') {
+          int rc = rmdir(name);
+          if (rc != 0) {
+            printf("Failed to rmdir `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+          }
+        } else if (type == 'f') {
+          int rc = unlink(name);
+          if (rc != 0) {
+            printf("Failed to unlink `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+          }
+        } else if (type == 'u') {
+          int rc = remove(name);
+          if (rc != 0) {
+            printf("Failed to remove `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+          }
+        } else {
+          /* print error */
+        }
+
+        rm_count++;
+
+        /* go to next item */
+        size_t item_size = strlen(item) + 1;
+        item += item_size;
+    }
+
+    /* free memory */
+    bayer_free(&recvbuf);
+    bayer_free(&recvdisps);
+    bayer_free(&recvsizes);
+    bayer_free(&sendbuf);
+    bayer_free(&sendoffset);
+    bayer_free(&senddisps);
+    bayer_free(&sendsizes);
+
+    return;
+}
+
 /* iterate through linked list of files and set ownership, timestamps, and permissions
  * starting from deepest level and working backwards */
 static void remove_files(
@@ -1459,6 +1999,11 @@ static void remove_files(
   map<uint32_t,string>& user_id2name,
   map<uint32_t,string>& group_id2name)
 {
+    /* get our rank and number of ranks in job */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
     create_list(users, groups, files, user_id2name, group_id2name);
 
     /* get max depth across all procs */
@@ -1473,7 +2018,7 @@ static void remove_files(
     }
     MPI_Allreduce(&depth, &max_depth, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
 
-    /* set write permissions on all directories ending at deepest level */
+    /* from top to bottom, ensure all directories have write bit set */
     for (depth = 0; depth <= max_depth; depth++) {
         elem = rm_head;
         while (elem != NULL) {
@@ -1499,34 +2044,40 @@ static void remove_files(
 
     /* now remove files starting from deepest level */
     for (depth = max_depth; depth >= 0; depth--) {
+        double start = MPI_Wtime();
+
         /* remove all files at this level */
-        elem = rm_head;
-        while (elem != NULL) {
-            if (elem->depth == depth) {
-                //printf("depth %d file %s\n", elem->depth, elem->name);
-                if (elem->type == TYPE_DIR) {
-                  int rc = rmdir(elem->name);
-                  if (rc != 0) {
-                    printf("Failed to rmdir `%s' (errno=%d %s)\n", elem->name, errno, strerror(errno));
-                  }
-                } else if (elem->type == TYPE_FILE || elem->type == TYPE_LINK) {
-                  int rc = unlink(elem->name);
-                  if (rc != 0) {
-                    printf("Failed to unlink `%s' (errno=%d %s)\n", elem->name, errno, strerror(errno));
-                  }
-                } else {
-                  int rc = remove(elem->name);
-                  if (rc != 0) {
-                    printf("Failed to remove `%s' (errno=%d %s)\n", elem->name, errno, strerror(errno));
-                  }
-                }
-            }
-            elem = elem->next;
-        }
+        rm_depth = depth;
+        rm_count = 0;
+
+//        remove_direct();
+        remove_spread();
+//        remove_map();
+//        remove_libcircle();
         
         /* wait for all procs to finish before we start
          * with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
+
+        double end = MPI_Wtime();
+
+        if (verbose) {
+            uint64_t min, max, sum;
+            MPI_Allreduce(&rm_count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
+            MPI_Allreduce(&rm_count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+            MPI_Allreduce(&rm_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+            double rate = 0.0;
+            if (end - start > 0.0) {
+              rate = (double)sum / (end - start);
+            }
+            double time = end - start;
+            if (rank == 0) {
+                printf("level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
+                  depth, (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time
+                );
+                fflush(stdout);
+            }
+        }
     }
 
     free_list();
