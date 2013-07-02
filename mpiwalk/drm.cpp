@@ -1455,6 +1455,31 @@ static void free_list()
 static int rm_depth;      /* tracks current level at which to remove items */
 static uint64_t rm_count; /* tracks number of items local process has removed */
 
+static void remove_type(char type, const char* name)
+{
+  if (type == 'd') {
+    int rc = rmdir(name);
+    if (rc != 0) {
+      printf("Failed to rmdir `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+    }
+  } else if (type == 'f') {
+    int rc = unlink(name);
+    if (rc != 0) {
+      printf("Failed to unlink `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+    }
+  } else if (type == 'u') {
+    int rc = remove(name);
+    if (rc != 0) {
+      printf("Failed to remove `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+    }
+  } else {
+    /* print error */
+    printf("Unknown type=%c name=%s @ %s:%d\n", type, name, __FILE__, __LINE__);
+  }
+
+  return;
+}
+
 static void remove_process(CIRCLE_handle* handle)
 {
   char path[CIRCLE_MAX_STRING_LEN];
@@ -1462,25 +1487,7 @@ static void remove_process(CIRCLE_handle* handle)
   
   char item = path[0];
   char* name = &path[1];
-  if (item == 'd') {
-    int rc = rmdir(name);
-    if (rc != 0) {
-      printf("Failed to rmdir `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-    }
-  } else if (item == 'f') {
-    int rc = unlink(name);
-    if (rc != 0) {
-      printf("Failed to unlink `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-    }
-  } else if (item == 'u') {
-    int rc = remove(name);
-    if (rc != 0) {
-      printf("Failed to remove `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-    }
-  } else {
-    /* print error */
-  }
-
+  remove_type(item, name);
   rm_count++;
 
   return;
@@ -1516,7 +1523,9 @@ static void remove_create(CIRCLE_handle* handle)
   return;
 }
 
-static void remove_libcirlce()
+/* insert all items to be removed into libcircle for
+ * dynamic load balancing */
+static void remove_libcircle()
 {
   /* initialize libcircle */
   CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
@@ -1539,6 +1548,7 @@ static void remove_libcirlce()
   return;
 }
 
+/* for given depth, just remove the files we know about */
 static void remove_direct()
 {
   /* each process directly removes its elements */
@@ -1568,6 +1578,7 @@ static void remove_direct()
   return;
 }
 
+/* spread with synchronization */
   /* allreduce to get total count of items */
 
   /* sort by name */
@@ -1583,6 +1594,7 @@ static void remove_direct()
   /* if my right neighbor has same dirname, send him msg when we're done */
 
   /* if my left neighbor has same dirname, wait for msg */
+
 
 /* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
 static uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len)
@@ -1622,6 +1634,8 @@ static int get_first_nonzero(const int* buf, int size)
   return -1;
 }
 
+/* for given depth, evenly spread the files among processes for
+ * improved load balancing */
 static void remove_spread()
 {
     /* get our rank and number of ranks in job */
@@ -1786,7 +1800,10 @@ static void remove_spread()
     }
 
     /* alltoallv to send data */
-    MPI_Alltoallv(sendbuf, sendsizes, senddisps, MPI_CHAR, recvbuf, recvsizes, recvdisps, MPI_CHAR, MPI_COMM_WORLD);
+    MPI_Alltoallv(
+        sendbuf, sendsizes, senddisps, MPI_CHAR,
+        recvbuf, recvsizes, recvdisps, MPI_CHAR, MPI_COMM_WORLD
+    );
 
     /* delete data */
     char* item = recvbuf;
@@ -1796,25 +1813,7 @@ static void remove_spread()
         char* name = &item[1];
 
         /* delete item */
-        if (type == 'd') {
-          int rc = rmdir(name);
-          if (rc != 0) {
-            printf("Failed to rmdir `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-          }
-        } else if (type == 'f') {
-          int rc = unlink(name);
-          if (rc != 0) {
-            printf("Failed to unlink `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-          }
-        } else if (type == 'u') {
-          int rc = remove(name);
-          if (rc != 0) {
-            printf("Failed to remove `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-          }
-        } else {
-          /* print error */
-        }
-
+        remove_type(type, name);
         rm_count++;
 
         /* go to next item */
@@ -1834,6 +1833,9 @@ static void remove_spread()
     return;
 }
 
+/* for given depth, hash directory name and map to processes to
+ * test whether having all files in same directory on one process
+ * matters */
 static void remove_map()
 {
     /* get our rank and number of ranks in job */
@@ -1942,7 +1944,10 @@ static void remove_map()
     }
 
     /* alltoallv to send data */
-    MPI_Alltoallv(sendbuf, sendsizes, senddisps, MPI_CHAR, recvbuf, recvsizes, recvdisps, MPI_CHAR, MPI_COMM_WORLD);
+    MPI_Alltoallv(
+        sendbuf, sendsizes, senddisps, MPI_CHAR,
+        recvbuf, recvsizes, recvdisps, MPI_CHAR, MPI_COMM_WORLD
+    );
 
     /* delete data */
     char* item = recvbuf;
@@ -1952,25 +1957,7 @@ static void remove_map()
         char* name = &item[1];
 
         /* delete item */
-        if (type == 'd') {
-          int rc = rmdir(name);
-          if (rc != 0) {
-            printf("Failed to rmdir `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-          }
-        } else if (type == 'f') {
-          int rc = unlink(name);
-          if (rc != 0) {
-            printf("Failed to unlink `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-          }
-        } else if (type == 'u') {
-          int rc = remove(name);
-          if (rc != 0) {
-            printf("Failed to remove `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-          }
-        } else {
-          /* print error */
-        }
-
+        remove_type(type, name);
         rm_count++;
 
         /* go to next item */
@@ -1986,6 +1973,122 @@ static void remove_map()
     bayer_free(&sendoffset);
     bayer_free(&senddisps);
     bayer_free(&sendsizes);
+
+    return;
+}
+
+/* for each depth, sort files by filename and then remove, to test
+ * whether it matters to limit the number of directories each process
+ * has to reference (e.g., locking) */
+static void remove_sort()
+{
+    /* get max filename length and count number of items at this depth */
+    int max_len = 0;
+    uint64_t my_count = 0;
+    const rm_elem_t* elem = rm_head;
+    while (elem != NULL) {
+        if (elem->depth == rm_depth) {
+            /* identify a rank responsible for this item */
+            int len = (int) strlen(elem->name) + 1;
+            if (len > max_len) {
+                max_len = len;
+            }
+            my_count++;
+        }
+        elem = elem->next;
+    }
+
+    /* bail out if total count is 0 */
+    int64_t all_count;
+    MPI_Allreduce(&my_count, &all_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    if (all_count == 0) {
+        return;
+    }
+
+    /* compute max string size */
+    int chars;
+    MPI_Allreduce(&max_len, &chars, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+
+    /* create key datatype (filename) and comparison op */
+    MPI_Datatype dt_key;
+    DTCMP_Op op_str;
+    DTCMP_Str_create_ascend(chars, &dt_key, &op_str);
+
+    /* create keysat datatype (filename + type) */
+    MPI_Datatype types[2], dt_keysat;
+    types[0] = dt_key;
+    types[1] = MPI_CHAR;
+    DTCMP_Type_create_series(2, types, &dt_keysat);
+
+    /* allocate send buffer */
+    char* sendbuf = NULL;
+    int sendcount = (int) my_count;
+    size_t sendbufsize = sendcount * (chars + 1);
+    if (sendbufsize > 0) {
+        sendbuf = (char*) malloc(sendbufsize);
+    }
+
+    /* copy data into buffer */
+    elem = rm_head;
+    char* ptr = sendbuf;
+    while (elem != NULL) {
+        if (elem->depth == rm_depth) {
+            /* encode the filename first */
+            strcpy(ptr, elem->name);
+            ptr += chars;
+
+            /* last character encodes item type */
+            if (elem->type == TYPE_DIR) {
+                ptr[0] = 'd';
+            } else if (elem->type == TYPE_FILE || elem->type == TYPE_LINK) {
+                ptr[0] = 'f';
+            } else {
+                ptr[0] = 'u';
+            }
+            ptr++;
+        }
+        elem = elem->next;
+    }
+
+    /* sort items */
+    void* recvbuf;
+    int recvcount;
+    DTCMP_Handle handle;
+    DTCMP_Sortz(
+        sendbuf, sendcount, &recvbuf, &recvcount,
+        dt_key, dt_keysat, op_str, DTCMP_FLAG_NONE, MPI_COMM_WORLD, &handle
+    );
+
+    /* delete data */
+    int delcount = 0;
+    ptr = (char*)recvbuf;
+    while (delcount < recvcount) {
+        /* get item name */
+        char* name = ptr;
+        ptr += chars;
+
+        /* get item type */
+        char type = ptr[0];
+        ptr++;
+
+        /* delete item */
+        remove_type(type, name);
+        rm_count++;
+        delcount++;
+    }
+
+    /* free output data */
+    DTCMP_Free(&handle);
+
+    /* free our send buffer */
+    bayer_free(&sendbuf);
+
+    /* free key comparison operation */
+    DTCMP_Op_free(&op_str);
+
+    /* free datatypes */
+    MPI_Type_free(&dt_keysat);
+    MPI_Type_free(&dt_key);
 
     return;
 }
@@ -2050,9 +2153,11 @@ static void remove_files(
         rm_depth = depth;
         rm_count = 0;
 
-//        remove_direct();
-        remove_spread();
+        remove_direct();
+//        remove_spread();
 //        remove_map();
+//      remove_sort();
+//      TODO: remove spread then sort
 //        remove_libcircle();
         
         /* wait for all procs to finish before we start
