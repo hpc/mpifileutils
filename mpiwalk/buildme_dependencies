@@ -37,13 +37,13 @@ pushd libcircle.git
   export CFLAGS=${OPT}
   ./configure --prefix=$installdir
   make clean
-  make
-  make install
+  make VERBOSE=1
+  make VERBOSE=1 install
 popd
 
 pushd lwgrp.git
-  #make distclean
-  #./autogen.sh
+#  make distclean
+#  ./autogen.sh
   export CFLAGS=${OPT}
   ./configure --prefix=${installdir}
   make clean
@@ -52,8 +52,8 @@ pushd lwgrp.git
 popd
 
 pushd dtcmp.git
-  #make distclean
-  #./autogen.sh
+#  make distclean
+#  ./autogen.sh
   export CFLAGS=${OPT}
   ./configure --prefix=${installdir} --with-lwgrp=${installdir}
   make clean

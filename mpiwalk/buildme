@@ -20,9 +20,25 @@ OPT="-g -O0"
 
 installdir=`pwd`/install
 
+# fetch dcp source code
+if [ ! -f dcp.git ] ; then
+  git clone git://github.com/hpc/dcp.git dcp.git
+fi
+
+# build dcp command
+pushd dcp.git
+  export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
+  export CFLAGS="-g -O0"
+  ./configure --prefix=$installdir
+  make clean
+  make VERBOSE=1
+  make VERBOSE=1 install
+popd
+
+# build mpiwalk command
 mpicxx ${OPT} -o mpiwalk mpiwalk.cpp \
   -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp
 
+# build drm command
 mpicxx ${OPT} -o drm drm.cpp \
   -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp
-
