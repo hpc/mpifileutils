@@ -10,10 +10,25 @@ It can sort file information by a number of fields, e.g., by filename, size, or 
 It uses libcircle to implement the parallel file walk, and it uses dtcmp for parallel sorting.
 
 To build:
-  1) run the buildme_mvapich script to download and build MVAPICH2-1.9
-     you may need to modify lines in this script to match your network and resource manager
-  2) run the buildme_dependencies script to download and build dependent libs
-  3) run the buildme script to build dcp, mpiwalk, and drm
+  cd into "mpiwalk" directory
+
+  MVAPICH2 v1.9:
+    1) modify the buildme_mvapich script to match your network and resource manager
+       (it's currently set up for Mellanox IB interconnects and SLURM)
+    2) run the buildme_mvapich script to download and build MVAPICH2-1.9
+
+  Open MPI v1.7.1 (not yet supported):
+    1) modify the buildme_openmpi script if needed
+    2) run buildme_autotools
+    3) run buildme_openmpi
+
+  Other dependencies (libcircle, lwgrp, dtcmp):
+    1) modify buildme_dependencies script to use correct MPI library
+    2) run the buildme_dependencies script to download and build dependent libs
+
+  Tools (dcp, mpiwalk, drm):
+    1) modify buildme script to use correct MPI library
+    2) run the buildme script to build dcp, mpiwalk, and drm
 
 Example run commands:
   1) Walk current working directory

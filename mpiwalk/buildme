@@ -10,8 +10,13 @@
 #. /usr/local/tools/dotkit/init.sh
 #use mvapich2-gnu
 
+# MVAPICH
 curdir=`pwd`
 export PATH="${curdir}/mvapich2/install/bin:$PATH"
+
+# Open MPI
+#curdir=`pwd`
+#export PATH="${curdir}/openmpi/install/bin:$PATH"
 
 ##################
 # Build software
