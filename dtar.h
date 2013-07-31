@@ -1,8 +1,6 @@
 #ifndef __DTAR_H_
 #define __DTAR_H_
 
-#include <mpi.h>
-
 #include <libcircle.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -20,7 +18,7 @@
 #endif
 
 typedef enum {
-    TREEWALK, COPY, CLEANUP
+    TREEWALK, COPY
 } DTAR_operation_code_t;
 
 typedef struct {
@@ -44,13 +42,12 @@ typedef struct {
 
     int64_t file_size;
     int64_t chunk;
-    uint16_t source_base_offset;
+    int64_t  offset;
     DTAR_operation_code_t code;
     char* operand;
-    char* dest_base_appendix;
-    char* dest_full_path;
+} DTAR_operation_t;
 
-} DTAR_operation_t;   /*copy from dcp */
+void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
 
 
 #endif

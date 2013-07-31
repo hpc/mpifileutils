@@ -1,23 +1,23 @@
 /* See the file "COPYING" for the full license governing this code. */
 
-#ifndef __DCP_TREEWALK_H
-#define __DCP_TREEWALK_H
+#ifndef __DTAR_TREEWALK_H
+#define __DTAR_TREEWALK_H
 
 #include "common.h"
 
-void DCOPY_do_treewalk(DCOPY_operation_t* op, \
+void DTAR_do_treewalk(DTAR_operation_t* op, \
                        CIRCLE_handle* handle);
 
-void DCOPY_stat_process_link(DCOPY_operation_t* op, \
+void DTAR_stat_process_link(DTAR_operation_t* op, \
                              const struct stat64* statbuf,
                              CIRCLE_handle* handle);
 
-void DCOPY_stat_process_file(DCOPY_operation_t* op, \
+void DTAR_stat_process_file(DTAR_operation_t* op, \
                              const struct stat64* statbuf,
                              CIRCLE_handle* handle);
 
-void DCOPY_stat_process_dir(DCOPY_operation_t* op,
+void DTAR_stat_process_dir(DTAR_operation_t* op,
                             const struct stat64* statbuf,
                             CIRCLE_handle* handle);
 
-#endif /* __DCP_TREEWALK_H */
+#endif /* __DTAR_TREEWALK_H */
