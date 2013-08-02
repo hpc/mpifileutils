@@ -202,7 +202,6 @@ void DTAR_stat_process_file(DTAR_operation_t* op, \
 
     write_header(offset, op);
 
-    return ;
     op->offset=offset+512;
 
     printf("rank %d file %s data:%x entry:%x hex_entry:%x\n" , \

@@ -1,0 +1,22 @@
+#!/bin/bash
+
+##################
+# Build software
+##################
+
+set -x
+
+OPT="-g -O0"
+
+installdir=`pwd`/install
+dir=`pwd`
+
+mpicxx -o test/dtar   \
+        dtar.c  copy.c   helper.c  treewalk.c      \
+		-I${installdir}/include \
+		-I${dir}/attr-2.4.47/include  \
+		-L${installdir}/lib     \
+        -lcircle  -larchive           \
+         -D__STDC_FORMAT_MACROS
+rm *.o	   
+
