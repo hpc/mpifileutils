@@ -11,8 +11,8 @@ OPT="-g -O0"
 installdir=`pwd`/install
 dir=`pwd`
 
-export PATH="`pwd`/install/include:$PATH"   >> /etc/null
-export LD_LIBRARY_PATH="`pwd`/install/include:$LD_LIBRARY_PATH" >> /etc/null
+#export PATH="`pwd`/install/include:$PATH"   >& /dev/null
+#export LD_LIBRARY_PATH="`pwd`/install/include:$LD_LIBRARY_PATH" >& /dev/null
 
 mpicxx -o test/dtar   \
         dtar.c  copy.c   helper.c  treewalk.c      \
