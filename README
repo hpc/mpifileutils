@@ -2,3 +2,10 @@ How to build
 
 ./buildme_dependencies
 ./buildme
+
+How to Test
+
+cd test
+./source env.sh
+./run.sh	
+
