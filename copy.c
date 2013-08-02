@@ -1,34 +1,33 @@
 /* See the file "COPYING" for the full license governing this code. */
 
-#include "copy.h"
-#include "treewalk.h"
-#include "dcp.h"
+#include "dtar.h"
+#include "log.h"
 
 #include <errno.h>
 #include <fcntl.h>
+#include <dirent.h>
 #include <libgen.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <inttypes.h>
-// #include <sys/sendfile.h>
 
-extern DTAR_options_t DTAR_user_opts;
-//extern DTAR_statistics_t DTAR_statistics;
+extern DTAR_options_t    DTAR_user_opts;
+extern DTAR_writer_t        DTAR_writer;
 
-
-int DCOPY_open_input_fd(DCOPY_operation_t* op, \
+int DTAR_open_input_fd(DTAR_operation_t* op, \
                         off64_t offset, \
                         off64_t len)
 {
     int in_fd = open64(op->operand, O_RDONLY | O_NOATIME);
 
     if(in_fd < 0) {
-        LOG(DCOPY_LOG_DBG, "Failed to open input file `%s'. %s", \
-            op->operand, strerror(errno));
-        /* Handle operation requeue in parent function. */
+        printf("In DTAR_open_input_fd in_fd is invalid\n");
+        return in_fd;
     }
 
     posix_fadvise64(in_fd, offset, len, POSIX_FADV_SEQUENTIAL);
@@ -39,16 +38,19 @@ int DCOPY_open_input_fd(DCOPY_operation_t* op, \
 void DTAR_do_copy(DTAR_operation_t* op, \
                    CIRCLE_handle* handle)
 {
+
+    printf("rank %d is going to do copy\n", CIRCLE_global_rank);
+
     off64_t offset = DTAR_CHUNK_SIZE * op->chunk;
 
     int in_fd = DTAR_open_input_fd(op, offset, DTAR_CHUNK_SIZE);
 
     if(in_fd < 0) {
-        printf("In DTAR_do_copy in_fd in invalid\n");
+        printf("In DTAR_do_copy in_fd is invalid\n");
         return;
     }
 
-    int out_fd = DTAR_writer->fd_tar;
+    int out_fd = DTAR_writer.fd_tar;
 
     if(out_fd < 0) {
         printf("In DTAR_do_copy in_fd in invalid\n");
@@ -56,15 +58,14 @@ void DTAR_do_copy(DTAR_operation_t* op, \
     }
 
     if(DTAR_perform_copy(op, in_fd, out_fd, offset) < 0) {
-        DTAR_retry_failed_operation(COPY, handle, op);
+        printf("In DTAR_do_copy perform copy failed\n");
         return;
     }
 
     if(close(in_fd) < 0) {
-        LOG(DTAR_LOG_DBG, "Close on source file failed. errno=%d %s", errno, strerror(errno));
+        printf("In DTAR_do_copy close failed\n");
     }
 
-    DTAR_enqueue_cleanup_stage(op, handle);
 
     return;
 }
@@ -81,14 +82,14 @@ int DTAR_perform_copy(DTAR_operation_t* op, \
     char io_buf[FD_BLOCK_SIZE];
 
     if(lseek64(in_fd, offset, SEEK_SET) < 0) {
-        LOG(DTAR_LOG_ERR, "Couldn't seek in source path `%s'. errno=%d %s", \
+        printf( "Couldn't seek in source path `%s'. errno=%d %s", \
             op->operand, errno, strerror(errno));
         /* Handle operation requeue in parent function. */
         return -1;
     }
 
-    if(lseek64(out_fd, offset + op->source_base_offset, SEEK_SET) < 0) {
-        LOG(DTAR_LOG_ERR, "Couldn't seek in destination path (source is `%s'). errno=%d %s", \
+    if(lseek64(out_fd, offset + op->offset, SEEK_SET) < 0) {
+        printf( "Couldn't seek in destination path (source is `%s'). errno=%d %s", \
             op->operand, errno, strerror(errno));
         return -1;
     }
@@ -105,7 +106,7 @@ int DTAR_perform_copy(DTAR_operation_t* op, \
                                      (size_t)num_of_bytes_read);
 
         if(num_of_bytes_written != num_of_bytes_read) {
-            LOG(DTAR_LOG_ERR, "Write error when copying from `%s'. errno=%d %s", \
+            printf( "Write error when copying from `%s'. errno=%d %s", \
                 op->operand, errno, strerror(errno));
             return -1;
         }
@@ -113,19 +114,18 @@ int DTAR_perform_copy(DTAR_operation_t* op, \
         total_bytes_written += num_of_bytes_written;
     }
 
-  int num_chunks=op->file_size/DTAR_CHUNK_SIZE; 
-  int rem =op->file_size - DTAR_CHUNK_SIZE*num_chunks;
-  int last_chunk= (rem)? num_chunks:num_chunks-1; 
+    int num_chunks=op->file_size/DTAR_CHUNK_SIZE; 
+    int rem =op->file_size - DTAR_CHUNK_SIZE*num_chunks;
+    int last_chunk= (rem)? num_chunks:num_chunks-1; 
 
-  if(op->chunk_index == last_chunk) {
+    if(op->chunk == last_chunk) {
  
-     int padding=op->file_size%512;
-  
-     if( padding >0 ) {
-         char * buff_num=calloc(padding, sizeof(char));     
+    int padding=512 - op->file_size%512;
+    if( padding >0 ) {
+         char * buff_null=(char*)calloc(padding, sizeof(char));     
          int num_of_bytes_written = write(out_fd, buff_null, \
                                          (size_t)padding);
-     }
+    }
   } 
 
     return 1;

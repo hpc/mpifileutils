@@ -1,66 +1,43 @@
-#include <sys/types.h>
-#include <sys/stat.h>
-
+#include "dtar.h"
+#include "log.h"
 #include <archive.h>
 #include <archive_entry.h>
+#include <libcircle.h>
+
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <inttypes.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
-#include <libcircle.h>
-#include "dtar.h"
-
-extern DTAR_opts_t DTAR_user_opts;
+extern DTAR_options_t DTAR_user_opts;
 extern DTAR_writer_t  DTAR_writer;
-
+extern void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle); 
 
 void DTAR_writer_init()
 {
-	
-        char compress=DTAR_user_opts->compress;
-        char filename=DTAR_user_opts->dest_path;
-  
-        DTAR_writer->flags= O_WRONLY | O_CREAT | O_TRUNC | O_BINARY | O_CLOEXEC;
-	DTAR_writer->a=archive_write_new();
-	
-        switch (compress) {
-	case 'j': case 'y':
-		archive_write_add_filter_bzip2(a);
-		break;
-	case 'Z':
-		archive_write_add_filter_compress(a);
-		break;
-	case 'z':
-		archive_write_add_filter_gzip(a);
-		break;
-	default:
-		archive_write_add_filter_none(a);
-		break;
-	}
-	archive_write_set_format_ustar(a);
-        archive_write_set_bytes_per_block(a,0);
-
-	if (strcmp(filename, "-") == 0)
-		filename = NULL;
-         
-         DTAR_writer->fd_tar=open(filename,DTAR_writer->flags,0666);
-         archive_write_open_fd(a, DTAR_writer->fd_tar); 
+    char * filename=DTAR_user_opts.dest_path;
+    //DTAR_writer.flags= O_WRONLY | O_CREAT | O_TRUNC | O_BINARY | O_CLOEXEC;
+    DTAR_writer.flags= O_WRONLY | O_CREAT | O_BINARY | O_CLOEXEC;
+    DTAR_writer.fd_tar=open(filename, DTAR_writer.flags, 0666);
 }
 
-void DTAR_parse_path_args(const chat * filename, char compress, const char ** argv);
+void DTAR_parse_path_args(char * filename, char compress, char ** argv)
 {
     int i=0;
-    DTAR_user_opts->dest_path=filename;
+    DTAR_user_opts.dest_path=filename;
     
     while (*argv != NULL) {
-    argv++;
-    i++; 
+           argv++;
+           i++; 
     }
 
-    DTAR_user_opts->num_src_paths=i;
-    DTAR_user_opts->src_path=argv;
+    DTAR_user_opts.num_src_paths=i;
+    DTAR_user_opts.src_path=argv-i;
 
 }
 
@@ -79,24 +56,24 @@ void DTAR_process_objects(CIRCLE_handle* handle)
 
     DTAR_jump_table[opt->code](opt, handle);
 
-    DTAR_opt_free(&opt);
+   // DTAR_opt_free(&opt);
     return;
 }
 
 void DTAR_enqueue_work_objects(CIRCLE_handle* handle)
 {
 
-    char* opts_dest_path_dirname;
-    char* src_path_dirname;
+  //  char* opts_dest_path_dirname;
+  //   char* src_path_dirname;
 
-    uint32_t number_of_source_files = DTAR_user_opts->num_src_paths;
+    uint32_t number_of_source_files = DTAR_user_opts.num_src_paths;
 
     if(number_of_source_files < 1) {
         LOG(DTAR_LOG_ERR, "At least one valid source file must be specified.");
         DTAR_abort(EXIT_FAILURE);
     }
-    
-    int exist=access(DTAR_user_option->des_path, F_OK );
+  
+    int exist=access(DTAR_user_opts.dest_path, F_OK );
     
     if (-1 != exist) { 
 
@@ -105,9 +82,8 @@ void DTAR_enqueue_work_objects(CIRCLE_handle* handle)
         for(i = 0; i < DTAR_user_opts.num_src_paths; i++) {
 
             char* src_path = DTAR_user_opts.src_path[i];
-            char* src_path_basename = NULL;
             size_t src_len = strlen(src_path) + 1;
-            char* op = DTAR_encode_operation(TREEWALK, 0, \ 
+            char* op = DTAR_encode_operation(TREEWALK, 0, \
                                              src_path, 0, \
                                              0);
             handle->enqueue(op);
@@ -193,7 +169,6 @@ DTAR_operation_t* DTAR_decode_operation(char* op)
     return ret;
 }
 
-
 /* called by single process upon detection of a problem */
 void DTAR_abort(int code)
 {
@@ -208,5 +183,4 @@ void DTAR_exit(int code)
     MPI_Finalize();
     exit(code);
 }
-
 
