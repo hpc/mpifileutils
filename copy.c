@@ -23,7 +23,13 @@ int DTAR_open_input_fd(DTAR_operation_t* op, \
                         off64_t offset, \
                         off64_t len)
 {
-    int in_fd = open64(op->operand, O_RDONLY | O_NOATIME);
+ 
+    char path[PATH_MAX];
+	strcpy(path, op->dir);
+	strcat(path, "/");
+    strcat(path, op->operand);	
+
+    int in_fd = open64(path, O_RDONLY | O_NOATIME);
 
     if(in_fd < 0) {
         printf("In DTAR_open_input_fd in_fd is invalid\n");

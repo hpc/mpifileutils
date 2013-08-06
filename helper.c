@@ -6,6 +6,7 @@
 
 #include <dirent.h>
 #include <sys/types.h>
+#include <libgen.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <inttypes.h>
@@ -63,9 +64,8 @@ void DTAR_process_objects(CIRCLE_handle* handle)
 void DTAR_enqueue_work_objects(CIRCLE_handle* handle)
 {
 
-  //  char* opts_dest_path_dirname;
-  //   char* src_path_dirname;
-
+    char* dirc, * dname;
+	char* basec, *bname;
     uint32_t number_of_source_files = DTAR_user_opts.num_src_paths;
 
     if(number_of_source_files < 1) {
@@ -80,14 +80,21 @@ void DTAR_enqueue_work_objects(CIRCLE_handle* handle)
         int i;
 
         for(i = 0; i < DTAR_user_opts.num_src_paths; i++) {
-
+           
             char* src_path = DTAR_user_opts.src_path[i];
+		   	dirc=strdup(src_path);
+			basec=strdup(src_path);
+            dname=dirname(dirc);
+			bname=basename(basec);
+
             size_t src_len = strlen(src_path) + 1;
             char* op = DTAR_encode_operation(TREEWALK, 0, \
-                                             src_path, 0, \
-                                             0);
+                                             bname, 0, \
+                                             0, dname);
             handle->enqueue(op);
         }
+        free(basec);
+		free(dirc);
     }
     else {
 
@@ -97,6 +104,7 @@ void DTAR_enqueue_work_objects(CIRCLE_handle* handle)
 
 }
 
+
 /**
  * Encode an operation code for use on the distributed queue structure.
  */
@@ -104,15 +112,18 @@ char* DTAR_encode_operation(DTAR_operation_code_t code, \
                              int64_t chunk, \
                              char* operand, \
                              uint64_t offset, \
-                             int64_t file_size)
+                             int64_t file_size, char * dir)
 {
     char* op = (char*) malloc(sizeof(char) * CIRCLE_MAX_STRING_LEN);
     char* ptr = op;
     size_t remaining = CIRCLE_MAX_STRING_LEN;
 
     size_t len = strlen(operand);
-    int written = snprintf(ptr, remaining, "%" PRId64 ":%" PRId64 ":%" PRIu16 ":%d:%d:%s", \
-                       file_size, chunk, offset, code, (int)len, operand);
+	size_t len_dir=strlen(dir);
+
+    int written = snprintf(ptr, remaining, "%" PRId64 ":%" PRId64 ":%" PRIu64 ":%d:%d:%s:%d:%s", \
+			               file_size, chunk, offset, code, (int)len, \
+						   operand, (int)len_dir, dir);
 
     if(written >= remaining) {
         LOG(DTAR_LOG_DBG, \
@@ -123,6 +134,8 @@ char* DTAR_encode_operation(DTAR_operation_code_t code, \
 
     ptr += written;
     remaining -= written;
+
+	printf("rank %d, %s\n", CIRCLE_global_rank, op);
 
     return op;
 }
@@ -164,7 +177,22 @@ DTAR_operation_t* DTAR_decode_operation(char* op)
 
     /* skip over digits and trailing ':' to get pointer to operand */
     char* operand = str + strlen(str) + 1;
+	operand[op_len]='\0';
     ret->operand = operand;
+    str= operand + op_len + 1;
+
+    int dir_len;
+    str = strtok(str, ":");
+    if(sscanf(str, "%d", &dir_len) != 1) {
+        LOG(DTAR_LOG_ERR, "Could not decode operand string length.");
+        DTAR_abort(EXIT_FAILURE);
+    }
+
+    char* dir = str + strlen(str) + 1;
+    ret->dir =dir;
+
+    printf("rank %d, op is %s, dir is %s\n", CIRCLE_global_rank, \
+			ret->operand, ret->dir); 
 
     return ret;
 }

@@ -22,30 +22,127 @@ extern DTAR_options_t DTAR_user_opts;
 extern DTAR_writer_t  DTAR_writer;
 extern MPI_Comm       inter_comm;
 
-static void print_header(char * path) {
 
-	   int status;
-	   char cmd[1035];
-       FILE *fp;
-	    
-       /* Open the command for reading. */
-	   sprintf(cmd, "hexdump -C test.tar >> %s.log", path);
-       fp = popen(cmd, "r");
-       if (fp == NULL) {
-	       printf("Failed to run command\n" );
-		   return;
-	   }
-	   /* close */
-	   pclose(fp);
+inline static struct archive * new_archive()
+{
+	
+    char   compress=DTAR_user_opts.compress;
+	struct archive *a=archive_write_new();
+	
+    switch (compress) {
+	case 'j': case 'y':
+		archive_write_add_filter_bzip2(a);
+		break;
+	case 'Z':
+		archive_write_add_filter_compress(a);
+		break;
+	case 'z':
+		archive_write_add_filter_gzip(a);
+		break;
+	default:
+		archive_write_add_filter_none(a);
+		break;
+	}
+	archive_write_set_format_ustar(a);
+        archive_write_set_bytes_per_block(a, 0);
+         
+        return a;
 }
 
+inline static int write_header( off64_t offset, DTAR_operation_t * op) 
+{
+    
+    char* bname = op->operand; 
+	char* dname = op->dir;
+	char  dir[PATH_MAX];
+
+	if( getcwd(dir, PATH_MAX) == NULL) {
+        printf("can not getcwd in write_header\n");
+        return -1;
+	}
+
+    printf("op is %s, dir is %s, base is %s, pwd is %s\n", op->operand,
+			dname, bname, dir);
+
+    int ret=chdir(dname);
+    if(ret !=0) {
+		printf("can not chdir in write_header\n");
+		return -1;
+    }
+	
+    struct archive *disk= archive_read_disk_new();
+    int    r=archive_read_disk_open(disk, bname);
+    if( r != ARCHIVE_OK ) {
+       printf("Cannot read disk in treewalk.c\n");
+       return -1;
+    } 
+
+    struct archive_entry *entry=archive_entry_new();
+    r=archive_read_next_header2(disk, entry);
+   
+    if (r != ARCHIVE_OK) {
+        printf("Cannot read header in treewalk.c\n");
+        return -1;
+    }
+    
+    struct archive * a=new_archive();
+    archive_write_open_fd(a, DTAR_writer.fd_tar); 
+    off64_t cur_pos= lseek64(DTAR_writer.fd_tar, offset, SEEK_SET);      
+
+    if(cur_pos < 0) {
+       printf("Cannot seek in treewalk.c offset is %d\n", offset); 
+       return -1;
+    }
+  
+    printf("rank %d file %s header offset is %x  current pos is %x\n", CIRCLE_global_rank, \
+            op->operand, offset, cur_pos);
+    archive_write_header(a, entry);
+
+    if( r != ARCHIVE_OK) {
+        printf("Cannot write header in treewalk.c\n");
+        return -1;
+    }    
+    
+    fsync(DTAR_writer.fd_tar);
+    archive_entry_free(entry);
+    archive_read_close(disk);
+    archive_read_free(disk);
+
+	ret=chdir(dir);
+    if (ret !=0) {
+		printf("can not chdir in write_header\n");
+		return -1;
+    }
+
+/* 
+   how to destroy a is a problem 
+   need to think about 
+   archive_write_close and 
+   archive_write_free will 
+   automatically add 1024 zero bits
+*/
+
+
+//    archive_write_close(a);
+//    archive_write_free(a);
+  
+    return 0;
+
+}
 
 void DTAR_do_treewalk(DTAR_operation_t* op, \
                        CIRCLE_handle* handle)
 {
     struct stat64 statbuf;
 
-    if(lstat64(op->operand, &statbuf) < 0) {
+    char path[PATH_MAX];
+	strcpy(path, op->dir);
+	strcat(path, "/");
+    strcat(path, op->operand);	
+
+	printf("rank %d, path is %s\n", CIRCLE_global_rank, path);
+
+    if(lstat64(path, &statbuf) < 0) {
         LOG(DTAR_LOG_DBG, "Could not get info for `%s'. errno=%d %s", op->operand, errno, strerror(errno));
         return;
     }
@@ -97,83 +194,6 @@ void DTAR_stat_process_link(DTAR_operation_t* op, \
     return;
 }
 
-static struct archive * new_archive()
-{
-	
-        char   compress=DTAR_user_opts.compress;
-	struct archive *a=archive_write_new();
-	
-        switch (compress) {
-	case 'j': case 'y':
-		archive_write_add_filter_bzip2(a);
-		break;
-	case 'Z':
-		archive_write_add_filter_compress(a);
-		break;
-	case 'z':
-		archive_write_add_filter_gzip(a);
-		break;
-	default:
-		archive_write_add_filter_none(a);
-		break;
-	}
-	archive_write_set_format_ustar(a);
-        archive_write_set_bytes_per_block(a, 0);
-         
-        return a;
-}
-
-
-inline static int write_header( off64_t offset, DTAR_operation_t * op) 
-{
-  
-    struct archive *disk= archive_read_disk_new();
-    int    r=archive_read_disk_open(disk, op->operand);
- 
-    if( r != ARCHIVE_OK ) {
-       printf("Cannot read disk in treewalk.c\n");
-       return -1;
-    } 
-
-    struct archive_entry *entry=archive_entry_new();
-    r=archive_read_next_header2(disk, entry);
-   
-    if (r != ARCHIVE_OK) {
-        printf("Cannot read header in treewalk.c\n");
-        return -1;
-    }
-    
-    struct archive * a=new_archive();
-    archive_write_open_fd(a, DTAR_writer.fd_tar); 
-    off64_t cur_pos= lseek64(DTAR_writer.fd_tar, offset, SEEK_SET);      
-
-    if(cur_pos < 0) {
-       printf("Cannot seek in treewalk.c offset is %d\n", offset); 
-       return -1;
-    }
-  
-    printf("rank %d file %s header offset is %x  current pos is %x\n", CIRCLE_global_rank, \
-            op->operand, offset, cur_pos);
-    archive_write_header(a, entry);
-
-    if( r != ARCHIVE_OK) {
-        printf("Cannot write header in treewalk.c\n");
-        return -1;
-    }    
-    
-    fsync(DTAR_writer.fd_tar);
-
-    archive_entry_free(entry);
-    archive_read_close(disk);
-    archive_read_free(disk);
-    
-//    archive_write_close(a);
-//    archive_write_free(a);
-  
-    return 0;
-
-}
-
 void DTAR_stat_process_file(DTAR_operation_t* op, \
                              const struct stat64* statbuf,
                              CIRCLE_handle* handle)
@@ -198,8 +218,10 @@ void DTAR_stat_process_file(DTAR_operation_t* op, \
     MPI_Send(buffer, 2,  MPI_LONG_LONG, 0, 0, inter_comm);
     MPI_Recv(&offset, 1, MPI_LONG_LONG, 0, 0, inter_comm, &stat);    
 
-    write_header(offset, op);
+    printf("rank %d, offset is %d\n", CIRCLE_global_rank, offset);
 
+    write_header(offset, op);
+	 
     op->offset=offset+512;
 
     printf("rank %d file %s data:%x entry:%x hex_entry:%x\n" , \
@@ -207,7 +229,7 @@ void DTAR_stat_process_file(DTAR_operation_t* op, \
     for(chunk_index = 0; chunk_index < num_chunks; chunk_index++) {
         char* newop = DTAR_encode_operation(COPY, chunk_index, op->operand, \
                                              op->offset, \
-                                             file_size);
+                                             file_size, op->dir);
         handle->enqueue(newop);
         free(newop);
     }
@@ -216,7 +238,7 @@ void DTAR_stat_process_file(DTAR_operation_t* op, \
     if((num_chunks * DTAR_CHUNK_SIZE) < file_size || num_chunks == 0) {
         char* newop = DTAR_encode_operation(COPY, chunk_index, op->operand, \
                                              op->offset, \
-                                             file_size);
+                                             file_size, op->dir);
         handle->enqueue(newop);
         free(newop);
     }
@@ -226,6 +248,52 @@ void DTAR_stat_process_dir(DTAR_operation_t* op,
                             const struct stat64* statbuf,
                             CIRCLE_handle* handle)
 {
+    int64_t buffer[2];
+    off64_t offset=0;
+    MPI_Status  stat;
+
+    buffer[0]=(int64_t)CIRCLE_global_rank;
+    buffer[1]=512;
+    MPI_Send(buffer, 2,  MPI_LONG_LONG, 0, 0, inter_comm);
+    MPI_Recv(&offset, 1, MPI_LONG_LONG, 0, 0, inter_comm, &stat);    
+    write_header(offset, op);
+ 
+ 	DIR* curr_dir;
+    char* curr_dir_name;
+    char* newop;
+
+    struct dirent* curr_ent;
+    char newop_path[PATH_MAX];
+
+	char path[PATH_MAX];
+	strcpy(path, op->dir);
+	strcat(path, "/");
+    strcat(path, op->operand);	
+
+    curr_dir = opendir(path);
+
+    if(curr_dir == NULL) {
+        LOG(DTAR_LOG_ERR, "Unable to open dir `%s'. errno=%d %s", \
+            op->operand, errno, strerror(errno));
+        return;
+    }
+    else {
+        while((curr_ent = readdir(curr_dir)) != NULL) {
+            curr_dir_name = curr_ent->d_name;
+
+            if((strncmp(curr_dir_name, ".", 2)) && (strncmp(curr_dir_name, "..", 3))) {
+                sprintf(newop_path, "%s/%s", op->operand, curr_dir_name);
+                LOG(DTAR_LOG_DBG, "Stat operation is enqueueing `%s'", newop_path);
+                newop = DTAR_encode_operation(TREEWALK, 0, newop_path, \
+                                               0, 0, op->dir);
+                handle->enqueue(newop);
+                free(newop);
+            }
+        }
+    }
+
+    closedir(curr_dir);
+
     return;
 }
 

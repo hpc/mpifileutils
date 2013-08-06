@@ -96,6 +96,7 @@ typedef struct {
     int64_t  offset;
     DTAR_operation_code_t code;
     char* operand;
+	char* dir;
 } DTAR_operation_t;
 
 
@@ -121,7 +122,8 @@ char* DTAR_encode_operation(DTAR_operation_code_t code, \
                              int64_t chunk, \
                              char* operand, \
                              uint64_t offset, \
-                             int64_t file_size);
+                             int64_t file_size,\
+							 char* dir);
 
 DTAR_operation_t* DTAR_decode_operation(char* op);
 
