@@ -152,7 +152,6 @@ inline static int write_header( off64_t offset, DTAR_operation_t * op)
        return -1;
     }
   
-    print_header(op->operand);
     printf("rank %d file %s header offset is %x  current pos is %x\n", CIRCLE_global_rank, \
             op->operand, offset, cur_pos);
     archive_write_header(a, entry);
@@ -163,7 +162,6 @@ inline static int write_header( off64_t offset, DTAR_operation_t * op)
     }    
     
     fsync(DTAR_writer.fd_tar);
-    print_header(op->operand);
 
     archive_entry_free(entry);
     archive_read_close(disk);
