@@ -7,5 +7,5 @@ How to Test
 
 cd test
 ./source env.sh
-./run.sh	
+./run.sh
 

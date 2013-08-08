@@ -191,7 +191,18 @@ void DTAR_stat_process_link(DTAR_operation_t* op, \
                              const struct stat64* statbuf,
                              CIRCLE_handle* handle)
 {
-    return;
+
+    int64_t buffer[2];
+    off64_t offset=0;
+    MPI_Status  stat;
+    buffer[0]=(int64_t)CIRCLE_global_rank;
+    buffer[1]=512;
+
+    MPI_Send(buffer, 2,  MPI_LONG_LONG, 0, 0, inter_comm);
+    MPI_Recv(&offset, 1, MPI_LONG_LONG, 0, 0, inter_comm, &stat);    
+
+    printf("rank %d, offset is %d\n", CIRCLE_global_rank, offset);
+    write_header(offset, op);
 }
 
 void DTAR_stat_process_file(DTAR_operation_t* op, \
