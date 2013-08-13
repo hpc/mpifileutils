@@ -10,6 +10,8 @@
 #include <getopt.h>
 #include <time.h> /* asctime / localtime */
 
+#include <stdarg.h> /* variable length args */
+
 #include <pwd.h> /* for getpwent */
 #include <grp.h> /* for getgrent */
 #include <errno.h>
@@ -59,6 +61,78 @@ char _DFTW_TOP_DIR[PATH_MAX];
 /** The callback. */
 DFTW_cb_t _DFTW_CB;
 
+/* print abort message and call MPI_Abort to kill run */
+void bayer_abort(int rc, const char *fmt, ...)
+{
+  va_list argp;
+  fprintf(stderr, "ABORT: rank X on HOST: ");
+  va_start(argp, fmt);
+  vfprintf(stderr, fmt, argp);
+  va_end(argp);
+  fprintf(stderr, "\n");
+
+  MPI_Abort(MPI_COMM_WORLD, 0);
+}
+
+/* if size > 0 allocates size bytes and returns pointer,
+ * calls bayer_abort if malloc fails, returns NULL if size == 0 */
+static void* bayer_malloc(size_t size, const char* desc, const char* file, int line)
+{
+  /* only bother if size > 0 */
+  if (size > 0) {
+    /* try to allocate memory and check whether we succeeded */
+    void* ptr = malloc(size);
+    if (ptr == NULL) {
+      /* allocate failed, abort */
+      bayer_abort(1, "Failed to allocate %llu bytes for %s @ %s:%d",
+        (unsigned long long) size, desc, file, line
+      );
+    }
+
+    /* return the pointer */
+    return ptr;
+  }
+
+  return NULL;
+}
+
+/* if str != NULL, call strdup and return pointer, calls bayer_abort if strdup fails */
+static char* bayer_strdup(const char* str, const char* desc, const char* file, int line)
+{
+  if (str != NULL) {
+    /* TODO: check that str length is below some max? */
+    char* ptr = strdup(str);
+    if (ptr == NULL) {
+      /* allocate failed, abort */
+      bayer_abort(1, "Failed to allocate string for %s @ %s:%d",
+        desc, file, line
+      );
+    }
+
+    return ptr;
+  }
+  return NULL;
+}
+
+/* free memory if pointer is not NULL, set pointer to NULL */
+static void bayer_free(void* p)
+{
+  /* caller passes in pointer to pointer */
+  if (p != NULL) {
+    /* get pointer to memory */
+    void* ptr = *(void**)p;
+    if (ptr != NULL ) {
+      /* free memory */
+      free(ptr);
+    }
+
+    /* set caller's pointer to NULL */
+    *(void**)p = NULL;
+  }
+
+  return;
+}
+
 /* calls lstat, and retries a few times if we get EIO or EINTR */
 static int reliable_lstat(const char* path, struct stat* buf)
 {
@@ -101,10 +175,10 @@ static int record_info(const char *fpath, const struct stat *sb, mode_t type)
 {
   /* TODO: check that memory allocation doesn't fail */
   /* create new element to record file path, file type, and stat info */
-  elem_t* elem = (elem_t*) malloc(sizeof(elem_t));
+  elem_t* elem = (elem_t*) bayer_malloc(sizeof(elem_t), "file info element", __FILE__, __LINE__);
 
   /* copy path */
-  elem->file = strdup(fpath);
+  elem->file = bayer_strdup(fpath, "file path", __FILE__, __LINE__);
 
   /* set file type */
   if (S_ISDIR(type)) {
@@ -122,7 +196,7 @@ static int record_info(const char *fpath, const struct stat *sb, mode_t type)
 
   /* copy stat info */
   if (sb != NULL) {
-    elem->sb = (struct stat*) malloc(sizeof(struct stat));
+    elem->sb = (struct stat*) bayer_malloc(sizeof(struct stat), "stat structure", __FILE__, __LINE__);
     memcpy(elem->sb, sb, sizeof(struct stat));
   } else {
     elem->sb = NULL;
@@ -408,8 +482,8 @@ static void strid_insert(
   int* maxchars)
 {
   /* add username and id to linked list */
-  strid_t* elem = (strid_t*) malloc(sizeof(strid_t));
-  elem->name = strdup(name);
+  strid_t* elem = (strid_t*) bayer_malloc(sizeof(strid_t), "string-to-id element", __FILE__, __LINE__);
+  elem->name = bayer_strdup(name, "name", __FILE__, __LINE__);
   elem->id = id;
   elem->next = NULL;
   if (*head == NULL) {
@@ -476,10 +550,7 @@ static void init_buft(buf_t* items)
 
 static void free_buft(buf_t* items)
 {
-  if (items->buf != NULL) {
-    free(items->buf);
-    items->buf = NULL;
-  }
+  bayer_free(&(items->buf));
 
   if (items->dt != MPI_DATATYPE_NULL) {
     MPI_Type_free(&(items->dt));
@@ -551,8 +622,8 @@ static void strid_delete(strid_t** head, strid_t** tail, int* count)
   strid_t* current = *head;
   while (current != NULL) {
     strid_t* next = current->next;
-    free(current->name);
-    free(current);
+    bayer_free(&(current->name));
+    bayer_free(&current);
     current = next;
   }
 
@@ -636,7 +707,7 @@ retry:
   char* buf = NULL;
   size_t bufsize = count * extent;
   if (bufsize > 0) {
-    buf = (char*) malloc(bufsize);
+    buf = (char*) bayer_malloc(bufsize, "user name array", __FILE__, __LINE__);
   }
 
   /* copy items from list into array */
@@ -671,7 +742,7 @@ static void get_groups(buf_t* items)
   int rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-  /* rank 0 iterates over users with getpwent */
+  /* rank 0 iterates over groups with getgrent */
   strid_t* head = NULL;
   strid_t* tail = NULL;
   int count = 0;
@@ -679,7 +750,7 @@ static void get_groups(buf_t* items)
   if (rank == 0) {
     struct group* p;
     while (1) {
-      /* get next user, this function can fail so we retry a few times */
+      /* get next group, this function can fail so we retry a few times */
       int retries = 3;
 retry:
       p = getgrent();
@@ -696,11 +767,6 @@ retry:
       }
 
       if (p != NULL) {
-/*
-        printf("Group=%s GID=%d\n",
-          p->gr_name, p->gr_gid
-        );
-*/
         char* name  = p->gr_name;
         uint32_t id = p->gr_gid;
         strid_insert(name, id, &head, &tail, &count, &chars);
@@ -718,7 +784,7 @@ retry:
   MPI_Bcast(&count, 1, MPI_INT, 0, MPI_COMM_WORLD);
   MPI_Bcast(&chars, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-  /* create datatype to represent a username/id pair */
+  /* create datatype to represent a group/id pair */
   MPI_Datatype dt;
   create_stridtype(chars, &dt);
 
@@ -726,11 +792,11 @@ retry:
   MPI_Aint lb, extent;
   MPI_Type_get_extent(dt, &lb, &extent);
 
-  /* allocate an array to hold all user names and ids */
+  /* allocate an array to hold all group names and ids */
   char* buf = NULL;
   size_t bufsize = count * extent;
   if (bufsize > 0) {
-    buf = (char*) malloc(bufsize);
+    buf = (char*) bayer_malloc(bufsize, "group name array", __FILE__, __LINE__);
   }
 
   /* copy items from list into array */
@@ -738,7 +804,7 @@ retry:
     strid_serialize(head, chars, buf);
   }
 
-  /* broadcast the array of usernames and ids */
+  /* broadcast the array of groupnames and ids */
   MPI_Bcast(buf, count, dt, 0, MPI_COMM_WORLD);
 
   /* set output parameters */
@@ -841,7 +907,7 @@ static int convert_stat_to_dt(const elem_t* head, buf_t* items)
   size_t bufsize = extent * count;
   void* buf = NULL;
   if (bufsize > 0) {
-    buf = malloc(bufsize);
+    buf = bayer_malloc(bufsize, "stat datatype array", __FILE__, __LINE__);
   }
 
   /* copy stat data into stat datatypes */
@@ -1167,7 +1233,7 @@ static void read_cache_v2(
     /* allocate memory to hold data */
     size_t bufsize_file = files->count * extent_file;
     if (bufsize_file > 0) {
-      files->buf = (void*) malloc(bufsize_file);
+      files->buf = (void*) bayer_malloc(bufsize_file, "file buffer", __FILE__, __LINE__);
     }
 
     /* collective read of stat info */
@@ -1250,7 +1316,7 @@ static void read_cache_v3(
     /* allocate memory to hold data */
     size_t bufsize_user = users->count * extent_user;
     if (bufsize_user > 0) {
-      users->buf = (void*) malloc(bufsize_user);
+      users->buf = (void*) bayer_malloc(bufsize_user, "user buffer", __FILE__, __LINE__);
     }
 
     /* read data */
@@ -1274,7 +1340,7 @@ static void read_cache_v3(
     /* allocate memory to hold data */
     size_t bufsize_group = groups->count * extent_group;
     if (bufsize_group > 0) {
-      groups->buf = (void*) malloc(bufsize_group);
+      groups->buf = (void*) bayer_malloc(bufsize_group, "group buffer", __FILE__, __LINE__);
     }
 
     /* read data */
@@ -1298,7 +1364,7 @@ static void read_cache_v3(
     /* allocate memory to hold data */
     size_t bufsize_file = files->count * extent_file;
     if (bufsize_file > 0) {
-      files->buf = (void*) malloc(bufsize_file);
+      files->buf = (void*) bayer_malloc(bufsize_file, "file buffer", __FILE__, __LINE__);
     }
 
     /* collective read of stat info */
@@ -1429,7 +1495,7 @@ static int sort_files_readdir(
     sources[nfields] = 0;
   }
   nfields = 0;
-  char* sortfields_copy = strdup(sortfields);
+  char* sortfields_copy = bayer_strdup(sortfields, "sort fields", __FILE__, __LINE__);
   char* token = strtok(sortfields_copy, ",");
   while (token != NULL) {
     int valid = 1;
@@ -1461,8 +1527,7 @@ static int sort_files_readdir(
     }
     token = strtok(NULL, ",");
   }
-  free(sortfields_copy);
-  sortfields_copy = NULL;
+  bayer_free(&sortfields_copy);
 
   /* build key type */
   MPI_Datatype dt_key;
@@ -1494,7 +1559,7 @@ static int sort_files_readdir(
   size_t sortbufsize = keysat_extent * incount;
   void* sortbuf = NULL;
   if (sortbufsize > 0) {
-    sortbuf = malloc(sortbufsize);
+    sortbuf = bayer_malloc(sortbufsize, "presort buffer", __FILE__, __LINE__);
   }
 
   /* copy data into sort elements */
@@ -1531,7 +1596,7 @@ static int sort_files_readdir(
   void* newbuf = NULL;
   size_t newbufsize = sat_extent * outsortcount;
   if (newbufsize > 0) {
-    newbuf = malloc(newbufsize);
+    newbuf = bayer_malloc(newbufsize, "postsort buffer", __FILE__, __LINE__);
   }
 
   /* step through sorted data filenames */
@@ -1560,15 +1625,10 @@ static int sort_files_readdir(
   MPI_Type_free(&dt_filepath);
 
   /* free input buffer holding sort elements */
-  if (sortbuf != NULL) {
-    free(sortbuf);
-    sortbuf = NULL;
-  }
+  bayer_free(&sortbuf);
 
   /* set output params */
-  if (files->buf != NULL) {
-    free(files->buf);
-  }
+  bayer_free(&(files->buf));
   files->buf   = newbuf;
   files->count = outsortcount;
 
@@ -1629,7 +1689,7 @@ static int sort_files_stat(
     sources[nfields] = 0;
   }
   nfields = 0;
-  char* sortfields_copy = strdup(sortfields);
+  char* sortfields_copy = bayer_strdup(sortfields, "sort fields", __FILE__, __LINE__);
   char* token = strtok(sortfields_copy, ",");
   while (token != NULL) {
     int valid = 1;
@@ -1757,8 +1817,7 @@ static int sort_files_stat(
     }
     token = strtok(NULL, ",");
   }
-  free(sortfields_copy);
-  sortfields_copy = NULL;
+  bayer_free(&sortfields_copy);
 
   /* build key type */
   MPI_Datatype dt_key;
@@ -1790,7 +1849,7 @@ static int sort_files_stat(
   size_t sortbufsize = keysat_extent * incount;
   void* sortbuf = NULL;
   if (sortbufsize > 0) {
-    sortbuf = malloc(sortbufsize);
+    sortbuf = bayer_malloc(sortbufsize, "presort buffer", __FILE__, __LINE__);
   }
 
   /* copy data into sort elements */
@@ -1837,7 +1896,7 @@ static int sort_files_stat(
   void* newbuf = NULL;
   size_t newbufsize = stat_extent * outsortcount;
   if (newbufsize > 0) {
-    newbuf = malloc(newbufsize);
+    newbuf = bayer_malloc(newbufsize, "postsort buffer", __FILE__, __LINE__);
   }
 
   /* step through sorted data filenames */
@@ -1872,15 +1931,10 @@ static int sort_files_stat(
   MPI_Type_free(&dt_filepath);
 
   /* free input buffer holding sort elements */
-  if (sortbuf != NULL) {
-    free(sortbuf);
-    sortbuf = NULL;
-  }
+  bayer_free(&sortbuf);
 
   /* set output params */
-  if (files->buf != NULL) {
-    free(files->buf);
-  }
+  bayer_free(&(files->buf));
   files->buf   = newbuf;
   files->count = outsortcount;
 
@@ -2070,7 +2124,7 @@ int main(int argc, char **argv)
 
     switch (c) {
     case 'c':
-      cachename = strdup(optarg);
+      cachename = bayer_strdup(optarg, "cache file", __FILE__, __LINE__);
       break;
     case 'w':
       walk = 1;
@@ -2079,7 +2133,7 @@ int main(int argc, char **argv)
       walk_stat = 0;
       break;
     case 's':
-      sortfields = strdup(optarg);
+      sortfields = bayer_strdup(optarg, "sort fields", __FILE__, __LINE__);
       break;
     case 'p':
       print = 1;
@@ -2118,7 +2172,7 @@ int main(int argc, char **argv)
   if (sortfields != NULL) {
     int maxfields;
     int nfields = 0;
-    char* sortfields_copy = strdup(sortfields);
+    char* sortfields_copy = bayer_strdup(sortfields, "sort fields", __FILE__, __LINE__);
     if (walk_stat) {
       maxfields = 7;
       char* token = strtok(sortfields_copy, ",");
@@ -2174,7 +2228,7 @@ int main(int argc, char **argv)
       printf("Exceeded maximum number of sort fields: %d\n", maxfields);
       usage = 1;
     }
-    free(sortfields_copy);
+    bayer_free(&sortfields_copy);
   }
 
   if (usage) {
@@ -2253,11 +2307,11 @@ int main(int argc, char **argv)
     elem_t* current = list_head;
     while (current != NULL) {
       elem_t* next = current->next;
-      free(current->file);
+      bayer_free(&(current->file));
       if (current->sb != NULL) {
-        free(current->sb);
+        bayer_free(&(current->sb));
       }
-      free(current);
+      bayer_free(&current);
       current = next;
     }
 
@@ -2368,14 +2422,8 @@ int main(int argc, char **argv)
   free_buft(&files);
 
   /* free memory allocated for options */
-  if (sortfields != NULL) {
-    free(sortfields);
-    sortfields = NULL;
-  }
-  if (cachename != NULL) {
-    free(cachename);
-    cachename = NULL;
-  }
+  bayer_free(&sortfields);
+  bayer_free(&cachename);
 
   /* shut down the sorting library */
   DTCMP_Finalize();
