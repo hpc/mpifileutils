@@ -49,7 +49,7 @@ mpicxx ${OPT} -o drm drm.cpp \
 pushd dcp.git/src
   mpicc ${OPT} -o dcp common.c handle_args.c treewalk.c copy.c cleanup.c compare.c dcp.c \
     -I../. -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle \
-    ../../bayer_util.o ../../bayer_path.o ../../bayer_io.o
+    -I../../. ../../bayer_util.o ../../bayer_path.o ../../bayer_io.o
 popd
 
 exit 0
