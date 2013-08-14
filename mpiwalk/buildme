@@ -7,12 +7,12 @@
 #. /usr/share/[mM]odules/init/bash
 #module load mvapich2-gnu-psm/1.7
 
-#. /usr/local/tools/dotkit/init.sh
-#use mvapich2-gnu
+. /usr/local/tools/dotkit/init.sh
+use mvapich2-gnu
 
 # MVAPICH
-curdir=`pwd`
-export PATH="${curdir}/mvapich2/install/bin:$PATH"
+#curdir=`pwd`
+#export PATH="${curdir}/mvapich2/install/bin:$PATH"
 
 # Open MPI
 #curdir=`pwd`
@@ -29,24 +29,57 @@ OPT="-g -O0"
 installdir=`pwd`/install
 
 # fetch dcp source code
-if [ ! -f dcp.git ] ; then
+if [ ! -d "dcp.git" ] ; then
   git clone git://github.com/hpc/dcp.git dcp.git
 fi
 
+OBJLIST="bayer_util.o bayer_path.o bayer_io.o"
+mpicc ${OPT} -o bayer_util.o -c bayer_util.c -I${includedir}/include
+mpicc ${OPT} -o bayer_path.o -c bayer_path.c -I${includedir}/include
+mpicc ${OPT} -o bayer_io.o   -c bayer_io.c   -I${includedir}/include
+
+# build mpiwalk command
+mpicxx ${OPT} -o mpiwalk mpiwalk.cpp \
+  -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp ${OBJLIST}
+
+# build drm command
+mpicxx ${OPT} -o drm drm.cpp \
+  -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp ${OBJLIST}
+#exit 0
+
 # build dcp command
 pushd dcp.git
+#  make distclean
+#  ./autogen.sh
   export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
+  #export CFLAGS="-g -O0 -I../."
   export CFLAGS="-g -O0"
-  ./configure --prefix=$installdir
+  ./configure --prefix=$installdir --disable-silent-rules
+  export LDFLAGS="../bayer_util.o ../bayer_path.o ../bayer_io.o"
   make clean
   make VERBOSE=1
   make VERBOSE=1 install
 popd
 
-# build mpiwalk command
-mpicxx ${OPT} -o mpiwalk mpiwalk.cpp \
-  -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp
+# cp -pr dir1 dir2
+# if dir2 exists and is directory
+#   copy dir1 into dir2
+# if dir2 exists and is file
+#   fail
+# if dir2 does not exist
+#   copy dir1 as dir2
 
-# build drm command
-mpicxx ${OPT} -o drm drm.cpp \
-  -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp
+# cp -pr dir1/. dir2
+# if dir2 exists and is directory
+#   copy contents of dir1 into dir2
+# if dir2 exists and is file
+#   fail
+# if dir2 does not exist
+#   mkdir dir2 and copy dir1 into dir2
+
+# cp -pr dir1/ dir2
+# if dir2 exists and is directory
+#   copy dir1 into dir2
+# if dir2 does not exist
+#   mkdir dir2 and copy dir1 into dir2
+

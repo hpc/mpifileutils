@@ -18,6 +18,7 @@
 
 #include "libcircle.h"
 #include "dtcmp.h"
+#include "bayer.h"
 
 #include <map>
 #include <string>
@@ -60,115 +61,6 @@ char _DFTW_TOP_DIR[PATH_MAX];
 
 /** The callback. */
 DFTW_cb_t _DFTW_CB;
-
-/* print abort message and call MPI_Abort to kill run */
-void bayer_abort(int rc, const char *fmt, ...)
-{
-  va_list argp;
-  fprintf(stderr, "ABORT: rank X on HOST: ");
-  va_start(argp, fmt);
-  vfprintf(stderr, fmt, argp);
-  va_end(argp);
-  fprintf(stderr, "\n");
-
-  MPI_Abort(MPI_COMM_WORLD, 0);
-}
-
-/* if size > 0 allocates size bytes and returns pointer,
- * calls bayer_abort if malloc fails, returns NULL if size == 0 */
-static void* bayer_malloc(size_t size, const char* desc, const char* file, int line)
-{
-  /* only bother if size > 0 */
-  if (size > 0) {
-    /* try to allocate memory and check whether we succeeded */
-    void* ptr = malloc(size);
-    if (ptr == NULL) {
-      /* allocate failed, abort */
-      bayer_abort(1, "Failed to allocate %llu bytes for %s @ %s:%d",
-        (unsigned long long) size, desc, file, line
-      );
-    }
-
-    /* return the pointer */
-    return ptr;
-  }
-
-  return NULL;
-}
-
-/* if str != NULL, call strdup and return pointer, calls bayer_abort if strdup fails */
-static char* bayer_strdup(const char* str, const char* desc, const char* file, int line)
-{
-  if (str != NULL) {
-    /* TODO: check that str length is below some max? */
-    char* ptr = strdup(str);
-    if (ptr == NULL) {
-      /* allocate failed, abort */
-      bayer_abort(1, "Failed to allocate string for %s @ %s:%d",
-        desc, file, line
-      );
-    }
-
-    return ptr;
-  }
-  return NULL;
-}
-
-/* free memory if pointer is not NULL, set pointer to NULL */
-static void bayer_free(void* p)
-{
-  /* caller passes in pointer to pointer */
-  if (p != NULL) {
-    /* get pointer to memory */
-    void* ptr = *(void**)p;
-    if (ptr != NULL ) {
-      /* free memory */
-      free(ptr);
-    }
-
-    /* set caller's pointer to NULL */
-    *(void**)p = NULL;
-  }
-
-  return;
-}
-
-/* calls lstat, and retries a few times if we get EIO or EINTR */
-static int reliable_lstat(const char* path, struct stat* buf)
-{
-  int count = 5;
-retry:
-  errno = 0;
-  int rc = lstat(path, buf);
-  if (rc != 0) {
-    if (errno == EINTR || errno == EIO) {
-      count--;
-      if (count > 0) {
-        goto retry;
-      }
-    }
-  }
-  return rc;
-}
-
-/* calls lstat, and retries a few times if we get ENOENT, EIO, or EINTR */
-static struct dirent* reliable_readdir(DIR* dirp)
-{
-  /* read next directory entry, retry a few times */
-  int count = 5;
-retry:
-  errno = 0;
-  struct dirent* entry = readdir(dirp);
-  if (entry == NULL) {
-    if (errno == EINTR || errno == EIO || errno == ENOENT) {
-      count--;
-      if (count > 0) {
-        goto retry;
-      }
-    }
-  }
-  return entry;
-}
 
 /* appends file name and stat info to linked list */
 static int record_info(const char *fpath, const struct stat *sb, mode_t type)
@@ -232,7 +124,7 @@ static void DFTW_process_dir_readdir(char* dir, CIRCLE_handle* handle)
     /* Read all directory entries */
     while (1) {
       /* read next directory entry */
-      struct dirent* entry = reliable_readdir(dirp);
+      struct dirent* entry = bayer_readdir(dirp);
       if (entry == NULL) {
         break;
       }
@@ -261,7 +153,7 @@ static void DFTW_process_dir_readdir(char* dir, CIRCLE_handle* handle)
             } else {
               /* type is unknown, we need to stat it */
               struct stat st;
-              int status = reliable_lstat(newpath, &st);
+              int status = bayer_lstat(newpath, &st);
               if (status == 0) {
                 have_mode = 1;
                 mode = st.st_mode;
@@ -297,7 +189,7 @@ static void DFTW_create_readdir(CIRCLE_handle* handle)
 
   /* stat top level item */
   struct stat st;
-  int status = reliable_lstat(path, &st);
+  int status = bayer_lstat(path, &st);
   if (status != 0) {
     /* TODO: print error */
     return;
@@ -338,7 +230,7 @@ static void DFTW_process_dir_stat(char* dir, CIRCLE_handle* handle)
   } else {
     while (1) {
       /* read next directory entry */
-      struct dirent* entry = reliable_readdir(dirp);
+      struct dirent* entry = bayer_readdir(dirp);
       if (entry == NULL) {
         break;
       }
@@ -387,7 +279,7 @@ static void DFTW_process_stat(CIRCLE_handle* handle)
 
   /* stat item */
   struct stat st;
-  int status = reliable_lstat(path, &st);
+  int status = bayer_lstat(path, &st);
   if (status != 0) {
     /* print error */
     return;
