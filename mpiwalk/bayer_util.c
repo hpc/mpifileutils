@@ -74,3 +74,56 @@ void bayer_free(void* p)
     *(void**)p = NULL;
   }
 }
+
+void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
+{
+    /* get our rank in the communicator */
+    int rank;
+    MPI_Comm_rank(comm, &rank);
+
+    /* check that caller gave us a pointer to a char pointer */
+    if(recv == NULL) {
+        bayer_abort(1, "Invalid recv pointer @ %s:%d", __FILE__, __LINE__);
+    }
+
+    /* First, broadcast length of string. */
+    int len = 0;
+
+    if(rank == root) {
+        if(send != NULL) {
+            len = (int)(strlen(send) + 1);
+
+            /* TODO: check that strlen fits within an int */
+        }
+    }
+
+    if(MPI_SUCCESS != MPI_Bcast(&len, 1, MPI_INT, root, comm)) {
+        bayer_abort(1, "Failed to broadcast length of string @ %s:%d",
+            __FILE__, __LINE__
+        );
+    }
+
+    /* If the string is non-zero bytes, allocate space and bcast it. */
+    if(len > 0) {
+        /* allocate space to receive string */
+        *recv = (char*) bayer_malloc((size_t)len, "bcast recv str", __FILE__, __LINE__);
+
+        /* Broadcast the string. */
+        if(rank == root) {
+            strncpy(*recv, send, len);
+        }
+
+        if(MPI_SUCCESS != MPI_Bcast(*recv, len, MPI_CHAR, root, comm)) {
+            bayer_abort(1, "Failed to bcast string @ %s:%d",
+                __FILE__, __LINE__
+            );
+        }
+
+    }
+    else {
+        /* Root passed in a NULL value, so set the output to NULL. */
+        *recv = NULL;
+    }
+
+    return;
+}

@@ -11,6 +11,7 @@ extern "C" {
 
 #include <stdlib.h>
 #include <stdarg.h>
+#include "mpi.h"
 
 /* print abort message and call MPI_Abort to kill run */
 void bayer_abort(
@@ -35,6 +36,15 @@ char* bayer_strdup(
   const char* desc,
   const char* file,
   int line
+);
+
+/* broadcast string from root rank and allocate copy in recv on all
+ * ranks including the root, caller must free recv str with bayer_recv */
+void bayer_bcast_strdup(
+  const char* send,
+  char** recv,
+  int root,
+  MPI_Comm comm
 );
 
 /* caller passes in void** not void*, use void* to avoid excessive
