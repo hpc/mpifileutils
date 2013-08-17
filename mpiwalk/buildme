@@ -38,8 +38,8 @@ mpicc ${OPT} -o bayer_util.o -c bayer_util.c -I${includedir}/include
 mpicc ${OPT} -o bayer_path.o -c bayer_path.c -I${includedir}/include
 mpicc ${OPT} -o bayer_io.o   -c bayer_io.c   -I${includedir}/include
 
-# build mpiwalk command
-mpicxx ${OPT} -o mpiwalk mpiwalk.cpp \
+# build dwalk command
+mpicxx ${OPT} -o dwalk dwalk.cpp \
   -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp ${OBJLIST}
 
 # build drm command

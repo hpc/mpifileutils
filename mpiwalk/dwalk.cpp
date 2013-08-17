@@ -1948,7 +1948,7 @@ static void print_files(
 static void print_usage()
 {
   printf("\n");
-  printf("Usage: mpiwalk [options] <path>\n");
+  printf("Usage: dwalk [options] <path>\n");
   printf("\n");
   printf("Options:\n");
   printf("  -c, --cache <file>  - read/write directories using cache file\n");
