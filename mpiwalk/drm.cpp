@@ -19,6 +19,7 @@
 
 #include "libcircle.h"
 #include "dtcmp.h"
+#include "bayer.h"
 
 #include <map>
 #include <string>
@@ -61,43 +62,6 @@ char _DFTW_TOP_DIR[PATH_MAX];
 
 /** The callback. */
 DFTW_cb_t _DFTW_CB;
-
-/* calls lstat, and retries a few times if we get EIO or EINTR */
-static int reliable_lstat(const char* path, struct stat* buf)
-{
-  int count = 5;
-retry:
-  errno = 0;
-  int rc = lstat(path, buf);
-  if (rc != 0) {
-    if (errno == EINTR || errno == EIO) {
-      count--;
-      if (count > 0) {
-        goto retry;
-      }
-    }
-  }
-  return rc;
-}
-
-/* calls lstat, and retries a few times if we get ENOENT, EIO, or EINTR */
-static struct dirent* reliable_readdir(DIR* dirp)
-{
-  /* read next directory entry, retry a few times */
-  int count = 5;
-retry:
-  errno = 0;
-  struct dirent* entry = readdir(dirp);
-  if (entry == NULL) {
-    if (errno == EINTR || errno == EIO || errno == ENOENT) {
-      count--;
-      if (count > 0) {
-        goto retry;
-      }
-    }
-  }
-  return entry;
-}
 
 /* appends file name and stat info to linked list */
 static int record_info(const char *fpath, const struct stat *sb, mode_t type)
@@ -161,7 +125,7 @@ static void DFTW_process_dir_readdir(char* dir, CIRCLE_handle* handle)
     /* Read all directory entries */
     while (1) {
       /* read next directory entry */
-      struct dirent* entry = reliable_readdir(dirp);
+      struct dirent* entry = bayer_readdir(dirp);
       if (entry == NULL) {
         break;
       }
@@ -190,7 +154,7 @@ static void DFTW_process_dir_readdir(char* dir, CIRCLE_handle* handle)
             } else {
               /* type is unknown, we need to stat it */
               struct stat st;
-              int status = reliable_lstat(newpath, &st);
+              int status = bayer_lstat(newpath, &st);
               if (status == 0) {
                 have_mode = 1;
                 mode = st.st_mode;
@@ -226,7 +190,7 @@ static void DFTW_create_readdir(CIRCLE_handle* handle)
 
   /* stat top level item */
   struct stat st;
-  int status = reliable_lstat(path, &st);
+  int status = bayer_lstat(path, &st);
   if (status != 0) {
     /* TODO: print error */
     return;
@@ -267,7 +231,7 @@ static void DFTW_process_dir_stat(char* dir, CIRCLE_handle* handle)
   } else {
     while (1) {
       /* read next directory entry */
-      struct dirent* entry = reliable_readdir(dirp);
+      struct dirent* entry = bayer_readdir(dirp);
       if (entry == NULL) {
         break;
       }
@@ -316,7 +280,7 @@ static void DFTW_process_stat(CIRCLE_handle* handle)
 
   /* stat item */
   struct stat st;
-  int status = reliable_lstat(path, &st);
+  int status = bayer_lstat(path, &st);
   if (status != 0) {
     /* print error */
     return;
@@ -1609,18 +1573,6 @@ static uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len)
   hash ^= (hash >> 11);
   hash += (hash << 15);
   return hash;
-}
-
-static void bayer_free(void* p)
-{
-    void** pptr = (void**) p;
-    if (pptr != NULL) {
-        void* ptr = *pptr;
-        if (ptr != NULL) {
-            free(ptr);
-        }
-        *pptr = NULL;
-    }
 }
 
 static int get_first_nonzero(const int* buf, int size)
