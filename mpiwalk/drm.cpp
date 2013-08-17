@@ -2145,7 +2145,7 @@ static void remove_files(
 static void print_usage()
 {
   printf("\n");
-  printf("Usage: mpiwalk [options] <path>\n");
+  printf("Usage: drm [options] <path>\n");
   printf("\n");
   printf("Options:\n");
   printf("  -c, --cache <file>  - read/write directories using cache file\n");
@@ -2153,8 +2153,6 @@ static void print_usage()
   printf("  -l, --lite          - walk file system without stat\n");
   printf("  -v, --verbose       - verbose output\n");
   printf("  -h, --help          - print usage\n");
-  printf("\n");
-  printf("Fields: name,user,group,uid,gid,atime,mtime,ctime,size\n");
   printf("\n");
   fflush(stdout);
   return;
