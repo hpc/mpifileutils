@@ -1952,7 +1952,6 @@ static void print_usage()
   printf("\n");
   printf("Options:\n");
   printf("  -c, --cache <file>  - read/write directories using cache file\n");
-  printf("  -w, --walk          - walk file system starting from specified directory\n");
   printf("  -l, --lite          - walk file system without stat\n");
   printf("  -s, --sort <fields> - sort output by comma-delimited fields\n");
   printf("  -p, --print         - print files to screen\n");
@@ -1994,7 +1993,6 @@ int main(int argc, char **argv)
   int option_index = 0;
   static struct option long_options[] = {
     {"cache",    1, 0, 'c'},
-    {"walk",     0, 0, 'w'},
     {"lite",     0, 0, 'l'},
     {"sort",     1, 0, 's'},
     {"print",    0, 0, 'p'},
@@ -2006,7 +2004,7 @@ int main(int argc, char **argv)
   int usage = 0;
   while (1) {
     int c = getopt_long(
-      argc, argv, "c:wls:phv",
+      argc, argv, "c:ls:phv",
       long_options, &option_index
     );
 
@@ -2017,9 +2015,6 @@ int main(int argc, char **argv)
     switch (c) {
     case 'c':
       cachename = bayer_strdup(optarg, "cache file", __FILE__, __LINE__);
-      break;
-    case 'w':
-      walk = 1;
       break;
     case 'l':
       walk_stat = 0;
@@ -2046,18 +2041,27 @@ int main(int argc, char **argv)
     }
   }
 
-  if (walk == 0) {
-    if (cachename == NULL) {
-      /* if we're not walking, we must be reading, and for that we need a file */
+  /* paths to walk come after the options */
+  char* target = NULL;
+  if (optind < argc) {
+    /* got a path to walk */
+    walk = 1;
+
+    /* get absolute path and remove ".", "..", consecutive "/",
+     * and trailing "/" characters */
+    char* path = argv[optind];
+    target = bayer_path_strdup_abs_reduce_str(path);
+
+    /* currently only allow one path */
+    if (argc - optind > 1) {
       usage = 1;
     }
-    if (optind < argc) {
-      /* don't allow user to name directory if we're not walking */
-      //usage = 1;
+  } else {
+    /* if we're not walking, we must be reading,
+     * and for that we need a file */
+    if (cachename == NULL) {
+      usage = 1;
     }
-  } else if(walk == 1 && optind >= argc) {
-    /* if we're walking, check that user named directory */
-    usage = 1;
   }
 
   /* if user is trying to sort, verify the sort fields are valid */
@@ -2130,9 +2134,6 @@ int main(int argc, char **argv)
     MPI_Finalize();
     return 0;
   }
-
-  /* TODO: simplify input path */
-  char* target = argv[optind];
 
   /* TODO: check stat fields fit within MPI types */
   // if (sizeof(st_uid) > uint64_t) error(); etc...
@@ -2319,6 +2320,8 @@ int main(int argc, char **argv)
 
   /* shut down the sorting library */
   DTCMP_Finalize();
+
+  bayer_free(&target);
 
   /* shut down MPI */
   MPI_Finalize();

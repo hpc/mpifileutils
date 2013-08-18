@@ -177,6 +177,9 @@ int bayer_path_reduce(bayer_path* path);
  * and deletes path, caller must free returned string with bayer_free */
 char* bayer_path_strdup_reduce_str(const char* str);
 
+/* same as above, but prepend curr working dir if path not absolute */
+char* bayer_path_strdup_abs_reduce_str(const char* str);
+
 /* return 1 if path starts with an empty string, 0 otherwise */
 int bayer_path_is_absolute(const bayer_path* path);
 

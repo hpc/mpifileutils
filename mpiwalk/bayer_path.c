@@ -1248,6 +1248,21 @@ char* bayer_path_strdup_reduce_str(const char* str)
   return newstr;
 }
 
+/* same as above, but prepend curr working dir if path not absolute */
+char* bayer_path_strdup_abs_reduce_str(const char* str)
+{
+    bayer_path* path = bayer_path_from_str(str);
+    if (! bayer_path_is_absolute(path)) {
+      char cwd[PATH_MAX];
+      bayer_getcwd(cwd, PATH_MAX);
+      bayer_path_prepend_str(path, cwd);
+    }
+    bayer_path_reduce(path);
+    char* newstr = bayer_path_strdup(path);
+    bayer_path_delete(&path);
+    return newstr;
+}
+
 /* return 1 if path starts with an empty string, 0 otherwise */
 int bayer_path_is_absolute(const bayer_path* path)
 {
