@@ -34,22 +34,24 @@ if [ ! -d "dcp.git" ] ; then
 fi
 
 OBJLIST="bayer_util.o bayer_path.o bayer_io.o"
-mpicc ${OPT} -o bayer_util.o -c bayer_util.c -I${includedir}/include
-mpicc ${OPT} -o bayer_path.o -c bayer_path.c -I${includedir}/include
-mpicc ${OPT} -o bayer_io.o   -c bayer_io.c   -I${includedir}/include
+mpicc ${OPT} -o bayer_util.o -c bayer_util.c
+mpicc ${OPT} -o bayer_path.o -c bayer_path.c
+mpicc ${OPT} -o bayer_io.o   -c bayer_io.c
+ar cru libbayer.a ${OBJLIST}
+ranlib libbayer.a
 
 # build dwalk command
 mpicxx ${OPT} -o dwalk dwalk.cpp \
-  -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp ${OBJLIST}
+  -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -L./ -lbayer
 
 # build drm command
 mpicxx ${OPT} -o drm drm.cpp \
-  -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp ${OBJLIST}
+  -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -L./ -lbayer
 
 pushd dcp.git/src
   mpicc ${OPT} -o dcp common.c handle_args.c treewalk.c copy.c cleanup.c compare.c dcp.c \
     -I../. -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle \
-    -I../../. ../../bayer_util.o ../../bayer_path.o ../../bayer_io.o
+    -I../../. -L../../ -lbayer
 popd
 
 exit 0
