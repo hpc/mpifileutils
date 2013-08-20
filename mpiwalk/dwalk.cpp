@@ -2246,7 +2246,9 @@ int main(int argc, char **argv)
       printf("  Directories: %lu\n", (unsigned long long) total_dirs);
       printf("  Files: %lu\n", (unsigned long long) total_files);
       printf("  Links: %lu\n", (unsigned long long) total_links);
-      printf("Data: %.3lf %s\n", agg_size_tmp, agg_size_units);
+      if (walk_stat) {
+        printf("Data: %.3lf %s\n", agg_size_tmp, agg_size_units);
+      }
     }
   } else {
     /* read data from cache file */
