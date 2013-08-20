@@ -51,6 +51,12 @@ typedef struct list_elem {
 /* declare types and function prototypes for DFTW code */
 typedef int (*DFTW_cb_t)(const char* fpath, const struct stat* sb, mode_t type);
 
+/* keep stats during walk */
+uint64_t total_dirs  = 0;
+uint64_t total_files = 0;
+uint64_t total_links = 0;
+uint64_t total_bytes = 0;
+
 /* variables to track linked list during walk */
 uint64_t        list_count = 0;
 static elem_t*  list_head  = NULL;
@@ -75,10 +81,13 @@ static int record_info(const char *fpath, const struct stat *sb, mode_t type)
   /* set file type */
   if (S_ISDIR(type)) {
     elem->type = TYPE_DIR;
+    total_dirs++;
   } else if (S_ISREG(type)) {
     elem->type = TYPE_FILE;
+    total_files++;
   } else if (S_ISLNK(type)) {
     elem->type = TYPE_LINK;
+    total_links++;
   } else {
     /* unknown file type */
     elem->type = TYPE_UNKNOWN;
@@ -90,6 +99,11 @@ static int record_info(const char *fpath, const struct stat *sb, mode_t type)
   if (sb != NULL) {
     elem->sb = (struct stat*) bayer_malloc(sizeof(struct stat), "stat structure", __FILE__, __LINE__);
     memcpy(elem->sb, sb, sizeof(struct stat));
+
+    /* if it's a file, sum the number of bytes */
+    if (S_ISREG(type)) {
+      total_bytes += (uint64_t) sb->st_size;
+    }
   } else {
     elem->sb = NULL;
   }
@@ -2222,6 +2236,17 @@ int main(int argc, char **argv)
       printf("Walked %lu files in %f seconds (%f files/sec)\n",
         all_count, time, rate
       );
+
+      /* convert total size to units */
+      double agg_size_tmp;
+      const char* agg_size_units;
+      bayer_format_bytes(total_bytes, &agg_size_tmp, &agg_size_units);
+
+      printf("Items: %lu\n", (unsigned long long) total_dirs + total_files + total_links);
+      printf("  Directories: %lu\n", (unsigned long long) total_dirs);
+      printf("  Files: %lu\n", (unsigned long long) total_files);
+      printf("  Links: %lu\n", (unsigned long long) total_links);
+      printf("Data: %.3lf %s\n", agg_size_tmp, agg_size_units);
     }
   } else {
     /* read data from cache file */
