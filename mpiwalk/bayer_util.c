@@ -127,3 +127,46 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
 
     return;
 }
+
+static void bayer_format_1024(
+  double input,
+  const char** units_list,
+  int units_len,
+  double* val,
+  const char* units[])
+{
+    /* divide input by 1024 until it falls to less than 1024,
+     * increment units each time */
+    int idx = 0;
+    while(input / 1024.0 > 1.0) {
+        input /= 1024.0;
+        idx++;
+        if(idx == (units_len - 1)) {
+            /* we've gone as high as we can go */
+            break;
+        }
+    }
+
+    /* set output paramaters */
+    *val   = input;
+    *units = units_list[idx];
+
+    return;
+}
+/* given a number of bytes, return value converted to returned units */
+#define NUM_UNITS_BYTES (7)
+static const char* units_bytes[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB"};
+void bayer_format_bytes(uint64_t bytes, double* val, const char** units)
+{
+    double bytes_d = (double) bytes;
+    bayer_format_1024(bytes_d, units_bytes, NUM_UNITS_BYTES, val, units);
+    return;
+}
+
+#define NUM_UNITS_BW (6)
+static const char* units_bw[] = {"B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s"};
+void bayer_format_bw(double bw, double* val, const char** units)
+{
+    bayer_format_1024(bw, units_bw, NUM_UNITS_BW, val, units);
+    return;
+}

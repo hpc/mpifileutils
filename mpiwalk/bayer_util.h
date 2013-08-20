@@ -11,6 +11,7 @@ extern "C" {
 
 #include <stdlib.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include "mpi.h"
 
 /* print abort message and call MPI_Abort to kill run */
@@ -51,6 +52,12 @@ void bayer_bcast_strdup(
  * compiler warnings, free memory if pointer is not NULL, set
  * pointer to NULL */
 void bayer_free(void* p);
+
+/* given a number of bytes, return value converted to returned units */
+void bayer_format_bytes(uint64_t bytes, double* val, const char** units);
+
+/* given a bandwidth in bytes/sec, return value converted to returned units */
+void bayer_format_bw(double bw, double* val, const char** units);
 
 #endif /* BAYER_UTIL_H */
 
