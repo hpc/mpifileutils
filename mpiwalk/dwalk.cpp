@@ -2226,6 +2226,13 @@ int main(int argc, char **argv)
     uint64_t my_count = files.count;
     MPI_Allreduce(&my_count, &all_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
+    /* get total directories, files, links, and bytes */
+    uint64_t all_dirs, all_files, all_links, all_bytes;
+    MPI_Allreduce(&total_dirs,  &all_dirs,  1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_files, &all_files, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_links, &all_links, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_bytes, &all_bytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
     /* report walk count, time, and rate */
     if (verbose && rank == 0) {
       double time = end_walk - start_walk;
@@ -2240,12 +2247,12 @@ int main(int argc, char **argv)
       /* convert total size to units */
       double agg_size_tmp;
       const char* agg_size_units;
-      bayer_format_bytes(total_bytes, &agg_size_tmp, &agg_size_units);
+      bayer_format_bytes(all_bytes, &agg_size_tmp, &agg_size_units);
 
-      printf("Items: %lu\n", (unsigned long long) total_dirs + total_files + total_links);
-      printf("  Directories: %lu\n", (unsigned long long) total_dirs);
-      printf("  Files: %lu\n", (unsigned long long) total_files);
-      printf("  Links: %lu\n", (unsigned long long) total_links);
+      printf("Items: %lu\n", (unsigned long long) all_count);
+      printf("  Directories: %lu\n", (unsigned long long) all_dirs);
+      printf("  Files: %lu\n", (unsigned long long) all_files);
+      printf("  Links: %lu\n", (unsigned long long) all_links);
       if (walk_stat) {
         printf("Data: %.3lf %s\n", agg_size_tmp, agg_size_units);
       }
