@@ -22,5 +22,5 @@ mpicxx -o test/dtar   \
 		-L${installdir}/lib     \
         -lcircle  -larchive           \
          -D__STDC_FORMAT_MACROS
-rm *.o	   
+rm -f *.o	   
 
