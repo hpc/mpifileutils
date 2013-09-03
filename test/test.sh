@@ -37,6 +37,10 @@ while [[ $# -gt 0 ]]; do
 		L=1
 		shift
 	fi
+	if [[ "$1" == "--DEBUG" ]]; then
+		DEBUG=1
+		shift
+	fi
 done	
 
 ###Create temporary directories
@@ -91,5 +95,6 @@ if [[ $DIFF != "" ]]; then
 else
 	echo "tar file is good"
 fi
-
-rm -rf $TMPDIR $TMPCHCK $TARGET
+if [[ DEBUG -ne 1 ]]; then
+	rm -rf $TMPDIR $TMPCHCK $TARGET
+fi
