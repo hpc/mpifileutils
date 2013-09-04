@@ -41,6 +41,30 @@ void* bayer_malloc(size_t size, const char* desc, const char* file, int line)
   return NULL;
 }
 
+/* if size > 0, allocates size bytes aligned with specified alignment
+ * and returns pointer, calls bayer_abort on failure,
+ * returns NULL if size == 0 */
+void* bayer_memalign(size_t size, size_t alignment, const char* desc, const char* file, int line)
+{
+  /* only bother if size > 0 */
+  if (size > 0) {
+    /* try to allocate memory and check whether we succeeded */
+    void* ptr;
+    int rc = posix_memalign(&ptr, alignment, size);
+    if (rc != 0) {
+      /* allocate failed, abort */
+      bayer_abort(1, "Failed to allocate %llu bytes for %s posix_memalign rc=%d @ %s:%d",
+        (unsigned long long) size, desc, rc, file, line
+      );
+    }
+
+    /* return the pointer */
+    return ptr;
+  }
+
+  return NULL;
+}
+
 /* if str != NULL, call strdup and return pointer, calls bayer_abort if strdup fails */
 char* bayer_strdup(const char* str, const char* desc, const char* file, int line)
 {

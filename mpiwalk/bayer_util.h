@@ -30,6 +30,17 @@ void* bayer_malloc(
   int line
 );
 
+/* if size > 0, allocates size bytes aligned with specified alignment
+ * and returns pointer, calls bayer_abort on failure,
+ * returns NULL if size == 0 */
+void* bayer_memalign(
+  size_t size,
+  size_t alignment,
+  const char* desc,
+  const char* file,
+  int line
+);
+
 /* if str != NULL, call strdup and return pointer, calls bayer_abort
  * if strdup fails */
 char* bayer_strdup(
