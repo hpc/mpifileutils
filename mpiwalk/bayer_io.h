@@ -56,7 +56,7 @@ int bayer_mknod(const char* path, mode_t mode, dev_t dev);
  ****************************/
 
 /* call readlink, retry a few times on EINTR or EIO */
-ssize_t readlink(const char* path, char* buf, size_t bufsize);
+ssize_t bayer_readlink(const char* path, char* buf, size_t bufsize);
 
 /* call symlink, retry a few times on EINTR or EIO */
 int bayer_symlink(const char* oldpath, const char* newpath);
