@@ -11,7 +11,115 @@
 #include <fcntl.h>
 
 #define BAYER_IO_TRIES  (5)
-#define BAYER_OPEN_USLEEP (100)
+#define BAYER_IO_USLEEP (100)
+
+/* calls lstat, and retries a few times if we get EIO or EINTR */
+int bayer_lstat(const char* path, struct stat* buf)
+{
+    int rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = lstat(path, buf);
+    if (rc != 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
+/* calls lstat64, and retries a few times if we get EIO or EINTR */
+int bayer_lstat64(const char* path, struct stat64* buf)
+{
+    int rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = lstat64(path, buf);
+    if (rc != 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
+/* call mknod, retry a few times on EINTR or EIO */
+int bayer_mknod(const char* path, mode_t mode, dev_t dev)
+{
+    int rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = mknod(path, mode, dev);
+    if (rc < 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
+/*****************************
+ * Links
+ ****************************/
+
+/* call readlink, retry a few times on EINTR or EIO */
+ssize_t bayer_readlink(const char* path, char* buf, size_t bufsize)
+{
+    ssize_t rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = readlink(path, buf, bufsize);
+    if (rc < 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
+/* call symlink, retry a few times on EINTR or EIO */
+int bayer_symlink(const char* oldpath, const char* newpath)
+{
+    int rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = symlink(oldpath, newpath);
+    if (rc < 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
+/*****************************
+ * Files
+ ****************************/
 
 /* open file with specified flags and mode, retry open a few times on failure */
 int bayer_open(const char* file, int flags, ...)
@@ -41,8 +149,8 @@ int bayer_open(const char* file, int flags, ...)
         /* try again */
         int tries = BAYER_IO_TRIES;
         while (tries && fd < 0) {
-            /* sleep between consecutive tries */
-            usleep(BAYER_OPEN_USLEEP);
+            /* sleep a bit before consecutive tries */
+            usleep(BAYER_IO_USLEEP);
 
             /* open again */
             errno = 0;
@@ -74,6 +182,8 @@ retry:
         if (errno == EINTR || errno == EIO) {
             tries--;
             if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
                 goto retry;
             }
         }
@@ -92,6 +202,8 @@ retry:
         if (errno == EINTR || errno == EIO) {
             tries--;
             if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
                 goto retry;
             }
         }
@@ -115,6 +227,8 @@ ssize_t bayer_read(const char* file, int fd, void* buf, size_t size)
         } else { /* (rc < 0) */
             /* got an error, check whether it was serious */
             if (errno == EINTR || errno == EAGAIN) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
                 continue;
             }
 
@@ -126,6 +240,9 @@ ssize_t bayer_read(const char* file, int fd, void* buf, size_t size)
                     file, errno, strerror(errno)
                 );
             }
+
+            /* sleep a bit before consecutive tries */
+            usleep(BAYER_IO_USLEEP);
         }
     }
     return n;
@@ -149,6 +266,8 @@ ssize_t bayer_write(const char* file, int fd, const void* buf, size_t size)
         } else { /* (rc < 0) */
             /* got an error, check whether it was serious */
             if (errno == EINTR || errno == EAGAIN) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
                 continue;
             }
 
@@ -160,6 +279,9 @@ ssize_t bayer_write(const char* file, int fd, const void* buf, size_t size)
                     file, errno, strerror(errno)
                 );
             }
+
+            /* sleep a bit before consecutive tries */
+            usleep(BAYER_IO_USLEEP);
         }
     }
     return n;
@@ -176,12 +298,18 @@ retry:
         if (errno == EINTR || errno == EIO) {
             tries--;
             if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
                 goto retry;
             }
         }
     }
     return rc;
 }
+
+/*****************************
+ * Directories
+ ****************************/
 
 /* get current working directory, abort if fail or buffer too small */
 void bayer_getcwd(char* buf, size_t size)
@@ -194,17 +322,19 @@ void bayer_getcwd(char* buf, size_t size)
     }
 }
 
-/* calls lstat, and retries a few times if we get EIO or EINTR */
-int bayer_lstat(const char* path, struct stat* buf)
+/* create directory, retry a few times on EINTR or EIO */
+int bayer_mkdir(const char* dir, mode_t mode)
 {
     int rc;
     int tries = BAYER_IO_TRIES;
 retry:
-    rc = lstat(path, buf);
-    if (rc != 0) {
+    rc = mkdir(dir, mode);
+    if (rc < 0) {
         if (errno == EINTR || errno == EIO) {
             tries--;
             if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
                 goto retry;
             }
         }
@@ -212,7 +342,67 @@ retry:
     return rc;
 }
 
-/* calls lstat, and retries a few times if we get ENOENT, EIO, or EINTR */
+/* remove directory, retry a few times on EINTR or EIO */
+int bayer_rmdir(const char* dir)
+{
+    int rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = rmdir(dir);
+    if (rc < 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
+/* open directory, retry a few times on EINTR or EIO */
+DIR* bayer_opendir(const char* dir)
+{
+    DIR* dirp;
+    int tries = BAYER_IO_TRIES;
+retry:
+    dirp = opendir(dir);
+    if (dirp == NULL) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return dirp;
+}
+
+/* close directory, retry a few times on EINTR or EIO */
+int bayer_closedir(DIR* dirp)
+{
+    int rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = closedir(dirp);
+    if (rc < 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
+/* read directory entry, retry a few times on ENOENT, EIO, or EINTR */
 struct dirent* bayer_readdir(DIR* dirp)
 {
     /* read next directory entry, retry a few times */
@@ -224,6 +414,8 @@ retry:
         if (errno == EINTR || errno == EIO || errno == ENOENT) {
             tries--;
             if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
                 goto retry;
             }
         }
