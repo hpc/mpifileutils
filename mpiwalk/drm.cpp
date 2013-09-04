@@ -117,7 +117,7 @@ static int record_info(const char *fpath, const struct stat *sb, mode_t type)
 static void DFTW_process_dir_readdir(char* dir, CIRCLE_handle* handle)
 {
   /* TODO: may need to try these functions multiple times */
-  DIR* dirp = opendir(dir);
+  DIR* dirp = bayer_opendir(dir);
 
   if (! dirp) {
     /* TODO: print error */
@@ -178,7 +178,7 @@ static void DFTW_process_dir_readdir(char* dir, CIRCLE_handle* handle)
     }
   }
 
-  closedir(dirp);
+  bayer_closedir(dirp);
 
   return;
 }
@@ -224,7 +224,7 @@ static void DFTW_process_readdir(CIRCLE_handle* handle)
 static void DFTW_process_dir_stat(char* dir, CIRCLE_handle* handle)
 {
   /* TODO: may need to try these functions multiple times */
-  DIR* dirp = opendir(dir);
+  DIR* dirp = bayer_opendir(dir);
 
   if (! dirp) {
     /* TODO: print error */
@@ -259,7 +259,7 @@ static void DFTW_process_dir_stat(char* dir, CIRCLE_handle* handle)
     }
   }
 
-  closedir(dirp);
+  bayer_closedir(dirp);
 
   return;
 }
@@ -1422,12 +1422,12 @@ static uint64_t rm_count; /* tracks number of items local process has removed */
 static void remove_type(char type, const char* name)
 {
   if (type == 'd') {
-    int rc = rmdir(name);
+    int rc = bayer_rmdir(name);
     if (rc != 0) {
       printf("Failed to rmdir `%s' (errno=%d %s)\n", name, errno, strerror(errno));
     }
   } else if (type == 'f') {
-    int rc = unlink(name);
+    int rc = bayer_unlink(name);
     if (rc != 0) {
       printf("Failed to unlink `%s' (errno=%d %s)\n", name, errno, strerror(errno));
     }
@@ -1520,12 +1520,12 @@ static void remove_direct()
   while (elem != NULL) {
       if (elem->depth == rm_depth) {
           if (elem->type == TYPE_DIR) {
-            int rc = rmdir(elem->name);
+            int rc = bayer_rmdir(elem->name);
             if (rc != 0) {
               printf("Failed to rmdir `%s' (errno=%d %s)\n", elem->name, errno, strerror(errno));
             }
           } else if (elem->type == TYPE_FILE || elem->type == TYPE_LINK) {
-            int rc = unlink(elem->name);
+            int rc = bayer_unlink(elem->name);
             if (rc != 0) {
               printf("Failed to unlink `%s' (errno=%d %s)\n", elem->name, errno, strerror(errno));
             }
