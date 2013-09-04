@@ -1444,10 +1444,10 @@ static int sort_files_readdir(
   DTCMP_Op_create_series(nfields, ops, &op_key);
 
   /* build keysat type */
-  MPI_Datatype dt_keysat;
-  types[0] = dt_key;
-  types[1] = dt_sat;
-  DTCMP_Type_create_series(2, types, &dt_keysat);
+  MPI_Datatype dt_keysat, keysat_types[2];
+  keysat_types[0] = dt_key;
+  keysat_types[1] = dt_sat;
+  DTCMP_Type_create_series(2, keysat_types, &dt_keysat);
 
   /* get extent of key type */
   MPI_Aint key_lb, key_extent;
@@ -1734,10 +1734,10 @@ static int sort_files_stat(
   DTCMP_Op_create_series(nfields, ops, &op_key);
 
   /* build keysat type */
-  MPI_Datatype dt_keysat;
-  types[0] = dt_key;
-  types[1] = dt_stat;
-  DTCMP_Type_create_series(2, types, &dt_keysat);
+  MPI_Datatype dt_keysat, keysat_types[2];
+  keysat_types[0] = dt_key;
+  keysat_types[1] = dt_stat;
+  DTCMP_Type_create_series(2, keysat_types, &dt_keysat);
 
   /* get extent of key type */
   MPI_Aint key_lb, key_extent;
