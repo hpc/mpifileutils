@@ -307,6 +307,26 @@ retry:
     return rc;
 }
 
+/* force flush of written data */
+int bayer_fsync(const char* file, int fd)
+{
+    int rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = fsync(fd);
+    if (rc < 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
 /*****************************
  * Directories
  ****************************/

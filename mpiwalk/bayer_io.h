@@ -83,6 +83,9 @@ ssize_t bayer_write(const char* file, int fd, const void* buf, size_t size);
 /* delete a file */
 int bayer_unlink(const char* file);
 
+/* force flush of written data */
+int bayer_fsync(const char* file, int fd);
+
 /*****************************
  * Directories
  ****************************/
