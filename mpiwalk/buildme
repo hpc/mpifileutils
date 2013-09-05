@@ -31,6 +31,8 @@ installdir=`pwd`/install
 # fetch dcp source code
 if [ ! -d "dcp.git" ] ; then
   git clone git://github.com/hpc/dcp.git dcp.git
+
+  # switch to bayer branch
   pushd dcp.git
     git checkout bayer
   popd
@@ -56,12 +58,14 @@ mpicxx ${OPT} -o drm drm.cpp \
 
 # build dcp command
 pushd dcp.git
+  # need to run configure once to build config.h
   if [ ! -f config.h ] ; then
     export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
     export CFLAGS="-g -O0"
     ./configure --prefix=$installdir --disable-silent-rules
   fi
 
+  # build dcp command
   pushd src
     mpicc ${OPT} -o dcp common.c handle_args.c treewalk.c copy.c cleanup.c compare.c dcp.c \
       -I../. -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle \
