@@ -40,15 +40,24 @@ int main(int argc, char **argv) {
     char compress, mode, opt;
     int flags;
     int opt_index = 0;
+    int numprocs, rank;
 
     MPI_Init(&argc, &argv);
 
+    DTAR_debug_stream = stdout;
+
+    MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    if (rank == 0 && numprocs < 3) {
+        fprintf(stderr, "\nERROR: DTAR requires at least three process to run!\n\n");
+        MPI_Finalize();
+        exit(-1);
+    }
     mode = 'x';
     verbose = 0;
     compress = '\0';
     flags = ARCHIVE_EXTRACT_TIME;
-
-    DTAR_debug_stream = stdout;
 
     /* Among other sins, getopt(3) pulls in printf(3). */
     while (*++argv != NULL && **argv == '-') {

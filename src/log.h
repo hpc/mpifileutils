@@ -12,7 +12,6 @@ typedef enum {
     DTAR_LOG_DBG = 5
 } DTAR_loglevel;
 
-//                fprintf(DTAR_debug_stream,"[%s] ", timestamp);
 #define LOG(level, ...) do {  \
         if (level <= DTAR_debug_level) { \
             char timestamp[256]; \
