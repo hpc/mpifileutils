@@ -65,7 +65,7 @@
 #include <utime.h>
 #include <mpi.h>
 #include <dirent.h>
-#include <attr/xattr.h>
+#include <xattr.h>
 
 
 typedef enum {
@@ -144,13 +144,6 @@ void DTAR_stat_process_file(DTAR_operation_t* op, const struct stat64* statbuf,
 
 void DTAR_stat_process_dir(DTAR_operation_t* op, const struct stat64* statbuf,
         CIRCLE_handle* handle);
-
-
-DTAR_options_t DTAR_user_opts;
-DTAR_writer_t DTAR_writer;
-DTAR_loglevel DTAR_debug_level;
-FILE * DTAR_debug_stream;
-
 
 
 #endif

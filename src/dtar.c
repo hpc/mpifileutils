@@ -21,6 +21,12 @@ MPI_Comm inter_comm;
 int64_t g_tar_offset = 0;
 int verbose = 0;
 
+DTAR_options_t DTAR_user_opts;
+DTAR_writer_t DTAR_writer;
+DTAR_loglevel DTAR_debug_level;
+FILE * DTAR_debug_stream;
+
+
 void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
 
 static void create(char *filename, char compress, int opt_index, int argc,
