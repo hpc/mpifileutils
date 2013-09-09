@@ -6,10 +6,10 @@
 
 typedef enum {
     DTAR_LOG_FATAL = 1,
-    DTAR_LOG_ERR   = 2,
-    DTAR_LOG_WARN  = 3,
-    DTAR_LOG_INFO  = 4,
-    DTAR_LOG_DBG   = 5
+    DTAR_LOG_ERR = 2,
+    DTAR_LOG_WARN = 3,
+    DTAR_LOG_INFO = 4,
+    DTAR_LOG_DBG = 5
 } DTAR_loglevel;
 
 //                fprintf(DTAR_debug_stream,"[%s] ", timestamp);
