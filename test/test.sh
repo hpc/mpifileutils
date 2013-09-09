@@ -75,7 +75,7 @@ echo
 
 ###Create the tarfile
 echo "creating parallel tar file..."
-mpirun -np $NUM_PROC -machinefile ./machines ./dtar -c -j -f $TARGET $TMPDIR
+mpirun -np $NUM_PROC -machinefile ./dtar -cf $TARGET $TMPDIR
 ###Extract the resulting tarfile with GNU tar
 echo extracting tar file...
 tar -xf $TARGET -C $TMPCHCK
@@ -89,7 +89,7 @@ if [[ $DEBUG -eq 1 ]]; then
 	echo "diff: $DIFF"
 fi
 echo
-if [[ $DIFF != "" ]]; then
+if [[ $DIFF -ne 0 ]]; then
 	if [[ "$DIFF" == *".lnk"* ]]; then
 		echo "symbolic link failure"
 	else
