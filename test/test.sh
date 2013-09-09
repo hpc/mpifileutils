@@ -75,7 +75,7 @@ echo
 
 ###Create the tarfile
 echo "creating parallel tar file..."
-mpirun -np $NUM_PROC -machinefile ./machines ./dtar -c -f $TARGET $TMPDIR
+mpirun -np $NUM_PROC -machinefile ./machines ./dtar -c -j -f $TARGET $TMPDIR
 ###Extract the resulting tarfile with GNU tar
 echo extracting tar file...
 tar -xf $TARGET -C $TMPCHCK
@@ -83,8 +83,11 @@ tar -xf $TARGET -C $TMPCHCK
 ###Check extracted files against the originals
 GOOD=1
 echo checking files...
-DIFF=$(diff -q -r $TMPDIR $TMPCHCK/tmp)
-echo $DIFF
+diff -q -r $TMPDIR $TMPCHCK/tmp
+DIFF=$?
+if [[ $DEBUG -eq 1 ]]; then
+	echo "diff: $DIFF"
+fi
 echo
 if [[ $DIFF != "" ]]; then
 	if [[ "$DIFF" == *".lnk"* ]]; then
@@ -95,6 +98,6 @@ if [[ $DIFF != "" ]]; then
 else
 	echo "tar file is good"
 fi
-if [[ DEBUG -ne 1 ]]; then
+if [[ $DEBUG -ne 1 ]]; then
 	rm -rf $TMPDIR $TMPCHCK $TARGET
 fi
