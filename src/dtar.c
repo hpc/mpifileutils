@@ -21,11 +21,6 @@ MPI_Comm inter_comm;
 int64_t g_tar_offset = 0;
 int verbose = 0;
 
-DTAR_options_t DTAR_user_opts;
-DTAR_writer_t DTAR_writer;
-DTAR_loglevel DTAR_debug_level;
-FILE* DTAR_debug_stream;
-
 void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
 
 static void create(char *filename, char compress, int opt_index, int argc,
@@ -44,13 +39,15 @@ int main(int argc, char **argv) {
 
     MPI_Init(&argc, &argv);
 
+    /* By default, show info log message */
     DTAR_debug_stream = stdout;
+    DTAR_debug_level = DTAR_LOG_INFO;
 
     MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     if (rank == 0 && numprocs < 3) {
-        fprintf(stderr, "\nERROR: DTAR requires at least three process to run!\n\n");
+        LOG(DTAR_LOG_FATAL, "DTAR requires at three 3 process to run!");
         MPI_Finalize();
         exit(-1);
     }
