@@ -65,7 +65,7 @@
 #include <utime.h>
 #include <mpi.h>
 #include <dirent.h>
-#include <xattr.h>
+#include <attr/xattr.h>
 
 typedef enum {
     TREEWALK, COPY
