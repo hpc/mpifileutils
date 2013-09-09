@@ -75,7 +75,7 @@ echo
 
 ###Create the tarfile
 echo "creating parallel tar file..."
-mpirun -np $NUM_PROC -machinefile ./dtar -cf $TARGET $TMPDIR
+mpirun -np $NUM_PROC ./dtar -cf $TARGET $TMPDIR
 ###Extract the resulting tarfile with GNU tar
 echo extracting tar file...
 tar -xf $TARGET -C $TMPCHCK
