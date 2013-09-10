@@ -25,15 +25,6 @@
 
 using namespace std;
 
-/* TODO: these types may be encoded in files */
-enum filetypes {
-  TYPE_NULL    = 0,
-  TYPE_UNKNOWN = 1,
-  TYPE_FILE    = 2,
-  TYPE_DIR     = 3,
-  TYPE_LINK    = 4,
-};
-
 // getpwent getgrent to read user and group entries
 
 /* TODO: change globals to struct */
@@ -43,7 +34,7 @@ static int walk_stat = 1;
 /* struct for elements in linked list */
 typedef struct list_elem {
   char* file;             /* file name */
-  filetypes type;         /* record type of object */
+  bayer_filetypes type;         /* record type of object */
   struct stat* sb;        /* stat info */
   struct list_elem* next; /* pointer to next item */
 } elem_t;

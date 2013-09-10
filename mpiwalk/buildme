@@ -39,13 +39,15 @@ if [ ! -d "dcp.git" ] ; then
 fi
 
 # build bayer library
-mpicc ${OPT} -o bayer_util.o -c bayer_util.c
-mpicc ${OPT} -o bayer_path.o -c bayer_path.c
-mpicc ${OPT} -o bayer_io.o   -c bayer_io.c
+mpicc  ${OPT} -o bayer_util.o  -c bayer_util.c
+mpicc  ${OPT} -o bayer_path.o  -c bayer_path.c
+mpicc  ${OPT} -o bayer_io.o    -c bayer_io.c
+mpicxx ${OPT} -o bayer_flist.o -c bayer_flist.cpp -I${installdir}/include
 ar cru libbayer.a \
   bayer_util.o \
   bayer_path.o \
-  bayer_io.o
+  bayer_io.o \
+  bayer_flist.o
 ranlib libbayer.a
 
 # build dwalk command
@@ -53,7 +55,7 @@ mpicxx ${OPT} -o dwalk dwalk.cpp \
   -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -L./ -lbayer
 
 # build drm command
-mpicxx ${OPT} -o drm drm.cpp \
+mpicc ${OPT} -o drm drm.cpp \
   -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -L./ -lbayer
 
 # build dcp command
