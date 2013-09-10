@@ -41,7 +41,10 @@ inline static struct archive * new_archive() {
         archive_write_add_filter_none(a);
         break;
     }
-    archive_write_set_format_ustar(a);
+
+    // archive_write_set_format_ustar(a);
+    // above has no support for extended attributes
+    archive_write_set_format_pax_restricted(a);
     archive_write_set_bytes_per_block(a, 0);
 
     return a;
@@ -52,35 +55,35 @@ inline static int write_header(off64_t offset, DTAR_operation_t * op) {
     char* bname = op->operand;
     char* dname = op->dir;
     char dir[PATH_MAX];
+    struct stat st;
+    int ret;
 
     if (getcwd(dir, PATH_MAX) == NULL) {
         printf("can not getcwd in write_header\n");
         return -1;
     }
 
-    printf("op is %s, dir is %s, base is %s, pwd is %s\n", op->operand, dname,
-            bname, dir);
+    LOG(DTAR_LOG_INFO, "op is %s, dir is %s, base is %s, pwd is %s\n", op->operand, dname,
+          bname, dir);
 
-    int ret = chdir(dname);
+    ret = chdir(dname);
     if (ret != 0) {
         printf("can not chdir in write_header\n");
         return -1;
     }
 
-    struct archive *disk = archive_read_disk_new();
-    int r = archive_read_disk_open(disk, bname);
-    if (r != ARCHIVE_OK) {
-        printf("Cannot read disk in treewalk.c\n");
+    ret = stat(bname, &st);
+    if (ret !=0) {
+        perror("stat");
         return -1;
     }
+
 
     struct archive_entry *entry = archive_entry_new();
-    r = archive_read_next_header2(disk, entry);
-
-    if (r != ARCHIVE_OK) {
-        printf("Cannot read header in treewalk.c\n");
-        return -1;
-    }
+    archive_entry_copy_stat(entry, &st);
+    archive_entry_set_pathname(entry, bname);
+    archive_entry_set_uname(entry, userNameFromId(st.st_uid));
+    archive_entry_set_gname(entry, groupNameFromId(st.st_gid));
 
     struct archive * a = new_archive();
     archive_write_open_fd(a, DTAR_writer.fd_tar);
@@ -93,34 +96,23 @@ inline static int write_header(off64_t offset, DTAR_operation_t * op) {
 
     printf("rank %d file %s header offset is %x  current pos is %x\n",
             CIRCLE_global_rank, op->operand, offset, cur_pos);
+
     archive_write_header(a, entry);
 
-    if (r != ARCHIVE_OK) {
-        printf("Cannot write header in treewalk.c\n");
-        return -1;
-    }
-
+    // TODO: this may be not necessary
     fsync(DTAR_writer.fd_tar);
+
+    // free resources, why you can't free archive?
     archive_entry_free(entry);
-    archive_read_close(disk);
-    archive_read_free(disk);
+
+    // archive_write_free(a);
 
     ret = chdir(dir);
     if (ret != 0) {
-        printf("can not chdir in write_header\n");
+        perror("chdir() in write_header");
         return -1;
     }
 
-    /*
-     how to destroy a is a problem
-     need to think about
-     archive_write_close and
-     archive_write_free will
-     automatically add 1024 zero bits
-     */
-
-//    archive_write_close(a);
-//    archive_write_free(a);
     return 0;
 
 }

@@ -15,6 +15,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "helper.h"
+
 extern DTAR_options_t DTAR_user_opts;
 extern DTAR_writer_t DTAR_writer;
 extern void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
@@ -197,3 +199,16 @@ void DTAR_exit(int code) {
     exit(code);
 }
 
+char * userNameFromId(uid_t uid) {
+    struct passwd *pwd;
+    pwd = getpwuid(uid);
+
+    return (pwd == NULL) ? NULL : pwd->pw_name;
+
+}
+
+char * groupNameFromId(gid_t gid) {
+    struct group *grp;
+    grp = getgrgid(gid);
+    return (grp == NULL) ? NULL: grp->gr_name;
+}
