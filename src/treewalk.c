@@ -21,6 +21,8 @@ extern DTAR_options_t DTAR_user_opts;
 extern DTAR_writer_t DTAR_writer;
 extern MPI_Comm inter_comm;
 
+int HDR_LENGTH = 1536;
+
 inline static struct archive * new_archive() {
 
     char compress = DTAR_user_opts.compress;
@@ -42,9 +44,13 @@ inline static struct archive * new_archive() {
         break;
     }
 
-    // archive_write_set_format_ustar(a);
-    // above has no support for extended attributes
-    archive_write_set_format_pax_restricted(a);
+    int r = archive_write_set_format_pax(a);
+
+    if ( r != ARCHIVE_OK ) {
+        LOG(DTAR_LOG_ERR, archive_error_string(a));
+        return NULL;
+    }
+
     archive_write_set_bytes_per_block(a, 0);
 
     return a;
@@ -186,7 +192,7 @@ void DTAR_stat_process_link(DTAR_operation_t* op, const struct stat64* statbuf,
     off64_t offset = 0;
     MPI_Status stat;
     buffer[0] = (int64_t) CIRCLE_global_rank;
-    buffer[1] = 512;
+    buffer[1] = HDR_LENGTH;
 
     MPI_Send(buffer, 2, MPI_LONG_LONG, 0, 0, inter_comm);
     MPI_Recv(&offset, 1, MPI_LONG_LONG, 0, 0, inter_comm, &stat);
@@ -220,7 +226,7 @@ void DTAR_stat_process_file(DTAR_operation_t* op, const struct stat64* statbuf,
 
     write_header(offset, op);
 
-    op->offset = offset + 512;
+    op->offset = offset + HDR_LENGTH;
 
     printf("rank %d file %s data:%x entry:%x hex_entry:%x\n",
             CIRCLE_global_rank, op->operand, op->offset, offset, offset);
@@ -247,7 +253,7 @@ void DTAR_stat_process_dir(DTAR_operation_t* op, const struct stat64* statbuf,
     MPI_Status stat;
 
     buffer[0] = (int64_t) CIRCLE_global_rank;
-    buffer[1] = 512;
+    buffer[1] = HDR_LENGTH;
     MPI_Send(buffer, 2, MPI_LONG_LONG, 0, 0, inter_comm);
     MPI_Recv(&offset, 1, MPI_LONG_LONG, 0, 0, inter_comm, &stat);
     write_header(offset, op);
