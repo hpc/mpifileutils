@@ -25,7 +25,7 @@ DTAR_options_t DTAR_user_opts;
 DTAR_writer_t DTAR_writer;
 DTAR_loglevel DTAR_debug_level;
 FILE * DTAR_debug_stream;
-
+int xattr_flag = 0;
 
 void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
 
@@ -71,6 +71,9 @@ int main(int argc, char **argv) {
             switch (opt) {
             case 'c':
                 mode = opt;
+                break;
+            case 'e':
+                xattr_flag = 1;
                 break;
             case 'f':
                 if (*p != '\0')

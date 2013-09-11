@@ -21,6 +21,7 @@
 extern DTAR_options_t DTAR_user_opts;
 extern DTAR_writer_t DTAR_writer;
 extern MPI_Comm inter_comm;
+extern int xattr_flag;
 
 int HDR_LENGTH = 1536;
 
@@ -80,27 +81,23 @@ inline static int write_header(off64_t offset, DTAR_operation_t * op) {
         return -1;
     }
 
-    fd = open(bname, O_RDONLY);
-    if (fd < 0) {
-        perror("open");
-        return -1;
-    }
-
-    ret = stat(bname, &st);
-    if (ret !=0) {
-        perror("stat");
-        return -1;
-    }
-
-    ard = archive_read_disk_new();
-    archive_read_disk_set_standard_lookup(ard);
-
     struct archive_entry *entry = archive_entry_new();
-    // archive_entry_copy_stat(entry, &st);
     archive_entry_copy_pathname(entry, bname);
-    archive_read_disk_entry_from_file(ard, entry, fd, NULL);
-    archive_entry_set_uname(entry, userNameFromId(st.st_uid));
-    archive_entry_set_gname(entry, groupNameFromId(st.st_gid));
+
+    if (xattr_flag) {
+        fd = open(bname, O_RDONLY); // Error check?
+        ard = archive_read_disk_new();
+        archive_read_disk_set_standard_lookup(ard);
+        archive_read_disk_entry_from_file(ard, entry, fd, NULL);
+        archive_read_free(ard);
+
+    } else {
+        stat(bname, &st); // Error check?
+        archive_entry_copy_stat(entry, &st);
+        archive_entry_set_uname(entry, userNameFromId(st.st_uid));
+        archive_entry_set_gname(entry, groupNameFromId(st.st_gid));
+
+    }
 
     struct archive * a = new_archive();
     archive_write_open_fd(a, DTAR_writer.fd_tar);
@@ -121,17 +118,10 @@ inline static int write_header(off64_t offset, DTAR_operation_t * op) {
 
     // free resources, why you can't free archive?
     archive_entry_free(entry);
-    archive_read_free(ard);
     // archive_write_free(a);
 
     ret = chdir(dir);
-    if (ret != 0) {
-        perror("chdir() in write_header");
-        return -1;
-    }
-
     return 0;
-
 }
 
 void DTAR_do_treewalk(DTAR_operation_t* op, CIRCLE_handle* handle) {
