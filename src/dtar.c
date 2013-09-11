@@ -138,8 +138,7 @@ inline void server_stuff(void) {
     MPI_Irecv(&token, 1, MPI_INT, 0, 10, inter_comm, &request);
     MPI_Test(&request, &flag, &status);
 
-    MPI_Recv_init(buffer, 2, MPI_LONG_LONG,
-    MPI_ANY_SOURCE, 0, inter_comm, &req_offset);
+    MPI_Recv_init(buffer, 2, MPI_LONG_LONG, MPI_ANY_SOURCE, 0, inter_comm, &req_offset);
 
     MPI_Start(&req_offset);
 

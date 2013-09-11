@@ -69,8 +69,8 @@ inline static int write_header(off64_t offset, DTAR_operation_t * op) {
         return -1;
     }
 
-    LOG(DTAR_LOG_INFO, "op is %s, dir is %s, base is %s, pwd is %s\n", op->operand, dname,
-          bname, dir);
+    LOG(DTAR_LOG_INFO, "op = [%s], dir = [%s], base = [%s], pwd = [%s]\n",
+            op->operand, dname, bname, dir);
 
     ret = chdir(dname);
     if (ret != 0) {
@@ -214,9 +214,9 @@ void DTAR_stat_process_file(DTAR_operation_t* op, const struct stat64* statbuf,
 
     int64_t rem = (file_size) % 512;
     if (rem == 0) {
-        buffer[1] = file_size + 512;
+        buffer[1] = file_size + HDR_LENGTH;
     } else {
-        buffer[1] = (file_size / 512 + 2) * 512;
+        buffer[1] = (file_size / 512  + 4) * 512;
     }
 
     MPI_Send(buffer, 2, MPI_LONG_LONG, 0, 0, inter_comm);
