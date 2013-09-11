@@ -24,10 +24,8 @@ CMAKE_FORCE_CXX_COMPILER(mpicxx ${CMAKE_CXX_COMPILER_ID})
 
 pkg_check_modules(ARCHIVE REQUIRED libarchive)
 pkg_check_modules(CIRCLE REQUIRED libcircle)
-pkg_check_modules(ATTR REQUIRED libattr)
 
 # make include available
-add_definitions(${ATTR_CFLAGS})
 add_definitions(${ARCHIVE_CFLAGS})
 
 # make library available

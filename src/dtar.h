@@ -65,7 +65,7 @@
 #include <utime.h>
 #include <mpi.h>
 #include <dirent.h>
-#include <xattr.h>
+#include <sys/xattr.h>
 
 
 #define XATTR_SIZE 10000
