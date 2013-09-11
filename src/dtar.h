@@ -68,6 +68,8 @@
 #include <xattr.h>
 
 
+#define XATTR_SIZE 10000
+
 typedef enum {
     TREEWALK, COPY
 } DTAR_operation_code_t;

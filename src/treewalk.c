@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <inttypes.h>
 #include <sys/time.h>
@@ -62,7 +63,8 @@ inline static int write_header(off64_t offset, DTAR_operation_t * op) {
     char* dname = op->dir;
     char dir[PATH_MAX];
     struct stat st;
-    int ret;
+    int fd, ret;
+    struct archive *ard;
 
     if (getcwd(dir, PATH_MAX) == NULL) {
         printf("can not getcwd in write_header\n");
@@ -78,16 +80,25 @@ inline static int write_header(off64_t offset, DTAR_operation_t * op) {
         return -1;
     }
 
+    fd = open(bname, O_RDONLY);
+    if (fd < 0) {
+        perror("open");
+        return -1;
+    }
+
     ret = stat(bname, &st);
     if (ret !=0) {
         perror("stat");
         return -1;
     }
 
+    ard = archive_read_disk_new();
+    archive_read_disk_set_standard_lookup(ard);
 
     struct archive_entry *entry = archive_entry_new();
-    archive_entry_copy_stat(entry, &st);
-    archive_entry_set_pathname(entry, bname);
+    // archive_entry_copy_stat(entry, &st);
+    archive_entry_copy_pathname(entry, bname);
+    archive_read_disk_entry_from_file(ard, entry, fd, NULL);
     archive_entry_set_uname(entry, userNameFromId(st.st_uid));
     archive_entry_set_gname(entry, groupNameFromId(st.st_gid));
 
@@ -110,7 +121,7 @@ inline static int write_header(off64_t offset, DTAR_operation_t * op) {
 
     // free resources, why you can't free archive?
     archive_entry_free(entry);
-
+    archive_read_free(ard);
     // archive_write_free(a);
 
     ret = chdir(dir);
