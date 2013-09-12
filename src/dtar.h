@@ -67,8 +67,10 @@
 #include <dirent.h>
 #include <sys/xattr.h>
 
-
 #define XATTR_SIZE 10000
+
+/* This should NOT be needed, but Eclipse complains without it */
+typedef __off64_t off64_t;
 
 typedef enum {
     TREEWALK, COPY
