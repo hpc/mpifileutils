@@ -20,1326 +20,20 @@
 #include "dtcmp.h"
 #include "bayer.h"
 
-#include <map>
-#include <string>
-
-using namespace std;
-
 // getpwent getgrent to read user and group entries
 
 /* TODO: change globals to struct */
 static int verbose   = 0;
 static int walk_stat = 1;
 
-/* struct for elements in linked list */
-typedef struct list_elem {
-  char* file;             /* file name */
-  bayer_filetypes type;         /* record type of object */
-  struct stat* sb;        /* stat info */
-  struct list_elem* next; /* pointer to next item */
-} elem_t;
-
-/* declare types and function prototypes for DFTW code */
-typedef int (*DFTW_cb_t)(const char* fpath, const struct stat* sb, mode_t type);
-
 /* keep stats during walk */
-uint64_t total_dirs  = 0;
-uint64_t total_files = 0;
-uint64_t total_links = 0;
-uint64_t total_bytes = 0;
-
-/* variables to track linked list during walk */
-uint64_t        list_count = 0;
-static elem_t*  list_head  = NULL;
-static elem_t*  list_tail  = NULL;
-
-/** The top directory specified. */
-char _DFTW_TOP_DIR[PATH_MAX];
-
-/** The callback. */
-DFTW_cb_t _DFTW_CB;
-
-/* appends file name and stat info to linked list */
-static int record_info(const char *fpath, const struct stat *sb, mode_t type)
-{
-  /* TODO: check that memory allocation doesn't fail */
-  /* create new element to record file path, file type, and stat info */
-  elem_t* elem = (elem_t*) bayer_malloc(sizeof(elem_t), "file info element", __FILE__, __LINE__);
-
-  /* copy path */
-  elem->file = bayer_strdup(fpath, "file path", __FILE__, __LINE__);
-
-  /* set file type */
-  if (S_ISDIR(type)) {
-    elem->type = TYPE_DIR;
-    total_dirs++;
-  } else if (S_ISREG(type)) {
-    elem->type = TYPE_FILE;
-    total_files++;
-  } else if (S_ISLNK(type)) {
-    elem->type = TYPE_LINK;
-    total_links++;
-  } else {
-    /* unknown file type */
-    elem->type = TYPE_UNKNOWN;
-//    printf("Unknown file type for %s (%lx)\n", fpath, (unsigned long)type);
-//    fflush(stdout);
-  }
-
-  /* copy stat info */
-  if (sb != NULL) {
-    elem->sb = (struct stat*) bayer_malloc(sizeof(struct stat), "stat structure", __FILE__, __LINE__);
-    memcpy(elem->sb, sb, sizeof(struct stat));
-
-    /* if it's a file, sum the number of bytes */
-    if (S_ISREG(type)) {
-      total_bytes += (uint64_t) sb->st_size;
-    }
-  } else {
-    elem->sb = NULL;
-  }
-
-  /* append element to tail of linked list */
-  elem->next = NULL;
-  if (list_head == NULL) {
-    list_head = elem;
-  }
-  if (list_tail != NULL) {
-    list_tail->next = elem;
-  }
-  list_tail = elem;
-  list_count++;
-
-  /* To tell dftw() to continue */
-  return 0;
-}
-
-/****************************************
- * Walk directory tree using stat at top level and readdir
- ***************************************/
-
-static void DFTW_process_dir_readdir(char* dir, CIRCLE_handle* handle)
-{
-  /* TODO: may need to try these functions multiple times */
-  DIR* dirp = opendir(dir);
-
-  if (! dirp) {
-    /* TODO: print error */
-  } else {
-    /* Read all directory entries */
-    while (1) {
-      /* read next directory entry */
-      struct dirent* entry = bayer_readdir(dirp);
-      if (entry == NULL) {
-        break;
-      }
-
-      /* process component, unless it's "." or ".." */
-      char* name = entry->d_name;
-      if((strncmp(name, ".", 2)) && (strncmp(name, "..", 3))) {
-        /* <dir> + '/' + <name> + '/0' */
-        char newpath[CIRCLE_MAX_STRING_LEN];
-        size_t len = strlen(dir) + 1 + strlen(name) + 1;
-        if (len < sizeof(newpath)) {
-          /* build full path to item */
-          strcpy(newpath, dir);
-          strcat(newpath, "/");
-          strcat(newpath, name);
-
-          #ifdef _DIRENT_HAVE_D_TYPE
-            /* record info for item */
-            mode_t mode;
-            int have_mode = 0;
-            if (entry->d_type != DT_UNKNOWN) {
-              /* we can read object type from directory entry */
-              have_mode = 1;
-              mode = DTTOIF(entry->d_type);
-              _DFTW_CB(newpath, NULL, mode);
-            } else {
-              /* type is unknown, we need to stat it */
-              struct stat st;
-              int status = bayer_lstat(newpath, &st);
-              if (status == 0) {
-                have_mode = 1;
-                mode = st.st_mode;
-                _DFTW_CB(newpath, &st, mode);
-              } else {
-                /* error */
-              }
-            }
-
-            /* recurse into directories */
-            if (have_mode && S_ISDIR(mode)) {
-              handle->enqueue(newpath);
-            }
-          #endif
-        } else {
-          /* name is too long */
-          printf("Path name is too long: %lu chars exceeds limit %lu\n", len, sizeof(newpath));
-          fflush(stdout);
-        }
-      }
-    }
-  }
-
-  closedir(dirp);
-
-  return;
-}
-
-/** Call back given to initialize the dataset. */
-static void DFTW_create_readdir(CIRCLE_handle* handle)
-{
-  char* path = _DFTW_TOP_DIR;
-
-  /* stat top level item */
-  struct stat st;
-  int status = bayer_lstat(path, &st);
-  if (status != 0) {
-    /* TODO: print error */
-    return;
-  }
-
-  /* record item info */
-  _DFTW_CB(path, &st, st.st_mode);
-
-  /* recurse into directory */
-  if (S_ISDIR(st.st_mode)) {
-    DFTW_process_dir_readdir(path, handle);
-  }
-
-  return;
-}
-
-/** Callback given to process the dataset. */
-static void DFTW_process_readdir(CIRCLE_handle* handle)
-{
-  /* in this case, only items on queue are directories */
-  char path[CIRCLE_MAX_STRING_LEN];
-  handle->dequeue(path);
-  DFTW_process_dir_readdir(path, handle);
-  return;
-}
-
-/****************************************
- * Walk directory tree using stat on every object
- ***************************************/
-
-static void DFTW_process_dir_stat(char* dir, CIRCLE_handle* handle)
-{
-  /* TODO: may need to try these functions multiple times */
-  DIR* dirp = opendir(dir);
-
-  if (! dirp) {
-    /* TODO: print error */
-  } else {
-    while (1) {
-      /* read next directory entry */
-      struct dirent* entry = bayer_readdir(dirp);
-      if (entry == NULL) {
-        break;
-      }
-       
-      /* We don't care about . or .. */
-      char* name = entry->d_name;
-      if ((strncmp(name, ".", 2)) && (strncmp(name, "..", 3))) {
-        /* <dir> + '/' + <name> + '/0' */
-        char newpath[CIRCLE_MAX_STRING_LEN];
-        size_t len = strlen(dir) + 1 + strlen(name) + 1;
-        if (len < sizeof(newpath)) {
-          /* build full path to item */
-          strcpy(newpath, dir);
-          strcat(newpath, "/");
-          strcat(newpath, name);
-
-          /* add item to queue */
-          handle->enqueue(newpath);
-        } else {
-          /* name is too long */
-          printf("Path name is too long: %lu chars exceeds limit %lu\n", len, sizeof(newpath));
-          fflush(stdout);
-        }
-      }
-    }
-  }
-
-  closedir(dirp);
-
-  return;
-}
-
-/** Call back given to initialize the dataset. */
-static void DFTW_create_stat(CIRCLE_handle* handle)
-{
-  /* we'll call stat on every item */
-  handle->enqueue(_DFTW_TOP_DIR);
-}
-
-/** Callback given to process the dataset. */
-static void DFTW_process_stat(CIRCLE_handle* handle)
-{
-  /* get path from queue */
-  char path[CIRCLE_MAX_STRING_LEN];
-  handle->dequeue(path);
-
-  /* stat item */
-  struct stat st;
-  int status = bayer_lstat(path, &st);
-  if (status != 0) {
-    /* print error */
-    return;
-  }
-
-  /* TODO: filter items by stat info */
-
-  /* record info for item */
-  _DFTW_CB(path, &st, st.st_mode);
-
-  /* recurse into directory */
-  if (S_ISDIR(st.st_mode)) {
-    /* TODO: check that we can recurse into directory */
-    DFTW_process_dir_stat(path, handle);
-  }
-
-  return;
-}
-
-/****************************************
- * Set up and execute directory walk
- ***************************************/
-
-void dftw(
-  const char* dirpath,
-  DFTW_cb_t fn)
-//int (*fn)(const char* fpath, const struct stat* sb, mode_t type))
-{
-  /* set some global variables to do the file walk */
-  _DFTW_CB = fn;
-  strncpy(_DFTW_TOP_DIR, dirpath, PATH_MAX);
-
-  /* initialize libcircle */
-  CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL);
-
-  /* set libcircle verbosity level */
-  enum CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
-  if (verbose) {
-    loglevel = CIRCLE_LOG_INFO;
-  }
-  CIRCLE_enable_logging(loglevel);
-
-  /* register callbacks */
-  if (walk_stat) {
-    /* walk directories by calling stat on every item */
-    CIRCLE_cb_create(&DFTW_create_stat);
-    CIRCLE_cb_process(&DFTW_process_stat);
-  } else {
-    /* walk directories using file types in readdir */
-    CIRCLE_cb_create(&DFTW_create_readdir);
-    CIRCLE_cb_process(&DFTW_process_readdir);
-  }
-
-  /* run the libcircle job */
-  CIRCLE_begin();
-  CIRCLE_finalize();
-}
-
-/* create a type consisting of chars number of characters
- * immediately followed by a uint32_t */
-static void create_stridtype(int chars, MPI_Datatype* dt)
-{
-  /* build type for string */
-  MPI_Datatype dt_str;
-  MPI_Type_contiguous(chars, MPI_CHAR, &dt_str);
-
-  /* build keysat type */
-  MPI_Datatype types[2];
-  types[0] = dt_str;       /* file name */
-  types[1] = MPI_UINT32_T; /* id */
-  DTCMP_Type_create_series(2, types, dt);
-
-  MPI_Type_free(&dt_str);
-  return;
-}
-
-/* element for a linked list of name/id pairs */
-typedef struct strid {
-  char* name;
-  uint32_t id;
-  struct strid* next;
-} strid_t;
-
-/* insert specified name and id into linked list given by
- * head, tail, and count, also increase maxchars if needed */
-static void strid_insert(
-  const char* name,
-  uint32_t id,
-  strid_t** head,
-  strid_t** tail,
-  int* count,
-  int* maxchars)
-{
-  /* add username and id to linked list */
-  strid_t* elem = (strid_t*) bayer_malloc(sizeof(strid_t), "string-to-id element", __FILE__, __LINE__);
-  elem->name = bayer_strdup(name, "name", __FILE__, __LINE__);
-  elem->id = id;
-  elem->next = NULL;
-  if (*head == NULL) {
-    *head = elem;
-  }
-  if (*tail != NULL) {
-    (*tail)->next = elem;
-  }
-  *tail = elem;
-  (*count)++;
-
-  /* increase maximum username if we need to */
-  size_t len = strlen(name) + 1;
-  if (*maxchars < (int)len) {
-    /* round up to nearest multiple of 4 */
-    size_t len4 = len / 4;
-    if (len4 * 4 < len) {
-      len4++;
-    }
-    len4 *= 4;
-
-    *maxchars = (int)len4;
-  }
-
-  return;
-}
-
-/* copy data from linked list to array */
-static void strid_serialize(strid_t* head, int chars, void* buf)
-{
-  char* ptr = (char*)buf;
-  strid_t* current = head;
-  while (current != NULL) {
-    char* name  = current->name;
-    uint32_t id = current->id;
-
-    strcpy(ptr, name);
-    ptr += chars;
-
-    uint32_t* p32 = (uint32_t*) ptr;
-    *p32 = id;
-    ptr += 4;
-
-    current = current->next;
-  }
-  return;
-}
-
-typedef struct {
-  void* buf;
-  uint64_t count;
-  uint64_t chars;
-  MPI_Datatype dt;
-} buf_t;
-
-static void init_buft(buf_t* items)
-{
-  /* initialize output parameters */
-  items->buf = NULL;
-  items->count = 0;
-  items->chars = 0;
-  items->dt    = MPI_DATATYPE_NULL;
-}
-
-static void free_buft(buf_t* items)
-{
-  bayer_free(&(items->buf));
-
-  if (items->dt != MPI_DATATYPE_NULL) {
-    MPI_Type_free(&(items->dt));
-  }
-
-  items->count = 0;
-  items->chars = 0;
-
-  return;
-}
-
-/* build a name-to-id map and an id-to-name map */
-static void create_maps(
-  const buf_t* items,
-  map<string,uint32_t>& name2id,
-  map<uint32_t,string>& id2name)
-{
-  int i;
-  const char* ptr = (const char*)items->buf;
-  for (i = 0; i < items->count; i++) {
-    const char* name = ptr;
-    ptr += items->chars;
-
-    uint32_t id = *(uint32_t*)ptr;
-    ptr += 4;
-
-    name2id[name] = id;
-    id2name[id] = name;
-  }
-  return;
-}
-
-/* given an id, lookup its corresponding name, returns id converted
- * to a string if no matching name is found */
-static const char* get_name_from_id(uint32_t id, int chars, map<uint32_t,string>& id2name)
-{
-  map<uint32_t,string>::iterator it = id2name.find(id);
-  if (it != id2name.end()) {
-    const char* name = (*it).second.c_str();
-    return name;
-  } else {
-    /* store id as name and return that */
-    char temp[12];
-    size_t len = snprintf(temp, sizeof(temp), "%d", id);
-    if (len > (sizeof(temp) - 1) || len > (chars - 1)) {
-      /* TODO: ERROR! */
-      printf("ERROR!!!\n");
-    }
-
-    string newname = temp;
-    id2name[id] = newname;
-
-    it = id2name.find(id);
-    if (it != id2name.end()) {
-      const char* name = (*it).second.c_str();
-      return name;
-    } else {
-      /* TODO: ERROR! */
-      printf("ERROR!!!\n");
-    }
-  }
-  return NULL;
-}
-
-/* delete linked list and reset head, tail, and count values */
-static void strid_delete(strid_t** head, strid_t** tail, int* count)
-{
-  /* free memory allocated in linked list */
-  strid_t* current = *head;
-  while (current != NULL) {
-    strid_t* next = current->next;
-    bayer_free(&(current->name));
-    bayer_free(&current);
-    current = next;
-  }
-
-  /* set list data structure values back to NULL */
-  *head  = NULL;
-  *tail  = NULL;
-  *count = 0;
-
-  return;
-}
-
-/* read user array from file system using getpwent() */
-static void get_users(buf_t* items)
-{
-  /* initialize output parameters */
-  init_buft(items);
-
-  /* get our rank */
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  /* rank 0 iterates over users with getpwent */
-  strid_t* head = NULL;
-  strid_t* tail = NULL;
-  int count = 0;
-  int chars = 0;
-  if (rank == 0) {
-    struct passwd* p;
-    while (1) {
-      /* get next user, this function can fail so we retry a few times */
-      int retries = 3;
-retry:
-      p = getpwent();
-      if (p == NULL) {
-        if (errno == EIO) {
-          retries--;
-        } else {
-          /* TODO: ERROR! */
-          retries = 0;
-        }
-        if (retries > 0) {
-          goto retry;
-        }
-      }
-
-      if (p != NULL) {
-        /*
-        printf("User=%s Pass=%s UID=%d GID=%d Name=%s Dir=%s Shell=%s\n",
-          p->pw_name, p->pw_passwd, p->pw_uid, p->pw_gid, p->pw_gecos, p->pw_dir, p->pw_shell
-        );
-        printf("User=%s UID=%d GID=%d\n",
-          p->pw_name, p->pw_uid, p->pw_gid
-        );
-        */
-        char* name  = p->pw_name;
-        uint32_t id = p->pw_uid;
-        strid_insert(name, id, &head, &tail, &count, &chars);
-      } else {
-        /* hit the end of the user list */
-        endpwent();
-        break;
-      }
-    }
-
-//    printf("Max username %d, count %d\n", (int)chars, count);
-  }
-
-  /* bcast count and number of chars */
-  MPI_Bcast(&count, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  MPI_Bcast(&chars, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-  /* create datatype to represent a username/id pair */
-  MPI_Datatype dt;
-  create_stridtype(chars, &dt);
-
-  /* get extent of type */
-  MPI_Aint lb, extent;
-  MPI_Type_get_extent(dt, &lb, &extent);
-
-  /* allocate an array to hold all user names and ids */
-  char* buf = NULL;
-  size_t bufsize = count * extent;
-  if (bufsize > 0) {
-    buf = (char*) bayer_malloc(bufsize, "user name array", __FILE__, __LINE__);
-  }
-
-  /* copy items from list into array */
-  if (rank == 0) {
-    strid_serialize(head, chars, buf);
-  }
-
-  /* broadcast the array of usernames and ids */
-  MPI_Bcast(buf, count, dt, 0, MPI_COMM_WORLD);
-
-  /* set output parameters */
-  items->buf   = buf;
-  items->count = (uint64_t) count;
-  items->chars = (uint64_t) chars; 
-  items->dt    = dt;
-
-  /* delete the linked list */
-  if (rank == 0) {
-    strid_delete(&head, &tail, &count);
-  }
-
-  return;
-}
-
-/* read group array from file system using getgrent() */
-static void get_groups(buf_t* items)
-{
-  /* initialize output parameters */
-  init_buft(items);
-
-  /* get our rank */
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  /* rank 0 iterates over groups with getgrent */
-  strid_t* head = NULL;
-  strid_t* tail = NULL;
-  int count = 0;
-  int chars = 0;
-  if (rank == 0) {
-    struct group* p;
-    while (1) {
-      /* get next group, this function can fail so we retry a few times */
-      int retries = 3;
-retry:
-      p = getgrent();
-      if (p == NULL) {
-        if (errno == EIO || errno == EINTR) {
-          retries--;
-        } else {
-          /* TODO: ERROR! */
-          retries = 0;
-        }
-        if (retries > 0) {
-          goto retry;
-        }
-      }
-
-      if (p != NULL) {
-        char* name  = p->gr_name;
-        uint32_t id = p->gr_gid;
-        strid_insert(name, id, &head, &tail, &count, &chars);
-      } else {
-        /* hit the end of the group list */
-        endgrent();
-        break;
-      }
-    }
-
-//    printf("Max groupname %d, count %d\n", chars, count);
-  }
-
-  /* bcast count and number of chars */
-  MPI_Bcast(&count, 1, MPI_INT, 0, MPI_COMM_WORLD);
-  MPI_Bcast(&chars, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-  /* create datatype to represent a group/id pair */
-  MPI_Datatype dt;
-  create_stridtype(chars, &dt);
-
-  /* get extent of type */
-  MPI_Aint lb, extent;
-  MPI_Type_get_extent(dt, &lb, &extent);
-
-  /* allocate an array to hold all group names and ids */
-  char* buf = NULL;
-  size_t bufsize = count * extent;
-  if (bufsize > 0) {
-    buf = (char*) bayer_malloc(bufsize, "group name array", __FILE__, __LINE__);
-  }
-
-  /* copy items from list into array */
-  if (rank == 0) {
-    strid_serialize(head, chars, buf);
-  }
-
-  /* broadcast the array of groupnames and ids */
-  MPI_Bcast(buf, count, dt, 0, MPI_COMM_WORLD);
-
-  /* set output parameters */
-  items->buf   = buf;
-  items->count = (uint64_t) count;
-  items->chars = (uint64_t) chars; 
-  items->dt    = dt;
-
-  /* delete the linked list */
-  if (rank == 0) {
-    strid_delete(&head, &tail, &count);
-  }
-
-  return;
-}
-
-static void create_stattype(int chars, MPI_Datatype* dt_stat)
-{
-  /* build type for file path */
-  MPI_Datatype dt_filepath;
-  MPI_Type_contiguous(chars, MPI_CHAR, &dt_filepath);
-
-  /* build keysat type */
-  int fields;
-  MPI_Datatype types[8];
-  if (walk_stat) {
-    fields = 8;
-    types[0] = dt_filepath;  /* file name */
-    types[1] = MPI_UINT32_T; /* mode */
-    types[2] = MPI_UINT32_T; /* uid */
-    types[3] = MPI_UINT32_T; /* gid */
-    types[4] = MPI_UINT32_T; /* atime */
-    types[5] = MPI_UINT32_T; /* mtime */
-    types[6] = MPI_UINT32_T; /* ctime */
-    types[7] = MPI_UINT64_T; /* size */
-  } else {
-    fields = 2;
-    types[0] = dt_filepath;  /* file name */
-    types[1] = MPI_UINT32_T; /* file type */
-  }
-  DTCMP_Type_create_series(fields, types, dt_stat);
-
-  MPI_Type_free(&dt_filepath);
-  return;
-}
-
-static int convert_stat_to_dt(const elem_t* head, buf_t* items)
-{
-  /* initialize output params */
-  items->buf   = NULL;
-  items->count = 0;
-  items->chars = 0;
-  items->dt    = MPI_DATATYPE_NULL;
-
-  /* get our rank and the size of comm_world */
-  int rank, ranks;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-  /* count number of items in list and identify longest filename */
-  int max = 0;
-  uint64_t count = 0;
-  const elem_t* current = head;
-  while (current != NULL) {
-    const char* file = current->file;
-    size_t len = strlen(file) + 1;
-    if (len > max) {
-      max = (int) len;
-    }
-    count++;
-    current = current->next;
-  }
-
-  /* find smallest length that fits max and consists of integer
-   * number of 8 byte segments */
-  int max8 = max / 8;
-  if (max8 * 8 < max) {
-    max8++;
-  }
-  max8 *= 8;
-
-  /* compute longest file path across all ranks */
-  int chars;
-  MPI_Allreduce(&max8, &chars, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-
-  /* nothing to do if no one has anything */
-  if (chars <= 0) {
-    return 0;
-  }
-
-  /* build stat type */
-  MPI_Datatype dt;
-  create_stattype(chars, &dt);
-
-  /* get extent of stat type */
-  MPI_Aint lb, extent;
-  MPI_Type_get_extent(dt, &lb, &extent);
-
-  /* allocate buffer */
-  size_t bufsize = extent * count;
-  void* buf = NULL;
-  if (bufsize > 0) {
-    buf = bayer_malloc(bufsize, "stat datatype array", __FILE__, __LINE__);
-  }
-
-  /* copy stat data into stat datatypes */
-  char* ptr = (char*) buf;
-  current = list_head;
-  while (current != NULL) {
-    /* get pointer to file name and stat structure */
-    char* file = current->file;
-    const struct stat* sb = current->sb;
-
-    /* TODO: copy stat info via function */
-
-    uint32_t* ptr_uint32t;
-    uint64_t* ptr_uint64t;
-
-    /* copy in file name */
-    strcpy(ptr, file);
-    ptr += chars;
-
-    if (walk_stat) {
-      /* copy in mode time */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_mode;
-      ptr += sizeof(uint32_t);
-
-      /* copy in user id */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_uid;
-      ptr += sizeof(uint32_t);
-
-      /* copy in group id */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_gid;
-      ptr += sizeof(uint32_t);
-
-      /* copy in access time */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_atime;
-      ptr += sizeof(uint32_t);
-
-      /* copy in modify time */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_mtime;
-      ptr += sizeof(uint32_t);
-
-      /* copy in create time */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_ctime;
-      ptr += sizeof(uint32_t);
-
-      /* copy in size */
-      ptr_uint64t = (uint64_t*) ptr;
-      *ptr_uint64t = (uint64_t) sb->st_size;
-      ptr += sizeof(uint64_t);
-    } else {
-      /* just have the file type */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) current->type;
-      ptr += sizeof(uint32_t);
-    }
-
-    /* go to next element */
-    current = current->next;
-  }
-
-  /* set output params */
-  items->buf   = buf;
-  items->count = count;
-  items->chars = (uint64_t)chars;
-  items->dt    = dt;
-
-  return 0;
-}
-
-/* file version
- * 1: version, start, end, files, file chars, list (file)
- * 2: version, start, end, files, file chars, list (file, type)
- * 3: version, start, end, files, users, user chars, groups, group chars,
- *    files, file chars, list (user, userid), list (group, groupid),
- *    list (stat) */
-static void write_cache_readdir(
-  const char* name,
-  buf_t* files,
-  uint64_t walk_start,
-  uint64_t walk_end)
-{
-  /* get our rank and number of ranks in job */
-  int rank, ranks;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-  /* get total file count */
-  uint64_t all_count;
-  uint64_t count = files->count;
-  MPI_Allreduce(&count, &all_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-  /* get our offset */
-  uint64_t offset;
-  MPI_Exscan(&count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-  if (rank == 0) {
-    offset = 0;
-  }
-
-  /* report the filename we're writing to */
-  if (verbose && rank == 0) {
-    printf("Writing to cache file: %s\n", name);
-    fflush(stdout);
-  }
-
-  /* open file */
-  MPI_Status status;
-  MPI_File fh;
-  char datarep[] = "external32";
-  //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
-  int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
-  MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
-
-  /* truncate file to 0 bytes */
-  MPI_File_set_size(fh, 0);
-
-  /* prepare header */
-  uint64_t header[5];
-  header[0] = 2;             /* file version */
-  header[1] = walk_start;    /* time_t when file walk started */
-  header[2] = walk_end;      /* time_t when file walk stopped */
-  header[3] = all_count;     /* total number of stat entries */
-  header[4] = files->chars;  /* number of chars in file name */
-
-  /* write the header */
-  MPI_Offset disp = 0;
-  MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
-  if (rank == 0) {
-    MPI_File_write_at(fh, disp, header, 5, MPI_UINT64_T, &status);
-  }
-  disp += 5 * 8;
-
-  if (files->dt != MPI_DATATYPE_NULL) {
-    /* get extents of file datatypes */
-    MPI_Aint lb_file, extent_file;
-    MPI_Type_get_extent(files->dt, &lb_file, &extent_file);
-
-    /* collective write of file info */
-    MPI_File_set_view(fh, disp, files->dt, files->dt, datarep, MPI_INFO_NULL);
-    MPI_Offset write_offset = disp + offset * extent_file;
-    int write_count = (int) count;
-    MPI_File_write_at_all(fh, write_offset, files->buf, write_count, files->dt, &status);
-    disp += all_count * extent_file;
-  }
-
-  /* close file */
-  MPI_File_close(&fh);
-
-  return;
-}
-
-static void write_cache_stat(
-  const char* name,
-  buf_t* users,
-  buf_t* groups,
-  buf_t* files,
-  uint64_t walk_start,
-  uint64_t walk_end)
-{
-  /* get our rank and number of ranks in job */
-  int rank, ranks;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-  /* get total file count */
-  uint64_t all_count;
-  uint64_t count = files->count;
-  MPI_Allreduce(&count, &all_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-  /* get our offset */
-  uint64_t offset;
-  MPI_Exscan(&count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-  if (rank == 0) {
-    offset = 0;
-  }
-
-  /* report the filename we're writing to */
-  if (verbose && rank == 0) {
-    printf("Writing to cache file: %s\n", name);
-    fflush(stdout);
-  }
-
-  /* open file */
-  MPI_Status status;
-  MPI_File fh;
-  char datarep[] = "external32";
-  //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
-  int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
-  MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
-
-  /* truncate file to 0 bytes */
-  MPI_File_set_size(fh, 0);
-
-  /* prepare header */
-  uint64_t header[9];
-  header[0] = 3;             /* file version */
-  header[1] = walk_start;    /* time_t when file walk started */
-  header[2] = walk_end;      /* time_t when file walk stopped */
-  header[3] = users->count;  /* number of user records */
-  header[4] = users->chars;  /* number of chars in user name */
-  header[5] = groups->count; /* number of group records */
-  header[6] = groups->chars; /* number of chars in group name */
-  header[7] = all_count;     /* total number of stat entries */
-  header[8] = files->chars;  /* number of chars in file name */
-
-  /* write the header */
-  MPI_Offset disp = 0;
-  MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
-  if (rank == 0) {
-    MPI_File_write_at(fh, disp, header, 9, MPI_UINT64_T, &status);
-  }
-  disp += 9 * 8;
-
-  if (users->dt != MPI_DATATYPE_NULL) {
-    /* get extent user */
-    MPI_Aint lb_user, extent_user;
-    MPI_Type_get_extent(users->dt, &lb_user, &extent_user);
-
-    /* write out users */
-    MPI_File_set_view(fh, disp, users->dt, users->dt, datarep, MPI_INFO_NULL);
-    if (rank == 0) {
-      MPI_File_write_at(fh, disp, users->buf, users->count, users->dt, &status);
-    }
-    disp += users->count * extent_user;
-  }
-
-  if (groups->dt != MPI_DATATYPE_NULL) {
-    /* get extent group */
-    MPI_Aint lb_group, extent_group;
-    MPI_Type_get_extent(groups->dt, &lb_group, &extent_group);
-
-    /* write out groups */
-    MPI_File_set_view(fh, disp, groups->dt, groups->dt, datarep, MPI_INFO_NULL);
-    if (rank == 0) {
-      MPI_File_write_at(fh, disp, groups->buf, groups->count, groups->dt, &status);
-    }
-    disp += groups->count * extent_group;
-  }
-
-  if (files->dt != MPI_DATATYPE_NULL) {
-    /* get extent file */
-    MPI_Aint lb_file, extent_file;
-    MPI_Type_get_extent(files->dt, &lb_file, &extent_file);
-
-    /* collective write of stat info */
-    MPI_File_set_view(fh, disp, files->dt, files->dt, datarep, MPI_INFO_NULL);
-    MPI_Offset write_offset = disp + offset * extent_file;
-    int write_count = (int) count;
-    MPI_File_write_at_all(fh, write_offset, files->buf, write_count, files->dt, &status);
-    disp += all_count * extent_file;
-  }
-
-  /* close file */
-  MPI_File_close(&fh);
-
-  return;
-}
-
-static void read_cache_v2(
-  const char* name,
-  MPI_Offset* outdisp,
-  MPI_File fh,
-  char* datarep,
-  buf_t* files,
-  uint64_t* outstart,
-  uint64_t* outend)
-{
-  MPI_Status status;
-
-  MPI_Offset disp = *outdisp;
-
-  /* TODO: hacky way to indicate that we just have file names */
-  walk_stat = 0;
-
-  /* get our rank */
-  int rank, ranks;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-  /* rank 0 reads and broadcasts header */
-  uint64_t header[4];
-  MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
-  if (rank == 0) {
-    MPI_File_read_at(fh, disp, header, 4, MPI_UINT64_T, &status);
-  }
-  MPI_Bcast(header, 4, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-  disp += 4 * 8; /* 4 consecutive uint64_t types in external32 */
-
-  uint64_t all_count;
-  *outstart     = header[0];
-  *outend       = header[1];
-  all_count     = header[2];
-  files->chars  = header[3];
-
-  /* compute count for each process */
-  uint64_t count = all_count / ranks;
-  uint64_t remainder = all_count - count * ranks;
-  if (rank < remainder) {
-    count++;
-  }
-  files->count = count;
-
-  /* get our offset */
-  uint64_t offset;
-  MPI_Exscan(&count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-  if (rank == 0) {
-    offset = 0;
-  }
-
-  /* create file datatype and read in file info if there are any */
-  if (all_count > 0 && files->chars > 0) {
-    /* create types */
-    create_stattype((int)files->chars,   &(files->dt));
-
-    /* get extents */
-    MPI_Aint lb_file, extent_file;
-    MPI_Type_get_extent(files->dt, &lb_file, &extent_file);
-
-    /* allocate memory to hold data */
-    size_t bufsize_file = files->count * extent_file;
-    if (bufsize_file > 0) {
-      files->buf = (void*) bayer_malloc(bufsize_file, "file buffer", __FILE__, __LINE__);
-    }
-
-    /* collective read of stat info */
-    MPI_File_set_view(fh, disp, files->dt, files->dt, datarep, MPI_INFO_NULL);
-    MPI_Offset read_offset = disp + offset * extent_file;
-    MPI_File_read_at_all(fh, read_offset, files->buf, (int)files->count, files->dt, &status);
-    disp += all_count * extent_file;
-  }
-
-  *outdisp = disp;
-  return;
-}
-
-static void read_cache_v3(
-  const char* name,
-  MPI_Offset* outdisp,
-  MPI_File fh,
-  char* datarep,
-  buf_t* users,
-  buf_t* groups,
-  buf_t* files,
-  uint64_t* outstart,
-  uint64_t* outend)
-{
-  MPI_Status status;
-
-  MPI_Offset disp = *outdisp;
-
-  /* TODO: hacky way to indicate that we're processing stat data */
-  walk_stat = 1;
-
-  /* get our rank */
-  int rank, ranks;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-  /* rank 0 reads and broadcasts header */
-  uint64_t header[8];
-  MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
-  if (rank == 0) {
-    MPI_File_read_at(fh, disp, header, 8, MPI_UINT64_T, &status);
-  }
-  MPI_Bcast(header, 8, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-  disp += 8 * 8; /* 8 consecutive uint64_t types in external32 */
-
-  uint64_t all_count;
-  *outstart     = header[0];
-  *outend       = header[1];
-  users->count  = header[2];
-  users->chars  = header[3];
-  groups->count = header[4];
-  groups->chars = header[5];
-  all_count     = header[6];
-  files->chars  = header[7];
-
-  /* compute count for each process */
-  uint64_t count = all_count / ranks;
-  uint64_t remainder = all_count - count * ranks;
-  if (rank < remainder) {
-    count++;
-  }
-  files->count = count;
-
-  /* get our offset */
-  uint64_t offset;
-  MPI_Exscan(&count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-  if (rank == 0) {
-    offset = 0;
-  }
-
-  /* read users, if any */
-  if (users->count > 0 && users->chars > 0) {
-    /* create type */
-    create_stridtype((int)users->chars,  &(users->dt));
-
-    /* get extent */
-    MPI_Aint lb_user, extent_user;
-    MPI_Type_get_extent(users->dt, &lb_user, &extent_user);
-
-    /* allocate memory to hold data */
-    size_t bufsize_user = users->count * extent_user;
-    if (bufsize_user > 0) {
-      users->buf = (void*) bayer_malloc(bufsize_user, "user buffer", __FILE__, __LINE__);
-    }
-
-    /* read data */
-    MPI_File_set_view(fh, disp, users->dt, users->dt, datarep, MPI_INFO_NULL);
-    if (rank == 0) {
-      MPI_File_read_at(fh, disp, users->buf, (int)users->count, users->dt, &status);
-    }
-    MPI_Bcast(users->buf, (int)users->count, users->dt, 0, MPI_COMM_WORLD);
-    disp += bufsize_user;
-  }
-
-  /* read groups, if any */
-  if (groups->count > 0 && groups->chars > 0) {
-    /* create type */
-    create_stridtype((int)groups->chars, &(groups->dt));
-
-    /* get extent */
-    MPI_Aint lb_group, extent_group;
-    MPI_Type_get_extent(groups->dt, &lb_group, &extent_group);
-
-    /* allocate memory to hold data */
-    size_t bufsize_group = groups->count * extent_group;
-    if (bufsize_group > 0) {
-      groups->buf = (void*) bayer_malloc(bufsize_group, "group buffer", __FILE__, __LINE__);
-    }
-
-    /* read data */
-    MPI_File_set_view(fh, disp, groups->dt, groups->dt, datarep, MPI_INFO_NULL);
-    if (rank == 0) {
-      MPI_File_read_at(fh, disp, groups->buf, (int)groups->count, groups->dt, &status);
-    }
-    MPI_Bcast(groups->buf, (int)groups->count, groups->dt, 0, MPI_COMM_WORLD);
-    disp += bufsize_group;
-  }
-
-  /* read files, if any */
-  if (all_count > 0 && files->chars > 0) {
-    /* create types */
-    create_stattype((int)files->chars,   &(files->dt));
-
-    /* get extents */
-    MPI_Aint lb_file, extent_file;
-    MPI_Type_get_extent(files->dt, &lb_file, &extent_file);
-
-    /* allocate memory to hold data */
-    size_t bufsize_file = files->count * extent_file;
-    if (bufsize_file > 0) {
-      files->buf = (void*) bayer_malloc(bufsize_file, "file buffer", __FILE__, __LINE__);
-    }
-
-    /* collective read of stat info */
-    MPI_File_set_view(fh, disp, files->dt, files->dt, datarep, MPI_INFO_NULL);
-    MPI_Offset read_offset = disp + offset * extent_file;
-    MPI_File_read_at_all(fh, read_offset, files->buf, (int)files->count, files->dt, &status);
-    disp += all_count * extent_file;
-  }
-
-  *outdisp = disp;
-  return;
-}
-
-static void read_cache(
-  const char* name,
-  buf_t* users,
-  buf_t* groups,
-  buf_t* files,
-  uint64_t* outstart,
-  uint64_t* outend)
-{
-  /* intialize output variables */
-  init_buft(users);
-  init_buft(groups);
-  init_buft(files);
-  *outstart = 0;
-  *outend   = 0;
-
-  /* get our rank */
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  /* inform user about file name that we're reading */
-  if (verbose && rank == 0) {
-    printf("Reading from cache file: %s\n", name);
-    fflush(stdout);
-  }
-
-  /* open file */
-  int rc;
-  MPI_Status status;
-  MPI_File fh;
-  char datarep[] = "external32";
-  int amode = MPI_MODE_RDONLY;
-  rc = MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
-  if (rc != MPI_SUCCESS) {
-    if (rank == 0) {
-      printf("Failed to open file %s", name);
-    }
-    return;
-  }
-
-  /* set file view */
-  MPI_Offset disp = 0;
-
-  /* rank 0 reads and broadcasts version */
-  uint64_t version;
-  MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
-  if (rank == 0) {
-    MPI_File_read_at(fh, disp, &version, 1, MPI_UINT64_T, &status);
-  }
-  MPI_Bcast(&version, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-  disp += 1 * 8; /* 9 consecutive uint64_t types in external32 */
-
-  if (version == 2) {
-    read_cache_v2(name, &disp, fh, datarep, files, outstart, outend);
-  } else if (version == 3) {
-    read_cache_v3(name, &disp, fh, datarep, users, groups, files, outstart, outend);
-  } else {
-    /* TODO: unknown file format */
-  }
-
-  /* close file */
-  MPI_File_close(&fh);
-
-  return;
-}
-
+uint64_t total_dirs    = 0;
+uint64_t total_files   = 0;
+uint64_t total_links   = 0;
+uint64_t total_unknown = 0;
+uint64_t total_bytes   = 0;
+
+#if 0
 /* routine for sorting strings in ascending order */
 static int my_strcmp(const void* a, const void* b)
 {
@@ -1351,13 +45,11 @@ static int my_strcmp_rev(const void* a, const void* b)
   return strcmp((const char*)b, (const char*)a);
 }
 
-static int sort_files_readdir(
-  const char* sortfields,
-  buf_t* files)
+static int sort_files_readdir(const char* sortfields, bayer_flist flist)
 {
   void* inbuf      = files->buf;
-  uint64_t incount = files->count;
-  int chars        = (int)files->chars;
+  uint64_t incount = bayer_flist_size(flist);
+  int chars        = bayer_flist_file_max_name(flist);
   MPI_Datatype dt_sat = files->dt;
 
   /* get our rank and the size of comm_world */
@@ -1367,7 +59,7 @@ static int sort_files_readdir(
 
   /* build type for file path */
   MPI_Datatype dt_filepath;
-  MPI_Type_contiguous(chars,       MPI_CHAR, &dt_filepath);
+  MPI_Type_contiguous(chars, MPI_CHAR, &dt_filepath);
   MPI_Type_commit(&dt_filepath);
 
   /* build comparison op for filenames */
@@ -1454,10 +146,7 @@ static int sort_files_readdir(
 
   /* compute size of sort element and allocate buffer */
   size_t sortbufsize = keysat_extent * incount;
-  void* sortbuf = NULL;
-  if (sortbufsize > 0) {
-    sortbuf = bayer_malloc(sortbufsize, "presort buffer", __FILE__, __LINE__);
-  }
+  void* sortbuf = bayer_malloc(sortbufsize, "presort buffer", __FILE__, __LINE__);
 
   /* copy data into sort elements */
   int index = 0;
@@ -1490,11 +179,8 @@ static int sort_files_readdir(
   );
 
   /* allocate array to hold sorted info */
-  void* newbuf = NULL;
   size_t newbufsize = sat_extent * outsortcount;
-  if (newbufsize > 0) {
-    newbuf = bayer_malloc(newbufsize, "postsort buffer", __FILE__, __LINE__);
-  }
+  void* newbuf = bayer_malloc(newbufsize, "postsort buffer", __FILE__, __LINE__);
 
   /* step through sorted data filenames */
   index = 0;
@@ -1532,19 +218,13 @@ static int sort_files_readdir(
   return 0;
 }
 
-static int sort_files_stat(
-  const char* sortfields,
-  buf_t* users,
-  buf_t* groups,
-  buf_t* files,
-  map<uint32_t,string>& user_id2name,
-  map<uint32_t,string>& group_id2name)
+static int sort_files_stat(const char* sortfields, bayer_flist flist)
 {
   void* inbuf      = files->buf;
-  uint64_t incount = files->count;
-  int chars        = (int)files->chars;
-  int chars_user   = (int)users->chars;
-  int chars_group  = (int)groups->chars;
+  uint64_t incount = bayer_flist_size(flist);
+  int chars        = bayer_flist_file_max_name(flist);
+  int chars_user   = bayer_flist_user_max_name(flist);
+  int chars_group  = bayer_flist_group_max_name(flist);
   MPI_Datatype dt_stat = files->dt;
 
   /* get our rank and the size of comm_world */
@@ -1744,10 +424,7 @@ static int sort_files_stat(
 
   /* compute size of sort element and allocate buffer */
   size_t sortbufsize = keysat_extent * incount;
-  void* sortbuf = NULL;
-  if (sortbufsize > 0) {
-    sortbuf = bayer_malloc(sortbufsize, "presort buffer", __FILE__, __LINE__);
-  }
+  void* sortbuf = bayer_malloc(sortbufsize, "presort buffer", __FILE__, __LINE__);
 
   /* copy data into sort elements */
   int index = 0;
@@ -1790,11 +467,8 @@ static int sort_files_stat(
   );
 
   /* allocate array to hold sorted info */
-  void* newbuf = NULL;
   size_t newbufsize = stat_extent * outsortcount;
-  if (newbufsize > 0) {
-    newbuf = bayer_malloc(newbufsize, "postsort buffer", __FILE__, __LINE__);
-  }
+  void* newbuf = bayer_malloc(newbufsize, "postsort buffer", __FILE__, __LINE__);
 
   /* step through sorted data filenames */
   index = 0;
@@ -1837,13 +511,9 @@ static int sort_files_stat(
 
   return 0;
 }
+#endif
 
-static void print_files(
-  const buf_t* users,
-  const buf_t* groups,
-  const buf_t* files,
-  map<uint32_t,string>& user_id2name,
-  map<uint32_t,string>& group_id2name)
+static void print_summary(bayer_flist flist)
 {
   /* get our rank and the size of comm_world */
   int rank, ranks;
@@ -1851,46 +521,195 @@ static void print_files(
   MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
   /* step through and print data */
-  if (walk_stat) {
-    int index = 0;
-    char* ptr = (char*) files->buf;
-    while (index < files->count) {
-      /* extract stat values from function */
+  int index = 0;
+  uint64_t max = bayer_flist_size(flist);
+  while (index < max) {
+    /* get filename */
+    char* file;
+    bayer_flist_file_name(flist, index, &file);
 
-      /* get filename */
-      char* file = ptr;
-      ptr += files->chars;
-
+    if (bayer_flist_have_detail(flist)) {
       /* get mode */
-      uint32_t mode = *(uint32_t*)ptr;
-      ptr += sizeof(uint32_t);
+      mode_t mode;
+      bayer_flist_file_mode(flist, index, &mode);
 
-      /* get uid */
-      uint32_t uid = *(uint32_t*)ptr;
-      ptr += sizeof(uint32_t);
+      /* set file type */
+      if (S_ISDIR(mode)) {
+        total_dirs++;
+      } else if (S_ISREG(mode)) {
+        total_files++;
+      } else if (S_ISLNK(mode)) {
+        total_links++;
+      } else {
+        /* unknown file type */
+        total_unknown++;
+      }
 
-      /* get gid */
-      uint32_t gid = *(uint32_t*)ptr;
-      ptr += sizeof(uint32_t);
+      uint64_t size = bayer_flist_file_get_size(flist, index);
+      total_bytes += size;
+    } else {
+      /* get type */
+      bayer_filetype type;
+      bayer_flist_file_type(flist, index, &type);
 
-      /* get access time */
-      uint32_t access = *(uint32_t*)ptr;
-      ptr += sizeof(uint32_t);
+      if (type == TYPE_DIR) {
+        total_dirs++;
+      } else if (type == TYPE_FILE) {
+        total_files++;
+      } else if (type == TYPE_LINK) {
+        total_links++;
+      } else {
+        /* unknown file type */
+        total_unknown++;
+      }
+    }
 
-      /* get modify time */
-      uint32_t modify = *(uint32_t*)ptr;
-      ptr += sizeof(uint32_t);
+    /* go to next file */
+    index++;
+  }
 
-      /* get create time */
-      uint32_t create = *(uint32_t*)ptr;
-      ptr += sizeof(uint32_t);
+  /* get total directories, files, links, and bytes */
+  uint64_t all_dirs, all_files, all_links, all_unknown, all_bytes;
+  uint64_t all_count = bayer_flist_global_size(flist);
+  MPI_Allreduce(&total_dirs,    &all_dirs,    1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&total_files,   &all_files,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&total_links,   &all_links,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&total_unknown, &all_unknown, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&total_bytes,   &all_bytes,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
-      /* get size */
-      uint64_t size = *(uint64_t*)ptr;
-      ptr += sizeof(uint64_t);
+  /* convert total size to units */
+  if (verbose && rank == 0) {
+    printf("Items: %lu\n", (unsigned long long) all_count);
+    printf("  Directories: %lu\n", (unsigned long long) all_dirs);
+    printf("  Files: %lu\n", (unsigned long long) all_files);
+    printf("  Links: %lu\n", (unsigned long long) all_links);
+    /* printf("  Unknown: %lu\n", (unsigned long long) all_unknown); */
 
-      const char* username  = get_name_from_id(uid, users->chars,  user_id2name);
-      const char* groupname = get_name_from_id(gid, groups->chars, group_id2name);
+    if (walk_stat) {
+      double agg_size_tmp;
+      const char* agg_size_units;
+      bayer_format_bytes(all_bytes, &agg_size_tmp, &agg_size_units);
+
+      uint64_t size_per_file = 0.0;
+      if (all_files > 0) {
+        size_per_file = (uint64_t)((double)all_bytes/(double)all_files);
+      }
+      double size_per_file_tmp;
+      const char* size_per_file_units;
+      bayer_format_bytes(size_per_file, &size_per_file_tmp, &size_per_file_units);
+
+      printf("Data: %.3lf %s (%.3lf %s per file)\n", agg_size_tmp, agg_size_units, size_per_file_tmp, size_per_file_units);
+    }
+  }
+
+  return;
+}
+
+static char mode_format[11];
+static void prepare_mode_format(mode_t mode)
+{
+  if (S_ISDIR(mode)) {
+    mode_format[0] = 'd';
+  } else if (S_ISLNK(mode)) {
+    mode_format[0] = 'l';
+  } else {
+    mode_format[0] = '-';
+  }
+
+  if (S_IRUSR & mode) {
+    mode_format[1] = 'r';
+  } else {
+    mode_format[1] = '-';
+  }
+
+  if (S_IWUSR & mode) {
+    mode_format[2] = 'w';
+  } else {
+    mode_format[2] = '-';
+  }
+
+  if (S_IXUSR & mode) {
+    mode_format[3] = 'x';
+  } else {
+    mode_format[3] = '-';
+  }
+
+  if (S_IRGRP & mode) {
+    mode_format[4] = 'r';
+  } else {
+    mode_format[4] = '-';
+  }
+
+  if (S_IWGRP & mode) {
+    mode_format[5] = 'w';
+  } else {
+    mode_format[5] = '-';
+  }
+
+  if (S_IXGRP & mode) {
+    mode_format[6] = 'x';
+  } else {
+    mode_format[6] = '-';
+  }
+
+  if (S_IROTH & mode) {
+    mode_format[7] = 'r';
+  } else {
+    mode_format[7] = '-';
+  }
+
+  if (S_IWOTH & mode) {
+    mode_format[8] = 'w';
+  } else {
+    mode_format[8] = '-';
+  }
+
+  if (S_IXOTH & mode) {
+    mode_format[9] = 'x';
+  } else {
+    mode_format[9] = '-';
+  }
+
+  mode_format[10] = '\0';
+
+  return;
+}
+
+static char type_str_unknown[] = "UNK";
+static char type_str_dir[]  = "DIR";
+static char type_str_file[] = "REG";
+static char type_str_link[] = "LNK";
+
+static void print_files(bayer_flist flist)
+{
+  /* gather first 10 to rank 0 */
+
+  /* get our rank and the size of comm_world */
+  int rank, ranks;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+  /* step through and print data */
+  int index = 0;
+  uint64_t max = bayer_flist_size(flist);
+  while (index < max) {
+    /* get filename */
+    char* file;
+    bayer_flist_file_name(flist, index, &file);
+
+    if (bayer_flist_have_detail(flist)) {
+      /* get mode */
+      mode_t mode;
+      bayer_flist_file_mode(flist, index, &mode);
+
+      uint32_t uid = bayer_flist_file_get_uid(flist, index);
+      uint32_t gid = bayer_flist_file_get_gid(flist, index);
+      uint32_t access = bayer_flist_file_get_atime(flist, index);
+      uint32_t modify = bayer_flist_file_get_mtime(flist, index);
+      uint32_t create = bayer_flist_file_get_ctime(flist, index);
+      uint64_t size = bayer_flist_file_get_size(flist, index);
+      const char* username  = bayer_flist_file_get_username(flist, index);
+      const char* groupname = bayer_flist_file_get_groupname(flist, index);
 
       char access_s[30];
       char modify_s[30];
@@ -1908,43 +727,48 @@ static void print_files(
         create_s[0] = '\0';
       }
 
-      if (index < 10 || (files->count - index) <= 10) {
+      prepare_mode_format(mode);
+
+      if (index < 10 || (max - index) <= 10) {
         //printf("Rank %d: Mode=%lx UID=%d GUI=%d Access=%lu Modify=%lu Create=%lu Size=%lu File=%s\n",
         //  rank, mode, uid, gid, (unsigned long)access, (unsigned long)modify,
-        printf("Rank %d: Mode=%lx UID=%d(%s) GUI=%d(%s) Access=%s Modify=%s Create=%s Size=%lu File=%s\n",
-          rank, mode, uid, username, gid, groupname,
+        printf("Rank %d: Mode=%lx(%s) UID=%d(%s) GUI=%d(%s) Access=%s Modify=%s Create=%s Size=%lu File=%s\n",
+          rank, mode, mode_format, uid, username, gid, groupname,
           access_s, modify_s, create_s, (unsigned long)size, file
         );
       } else if (index == 10) {
         printf("<snip>\n");
       }
-
-      index++;
-    }
-  } else {
-    int index = 0;
-    char* ptr = (char*) files->buf;
-    while (index < files->count) {
-      /* extract stat values from function */
-
-      /* get filename */
-      char* file = ptr;
-      ptr += files->chars;
-
+    } else {
       /* get type */
-      uint32_t type = *(uint32_t*)ptr;
-      ptr += sizeof(uint32_t);
+      bayer_filetype type;
+      bayer_flist_file_type(flist, index, &type);
 
-      if (index < 10 || (files->count - index) <= 10) {
-        printf("Rank %d: Type=%d File=%s\n",
-          rank, type, file
+      char* type_str = type_str_unknown;
+      if (type == TYPE_DIR) {
+        type_str = type_str_dir;
+      } else if (type == TYPE_FILE) {
+        type_str = type_str_file;
+      } else if (type == TYPE_LINK) {
+        type_str = type_str_link;
+      }
+
+        printf("Rank %d: Type=%s File=%s\n",
+          rank, type_str, file
+        );
+#if 0
+      if (index < 10 || (max - index) <= 10) {
+        printf("Rank %d: Type=%s File=%s\n",
+          rank, type_str, file
         );
       } else if (index == 10) {
         printf("<snip>\n");
       }
-
-      index++;
+#endif
     }
+
+    /* go to next file */
+    index++;
   }
 
   return;
@@ -2149,27 +973,10 @@ int main(int argc, char **argv)
   uint64_t all_count = 0;
   uint64_t walk_start, walk_end;
 
-  /* initialize users, groups, and files */
-  buf_t users, groups, files;
-  init_buft(&users);
-  init_buft(&groups);
-  init_buft(&files);
-
-  map<string,uint32_t> user_name2id;
-  map<uint32_t,string> user_id2name;
-  map<string,uint32_t> group_name2id;
-  map<uint32_t,string> group_id2name;
+  /* create an empty file list */
+  bayer_flist flist;
 
   if (walk) {
-    /* we lookup users and groups first in case we can use
-     * them to filter the walk */
-    if (walk_stat) {
-      get_users(&users);
-      get_groups(&groups);
-      create_maps(&users, user_name2id, user_id2name);
-      create_maps(&groups, group_name2id, group_id2name);
-    }
-
     time_t walk_start_t = time(NULL);
     if (walk_start_t == (time_t)-1) {
       /* TODO: ERROR! */
@@ -2189,7 +996,7 @@ int main(int argc, char **argv)
 
     /* walk file tree and record stat data for each file */
     double start_walk = MPI_Wtime();
-    dftw(target, record_info);
+    bayer_flist_walk_path(target, walk_stat, &flist);
     double end_walk = MPI_Wtime();
 
     time_t walk_end_t = time(NULL);
@@ -2198,31 +1005,8 @@ int main(int argc, char **argv)
     }
     walk_end = (uint64_t) walk_end_t;
 
-    /* convert stat structs to datatypes */
-    convert_stat_to_dt(list_head, &files);
-
-    /* free linked list */
-    elem_t* current = list_head;
-    while (current != NULL) {
-      elem_t* next = current->next;
-      bayer_free(&(current->file));
-      if (current->sb != NULL) {
-        bayer_free(&(current->sb));
-      }
-      bayer_free(&current);
-      current = next;
-    }
-
     /* get total file count */
-    uint64_t my_count = files.count;
-    MPI_Allreduce(&my_count, &all_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-    /* get total directories, files, links, and bytes */
-    uint64_t all_dirs, all_files, all_links, all_bytes;
-    MPI_Allreduce(&total_dirs,  &all_dirs,  1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&total_files, &all_files, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&total_links, &all_links, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&total_bytes, &all_bytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    all_count = bayer_flist_global_size(flist);
 
     /* report walk count, time, and rate */
     if (verbose && rank == 0) {
@@ -2234,34 +1018,15 @@ int main(int argc, char **argv)
       printf("Walked %lu files in %f seconds (%f files/sec)\n",
         all_count, time, rate
       );
-
-      /* convert total size to units */
-      double agg_size_tmp;
-      const char* agg_size_units;
-      bayer_format_bytes(all_bytes, &agg_size_tmp, &agg_size_units);
-
-      printf("Items: %lu\n", (unsigned long long) all_count);
-      printf("  Directories: %lu\n", (unsigned long long) all_dirs);
-      printf("  Files: %lu\n", (unsigned long long) all_files);
-      printf("  Links: %lu\n", (unsigned long long) all_links);
-      if (walk_stat) {
-        printf("Data: %.3lf %s\n", agg_size_tmp, agg_size_units);
-      }
     }
   } else {
     /* read data from cache file */
     double start_read = MPI_Wtime();
-    read_cache(cachename, &users, &groups, &files, &walk_start, &walk_end);
+    bayer_flist_read_cache(cachename, &flist);
     double end_read = MPI_Wtime();
 
-    if (walk_stat) {
-      create_maps(&users, user_name2id, user_id2name);
-      create_maps(&groups, group_name2id, group_id2name);
-    }
-
     /* get total file count */
-    uint64_t my_count = files.count;
-    MPI_Allreduce(&my_count, &all_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    all_count = bayer_flist_global_size(flist);
 
     /* report read count, time, and rate */
     if (verbose && rank == 0) {
@@ -2278,12 +1043,14 @@ int main(int argc, char **argv)
 
   /* write data to cache file */
   if (walk && cachename != NULL) {
-    double start_write = MPI_Wtime();
-    if (walk_stat) {
-      write_cache_stat(cachename, &users, &groups, &files, walk_start, walk_end);
-    } else {
-      write_cache_readdir(cachename, &files, walk_start, walk_end);
+    /* report the filename we're writing to */
+    if (verbose && rank == 0) {
+      printf("Writing to cache file: %s\n", cachename);
+      fflush(stdout);
     }
+
+    double start_write = MPI_Wtime();
+    bayer_flist_write_cache(cachename, flist);
     double end_write = MPI_Wtime();
 
     /* report write count, time, and rate */
@@ -2299,6 +1066,7 @@ int main(int argc, char **argv)
     }
   }
 
+#if 0
   /* TODO: filter files */
 
   /* sort files */
@@ -2328,16 +1096,17 @@ int main(int argc, char **argv)
       );
     }
   }
+#endif
 
   /* print files */
   if (print) {
-    print_files(&users, &groups, &files, user_id2name, group_id2name);
+    print_files(flist);
   }
 
+  print_summary(flist);
+
   /* free users, groups, and files objects */
-  free_buft(&users);
-  free_buft(&groups);
-  free_buft(&files);
+  bayer_flist_free(&flist);
 
   /* free memory allocated for options */
   bayer_free(&sortfields);

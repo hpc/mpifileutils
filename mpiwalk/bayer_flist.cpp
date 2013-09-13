@@ -31,9 +31,17 @@ using namespace std;
 
 /* linked list element of stat data used during walk */
 typedef struct list_elem {
-  char* file;             /* file name */
-  bayer_filetype type;         /* record type of object */
-  struct stat* sb;        /* stat info */
+  char* file;             /* file name (strdup'd) */
+  int depth;              /* depth within directory tree */
+  bayer_filetype type;    /* type of file object */
+  int detail;             /* flag to indicate whether we have stat data */
+  uint32_t mode;          /* stat mode */
+  uint32_t uid;           /* user id */
+  uint32_t gid;           /* group id */
+  uint32_t atime;         /* access time */
+  uint32_t mtime;         /* modify time */
+  uint32_t ctime;         /* create time */
+  uint64_t size;          /* file size in bytes */
   struct list_elem* next; /* pointer to next item */
 } elem_t;
 
@@ -49,18 +57,19 @@ typedef struct {
 typedef struct flist {
   int detail;           /* set to 1 if we have stat, 0 if just file name */
   uint64_t total_files; /* total file count in list across all procs */
+  uint64_t max_file_name;
+  int min_depth;
+  int max_depth;
 
   /* variables to track linked list of stat data during walk */
-  uint64_t stat_count;
-  elem_t*  stat_head;
-  elem_t*  stat_tail;
+  uint64_t list_count;
+  elem_t*  list_head;
+  elem_t*  list_tail;
+  elem_t** list_index;
 
   /* buffers of users, groups, and files */
   buf_t users;
   buf_t groups;
-  buf_t files;
-
-  size_t file_elem_size; /* number of bytes of single element in files buf_t */
 
   /* map linux userid to user name, and map groupid to group name */
   map<string,uint32_t>* user_name2id;
@@ -121,8 +130,78 @@ static bayer_filetype get_bayer_filetype(mode_t mode)
   return type;
 }
 
-/* appends file name and stat info to linked list */
-static void stat_insert(flist_t* flist, const char *fpath, const struct stat *sb, mode_t mode)
+/* given path, return level within directory tree */
+static int get_depth(const char* path)
+{
+    const char* c;
+    int depth = 0;
+    for (c = path; *c != '\0'; c++) {
+        if (*c == '/') {
+            depth++;
+        }
+    }
+    return depth;
+}
+
+static void create_stattype(int detail, int chars, MPI_Datatype* dt_stat)
+{
+  /* build type for file path */
+  MPI_Datatype dt_filepath;
+  MPI_Type_contiguous(chars, MPI_CHAR, &dt_filepath);
+
+  /* build keysat type */
+  int fields;
+  MPI_Datatype types[8];
+  if (detail) {
+    fields = 8;
+    types[0] = dt_filepath;  /* file name */
+    types[1] = MPI_UINT32_T; /* mode */
+    types[2] = MPI_UINT32_T; /* uid */
+    types[3] = MPI_UINT32_T; /* gid */
+    types[4] = MPI_UINT32_T; /* atime */
+    types[5] = MPI_UINT32_T; /* mtime */
+    types[6] = MPI_UINT32_T; /* ctime */
+    types[7] = MPI_UINT64_T; /* size */
+  } else {
+    fields = 2;
+    types[0] = dt_filepath;  /* file name */
+    types[1] = MPI_UINT32_T; /* file type */
+  }
+  DTCMP_Type_create_series(fields, types, dt_stat);
+
+  MPI_Type_free(&dt_filepath);
+  return;
+}
+
+/* append element to tail of linked list */
+static void list_insert_elem(flist_t* flist, elem_t* elem)
+{
+  /* set head if this is the first item */
+  if (flist->list_head == NULL) {
+    flist->list_head = elem;
+  }
+
+  /* update last element to point to this new element */
+  elem_t* tail = flist->list_tail;
+  if (tail != NULL) {
+    tail->next = elem;
+  }
+
+  /* make this element the new tail */
+  flist->list_tail = elem;
+  elem->next = NULL;
+
+  /* increase list count by one */
+  flist->list_count++;
+
+  /* delete the index if we have one, it's out of date */
+  bayer_free(&flist->list_index);
+
+  return;
+}
+
+/* insert a file given its mode and optional stat data */
+static void list_insert_stat(flist_t* flist, const char *fpath, mode_t mode, const struct stat *sb)
 {
   /* create new element to record file path, file type, and stat info */
   elem_t* elem = (elem_t*) bayer_malloc(sizeof(elem_t), "File element", __FILE__, __LINE__);
@@ -130,44 +209,402 @@ static void stat_insert(flist_t* flist, const char *fpath, const struct stat *sb
   /* copy path */
   elem->file = bayer_strdup(fpath, "File name", __FILE__, __LINE__);
 
+  /* set depth */
+  elem->depth = get_depth(fpath);
+
   /* set file type */
   elem->type = get_bayer_filetype(mode);
 
   /* copy stat info */
   if (sb != NULL) {
-    elem->sb = (struct stat*) bayer_malloc(sizeof(struct stat), "Stat struct", __FILE__, __LINE__);
-    memcpy(elem->sb, sb, sizeof(struct stat));
+    elem->detail = 1;
+    elem->mode  = (uint32_t) sb->st_mode;
+    elem->uid   = (uint32_t) sb->st_uid;
+    elem->gid   = (uint32_t) sb->st_gid;
+    elem->atime = (uint32_t) sb->st_atime;
+    elem->mtime = (uint32_t) sb->st_mtime;
+    elem->ctime = (uint32_t) sb->st_ctime;
+    elem->size  = (uint64_t) sb->st_size;
+
+    /* TODO: link to user and group names? */
   } else {
-    elem->sb = NULL;
+    elem->detail = 0;
   }
 
   /* append element to tail of linked list */
-  elem->next = NULL;
-  if (flist->stat_head == NULL) {
-    flist->stat_head = elem;
-  }
-  if (flist->stat_tail != NULL) {
-    flist->stat_tail->next = elem;
-  }
-  flist->stat_tail = elem;
-  flist->stat_count++;
+  list_insert_elem(flist, elem);
+
+  return;
+}
+
+/* insert a file given just its name and type */
+static void list_insert_lite(flist_t* flist, const char *fpath, bayer_filetype type)
+{
+  /* create new element to record file path and file type */
+  elem_t* elem = (elem_t*) bayer_malloc(sizeof(elem_t), "File element", __FILE__, __LINE__);
+
+  /* copy path */
+  elem->file = bayer_strdup(fpath, "File name", __FILE__, __LINE__);
+
+  /* set depth */
+  elem->depth = get_depth(fpath);
+
+  /* set file type */
+  elem->type = type;
+
+  /* set detail == 0 since we don't have stat info */
+  elem->detail = 0;
+
+  /* append element to tail of linked list */
+  list_insert_elem(flist, elem);
+
+  return;
+}
+
+/* insert a file given a pointer to packed data */
+static void list_insert_ptr(flist_t* flist, char* ptr, uint64_t chars)
+{
+  /* create new element to record file path, file type, and stat info */
+  elem_t* elem = (elem_t*) bayer_malloc(sizeof(elem_t), "File element", __FILE__, __LINE__);
+
+  /* get name and advance pointer */
+  const char* file = ptr;
+  ptr += chars;
+
+  /* copy path */
+  elem->file = bayer_strdup(file, "File name", __FILE__, __LINE__);
+
+  /* set depth */
+  elem->depth = get_depth(file);
+
+  elem->detail = 1;
+
+  /* set file mode */
+  elem->mode = *(uint32_t*)ptr;
+  ptr += 4;
+
+  /* use mode to set file type */
+  elem->type = get_bayer_filetype((mode_t)elem->mode);
+
+  elem->uid = *(uint32_t*)ptr;
+  ptr += 4;
+
+  elem->gid = *(uint32_t*)ptr;
+  ptr += 4;
+
+  elem->atime = *(uint32_t*)ptr;
+  ptr += 4;
+
+  elem->mtime = *(uint32_t*)ptr;
+  ptr += 4;
+
+  elem->ctime = *(uint32_t*)ptr;
+  ptr += 4;
+
+  elem->size  = *(uint64_t*)ptr;
+  ptr += 8;
+
+  /* append element to tail of linked list */
+  list_insert_elem(flist, elem);
 
   return;
 }
 
 /* delete linked list of stat items */
-static void stat_delete(flist_t* flist)
+static void list_delete(flist_t* flist)
 {
-  elem_t* current = flist->stat_head;
+  elem_t* current = flist->list_head;
   while (current != NULL) {
     elem_t* next = current->next;
     bayer_free(&current->file);
-    bayer_free(&current->sb);
     bayer_free(&current);
     current = next;
   }
+  flist->list_count = 0;
+  flist->list_head  = NULL;
+  flist->list_tail  = NULL;
+
+  /* delete the cached index */
+  bayer_free(&flist->list_index);
 
   return;
+}
+
+/* given an index, return pointer to that file element,
+ * NULL if index is not in range */
+static elem_t* list_get_elem(flist_t* flist, int index)
+{
+  uint64_t max = flist->list_count;
+
+  /* build index of list elements if we don't already have one */
+  if (flist->list_index == NULL) {
+    /* allocate array to record pointer to each element */
+    size_t index_size = max * sizeof(elem_t*);
+    flist->list_index = (elem_t**) bayer_malloc(index_size, "List index", __FILE__, __LINE__);
+
+    /* get pointer to each element */
+    uint64_t i = 0;
+    elem_t* current = flist->list_head;
+    while (i < max && current != NULL) {
+      flist->list_index[i] = current;
+      current = current->next;
+      i++;
+    }
+  }
+
+  /* return pointer to element if index is within range */
+  if (index >= 0 && index < max) {
+    elem_t* elem = flist->list_index[index];
+    return elem;
+  }
+  return NULL;
+}
+
+static void list_compute_summary(flist_t* flist)
+{
+  /* initialize summary values */
+  flist->max_file_name = 0;
+  flist->min_depth     = 0;
+  flist->max_depth     = 0;
+  flist->total_files   = 0;
+
+  /* get total number of files in list */
+  uint64_t total;
+  uint64_t count = flist->list_count;
+  MPI_Allreduce(&count, &total, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+  flist->total_files = total;
+
+  /* bail out early if no one has anything */
+  if (total <= 0) {
+    return;
+  }
+
+  /* compute local min/max values */
+  int min_depth = -1;
+  int max_depth = -1;
+  uint64_t max_name = 0;
+  elem_t* current = flist->list_head;
+  while (current != NULL) {
+    uint64_t len = (uint64_t) (strlen(current->file) + 1);
+    if (len > max_name) {
+      max_name = len;
+    }
+
+    int depth = current->depth;
+    if (depth < min_depth || min_depth == -1) {
+      min_depth = depth;
+    }
+    if (depth > max_depth || max_depth == -1) {
+      max_depth = depth;
+    }
+
+    /* go to next item */
+    current = current->next;
+  }
+
+  /* get global maximums */
+  int global_max_depth;
+  MPI_Allreduce(&max_depth, &global_max_depth, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+
+  uint64_t global_max_name;
+  MPI_Allreduce(&max_name, &global_max_name, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+
+  /* since at least one rank has an item and max will be -1 on ranks
+   * without an item, set our min to global max if we have no items,
+   * this will ensure that our contribution is >= true global min */
+  int global_min_depth;
+  if (count == 0) {
+    min_depth = global_max_depth;
+  }
+  MPI_Allreduce(&min_depth, &global_min_depth, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+
+  /* set summary values */
+  flist->max_file_name = global_max_name;
+  flist->min_depth = global_min_depth;
+  flist->max_depth = global_max_depth;
+
+  return;
+}
+
+static int list_convert_to_dt(flist_t* flist, buf_t* items)
+{
+  int detail = flist->detail;
+  elem_t* head = flist->list_head;
+
+  /* initialize output params */
+  items->buf   = NULL;
+  items->count = 0;
+  items->chars = 0;
+  items->dt    = MPI_DATATYPE_NULL;
+
+  /* get our rank and the size of comm_world */
+  int rank, ranks;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+  /* count number of items in list and identify longest filename */
+  int max = 0;
+  uint64_t count = 0;
+  elem_t* current = head;
+  while (current != NULL) {
+    const char* file = current->file;
+    size_t len = strlen(file) + 1;
+    if (len > max) {
+      max = (int) len;
+    }
+    count++;
+    current = current->next;
+  }
+
+  /* find smallest length that fits max and consists of integer
+   * number of 8 byte segments */
+  int max8 = max / 8;
+  if (max8 * 8 < max) {
+    max8++;
+  }
+  max8 *= 8;
+
+  /* compute longest file path across all ranks */
+  int chars;
+  MPI_Allreduce(&max8, &chars, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+
+  /* nothing to do if no one has anything */
+  if (chars <= 0) {
+    return 0;
+  }
+
+  /* build stat type */
+  MPI_Datatype dt;
+  create_stattype(detail, chars, &dt);
+
+  /* get extent of stat type */
+  MPI_Aint lb, extent;
+  MPI_Type_get_extent(dt, &lb, &extent);
+
+  /* allocate buffer */
+  size_t bufsize = extent * count;
+  void* buf = bayer_malloc(bufsize, "array for stat data", __FILE__, __LINE__);
+
+  /* copy stat data into stat datatypes */
+  char* ptr = (char*) buf;
+  current = head;
+  while (current != NULL) {
+    /* get pointer to file name and stat structure */
+    char* file = current->file;
+
+    uint32_t* ptr_uint32t;
+    uint64_t* ptr_uint64t;
+
+    /* copy in file name */
+    strcpy(ptr, file);
+    ptr += chars;
+
+    if (detail) {
+      /* copy in mode time */
+      ptr_uint32t = (uint32_t*) ptr;
+      *ptr_uint32t = current->mode;
+      ptr += sizeof(uint32_t);
+
+      /* copy in user id */
+      ptr_uint32t = (uint32_t*) ptr;
+      *ptr_uint32t = current->uid;
+      ptr += sizeof(uint32_t);
+
+      /* copy in group id */
+      ptr_uint32t = (uint32_t*) ptr;
+      *ptr_uint32t = current->gid;
+      ptr += sizeof(uint32_t);
+
+      /* copy in access time */
+      ptr_uint32t = (uint32_t*) ptr;
+      *ptr_uint32t = current->atime;
+      ptr += sizeof(uint32_t);
+
+      /* copy in modify time */
+      ptr_uint32t = (uint32_t*) ptr;
+      *ptr_uint32t = current->mtime;
+      ptr += sizeof(uint32_t);
+
+      /* copy in create time */
+      ptr_uint32t = (uint32_t*) ptr;
+      *ptr_uint32t = current->ctime;
+      ptr += sizeof(uint32_t);
+
+      /* copy in size */
+      ptr_uint64t = (uint64_t*) ptr;
+      *ptr_uint64t = current->size;
+      ptr += sizeof(uint64_t);
+    } else {
+      /* just have the file type */
+      ptr_uint32t = (uint32_t*) ptr;
+      *ptr_uint32t = (uint32_t) current->type;
+      ptr += sizeof(uint32_t);
+    }
+
+    /* go to next element */
+    current = current->next;
+  }
+
+  /* set output params */
+  items->buf   = buf;
+  items->count = count;
+  items->chars = (uint64_t)chars;
+  items->dt    = dt;
+
+  return 0;
+}
+
+/* build a name-to-id map and an id-to-name map */
+static void create_maps(
+  const buf_t* items,
+  map<string,uint32_t>* name2id,
+  map<uint32_t,string>* id2name)
+{
+  int i;
+  const char* ptr = (const char*)items->buf;
+  for (i = 0; i < items->count; i++) {
+    const char* name = ptr;
+    ptr += items->chars;
+
+    uint32_t id = *(uint32_t*)ptr;
+    ptr += 4;
+
+    (*name2id)[name] = id;
+    (*id2name)[id] = name;
+  }
+  return;
+}
+
+/* given an id, lookup its corresponding name, returns id converted
+ * to a string if no matching name is found */
+static const char* get_name_from_id(uint32_t id, int chars, map<uint32_t,string>* id2name)
+{
+  map<uint32_t,string>::iterator it = id2name->find(id);
+  if (it != id2name->end()) {
+    const char* name = (*it).second.c_str();
+    return name;
+  } else {
+    /* store id as name and return that */
+    char temp[12];
+    size_t len = snprintf(temp, sizeof(temp), "%d", id);
+    if (len > (sizeof(temp) - 1) || len > (chars - 1)) {
+      /* TODO: ERROR! */
+      printf("ERROR!!!\n");
+    }
+
+    string newname = temp;
+    (*id2name)[id] = newname;
+
+    it = id2name->find(id);
+    if (it != id2name->end()) {
+      const char* name = (*it).second.c_str();
+      return name;
+    } else {
+      /* TODO: ERROR! */
+      printf("ERROR!!!\n");
+    }
+  }
+  return NULL;
 }
 
 /****************************************
@@ -188,16 +625,14 @@ static bayer_flist bayer_flist_new()
   flist->total_files = 0;
 
   /* initialize linked list */
-  flist->stat_count = 0;
-  flist->stat_head  = NULL;
-  flist->stat_tail  = NULL;
+  flist->list_count = 0;
+  flist->list_head  = NULL;
+  flist->list_tail  = NULL;
+  flist->list_index = NULL;
 
   /* initialize user, group, and file buffers */
   buft_init(&flist->users);
   buft_init(&flist->groups);
-  buft_init(&flist->files);
-
-  flist->file_elem_size = 0;
 
   /* allocate memory for maps */
   flist->user_name2id  = new map<string,uint32_t>;
@@ -215,9 +650,11 @@ void bayer_flist_free(bayer_flist* pbflist)
   /* convert handle to flist_t */
   flist_t* flist = *(flist_t**)pbflist;
 
+  /* delete linked list */
+  list_delete(flist);
+
   buft_free(&flist->users);
   buft_free(&flist->groups);
-  buft_free(&flist->files);
 
   delete flist->user_name2id;
   delete flist->user_id2name;
@@ -233,7 +670,7 @@ void bayer_flist_free(bayer_flist* pbflist)
 }
 
 /* return number of files across all procs */
-uint64_t bayer_flist_total_size(bayer_flist bflist)
+uint64_t bayer_flist_global_size(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
   uint64_t size = flist->total_files;
@@ -244,7 +681,7 @@ uint64_t bayer_flist_total_size(bayer_flist bflist)
 uint64_t bayer_flist_size(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
-  uint64_t size = flist->files.count;
+  uint64_t size = flist->list_count;
   return size;
 }
 
@@ -268,7 +705,7 @@ uint64_t bayer_flist_group_count(bayer_flist bflist)
 uint64_t bayer_flist_file_max_name(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
-  uint64_t count = flist->files.chars;
+  uint64_t count = flist->max_file_name;
   return count;
 }
 
@@ -292,59 +729,30 @@ uint64_t bayer_flist_group_max_name(bayer_flist bflist)
  * return max/min depth
  */
 
-static char* get_file(flist_t* flist, int index)
+int bayer_flist_have_detail(bayer_flist bflist)
 {
-  uint64_t max = flist->files.count;
-  if (index >= 0 && index < max) {
-    /* TODO: compute this once when creating list and store */
-    /* compute element size */
-    size_t elem_size;
-    if (flist->detail == 0) {
-      elem_size = flist->files.chars + 1 * sizeof(uint32_t);
-    } else {
-      elem_size = flist->files.chars + 6 * sizeof(uint32_t) + sizeof(uint64_t);
-    }
-
-    /* return pointer to file data */
-    char* ptr = ((char*)flist->files.buf) + index * elem_size;
-    return ptr;
-  }
-  return NULL;
+  flist_t* flist = (flist_t*) bflist;
+  int detail = flist->detail;
+  return detail;
 }
 
 int bayer_flist_file_name(bayer_flist bflist, int index, char** name)
 {
   flist_t* flist = (flist_t*) bflist;
-  char* ptr = get_file(flist, index);
-  if (ptr != NULL) {
-    /* for both detailed and non-detailed, pointer starts on file name */
-    *name = ptr;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL) {
+    *name = elem->file;
     return 0;
   }
   return -1;
 }
 
-/* given path, return level within directory tree */
-static int compute_depth(const char* path)
-{
-    const char* c;
-    int depth = 0;
-    for (c = path; *c != '\0'; c++) {
-        if (*c == '/') {
-            depth++;
-        }
-    }
-    return depth;
-}
-
 int bayer_flist_file_depth(bayer_flist bflist, int index, int* depth)
 {
   flist_t* flist = (flist_t*) bflist;
-  char* ptr = get_file(flist, index);
-  if (ptr != NULL) {
-    /* for both detailed and non-detailed, pointer starts on file name */
-    int d = compute_depth(ptr);
-    *depth = d;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL) {
+    *depth = elem->depth;
     return 0;
   }
   return -1;
@@ -353,20 +761,9 @@ int bayer_flist_file_depth(bayer_flist bflist, int index, int* depth)
 int bayer_flist_file_type(bayer_flist bflist, int index, bayer_filetype* type)
 {
   flist_t* flist = (flist_t*) bflist;
-  char* ptr = get_file(flist, index);
-  if (ptr != NULL) {
-    /* advance pointer to second field */
-    ptr += flist->files.chars;
-    uint32_t val = *(uint32_t*)ptr;
-    if (flist->detail == 0) {
-      /* for a non-detailed record, we store the bayer_filetype */
-      *type = (bayer_filetype) val;
-    } else {
-      /* for a detailed record, we store the mode_t */
-      mode_t mode = (mode_t) val;
-      bayer_filetype t = get_bayer_filetype(mode);
-      *type = t;
-    }
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL) {
+    *type = elem->type;
     return 0;
   }
   return -1;
@@ -376,16 +773,101 @@ int bayer_flist_file_mode(bayer_flist bflist, int index, mode_t* mode)
 {
   flist_t* flist = (flist_t*) bflist;
   if (flist->detail > 0) {
-    char* ptr = get_file(flist, index);
-    if (ptr != NULL) {
-      /* advance pointer to second field */
-      ptr += flist->files.chars;
-      uint32_t val = *(uint32_t*)ptr;
-      *mode = (mode_t) val;
+    elem_t* elem = list_get_elem(flist, index);
+    if (elem != NULL) {
+      *mode = (mode_t) elem->mode;
       return 0;
     }
   }
   return -1;
+}
+
+uint32_t bayer_flist_file_get_uid(bayer_flist bflist, int index)
+{
+  uint32_t ret = (uint32_t) -1;
+  flist_t* flist = (flist_t*) bflist;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL && flist->detail) {
+    ret = elem->uid;
+  }
+  return ret;
+}
+
+uint32_t bayer_flist_file_get_gid(bayer_flist bflist, int index)
+{
+  uint32_t ret = (uint32_t) -1;
+  flist_t* flist = (flist_t*) bflist;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL && flist->detail) {
+    ret = elem->gid;
+  }
+  return ret;
+}
+
+uint32_t bayer_flist_file_get_atime(bayer_flist bflist, int index)
+{
+  uint32_t ret = (uint32_t) -1;
+  flist_t* flist = (flist_t*) bflist;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL && flist->detail) {
+    ret = elem->atime;
+  }
+  return ret;
+}
+
+uint32_t bayer_flist_file_get_mtime(bayer_flist bflist, int index)
+{
+  uint32_t ret = (uint32_t) -1;
+  flist_t* flist = (flist_t*) bflist;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL && flist->detail) {
+    ret = elem->mtime;
+  }
+  return ret;
+}
+
+uint32_t bayer_flist_file_get_ctime(bayer_flist bflist, int index)
+{
+  uint32_t ret = (uint32_t) -1;
+  flist_t* flist = (flist_t*) bflist;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL && flist->detail) {
+    ret = elem->ctime;
+  }
+  return ret;
+}
+
+uint64_t bayer_flist_file_get_size(bayer_flist bflist, int index)
+{
+  uint64_t ret = (uint64_t) -1;
+  flist_t* flist = (flist_t*) bflist;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL && flist->detail) {
+    ret = elem->size;
+  }
+  return ret;
+}
+
+const char* bayer_flist_file_get_username(bayer_flist bflist, int index)
+{
+  const char* ret = NULL;
+  flist_t* flist = (flist_t*) bflist;
+  if (flist->detail) {
+    uint32_t id = bayer_flist_file_get_uid(bflist, index);
+    ret = get_name_from_id(id, flist->users.chars, flist->user_id2name);
+  }
+  return ret;
+}
+
+const char* bayer_flist_file_get_groupname(bayer_flist bflist, int index)
+{
+  const char* ret = NULL;
+  flist_t* flist = (flist_t*) bflist;
+  if (flist->detail) {
+    uint32_t id = bayer_flist_file_get_gid(bflist, index);
+    ret = get_name_from_id(id, flist->groups.chars, flist->group_id2name);
+  }
+  return ret;
 }
 
 /****************************************
@@ -428,7 +910,7 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
               /* we can read object type from directory entry */
               have_mode = 1;
               mode = DTTOIF(entry->d_type);
-              stat_insert(CURRENT_LIST, newpath, NULL, mode);
+              list_insert_stat(CURRENT_LIST, newpath, mode, NULL);
             } else {
               /* type is unknown, we need to stat it */
               struct stat st;
@@ -436,7 +918,7 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
               if (status == 0) {
                 have_mode = 1;
                 mode = st.st_mode;
-                stat_insert(CURRENT_LIST, newpath, &st, mode);
+                list_insert_stat(CURRENT_LIST, newpath, mode, &st);
               } else {
                 /* error */
               }
@@ -476,7 +958,7 @@ static void walk_readdir_create(CIRCLE_handle* handle)
   }
 
   /* record item info */
-  stat_insert(CURRENT_LIST, path, &st, st.st_mode);
+  list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
 
   /* recurse into directory */
   if (S_ISDIR(st.st_mode)) {
@@ -569,7 +1051,7 @@ static void walk_stat_process(CIRCLE_handle* handle)
   /* TODO: filter items by stat info */
 
   /* record info for item in list */
-  stat_insert(CURRENT_LIST, path, &st, st.st_mode);
+  list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
 
   /* recurse into directory */
   if (S_ISDIR(st.st_mode)) {
@@ -668,59 +1150,6 @@ static void strid_serialize(strid_t* head, int chars, void* buf)
     current = current->next;
   }
   return;
-}
-
-/* build a name-to-id map and an id-to-name map */
-static void create_maps(
-  const buf_t* items,
-  map<string,uint32_t>* name2id,
-  map<uint32_t,string>* id2name)
-{
-  int i;
-  const char* ptr = (const char*)items->buf;
-  for (i = 0; i < items->count; i++) {
-    const char* name = ptr;
-    ptr += items->chars;
-
-    uint32_t id = *(uint32_t*)ptr;
-    ptr += 4;
-
-    (*name2id)[name] = id;
-    (*id2name)[id] = name;
-  }
-  return;
-}
-
-/* given an id, lookup its corresponding name, returns id converted
- * to a string if no matching name is found */
-static const char* get_name_from_id(uint32_t id, int chars, map<uint32_t,string>& id2name)
-{
-  map<uint32_t,string>::iterator it = id2name.find(id);
-  if (it != id2name.end()) {
-    const char* name = (*it).second.c_str();
-    return name;
-  } else {
-    /* store id as name and return that */
-    char temp[12];
-    size_t len = snprintf(temp, sizeof(temp), "%d", id);
-    if (len > (sizeof(temp) - 1) || len > (chars - 1)) {
-      /* TODO: ERROR! */
-      printf("ERROR!!!\n");
-    }
-
-    string newname = temp;
-    id2name[id] = newname;
-
-    it = id2name.find(id);
-    if (it != id2name.end()) {
-      const char* name = (*it).second.c_str();
-      return name;
-    } else {
-      /* TODO: ERROR! */
-      printf("ERROR!!!\n");
-    }
-  }
-  return NULL;
 }
 
 /* delete linked list and reset head, tail, and count values */
@@ -934,184 +1363,6 @@ retry:
   return;
 }
 
-static void create_stattype(int detail, int chars, MPI_Datatype* dt_stat)
-{
-  /* build type for file path */
-  MPI_Datatype dt_filepath;
-  MPI_Type_contiguous(chars, MPI_CHAR, &dt_filepath);
-
-  /* build keysat type */
-  int fields;
-  MPI_Datatype types[8];
-  if (detail) {
-    fields = 8;
-    types[0] = dt_filepath;  /* file name */
-    types[1] = MPI_UINT32_T; /* mode */
-    types[2] = MPI_UINT32_T; /* uid */
-    types[3] = MPI_UINT32_T; /* gid */
-    types[4] = MPI_UINT32_T; /* atime */
-    types[5] = MPI_UINT32_T; /* mtime */
-    types[6] = MPI_UINT32_T; /* ctime */
-    types[7] = MPI_UINT64_T; /* size */
-  } else {
-    fields = 2;
-    types[0] = dt_filepath;  /* file name */
-    types[1] = MPI_UINT32_T; /* file type */
-  }
-  DTCMP_Type_create_series(fields, types, dt_stat);
-
-  MPI_Type_free(&dt_filepath);
-  return;
-}
-
-static int convert_stat_to_dt(flist_t* flist)
-{
-  int detail = flist->detail;
-  elem_t* head = flist->stat_head;
-  buf_t* items = &flist->files;
-
-  /* initialize output params */
-  items->buf   = NULL;
-  items->count = 0;
-  items->chars = 0;
-  items->dt    = MPI_DATATYPE_NULL;
-
-  /* get our rank and the size of comm_world */
-  int rank, ranks;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-  /* count number of items in list and identify longest filename */
-  int max = 0;
-  uint64_t count = 0;
-  elem_t* current = head;
-  while (current != NULL) {
-    const char* file = current->file;
-    size_t len = strlen(file) + 1;
-    if (len > max) {
-      max = (int) len;
-    }
-    count++;
-    current = current->next;
-  }
-
-  /* find smallest length that fits max and consists of integer
-   * number of 8 byte segments */
-  int max8 = max / 8;
-  if (max8 * 8 < max) {
-    max8++;
-  }
-  max8 *= 8;
-
-  /* compute longest file path across all ranks */
-  int chars;
-  MPI_Allreduce(&max8, &chars, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-
-  /* nothing to do if no one has anything */
-  if (chars <= 0) {
-    return 0;
-  }
-
-  /* build stat type */
-  MPI_Datatype dt;
-  create_stattype(detail, chars, &dt);
-
-  /* get extent of stat type */
-  MPI_Aint lb, extent;
-  MPI_Type_get_extent(dt, &lb, &extent);
-
-  /* record size of file buffer element */
-  flist->file_elem_size = (size_t) extent;
-
-  /* allocate buffer */
-  size_t bufsize = extent * count;
-  void* buf = bayer_malloc(bufsize, "array for stat data", __FILE__, __LINE__);
-
-  /* copy stat data into stat datatypes */
-  char* ptr = (char*) buf;
-  current = head;
-  while (current != NULL) {
-    /* get pointer to file name and stat structure */
-    char* file = current->file;
-    const struct stat* sb = current->sb;
-
-    /* TODO: copy stat info via function */
-
-    uint32_t* ptr_uint32t;
-    uint64_t* ptr_uint64t;
-
-    /* copy in file name */
-    strcpy(ptr, file);
-    ptr += chars;
-
-    if (detail) {
-      /* copy in mode time */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_mode;
-      ptr += sizeof(uint32_t);
-
-      /* copy in user id */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_uid;
-      ptr += sizeof(uint32_t);
-
-      /* copy in group id */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_gid;
-      ptr += sizeof(uint32_t);
-
-      /* copy in access time */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_atime;
-      ptr += sizeof(uint32_t);
-
-      /* copy in modify time */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_mtime;
-      ptr += sizeof(uint32_t);
-
-      /* copy in create time */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) sb->st_ctime;
-      ptr += sizeof(uint32_t);
-
-      /* copy in size */
-      ptr_uint64t = (uint64_t*) ptr;
-      *ptr_uint64t = (uint64_t) sb->st_size;
-      ptr += sizeof(uint64_t);
-    } else {
-      /* just have the file type */
-      ptr_uint32t = (uint32_t*) ptr;
-      *ptr_uint32t = (uint32_t) current->type;
-      ptr += sizeof(uint32_t);
-    }
-
-    /* go to next element */
-    current = current->next;
-  }
-
-  /* set output params */
-  items->buf   = buf;
-  items->count = count;
-  items->chars = (uint64_t)chars;
-  items->dt    = dt;
-
-  /* delete linked list */
-  current = head;
-  while (current != NULL) {
-    elem_t* next = current->next;
-    bayer_free(&current->file);
-    bayer_free(&current->sb);
-    bayer_free(&current);
-    current = next;
-  }
-  flist->stat_count = 0;
-  flist->stat_head  = NULL;
-  flist->stat_tail  = NULL;
-
-  return 0;
-}
-
 /* Set up and execute directory walk */
 void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist* pbflist)
 {
@@ -1162,12 +1413,9 @@ void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist* pbfli
   CIRCLE_begin();
   CIRCLE_finalize();
 
-  /* convert stat structs to datatypes */
-  convert_stat_to_dt(flist);
-
   /* get total file count */
   uint64_t total;
-  uint64_t count = flist->files.count;
+  uint64_t count = flist->list_count;
   MPI_Allreduce(&count, &total, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
   flist->total_files = total;
 
@@ -1200,8 +1448,9 @@ static void read_cache_v2(
   /* indicate that we just have file names */
   flist->detail = 0;
 
-  /* pointer to file buffer data structure */
-  buf_t* files = &flist->files;
+  /* create buf_t object to hold data from file */
+  buf_t files;
+  buft_init(&files);
 
   /* get our rank */
   int rank, ranks;
@@ -1218,10 +1467,10 @@ static void read_cache_v2(
   disp += 4 * 8; /* 4 consecutive uint64_t types in external32 */
 
   uint64_t all_count;
-  *outstart     = header[0];
-  *outend       = header[1];
-  all_count     = header[2];
-  files->chars  = header[3];
+  *outstart   = header[0];
+  *outend     = header[1];
+  all_count   = header[2];
+  files.chars = header[3];
 
   /* compute count for each process */
   uint64_t count = all_count / ranks;
@@ -1229,7 +1478,7 @@ static void read_cache_v2(
   if (rank < remainder) {
     count++;
   }
-  files->count = count;
+  files.count = count;
 
   /* get our offset */
   uint64_t offset;
@@ -1239,27 +1488,42 @@ static void read_cache_v2(
   }
 
   /* create file datatype and read in file info if there are any */
-  if (all_count > 0 && files->chars > 0) {
+  if (all_count > 0 && files.chars > 0) {
     /* create types */
-    create_stattype(flist->detail, (int)files->chars,   &(files->dt));
+    create_stattype(flist->detail, (int)files.chars,   &(files.dt));
 
     /* get extents */
     MPI_Aint lb_file, extent_file;
-    MPI_Type_get_extent(files->dt, &lb_file, &extent_file);
-
-    /* record size of file buffer element */
-    flist->file_elem_size = (size_t) extent_file;
+    MPI_Type_get_extent(files.dt, &lb_file, &extent_file);
 
     /* allocate memory to hold data */
-    size_t bufsize_file = files->count * extent_file;
-    files->buf = (void*) bayer_malloc(bufsize_file, "File data buffer", __FILE__, __LINE__);
+    size_t bufsize_file = files.count * extent_file;
+    files.buf = (void*) bayer_malloc(bufsize_file, "File data buffer", __FILE__, __LINE__);
 
     /* collective read of stat info */
-    MPI_File_set_view(fh, disp, files->dt, files->dt, datarep, MPI_INFO_NULL);
+    MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
     MPI_Offset read_offset = disp + offset * extent_file;
-    MPI_File_read_at_all(fh, read_offset, files->buf, (int)files->count, files->dt, &status);
+    MPI_File_read_at_all(fh, read_offset, files.buf, (int)files.count, files.dt, &status);
     disp += all_count * extent_file;
   }
+
+  /* for each file, insert an entry into our list */
+  uint64_t i = 0;
+  char* ptr = (char*) files.buf;
+  while (i < count) {
+    const char* name = ptr;
+    ptr += files.chars;
+
+    uint32_t type = *(uint32_t*)ptr;
+    ptr += 4;
+
+    list_insert_lite(flist, name, (bayer_filetype)type);
+
+    i++;
+  }
+
+  /* free buffer */
+  buft_free(&files);
 
   *outdisp = disp;
   return;
@@ -1297,7 +1561,10 @@ static void read_cache_v3(
   /* pointer to users, groups, and file buffer data structure */
   buf_t* users  = &flist->users;
   buf_t* groups = &flist->groups;
-  buf_t* files  = &flist->files;
+
+  /* create buf_t object to hold data from file */
+  buf_t files;
+  buft_init(&files);
 
   /* get our rank */
   int rank, ranks;
@@ -1321,7 +1588,7 @@ static void read_cache_v3(
   groups->count = header[4];
   groups->chars = header[5];
   all_count     = header[6];
-  files->chars  = header[7];
+  files.chars   = header[7];
 
   /* compute count for each process */
   uint64_t count = all_count / ranks;
@@ -1329,7 +1596,7 @@ static void read_cache_v3(
   if (rank < remainder) {
     count++;
   }
-  files->count = count;
+  files.count = count;
 
   /* get our offset */
   uint64_t offset;
@@ -1383,31 +1650,40 @@ static void read_cache_v3(
   }
 
   /* read files, if any */
-  if (all_count > 0 && files->chars > 0) {
+  if (all_count > 0 && files.chars > 0) {
     /* create types */
-    create_stattype(flist->detail, (int)files->chars,   &(files->dt));
+    create_stattype(flist->detail, (int)files.chars,   &(files.dt));
 
     /* get extents */
     MPI_Aint lb_file, extent_file;
-    MPI_Type_get_extent(files->dt, &lb_file, &extent_file);
-
-    /* record size of file buffer element */
-    flist->file_elem_size = (size_t) extent_file;
+    MPI_Type_get_extent(files.dt, &lb_file, &extent_file);
 
     /* allocate memory to hold data */
-    size_t bufsize_file = files->count * extent_file;
-    files->buf = (void*) bayer_malloc(bufsize_file, "File data buffer", __FILE__, __LINE__);
+    size_t bufsize_file = files.count * extent_file;
+    files.buf = (void*) bayer_malloc(bufsize_file, "File data buffer", __FILE__, __LINE__);
 
     /* collective read of stat info */
-    MPI_File_set_view(fh, disp, files->dt, files->dt, datarep, MPI_INFO_NULL);
+    MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
     MPI_Offset read_offset = disp + offset * extent_file;
-    MPI_File_read_at_all(fh, read_offset, files->buf, (int)files->count, files->dt, &status);
+    MPI_File_read_at_all(fh, read_offset, files.buf, (int)files.count, files.dt, &status);
     disp += all_count * extent_file;
+
+    /* for each file, insert an entry into our list */
+    uint64_t i = 0;
+    char* ptr = (char*) files.buf;
+    while (i < count) {
+      list_insert_ptr(flist, ptr, files.chars);
+      ptr += extent_file;
+      i++;
+    }
   }
 
   /* create maps of users and groups */
   create_maps(&flist->users, flist->user_name2id, flist->user_id2name);
   create_maps(&flist->groups, flist->group_name2id, flist->group_id2name);
+
+  /* free buffer */
+  buft_free(&files);
 
   *outdisp = disp;
   return;
@@ -1472,6 +1748,225 @@ void bayer_flist_read_cache(
 
   /* close file */
   MPI_File_close(&fh);
+
+  return;
+}
+
+/****************************************
+ * Write file list to file
+ ***************************************/
+
+/* file version
+ * 1: version, start, end, files, file chars, list (file)
+ * 2: version, start, end, files, file chars, list (file, type)
+ * 3: version, start, end, files, users, user chars, groups, group chars,
+ *    files, file chars, list (user, userid), list (group, groupid),
+ *    list (stat) */
+
+/* file format:
+ *   uint64_t timestamp when walk started
+ *   uint64_t timestamp when walk ended
+ *   uint64_t total number of files
+ *   uint64_t max filename length
+ *   list of <filenames(str), filetype(uint32_t)> */
+
+static void write_cache_readdir(
+  const char* name,
+  uint64_t walk_start,
+  uint64_t walk_end,
+  flist_t* flist)
+{
+  /* convert list to contiguous buffer */
+  buf_t files;
+  buft_init(&files);
+  list_convert_to_dt(flist, &files);
+
+  /* get our rank and number of ranks in job */
+  int rank, ranks;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+  /* get total file count */
+  uint64_t count = files.count;
+  uint64_t all_count = flist->total_files;
+
+  /* get our offset */
+  uint64_t offset;
+  MPI_Exscan(&count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+  if (rank == 0) {
+    offset = 0;
+  }
+
+  /* open file */
+  MPI_Status status;
+  MPI_File fh;
+  char datarep[] = "external32";
+  //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
+  int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
+  MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
+
+  /* truncate file to 0 bytes */
+  MPI_File_set_size(fh, 0);
+
+  /* prepare header */
+  uint64_t header[5];
+  header[0] = 2;            /* file version */
+  header[1] = walk_start;   /* time_t when file walk started */
+  header[2] = walk_end;     /* time_t when file walk stopped */
+  header[3] = all_count;    /* total number of stat entries */
+  header[4] = files.chars;  /* number of chars in file name */
+
+  /* write the header */
+  MPI_Offset disp = 0;
+  MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
+  if (rank == 0) {
+    MPI_File_write_at(fh, disp, header, 5, MPI_UINT64_T, &status);
+  }
+  disp += 5 * 8;
+
+  if (files.dt != MPI_DATATYPE_NULL) {
+    /* get extents of file datatypes */
+    MPI_Aint lb_file, extent_file;
+    MPI_Type_get_extent(files.dt, &lb_file, &extent_file);
+
+    /* collective write of file info */
+    MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
+    MPI_Offset write_offset = disp + offset * extent_file;
+    int write_count = (int) count;
+    MPI_File_write_at_all(fh, write_offset, files.buf, write_count, files.dt, &status);
+    disp += all_count * extent_file;
+  }
+
+  /* close file */
+  MPI_File_close(&fh);
+
+  /* free buffer */
+  buft_free(&files);
+
+  return;
+}
+
+static void write_cache_stat(
+  const char* name,
+  uint64_t walk_start,
+  uint64_t walk_end,
+  flist_t* flist)
+{
+  buf_t* users  = &flist->users;
+  buf_t* groups = &flist->groups;
+
+  /* convert list to contiguous buffer */
+  buf_t files;
+  buft_init(&files);
+  list_convert_to_dt(flist, &files);
+
+  /* get our rank and number of ranks in job */
+  int rank, ranks;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+  /* get total file count */
+  uint64_t count = files.count;
+  uint64_t all_count = flist->total_files;
+
+  /* get our offset */
+  uint64_t offset;
+  MPI_Exscan(&count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+  if (rank == 0) {
+    offset = 0;
+  }
+
+  /* open file */
+  MPI_Status status;
+  MPI_File fh;
+  char datarep[] = "external32";
+  //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
+  int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
+  MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
+
+  /* truncate file to 0 bytes */
+  MPI_File_set_size(fh, 0);
+
+  /* prepare header */
+  uint64_t header[9];
+  header[0] = 3;             /* file version */
+  header[1] = walk_start;    /* time_t when file walk started */
+  header[2] = walk_end;      /* time_t when file walk stopped */
+  header[3] = users->count;  /* number of user records */
+  header[4] = users->chars;  /* number of chars in user name */
+  header[5] = groups->count; /* number of group records */
+  header[6] = groups->chars; /* number of chars in group name */
+  header[7] = all_count;     /* total number of stat entries */
+  header[8] = files.chars;   /* number of chars in file name */
+
+  /* write the header */
+  MPI_Offset disp = 0;
+  MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
+  if (rank == 0) {
+    MPI_File_write_at(fh, disp, header, 9, MPI_UINT64_T, &status);
+  }
+  disp += 9 * 8;
+
+  if (users->dt != MPI_DATATYPE_NULL) {
+    /* get extent user */
+    MPI_Aint lb_user, extent_user;
+    MPI_Type_get_extent(users->dt, &lb_user, &extent_user);
+
+    /* write out users */
+    MPI_File_set_view(fh, disp, users->dt, users->dt, datarep, MPI_INFO_NULL);
+    if (rank == 0) {
+      MPI_File_write_at(fh, disp, users->buf, users->count, users->dt, &status);
+    }
+    disp += users->count * extent_user;
+  }
+
+  if (groups->dt != MPI_DATATYPE_NULL) {
+    /* get extent group */
+    MPI_Aint lb_group, extent_group;
+    MPI_Type_get_extent(groups->dt, &lb_group, &extent_group);
+
+    /* write out groups */
+    MPI_File_set_view(fh, disp, groups->dt, groups->dt, datarep, MPI_INFO_NULL);
+    if (rank == 0) {
+      MPI_File_write_at(fh, disp, groups->buf, groups->count, groups->dt, &status);
+    }
+    disp += groups->count * extent_group;
+  }
+
+  if (files.dt != MPI_DATATYPE_NULL) {
+    /* get extent file */
+    MPI_Aint lb_file, extent_file;
+    MPI_Type_get_extent(files.dt, &lb_file, &extent_file);
+
+    /* collective write of stat info */
+    MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
+    MPI_Offset write_offset = disp + offset * extent_file;
+    int write_count = (int) count;
+    MPI_File_write_at_all(fh, write_offset, files.buf, write_count, files.dt, &status);
+    disp += all_count * extent_file;
+  }
+
+  /* close file */
+  MPI_File_close(&fh);
+
+  /* free buffer */
+  buft_free(&files);
+
+  return;
+}
+
+void bayer_flist_write_cache(
+  const char* name,
+  bayer_flist bflist)
+{
+  /* convert handle to flist_t */
+  flist_t* flist = (flist_t*) bflist;
+
+  if (flist->detail) {
+    write_cache_stat(name, 0, 0, flist);
+  } else {
+    write_cache_readdir(name, 0, 0, flist);
+  }
 
   return;
 }

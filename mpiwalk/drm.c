@@ -981,7 +981,7 @@ int main(int argc, char **argv)
     walk_end = (uint64_t) walk_end_t;
 
     /* get total file count */
-    all_count = bayer_flist_total_size(flist);
+    all_count = bayer_flist_global_size(flist);
 
     /* report walk count, time, and rate */
     if (verbose && rank == 0) {
@@ -1001,7 +1001,7 @@ int main(int argc, char **argv)
     double end_read = MPI_Wtime();
 
     /* get total file count */
-    all_count = bayer_flist_total_size(flist);
+    all_count = bayer_flist_global_size(flist);
 
     /* report read count, time, and rate */
     if (verbose && rank == 0) {
