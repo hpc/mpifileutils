@@ -50,12 +50,14 @@ ar cru libbayer.a \
   bayer_flist.o
 ranlib libbayer.a
 
+#exit 0
+
 # build dwalk command
-mpicxx ${OPT} -o dwalk dwalk.cpp \
+mpicc ${OPT} -o dwalk dwalk.c \
   -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -L./ -lbayer
 
 # build drm command
-mpicc ${OPT} -o drm drm.cpp \
+mpicc ${OPT} -o drm drm.c \
   -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -L./ -lbayer
 
 # build dcp command
