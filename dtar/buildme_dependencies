@@ -1,0 +1,42 @@
+#!/bin/bash
+
+##################
+# Need to Load mpicc 
+#and mpicxx into $PATH
+##################
+
+##################
+# Build software
+##################
+
+set -x
+
+OPT="-g -O0"
+
+installdir=`pwd`/install
+rm -rf $installdir
+
+tar zxvf  libarchive-3.1.2.tar.gz
+tar zxvf  libcircle.tar.gz
+tar zxvf  attr-2.4.47.src.tar.gz
+
+# build dependencies
+pushd libcircle
+  export CFLAGS=${OPT}
+  ./configure --prefix=$installdir
+  make clean
+  make
+  make install
+popd
+
+pushd libarchive-3.1.2
+  #make distclean
+  #./autogen.sh
+  export CFLAGS=${OPT}
+  ./configure --prefix=${installdir}
+#  make clean
+  make
+  make install
+popd
+
+

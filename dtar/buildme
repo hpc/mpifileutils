@@ -1,0 +1,26 @@
+#!/bin/bash
+
+##################
+# Build software
+##################
+
+set -x
+
+OPT="-g -O0"
+
+installdir=`pwd`/install
+dir=`pwd`
+sourcedir=`pwd`/src
+
+#export PATH="`pwd`/install/include:$PATH"   >& /dev/null
+#export LD_LIBRARY_PATH="`pwd`/install/include:$LD_LIBRARY_PATH" >& /dev/null
+
+mpicxx -o test/dtar   \
+        ${sourcedir}/dtar.c  ${sourcedir}/copy.c   ${sourcedir}/helper.c  ${sourcedir}/treewalk.c      \
+		-I${installdir}/include \
+		-I${dir}/attr-2.4.47/include  \
+		-L${installdir}/lib     \
+        -lcircle  -larchive           \
+         -D__STDC_FORMAT_MACROS
+rm -f *.o	   
+
