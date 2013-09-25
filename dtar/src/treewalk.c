@@ -1,5 +1,6 @@
 #include "dtar.h"
 #include "log.h"
+#include "helper.h"
 #include <archive.h>
 #include <archive_entry.h>
 

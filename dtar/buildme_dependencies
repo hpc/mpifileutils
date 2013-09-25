@@ -13,12 +13,11 @@ set -x
 
 OPT="-g -O0"
 
-installdir=`pwd`/install
+installdir=`pwd`/dtar_ext
 rm -rf $installdir
 
 tar zxvf  libarchive-3.1.2.tar.gz
 tar zxvf  libcircle.tar.gz
-tar zxvf  attr-2.4.47.src.tar.gz
 
 # build dependencies
 pushd libcircle
@@ -39,4 +38,5 @@ pushd libarchive-3.1.2
   make install
 popd
 
+source env.sh
 
