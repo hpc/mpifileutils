@@ -31,9 +31,27 @@ void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
 
 static void create(char *filename, char compress, int opt_index, int argc,
         char **argv);
+static void extract(const char *filename, int do_extract, int flags);
+static int copy_data(struct archive *, struct archive *);
+
+static void errmsg(const char* m) {
+    fprintf(stderr, m);
+}
+
+static void msg(const char *m) {
+    fprintf(stdout, m);
+}
 
 void usage(void) {
-
+    const char *m = "\nUsage: dtar [-"
+            "c"
+            "x"
+            "] [-f file] [file]\n\n"
+            "If used in creation mode [-c], you need to invoke dtar program\n"
+            "with [mpirun -np num_of_procs], where \"num_of_procs\" needs\n"
+            "to be at least 3.\n\n";
+    fprintf(stderr, m);
+    exit(1);
 }
 
 int main(int argc, char **argv) {
@@ -49,18 +67,14 @@ int main(int argc, char **argv) {
     DTAR_debug_stream = stdout;
     DTAR_debug_level = DTAR_LOG_INFO;
 
-    MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    if (rank == 0 && numprocs < 3) {
-        LOG(DTAR_LOG_FATAL, "DTAR requires at three 3 process to run!");
-        MPI_Finalize();
-        exit(-1);
-    }
     mode = 'x';
     verbose = 0;
     compress = '\0';
     flags = ARCHIVE_EXTRACT_TIME;
+
+    if (argc == 1) {
+        usage();
+    }
 
     /* Among other sins, getopt(3) pulls in printf(3). */
     while (*++argv != NULL && **argv == '-') {
@@ -114,15 +128,25 @@ int main(int argc, char **argv) {
         }
     }
 
+    MPI_Comm_size(MPI_COMM_WORLD, &numprocs);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+
     switch (mode) {
     case 'c':
+        if (rank == 0 && numprocs < 3) {
+            LOG(DTAR_LOG_FATAL, "DTAR requires at three 3 process to run!");
+            MPI_Finalize();
+            exit(-1);
+        }
+
         create(filename, compress, opt_index, argc, argv);
         break;
     case 't':
-//        extract(filename, 0, flags);
+        extract(filename, 0, flags);
         break;
     case 'x':
-//        extract(filename, 1, flags);
+        extract(filename, 1, flags);
         break;
     }
 
@@ -215,4 +239,93 @@ static void create(char *filename, char compress, int opt_index, int argc,
     MPI_Comm_free(&inter_comm);
     MPI_Comm_free(&new_comm);
 
+}
+
+
+static void
+extract(const char *filename, int do_extract, int flags) {
+
+    struct archive *a;
+    struct archive *ext;
+    struct archive_entry *entry;
+    int r;
+    /* initiate archive object for reading */
+    a = archive_read_new();
+    /* initiate archive object for writing */
+    ext = archive_write_disk_new();
+    archive_write_disk_set_options(ext, flags);
+
+    /* we want all the format supports */
+    archive_read_support_filter_bzip2(a);
+    archive_read_support_filter_gzip(a);
+    archive_read_support_filter_compress(a);
+    archive_read_support_format_tar(a);
+
+    archive_write_disk_set_standard_lookup(ext);
+
+    if (filename != NULL && strcmp(filename, "-") == 0)
+        filename = NULL;
+
+    /* blocksize set to 1024K */
+    if (( r = archive_read_open_filename(a, filename, 10240))) {
+        errmsg(archive_error_string(a));
+        exit(r);
+    }
+
+    for (;;) {
+        r = archive_read_next_header(a, &entry);
+        if (r == ARCHIVE_EOF)
+            break;
+        if (r != ARCHIVE_OK) {
+            errmsg(archive_error_string(a));
+            exit(r);
+        }
+
+        if (verbose && do_extract)
+            msg("x ");
+
+        if (verbose || !do_extract)
+            msg(archive_entry_pathname(entry));
+
+        if (do_extract) {
+            r = archive_write_header(ext, entry);
+            if (r != ARCHIVE_OK)
+                errmsg(archive_error_string(a));
+            else
+                copy_data(a, ext);
+        }
+
+        if (verbose || !do_extract)
+            msg("\n");
+    }
+
+    archive_read_close(a);
+    archive_read_free(a);
+    exit(0);
+}
+
+static int
+copy_data(struct archive *ar, struct archive *aw) {
+    int r;
+    const void *buff;
+    size_t size;
+    off_t offset;
+    for (;;) {
+        r = archive_read_data_block(ar, &buff, &size, &offset);
+        if (r == ARCHIVE_EOF) {
+            errmsg(archive_error_string(ar));
+            return (ARCHIVE_OK);
+        }
+
+        if (r != ARCHIVE_OK)
+            return (r);
+
+        r = archive_write_data_block(aw, buff, size, offset);
+
+        if (r != ARCHIVE_OK) {
+            errmsg(archive_error_string(ar));
+            return (r);
+        }
+    }
+    return 0;
 }
