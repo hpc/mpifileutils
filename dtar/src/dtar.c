@@ -35,7 +35,7 @@ static void extract(const char *filename, int do_extract, int flags);
 static int copy_data(struct archive *, struct archive *);
 
 static void errmsg(const char* m) {
-    fprintf(stderr, m);
+    fprintf(stderr, "%s\n", m);
 }
 
 static void msg(const char *m) {
@@ -313,7 +313,6 @@ copy_data(struct archive *ar, struct archive *aw) {
     for (;;) {
         r = archive_read_data_block(ar, &buff, &size, &offset);
         if (r == ARCHIVE_EOF) {
-            errmsg(archive_error_string(ar));
             return (ARCHIVE_OK);
         }
 
