@@ -1041,6 +1041,10 @@ int main(int argc, char **argv)
     }
   }
 
+  bayer_flist flist2;
+  bayer_flist_subset(flist, &flist2);
+  bayer_flist_free(&flist2);
+
   /* write data to cache file */
   if (walk && cachename != NULL) {
     /* report the filename we're writing to */
