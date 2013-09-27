@@ -1,0 +1,20 @@
+#!/bin/bash
+
+set -x
+
+pushd libbayer
+  rm -rf bayer*.o libbayer.*
+popd
+
+pushd dwalk
+  rm -rf dwalk *.o
+popd
+
+pushd drm
+  rm -rf drm *.o
+popd
+
+pushd dcp/dcp.git/src
+  rm -rf dcp *.o
+popd
+

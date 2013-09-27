@@ -1,5 +1,0 @@
-#!/bin/bash
-
-set -x
-
-rm -rf bayer*.o dwalk drm dcp
