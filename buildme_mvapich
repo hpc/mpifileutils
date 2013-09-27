@@ -2,10 +2,14 @@
 
 set -x
 
-PREFIX=`pwd`/mvapich2/install
-
 # add autotools install bin to our path
 export PATH=`pwd`/autotools/install/bin:$PATH
+
+dir=`pwd`/mvapich2
+mkdir $dir
+cd $dir
+
+PREFIX=`pwd`/install
 
 if [ ! -f mvapich2-1.9.tgz ] ; then
   wget http://mvapich.cse.ohio-state.edu/download/mvapich2/mvapich2-1.9.tgz

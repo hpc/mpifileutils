@@ -7,12 +7,12 @@
 #. /usr/share/[mM]odules/init/bash
 #module load mvapich2-gnu-psm/1.7
 
-#. /usr/local/tools/dotkit/init.sh
-#use mvapich2-gnu
+. /usr/local/tools/dotkit/init.sh
+use mvapich2-gnu
 
 # MVAPICH
-curdir=`pwd`
-export PATH="${curdir}/mvapich2/install/bin:$PATH"
+#curdir=`pwd`
+#export PATH="${curdir}/mvapich2/install/bin:$PATH"
 
 # Open MPI
 #curdir=`pwd`
@@ -26,7 +26,7 @@ set -x
 
 OPT="-g -O0"
 
-installdir=`pwd`/install
+installdir=`pwd`/../install
 rm -rf $installdir
 
 # fetch dependencies

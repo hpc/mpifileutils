@@ -1,0 +1,42 @@
+#!/bin/bash
+
+##################
+# Load mpicc and mpicxx into $PATH
+##################
+
+#. /usr/share/[mM]odules/init/bash
+#module load mvapich2-gnu-psm/1.7
+
+. /usr/local/tools/dotkit/init.sh
+use mvapich2-gnu
+
+# MVAPICH
+#curdir=`pwd`
+#export PATH="${curdir}/mvapich2/install/bin:$PATH"
+
+# Open MPI
+#curdir=`pwd`
+#export PATH="${curdir}/openmpi/install/bin:$PATH"
+
+##################
+# Build bayer library
+##################
+
+set -x
+
+OPT="-g -O0"
+
+installdir=`pwd`/install
+
+mpicc  ${OPT} -o bayer_util.o  -c bayer_util.c
+mpicc  ${OPT} -o bayer_path.o  -c bayer_path.c
+mpicc  ${OPT} -o bayer_io.o    -c bayer_io.c
+mpicxx ${OPT} -o bayer_flist.o -c bayer_flist.cpp -I${installdir}/include
+ar cru libbayer.a \
+  bayer_util.o \
+  bayer_path.o \
+  bayer_io.o \
+  bayer_flist.o
+ranlib libbayer.a
+
+exit 0

@@ -2,7 +2,7 @@
 
 set -x
 
-installdir=`pwd`/install
+installdir=`pwd`/../install
 
 pushd libcircle.git
   make clean
