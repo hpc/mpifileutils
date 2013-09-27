@@ -2,7 +2,9 @@
 
 set -x
 
-installdir=`pwd`/../install
+installdir=`pwd`/install
+
+cd deps
 
 pushd libcircle.git
   make clean
@@ -15,5 +17,3 @@ popd
 pushd dtcmp.git
   make clean
 popd
-
-rm -rf $installdir

@@ -26,8 +26,10 @@ set -x
 
 OPT="-g -O0"
 
-installdir=`pwd`/../install
-rm -rf $installdir
+installdir=`pwd`/install
+
+mkdir deps
+cd deps
 
 # fetch dependencies
 if [ ! -f libcircle.git ] ; then
