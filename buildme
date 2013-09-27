@@ -65,6 +65,7 @@ pushd drm
 popd
 
 # build dcp command
+mkdir -p dcp
 pushd dcp
   # fetch dcp source code, if needed
   if [ ! -d "dcp.git" ] ; then
