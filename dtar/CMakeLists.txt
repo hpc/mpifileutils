@@ -1,13 +1,19 @@
 cmake_minimum_required(VERSION 2.8)
 project(dtar)
 
+# To build for release
+# cd build
+# cmake .. -DCMAKE_BUILD_TYPE=Release
+#
+# by default, it is "Debug"
+
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/CMakeScripts)
 
 if (DEFINED ENV{DTAR_EXT})
-	message("-- Using $ENV{DTAR_EXT}")
+    message("-- Using $ENV{DTAR_EXT}")
     set(ENV{PKG_CONFIG_PATH} "$ENV{DTAR_EXT}/lib/pkgconfig" )
 else ()
-	set(ENV{PKG_CONFIG_PATH} "/usr/local/lib/pkgconfig")
+    set(ENV{PKG_CONFIG_PATH} "/usr/local/lib/pkgconfig")
 endif()
 
 find_package(PkgConfig)
@@ -22,6 +28,9 @@ include(CMakeForceCompiler)
 CMAKE_FORCE_C_COMPILER(mpicc ${CMAKE_C_COMPILER_ID})
 CMAKE_FORCE_CXX_COMPILER(mpicxx ${CMAKE_CXX_COMPILER_ID})
 
+set(CMAKE_C_FLAGS_DEBUG         "-Wall -O0 -g")
+set(CMAKE_C_FLAGS_RELEASE       "-Wall -Werror -O3")
+
 pkg_check_modules(ARCHIVE REQUIRED libarchive)
 pkg_check_modules(CIRCLE REQUIRED libcircle)
 
@@ -34,7 +43,7 @@ link_libraries(${CIRCLE_LDFLAGS})
 
 # build
 
-add_executable(dtar 
+add_executable(dtar
     src/dtar.c src/copy.c src/helper.c src/treewalk.c)
 
 

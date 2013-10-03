@@ -124,7 +124,7 @@ char* DTAR_encode_operation(DTAR_operation_code_t code, int64_t chunk,
     ptr += written;
     remaining -= written;
 
-    printf("rank %d, %s\n", CIRCLE_global_rank, op);
+    LOG(DTAR_LOG_DBG, "rank %d, %s\n", CIRCLE_global_rank, op);
 
     return op;
 }
@@ -180,7 +180,7 @@ DTAR_operation_t* DTAR_decode_operation(char* op) {
     char* dir = str + strlen(str) + 1;
     ret->dir = dir;
 
-    printf("rank %d, op is %s, dir is %s\n", CIRCLE_global_rank, ret->operand,
+    LOG(DTAR_LOG_DBG, "rank %d, op is %s, dir is %s\n", CIRCLE_global_rank, ret->operand,
             ret->dir);
 
     return ret;

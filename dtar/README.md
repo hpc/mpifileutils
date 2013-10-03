@@ -19,3 +19,23 @@
 You can script this if you want, except the `source env.sh` 
 must be run through your shell for the environment setup to be correct
 
+# Testing on  Titan
+
+## From scratch
+
+    module load git
+    module load cmake
+    module load ompi
+
+    cd /tmp/work/fwang2
+    git clone ssh://git@github.com/hpc/bayer
+    cd bayer/dtar
+    ./buildme_dependencies
+    source env.sh
+    mkdir build
+    cd build; cmake ..
+    make
+
+## Reserve 
+
+

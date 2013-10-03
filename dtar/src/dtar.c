@@ -67,6 +67,10 @@ int main(int argc, char **argv) {
     DTAR_debug_stream = stdout;
     DTAR_debug_level = DTAR_LOG_INFO;
 
+    /* By default, show info log messages. */
+    CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_ERR;
+    CIRCLE_enable_logging(CIRCLE_debug);
+
     mode = 'x';
     verbose = 0;
     compress = '\0';
@@ -184,12 +188,11 @@ inline void server_stuff(void) {
     }
 
     char * buff_null = (char*) calloc(1024, 1);
-    printf("this is global offset %llx\n", g_tar_offset);
+    LOG(DTAR_LOG_DBG, "this is global offset %llx\n", g_tar_offset);
+
     lseek64(DTAR_writer.fd_tar, g_tar_offset, SEEK_SET);
     write(DTAR_writer.fd_tar, buff_null, 1024);
-
-    printf("All is done! Token is %d\n", token);
-
+    LOG(DTAR_LOG_DBG, "All is done! Token is %d\n", token);
 }
 
 static void create(char *filename, char compress, int opt_index, int argc,

@@ -11,7 +11,10 @@
 /* #define DTAR_CHUNK_SIZE (1073741824) 1GB chunk */
 /* #define DTAR_CHUNK_SIZE (536870912)  512MB chunk */
 /* #define DTAR_CHUNK_SIZE (33554432)  32MB chunk */
-#define DTAR_CHUNK_SIZE (33554432)  /*16MB chunk */
+
+/* 32MB */
+#define DTAR_CHUNK_SIZE (33554432)
+
 #define FD_BLOCK_SIZE (1048576)
 
 #ifndef PATH_MAX

@@ -69,16 +69,16 @@ inline static int write_header(off64_t offset, DTAR_operation_t * op) {
     struct archive *ard;
 
     if (getcwd(dir, PATH_MAX) == NULL) {
-        printf("can not getcwd in write_header\n");
+        LOG(DTAR_LOG_ERR, "can not getcwd in write_header\n");
         return -1;
     }
 
-    LOG(DTAR_LOG_INFO, "op = [%s], dir = [%s], base = [%s], pwd = [%s]\n",
+    LOG(DTAR_LOG_DBG, "op = [%s], dir = [%s], base = [%s], pwd = [%s]\n",
             op->operand, dname, bname, dir);
 
     ret = chdir(dname);
     if (ret != 0) {
-        printf("can not chdir in write_header\n");
+        LOG(DTAR_LOG_ERR, "can not chdir in write_header\n");
         return -1;
     }
 
@@ -105,11 +105,11 @@ inline static int write_header(off64_t offset, DTAR_operation_t * op) {
     off64_t cur_pos = lseek64(DTAR_writer.fd_tar, offset, SEEK_SET);
 
     if (cur_pos < 0) {
-        printf("Cannot seek in treewalk.c offset is %d\n", offset);
+        LOG(DTAR_LOG_ERR, "Cannot seek in treewalk.c offset is %d\n", offset);
         return -1;
     }
 
-    printf("rank %d file %s header offset is %x  current pos is %x\n",
+    LOG(DTAR_LOG_DBG, "rank %d file %s header offset is %x  current pos is %x\n",
             CIRCLE_global_rank, op->operand, offset, cur_pos);
 
     archive_write_header(a, entry);
@@ -133,7 +133,7 @@ void DTAR_do_treewalk(DTAR_operation_t* op, CIRCLE_handle* handle) {
     strcat(path, "/");
     strcat(path, op->operand);
 
-    printf("rank %d, path is %s\n", CIRCLE_global_rank, path);
+    LOG(DTAR_LOG_DBG, "rank %d, path is %s\n", CIRCLE_global_rank, path);
 
     if (lstat64(path, &statbuf) < 0) {
         LOG(DTAR_LOG_DBG, "Could not get info for `%s'. errno=%d %s",
@@ -199,7 +199,7 @@ void DTAR_stat_process_link(DTAR_operation_t* op, const struct stat64* statbuf,
     MPI_Send(buffer, 2, MPI_LONG_LONG, 0, 0, inter_comm);
     MPI_Recv(&offset, 1, MPI_LONG_LONG, 0, 0, inter_comm, &stat);
 
-    printf("rank %d, offset is %d\n", CIRCLE_global_rank, offset);
+    LOG(DTAR_LOG_DBG, "rank %d, offset is %d\n", CIRCLE_global_rank, offset);
     write_header(offset, op);
 }
 
@@ -224,13 +224,13 @@ void DTAR_stat_process_file(DTAR_operation_t* op, const struct stat64* statbuf,
     MPI_Send(buffer, 2, MPI_LONG_LONG, 0, 0, inter_comm);
     MPI_Recv(&offset, 1, MPI_LONG_LONG, 0, 0, inter_comm, &stat);
 
-    printf("rank %d, offset is %d\n", CIRCLE_global_rank, offset);
+    LOG(DTAR_LOG_DBG, "rank %d, offset is %d\n", CIRCLE_global_rank, offset);
 
     write_header(offset, op);
 
     op->offset = offset + HDR_LENGTH;
 
-    printf("rank %d file %s data:%x entry:%x hex_entry:%x\n",
+    LOG(DTAR_LOG_DBG, "rank %d file %s data:%x entry:%x hex_entry:%x\n",
             CIRCLE_global_rank, op->operand, op->offset, offset, offset);
     for (chunk_index = 0; chunk_index < num_chunks; chunk_index++) {
         char* newop = DTAR_encode_operation(COPY, chunk_index, op->operand,
