@@ -92,6 +92,7 @@ int main(int argc, char **argv) {
                 break;
             case 'e':
                 xattr_flag = 1;
+                flags |= ARCHIVE_EXTRACT_XATTR;
                 break;
             case 'f':
                 if (*p != '\0')
@@ -104,6 +105,7 @@ int main(int argc, char **argv) {
                 compress = opt;
                 break;
             case 'p':
+                flags |= ARCHIVE_EXTRACT_OWNER;
                 flags |= ARCHIVE_EXTRACT_PERM;
                 flags |= ARCHIVE_EXTRACT_ACL;
                 flags |= ARCHIVE_EXTRACT_FFLAGS;

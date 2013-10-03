@@ -1,0 +1,32 @@
+#!/bin/sh
+set -x
+
+export PATH=`pwd`/autotools/install/bin:$PATH
+
+dir=`pwd`/openmpi
+mkdir $dir
+cd $dir
+
+installdir=`pwd`/install
+
+if [ ! -f cce-mpi-openmpi-1.7.1.git ] ; then
+  git clone git://github.com/hpc/cce-mpi-openmpi-1.7.1.git cce-mpi-openmpi-1.7.1.git
+fi
+
+pushd cce-mpi-openmpi-1.7.1.git
+  export CC=gcc
+  export CXX=g++
+  export FC=gfortran
+
+  export CFLAGS="-g -O0"
+  export CXXFLAGS="-g -O0"
+  export FCFLAGS="-g -O0"
+
+  ./configure \
+    --prefix=${installdir} \
+    --with-platform=lanl/tlcc2
+
+  make -j4 VERBOSE=1
+
+  make VERBOSE=1 install
+popd

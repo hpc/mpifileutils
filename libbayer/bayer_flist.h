@@ -106,6 +106,11 @@ uint64_t bayer_flist_file_get_size(bayer_flist flist, int index);
 const char* bayer_flist_file_get_username(bayer_flist flist, int index);
 const char* bayer_flist_file_get_groupname(bayer_flist flist, int index);
 
+void bayer_flist_subset(bayer_flist src, bayer_flist* subset);
+size_t bayer_flist_file_pack_size(bayer_flist flist);
+size_t bayer_flist_file_pack(void* buf, bayer_flist flist, int index);
+size_t bayer_flist_file_unpack(void* buf, bayer_flist flist);
+
 #endif /* BAYER_FLIST_H */
 
 /* enable C++ codes to include this header directly */

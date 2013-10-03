@@ -1,0 +1,68 @@
+#!/bin/bash
+
+set -x
+
+# add autotools install bin to our path
+export PATH=`pwd`/autotools/install/bin:$PATH
+
+dir=`pwd`/mvapich2
+mkdir $dir
+cd $dir
+
+PREFIX=`pwd`/install
+
+if [ ! -f mvapich2-1.9.tgz ] ; then
+  wget http://mvapich.cse.ohio-state.edu/download/mvapich2/mvapich2-1.9.tgz
+fi
+
+rm -rf mvapich2-1.9
+tar -zxf mvapich2-1.9.tgz
+cd mvapich2-1.9
+
+export CC=gcc 
+export CXX=g++ 
+export F77=gfortran
+export FC=gfortran
+
+export MPICHLIB_CFLAGS="-g -O3"
+export MPICHLIB_CXXFLAGS="-g -O3"
+export MPICHLIB_FFLAGS="-g -O3 -fno-second-underscore"
+export MPICHLIB_FCFLAGS="-g -O3 -fno-second-underscore"
+
+export CONFIG_FLAGS="--enable-fast=all --enable-g=dbg --enable-nmpi-as-mpi"
+
+# if you have slurm, use this otherwise comment this line
+export PMI="--with-pm=no --with-pmi=slurm"
+
+# this option only works at LLNL
+#export PMI="--with-pm=no --with-pmi=pmgr --with-pmgr=/usr/local/tools/pmgr"
+
+# use this device for Mellanox IB systems
+export DEVICE_FLAGS="--with-device=ch3:mrail --with-rdma=gen2"
+
+# use this setting for QLogic/Intel PSM systems
+#export DEVICE_FLAGS="--with-device=ch3:psm"
+
+#make distclean
+
+# if you have to execute this line,
+# first run buildme_autotools to download and build the needed versions
+
+#./autogen.sh
+
+./configure \
+  --prefix=${PREFIX} \
+  --enable-f77 --enable-fc --enable-cxx \
+  ${CONFIG_FLAGS} \
+  --enable-shared --enable-sharedlibs=gcc \
+  --enable-debuginfo \
+  ${DEVICE_FLAGS} \
+  ${PMI} \
+  --enable-romio --with-file-system=lustre+nfs+ufs \
+  --disable-mpe --without-mpe
+
+make clean
+
+make -j4 VERBOSE=1
+
+make install VERBOSE=1

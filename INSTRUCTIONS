@@ -1,8 +1,8 @@
-mpiwalk - parallel walk and sort
-dcp     - parallel copy
-drm     - parallel remove
+dwalk - parallel walk and sort
+dcp   - parallel copy
+drm   - parallel remove
 
-mpiwalk is a prototype tool to execute a directory walk and then optionally sort the output.
+dwalk is a prototype tool to execute a directory walk and then optionally sort the output.
 It executes a walk starting from a top-level directory and it calls stat for every file and directory.
 It can also execute a "lite walk" in which it avoids calling stat and distinguishes directories from files using the d_type returned in readdir().
 It can write the results of its walk to a file, and these files may be specified as input in order to avoid the walk.
@@ -10,8 +10,6 @@ It can sort file information by a number of fields, e.g., by filename, size, or 
 It uses libcircle to implement the parallel file walk, and it uses dtcmp for parallel sorting.
 
 To build:
-  cd into "mpiwalk" directory
-
   MVAPICH2 v1.9:
     1) modify the buildme_mvapich script to match your network and resource manager
        (it's currently set up for Mellanox IB interconnects and SLURM)
@@ -26,25 +24,25 @@ To build:
     1) modify buildme_dependencies script to use correct MPI library
     2) run the buildme_dependencies script to download and build dependent libs
 
-  Tools (dcp, mpiwalk, drm):
+  Tools (dcp, dwalk, drm):
     1) modify buildme script to use correct MPI library
-    2) run the buildme script to build dcp, mpiwalk, and drm
+    2) run the buildme script to build dcp, dwalk, and drm
 
 Example run commands:
   1) Walk current working directory
-    mpirun -np 2 ./mpiwalk -v -w `pwd`
+    mpirun -np 2 ./dwalk -v `pwd`
 
   2) Walk current working directory, sort by ascending filename, print results
-    mpirun -np 2 ./mpiwalk -v -w -p -s name `pwd`
+    mpirun -np 2 ./dwalk -v -p -s name `pwd`
 
   3) Walk current working directory and write list to cache.out file
-    mpirun -np 2 ./mpiwalk -v -w -c cache.out `pwd`
+    mpirun -np 2 ./dwalk -v -c cache.out `pwd`
 
   4) Read list from cache.out, sort by descending atime
-    mpirun -np 2 ./mpiwalk -v -s -atime -c cache.out
+    mpirun -np 2 ./dwalk -v -s -atime -c cache.out
 
 Example copy:
-  1) mpirun -np 2 ./dcp -R -C /dir /newdir
+  1) mpirun -np 2 ./dcp -p -c /dir /newdir
 
 Example remove:
-  1) mpirun -np 2 ./drm -v -w /newdir
+  1) mpirun -np 2 ./drm -v /newdir

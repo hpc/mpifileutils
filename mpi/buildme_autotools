@@ -1,0 +1,52 @@
+#!/bin/bash
+
+set -x
+
+topdir=`pwd`
+
+## create directory to download and build autotools
+mkdir autotools
+pushd autotools
+  # clean out our autotools install directory
+  toolsinstalldir=${topdir}/autotools/install
+  rm -rf $toolsinstalldir
+
+  # add autotools install bin to our path
+  export PATH=${toolsinstalldir}/bin:$PATH
+
+  # build autoconf
+  if [ ! -f autoconf-2.69.tar.gz ] ; then
+    wget http://ftp.gnu.org/gnu/autoconf/autoconf-2.69.tar.gz
+  fi
+  rm -rf autoconf-2.69
+  tar -zxf autoconf-2.69.tar.gz
+  pushd autoconf-2.69
+    ./configure --prefix=$toolsinstalldir
+    make
+    make install
+  popd
+
+  # build automake
+  if [ ! -f automake-1.13.tar.gz ] ; then
+    wget http://ftp.gnu.org/gnu/automake/automake-1.13.tar.gz
+  fi
+  rm -rf automake-1.13
+  tar -zxf automake-1.13.tar.gz
+  pushd automake-1.13
+    ./configure --prefix=$toolsinstalldir
+    make
+    make install
+  popd
+
+  # build libtool
+  if [ ! -f libtool-2.4.tar.gz ] ; then
+    wget http://mirror.team-cymru.org/gnu/libtool/libtool-2.4.tar.gz
+  fi
+  rm -rf libtool-2.4
+  tar -zxf libtool-2.4.tar.gz
+  pushd libtool-2.4
+    ./configure --prefix=$toolsinstalldir
+    make
+    make install
+  popd
+popd

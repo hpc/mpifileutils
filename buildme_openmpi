@@ -1,9 +1,13 @@
 #!/bin/sh
 set -x
 
-installdir=`pwd`/openmpi/install
-
 export PATH=`pwd`/autotools/install/bin:$PATH
+
+dir=`pwd`/openmpi
+mkdir $dir
+cd $dir
+
+installdir=`pwd`/install
 
 if [ ! -f cce-mpi-openmpi-1.7.1.git ] ; then
   git clone git://github.com/hpc/cce-mpi-openmpi-1.7.1.git cce-mpi-openmpi-1.7.1.git

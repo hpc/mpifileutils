@@ -1,0 +1,97 @@
+#!/bin/bash
+
+##################
+# Load mpicc and mpicxx into $PATH
+##################
+
+#. /usr/share/[mM]odules/init/bash
+#module load mvapich2-gnu-psm/1.7
+
+. /usr/local/tools/dotkit/init.sh
+use mvapich2-gnu
+
+# MVAPICH
+#curdir=`pwd`
+#export PATH="${curdir}/mvapich2/install/bin:$PATH"
+
+# Open MPI
+#curdir=`pwd`
+#export PATH="${curdir}/openmpi/install/bin:$PATH"
+
+##################
+# Build software
+##################
+
+set -x
+
+OPT="-g -O0"
+
+installdir=`pwd`/install
+
+mkdir ${installdir}/bin
+
+# build libbayer
+pushd libbayer
+  mpicc  ${OPT} -o bayer_util.o  -c bayer_util.c
+  mpicc  ${OPT} -o bayer_path.o  -c bayer_path.c
+  mpicc  ${OPT} -o bayer_io.o    -c bayer_io.c
+  mpicxx ${OPT} -o bayer_flist.o -c bayer_flist.cpp -I${installdir}/include
+
+  ar cru libbayer.a \
+    bayer_util.o \
+    bayer_path.o \
+    bayer_io.o \
+    bayer_flist.o
+  ranlib libbayer.a
+
+  cp bayer*.h   $installdir/include/.
+  cp libbayer.a $installdir/lib/.
+popd
+
+# build dwalk command
+pushd dwalk
+  mpicc ${OPT} -o dwalk dwalk.c \
+    -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
+
+  cp dwalk ${installdir}/bin/.
+popd
+
+# build drm command
+pushd drm
+  mpicc ${OPT} -o drm drm.c \
+    -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
+
+  cp drm ${installdir}/bin
+popd
+
+# build dcp command
+mkdir -p dcp
+pushd dcp
+  # fetch dcp source code, if needed
+  if [ ! -d "dcp.git" ] ; then
+    git clone git://github.com/hpc/dcp.git dcp.git
+
+    # switch to bayer branch
+    pushd dcp.git
+      git checkout bayer
+    popd
+  fi
+
+  # build dcp command
+  pushd dcp.git
+    # need to run configure once to build config.h
+    if [ ! -f config.h ] ; then
+      export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
+      export CFLAGS="-g -O0"
+      ./configure --prefix=$installdir --disable-silent-rules
+    fi
+
+    # build dcp command
+    pushd src
+      mpicc ${OPT} -o dcp common.c handle_args.c treewalk.c copy.c cleanup.c compare.c dcp.c \
+        -I../. -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -lbayer
+
+      cp dcp ${installdir}/bin
+    popd
+  popd
+popd
