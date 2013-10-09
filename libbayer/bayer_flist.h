@@ -36,6 +36,13 @@ extern bayer_flist BAYER_FLIST_NULL;
 /* initialize file list */
 //void flist_init(bayer_list flist);
 
+/* create list as subset of another list
+ * (returns emtpy list with same user and group maps) */
+void bayer_flist_subset(
+  bayer_flist srclist,
+  bayer_flist* bflist
+);
+
 /* create file list by walking directory */
 void bayer_flist_walk_path(
   const char* path,
@@ -57,6 +64,13 @@ void bayer_flist_write_cache(
 
 /* free resouces in file list */
 void bayer_flist_free(bayer_flist* flist);
+
+size_t bayer_flist_file_pack_size(bayer_flist flist);
+size_t bayer_flist_file_pack(void* buf, bayer_flist flist, int index);
+size_t bayer_flist_file_unpack(const void* buf, bayer_flist flist, int detail, uint64_t chars);
+
+/* run this to enable query functions on list after adding elements */
+int bayer_flist_summarize(bayer_flist flist);
 
 /* return number of files across all procs */
 uint64_t bayer_flist_global_size(bayer_flist flist);
@@ -105,11 +119,6 @@ uint32_t bayer_flist_file_get_ctime(bayer_flist flist, int index);
 uint64_t bayer_flist_file_get_size(bayer_flist flist, int index);
 const char* bayer_flist_file_get_username(bayer_flist flist, int index);
 const char* bayer_flist_file_get_groupname(bayer_flist flist, int index);
-
-void bayer_flist_subset(bayer_flist src, bayer_flist* subset);
-size_t bayer_flist_file_pack_size(bayer_flist flist);
-size_t bayer_flist_file_pack(void* buf, bayer_flist flist, int index);
-size_t bayer_flist_file_unpack(void* buf, bayer_flist flist);
 
 #endif /* BAYER_FLIST_H */
 

@@ -47,11 +47,11 @@ typedef struct list_elem {
 
 /* holds an array of objects: users, groups, or file data */
 typedef struct {
-  void* buf;
-  size_t bufsize;
-  uint64_t count;
-  uint64_t chars;
-  MPI_Datatype dt;
+  void* buf;       /* pointer to memory buffer holding data */
+  size_t bufsize;  /* number of bytes in buffer */
+  uint64_t count;  /* number of items */
+  uint64_t chars;  /* max name of item */
+  MPI_Datatype dt; /* MPI datatype for sending/receiving/writing to file */
 } buf_t;
 
 /* abstraction for distributed file list */
@@ -67,10 +67,10 @@ typedef struct flist {
   int max_depth;           /* maximum file depth */
 
   /* variables to track linked list of stat data during walk */
-  uint64_t list_count;
-  elem_t*  list_head;
-  elem_t*  list_tail;
-  elem_t** list_index;
+  uint64_t list_count; /* number of items in list */
+  elem_t*  list_head;  /* points to item at head of list */
+  elem_t*  list_tail;  /* points to item at tail of list */
+  elem_t** list_index; /* an array with pointers to each item in list */
 
   /* buffers of users, groups, and files */
   buf_t users;
@@ -2017,8 +2017,36 @@ void bayer_flist_write_cache(
 
 size_t bayer_flist_file_pack_size(bayer_flist bflist)
 {
+  flist_t* flist = (flist_t*) bflist;
+  size_t size = list_elem_pack_size(flist->detail, flist->max_file_name, NULL);
+  return size;
+}
+
+size_t bayer_flist_file_pack(void* buf, bayer_flist bflist, int index)
+{
   /* convert handle to flist_t */
   flist_t* flist = (flist_t*) bflist;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL) {
+    size_t size = list_elem_pack(buf, flist->detail, flist->max_file_name, elem);
+    return size;
+  }
+  return 0;
+}
 
+size_t bayer_flist_file_unpack(const void* buf, bayer_flist bflist, int detail, uint64_t chars)
+{
+  /* convert handle to flist_t */
+  flist_t* flist = (flist_t*) bflist;
+  char* ptr = (char*) buf;
+  size_t size = list_insert_ptr(flist, ptr, detail, chars);
+  return size;
+}
 
+int bayer_flist_summarize(bayer_flist bflist)
+{
+  /* convert handle to flist_t */
+  flist_t* flist = (flist_t*) bflist;
+  list_compute_summary(flist);
+  return BAYER_SUCCESS;
 }
