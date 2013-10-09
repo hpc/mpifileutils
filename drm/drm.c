@@ -49,28 +49,23 @@ static void create_list(bayer_flist flist)
     rm_elem_t* elem = (rm_elem_t*) bayer_malloc(sizeof(rm_elem_t), "Remove element", __FILE__, __LINE__);
 
     /* get file name */
-    char* file;
-    bayer_flist_file_name(flist, index, &file);
+    const char* file = bayer_flist_file_get_name(flist, index);
     elem->name = bayer_strdup(file, "File name", __FILE__, __LINE__);
 
     /* get file depth */
-    int depth;
-    bayer_flist_file_depth(flist, index, &depth);
-    elem->depth = depth;
+    elem->depth = bayer_flist_file_get_depth(flist, index);
 
     /* get file type */
-    bayer_filetype type;
-    bayer_flist_file_type(flist, index, &type);
-    elem->type = type;
-    if (type != TYPE_DIR) {
+    elem->type = bayer_flist_file_get_type(flist, index);
+    if (elem->type != TYPE_DIR) {
       elem->type = TYPE_FILE;
     }
 
-    /* get mode */
-    mode_t mode;
-    if (bayer_flist_file_mode(flist, index, &mode) == BAYER_SUCCESS) {
+    /* get mode, if we have it */
+    elem->have_mode = 0;
+    if (bayer_flist_have_detail(flist)) {
       elem->have_mode = 1;
-      elem->mode = (mode_t)mode;
+      elem->mode = (mode_t) bayer_flist_file_get_mode(flist, index);
     }
 
     /* attach element to remove list */

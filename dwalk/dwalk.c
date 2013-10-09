@@ -174,8 +174,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
     int i;
     for (i = 0; i < nfields; i++) {
       if (fields[i] == FILENAME) {
-        char* name;
-        bayer_flist_file_name(flist, index, &name);
+        const char* name = bayer_flist_file_get_name(flist, index);
         strcpy(sortptr, name);
       }
       sortptr += lengths[i];
@@ -233,6 +232,59 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
   bayer_flist_free(&flist);
 
   return 0;
+}
+
+static uint32_t gettime()
+{
+  uint32_t t = 0;
+  time_t now = time(NULL);
+  if (now != (time_t)-1) {
+    t = (uint32_t) now;
+  }
+  return t;
+}
+
+static void filter_files(bayer_flist* pflist)
+{
+  bayer_flist flist = *pflist;
+
+  size_t bufsize = bayer_flist_file_pack_size(flist);
+  void* buf = bayer_malloc(bufsize, "pack buffer", __FILE__, __LINE__);
+
+  uint64_t chars = bayer_flist_file_max_name(flist);
+  int details = bayer_flist_have_detail(flist);
+
+  // for each file, if (now - atime) > 60d and (now - ctime) > 60d, add to list
+  bayer_flist eligible;
+  bayer_flist_subset(flist, &eligible);
+
+  static uint32_t limit = 60 * 24 * 3600; /* 60 days */
+  uint32_t now = gettime();
+  int index = 0;
+  int files = bayer_flist_size(flist);
+  while (index < files) {
+    bayer_filetype type = bayer_flist_file_get_type(flist, index);
+    if (type == TYPE_FILE || type == TYPE_LINK) {
+      /* we only purge files and links */
+      uint32_t atime = bayer_flist_file_get_atime(flist, index);
+      uint32_t ctime = bayer_flist_file_get_ctime(flist, index);
+      if ((now - atime) > limit && (now - ctime) > limit) {
+        /* only purge items that have not been
+         * accessed or changed in past limit seconds */
+        bayer_flist_file_pack(buf, flist, index);
+        bayer_flist_file_unpack(buf, eligible, details, chars);
+      }
+    }
+    index++;
+  }
+
+  bayer_flist_summarize(eligible);
+
+  bayer_free(&buf);
+
+  bayer_flist_free(&flist);
+  *pflist = eligible;
+  return;
 }
 
 static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
@@ -442,8 +494,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
     int i;
     for (i = 0; i < nfields; i++) {
       if (fields[i] == FILENAME) {
-        char* name;
-        bayer_flist_file_name(flist, index, &name);
+        const char* name = bayer_flist_file_get_name(flist, index);
         strcpy(sortptr, name);
       } else if (fields[i] == USERNAME) {
         const char* name = bayer_flist_file_get_username(flist, index);
@@ -546,13 +597,11 @@ static void print_summary(bayer_flist flist)
   uint64_t max = bayer_flist_size(flist);
   while (index < max) {
     /* get filename */
-    char* file;
-    bayer_flist_file_name(flist, index, &file);
+    const char* file = bayer_flist_file_get_name(flist, index);
 
     if (bayer_flist_have_detail(flist)) {
       /* get mode */
-      mode_t mode;
-      bayer_flist_file_mode(flist, index, &mode);
+      mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, index);
 
       /* set file type */
       if (S_ISDIR(mode)) {
@@ -570,8 +619,7 @@ static void print_summary(bayer_flist flist)
       total_bytes += size;
     } else {
       /* get type */
-      bayer_filetype type;
-      bayer_flist_file_type(flist, index, &type);
+      bayer_filetype type = bayer_flist_file_get_type(flist, index);
 
       if (type == TYPE_DIR) {
         total_dirs++;
@@ -715,13 +763,11 @@ static void print_files(bayer_flist flist)
   uint64_t max = bayer_flist_size(flist);
   while (index < max) {
     /* get filename */
-    char* file;
-    bayer_flist_file_name(flist, index, &file);
+    const char* file = bayer_flist_file_get_name(flist, index);
 
     if (bayer_flist_have_detail(flist)) {
       /* get mode */
-      mode_t mode;
-      bayer_flist_file_mode(flist, index, &mode);
+      mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, index);
 
       uint32_t uid = bayer_flist_file_get_uid(flist, index);
       uint32_t gid = bayer_flist_file_get_gid(flist, index);
@@ -762,8 +808,7 @@ static void print_files(bayer_flist flist)
       }
     } else {
       /* get type */
-      bayer_filetype type;
-      bayer_flist_file_type(flist, index, &type);
+      bayer_filetype type = bayer_flist_file_get_type(flist, index);
 
       char* type_str = type_str_unknown;
       if (type == TYPE_DIR) {
@@ -1074,6 +1119,7 @@ int main(int argc, char **argv)
   }
 
   /* TODO: filter files */
+  //filter_files(&flist);
 
   /* sort files */
   if (sortfields != NULL) {

@@ -93,24 +93,16 @@ uint64_t bayer_flist_user_max_name(bayer_flist flist);
 /* return maximum length of group names */
 uint64_t bayer_flist_group_max_name(bayer_flist flist);
 
+/* determines which properties are readable */
 int bayer_flist_have_detail(bayer_flist flist);
 
-/* get pointer to name of file at specified index,
- * returns 0 on success -1 otherwise */
-int bayer_flist_file_name(bayer_flist flist, int index, char** name);
+/* always set */
+const char* bayer_flist_file_get_name(bayer_flist flist, int index);
+int bayer_flist_file_get_depth(bayer_flist flist, int index);
+bayer_filetype bayer_flist_file_get_type(bayer_flist flist, int index);
 
-/* get depth of file at specified index,
- * returns 0 on success -1 otherwise */
-int bayer_flist_file_depth(bayer_flist flist, int index, int* depth);
-
-/* get type of file at specified index,
- * returns 0 on success -1 otherwise */
-int bayer_flist_file_type(bayer_flist flist, int index, bayer_filetype* type);
-
-/* get mode of file at specified index,
- * returns 0 on success -1 otherwise */
-int bayer_flist_file_mode(bayer_flist flist, int index, mode_t* mode);
-
+/* valid if detail == 1 */
+uint32_t bayer_flist_file_get_mode(bayer_flist flist, int index);
 uint32_t bayer_flist_file_get_uid(bayer_flist flist, int index);
 uint32_t bayer_flist_file_get_gid(bayer_flist flist, int index);
 uint32_t bayer_flist_file_get_atime(bayer_flist flist, int index);

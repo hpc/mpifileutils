@@ -760,50 +760,48 @@ int bayer_flist_have_detail(bayer_flist bflist)
   return detail;
 }
 
-int bayer_flist_file_name(bayer_flist bflist, int index, char** name)
+const char* bayer_flist_file_get_name(bayer_flist bflist, int index)
 {
+  const char* name = NULL;
   flist_t* flist = (flist_t*) bflist;
   elem_t* elem = list_get_elem(flist, index);
   if (elem != NULL) {
-    *name = elem->file;
-    return 0;
+    name = elem->file;
   }
-  return -1;
+  return name;
 }
 
-int bayer_flist_file_depth(bayer_flist bflist, int index, int* depth)
+int bayer_flist_file_get_depth(bayer_flist bflist, int index)
 {
+  int depth = -1;
   flist_t* flist = (flist_t*) bflist;
   elem_t* elem = list_get_elem(flist, index);
   if (elem != NULL) {
-    *depth = elem->depth;
-    return 0;
+    depth = elem->depth;
   }
-  return -1;
+  return depth;
 }
 
-int bayer_flist_file_type(bayer_flist bflist, int index, bayer_filetype* type)
+bayer_filetype bayer_flist_file_get_type(bayer_flist bflist, int index)
 {
+  bayer_filetype type = TYPE_NULL;
   flist_t* flist = (flist_t*) bflist;
   elem_t* elem = list_get_elem(flist, index);
   if (elem != NULL) {
-    *type = elem->type;
-    return 0;
+    type = elem->type;
   }
-  return -1;
+  return type;
 }
 
-int bayer_flist_file_mode(bayer_flist bflist, int index, mode_t* mode)
+uint32_t bayer_flist_file_get_mode(bayer_flist bflist, int index)
 {
+  uint32_t mode = 0;
   flist_t* flist = (flist_t*) bflist;
-  if (flist->detail > 0) {
-    elem_t* elem = list_get_elem(flist, index);
-    if (elem != NULL) {
-      *mode = (mode_t) elem->mode;
-      return 0;
-    }
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL && flist->detail > 0) {
+    mode = elem->mode;
   }
-  return -1;
+  return mode;
 }
 
 uint32_t bayer_flist_file_get_uid(bayer_flist bflist, int index)
