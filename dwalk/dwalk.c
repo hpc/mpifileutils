@@ -33,7 +33,19 @@ uint64_t total_links   = 0;
 uint64_t total_unknown = 0;
 uint64_t total_bytes   = 0;
 
-#if 0
+typedef enum {
+  NULLFIELD = 0,
+  FILENAME,
+  USERNAME,
+  GROUPNAME,
+  USERID,
+  GROUPID,
+  ATIME,
+  MTIME,
+  CTIME,
+  FILESIZE,
+} sort_field;
+
 /* routine for sorting strings in ascending order */
 static int my_strcmp(const void* a, const void* b)
 {
@@ -45,12 +57,22 @@ static int my_strcmp_rev(const void* a, const void* b)
   return strcmp((const char*)b, (const char*)a);
 }
 
-static int sort_files_readdir(const char* sortfields, bayer_flist flist)
+static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
 {
-  void* inbuf      = files->buf;
+  /* get list from caller */
+  bayer_flist flist = *pflist;
+
+  /* create a new list as subset of original list */
+  bayer_flist flist2;
+  bayer_flist_subset(flist, &flist2);
+
   uint64_t incount = bayer_flist_size(flist);
   int chars        = bayer_flist_file_max_name(flist);
-  MPI_Datatype dt_sat = files->dt;
+
+  /* create datatype for packed file list element */
+  MPI_Datatype dt_sat;
+  size_t bytes = bayer_flist_file_pack_size(flist);
+  MPI_Type_contiguous(bytes, MPI_BYTE, &dt_sat);
 
   /* get our rank and the size of comm_world */
   int rank, ranks;
@@ -74,14 +96,12 @@ static int sort_files_readdir(const char* sortfields, bayer_flist flist)
   const int MAXFIELDS = 1;
   MPI_Datatype types[MAXFIELDS];
   DTCMP_Op ops[MAXFIELDS];
-  size_t offsets[MAXFIELDS];
+  sort_field fields[MAXFIELDS];
   size_t lengths[MAXFIELDS];
-  int    sources[MAXFIELDS];
   int nfields = 0;
   for (nfields = 0; nfields < MAXFIELDS; nfields++) {
     types[nfields]   = MPI_DATATYPE_NULL;
     ops[nfields]     = DTCMP_OP_NULL;
-    sources[nfields] = 0;
   }
   nfields = 0;
   char* sortfields_copy = bayer_strdup(sortfields, "sort fields", __FILE__, __LINE__);
@@ -91,15 +111,281 @@ static int sort_files_readdir(const char* sortfields, bayer_flist flist)
     if (strcmp(token, "name") == 0) {
       types[nfields]   = dt_filepath;
       ops[nfields]     = op_filepath;
-      offsets[nfields] = 0;
+      fields[nfields]  = FILENAME;
       lengths[nfields] = chars;
-      sources[nfields] = 1;
     } else if (strcmp(token, "-name") == 0) {
       types[nfields]   = dt_filepath;
       ops[nfields]     = op_filepath_rev;
-      offsets[nfields] = 0;
+      fields[nfields]  = FILENAME;
       lengths[nfields] = chars;
-      sources[nfields] = 1;
+    } else {
+      /* invalid token */
+      valid = 0;
+      if (rank == 0) {
+        printf("Invalid sort field: %s\n", token);
+      }
+    }
+    if (valid) {
+      nfields++;
+    }
+    if (nfields > MAXFIELDS) {
+      /* TODO: print warning if we have too many fields */
+      break;
+    }
+    token = strtok(NULL, ",");
+  }
+  bayer_free(&sortfields_copy);
+
+  /* build key type */
+  MPI_Datatype dt_key;
+  DTCMP_Type_create_series(nfields, types, &dt_key);
+
+  /* create sort op */
+  DTCMP_Op op_key;
+  DTCMP_Op_create_series(nfields, ops, &op_key);
+
+  /* build keysat type */
+  MPI_Datatype dt_keysat, keysat_types[2];
+  keysat_types[0] = dt_key;
+  keysat_types[1] = dt_sat;
+  DTCMP_Type_create_series(2, keysat_types, &dt_keysat);
+
+  /* get extent of key type */
+  MPI_Aint key_lb, key_extent;
+  MPI_Type_get_extent(dt_key, &key_lb, &key_extent);
+
+  /* get extent of keysat type */
+  MPI_Aint keysat_lb, keysat_extent;
+  MPI_Type_get_extent(dt_keysat, &keysat_lb, &keysat_extent);
+
+  /* get extent of sat type */
+  MPI_Aint sat_lb, sat_extent;
+  MPI_Type_get_extent(dt_sat, &sat_lb, &sat_extent);
+
+  /* compute size of sort element and allocate buffer */
+  size_t sortbufsize = keysat_extent * incount;
+  void* sortbuf = bayer_malloc(sortbufsize, "presort buffer", __FILE__, __LINE__);
+
+  /* copy data into sort elements */
+  int index = 0;
+  char* sortptr = (char*) sortbuf;
+  while (index < incount) {
+    /* copy in access time */
+    int i;
+    for (i = 0; i < nfields; i++) {
+      if (fields[i] == FILENAME) {
+        char* name;
+        bayer_flist_file_name(flist, index, &name);
+        strcpy(sortptr, name);
+      }
+      sortptr += lengths[i];
+    }
+
+    /* pack file element */
+    sortptr += bayer_flist_file_pack(sortptr, flist, index);
+
+    index++;
+  }
+
+  /* sort data */
+  void* outsortbuf;
+  int outsortcount;
+  DTCMP_Handle handle;
+  DTCMP_Sortz(
+    sortbuf, incount, &outsortbuf, &outsortcount,
+    dt_key, dt_keysat, op_key, DTCMP_FLAG_NONE,
+    MPI_COMM_WORLD, &handle
+  );
+
+  /* step through sorted data filenames */
+  index = 0;
+  sortptr = (char*) outsortbuf;
+  while (index < outsortcount) {
+    sortptr += key_extent;
+    sortptr += bayer_flist_file_unpack(sortptr, flist2, 0, chars);
+    index++;
+  }
+
+  /* build summary of new list */
+  bayer_flist_summarize(flist2);
+
+  /* free memory */
+  DTCMP_Free(&handle);
+    
+  /* free ops */
+  DTCMP_Op_free(&op_key);
+  DTCMP_Op_free(&op_filepath_rev);
+  DTCMP_Op_free(&op_filepath);
+
+  /* free types */
+  MPI_Type_free(&dt_keysat);
+  MPI_Type_free(&dt_key);
+  MPI_Type_free(&dt_filepath);
+
+  /* free input buffer holding sort elements */
+  bayer_free(&sortbuf);
+
+  /* free the satellite type */
+  MPI_Type_free(&dt_sat);
+
+  /* return new list and free old one */
+  *pflist = flist2;
+  bayer_flist_free(&flist);
+
+  return 0;
+}
+
+static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
+{
+  /* get list from caller */
+  bayer_flist flist = *pflist;
+
+  /* create a new list as subset of original list */
+  bayer_flist flist2;
+  bayer_flist_subset(flist, &flist2);
+
+  uint64_t incount = bayer_flist_size(flist);
+  int chars        = bayer_flist_file_max_name(flist);
+  int chars_user   = bayer_flist_user_max_name(flist);
+  int chars_group  = bayer_flist_group_max_name(flist);
+
+  /* create datatype for packed file list element */
+  MPI_Datatype dt_sat;
+  size_t bytes = bayer_flist_file_pack_size(flist);
+  MPI_Type_contiguous(bytes, MPI_BYTE, &dt_sat);
+
+  /* get our rank and the size of comm_world */
+  int rank, ranks;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+  /* build type for file path */
+  MPI_Datatype dt_filepath, dt_user, dt_group;
+  MPI_Type_contiguous(chars,       MPI_CHAR, &dt_filepath);
+  MPI_Type_contiguous(chars_user,  MPI_CHAR, &dt_user);
+  MPI_Type_contiguous(chars_group, MPI_CHAR, &dt_group);
+  MPI_Type_commit(&dt_filepath);
+  MPI_Type_commit(&dt_user);
+  MPI_Type_commit(&dt_group);
+
+  /* build comparison op for filenames */
+  DTCMP_Op op_filepath, op_user, op_group;
+  DTCMP_Op_create(dt_filepath, my_strcmp, &op_filepath);
+  DTCMP_Op_create(dt_user,     my_strcmp, &op_user);
+  DTCMP_Op_create(dt_group,    my_strcmp, &op_group);
+
+  /* build comparison op for filenames */
+  DTCMP_Op op_filepath_rev, op_user_rev, op_group_rev;
+  DTCMP_Op_create(dt_filepath, my_strcmp_rev, &op_filepath_rev);
+  DTCMP_Op_create(dt_user,     my_strcmp_rev, &op_user_rev);
+  DTCMP_Op_create(dt_group,    my_strcmp_rev, &op_group_rev);
+
+  /* TODO: process sort fields */
+  const int MAXFIELDS = 7;
+  MPI_Datatype types[MAXFIELDS];
+  DTCMP_Op ops[MAXFIELDS];
+  sort_field fields[MAXFIELDS];
+  size_t lengths[MAXFIELDS];
+  int nfields = 0;
+  for (nfields = 0; nfields < MAXFIELDS; nfields++) {
+    types[nfields]   = MPI_DATATYPE_NULL;
+    ops[nfields]     = DTCMP_OP_NULL;
+  }
+  nfields = 0;
+  char* sortfields_copy = bayer_strdup(sortfields, "sort fields", __FILE__, __LINE__);
+  char* token = strtok(sortfields_copy, ",");
+  while (token != NULL) {
+    int valid = 1;
+    if (strcmp(token, "name") == 0) {
+      types[nfields]   = dt_filepath;
+      ops[nfields]     = op_filepath;
+      fields[nfields]  = FILENAME;
+      lengths[nfields] = chars;
+    } else if (strcmp(token, "-name") == 0) {
+      types[nfields]   = dt_filepath;
+      ops[nfields]     = op_filepath_rev;
+      fields[nfields]  = FILENAME;
+      lengths[nfields] = chars;
+    } else if (strcmp(token, "user") == 0) {
+      types[nfields]   = dt_user;
+      ops[nfields]     = op_user;
+      fields[nfields]  = USERNAME;
+      lengths[nfields] = chars_user;
+    } else if (strcmp(token, "-user") == 0) {
+      types[nfields]   = dt_user;
+      ops[nfields]     = op_user_rev;
+      fields[nfields]  = USERNAME;
+      lengths[nfields] = chars_user;
+    } else if (strcmp(token, "group") == 0) {
+      types[nfields]   = dt_group;
+      ops[nfields]     = op_group;
+      fields[nfields]  = GROUPNAME;
+      lengths[nfields] = chars_group;
+    } else if (strcmp(token, "-group") == 0) {
+      types[nfields]   = dt_group;
+      ops[nfields]     = op_group_rev;
+      fields[nfields]  = GROUPNAME;
+      lengths[nfields] = chars_group;
+    } else if (strcmp(token, "uid") == 0) {
+      types[nfields]   = MPI_UINT32_T;
+      ops[nfields]     = DTCMP_OP_UINT32T_ASCEND;
+      fields[nfields]  = USERID;
+      lengths[nfields] = 4;
+    } else if (strcmp(token, "-uid") == 0) {
+      types[nfields]   = MPI_UINT32_T;
+      ops[nfields]     = DTCMP_OP_UINT32T_DESCEND;
+      fields[nfields]  = USERID;
+      lengths[nfields] = 4;
+    } else if (strcmp(token, "gid") == 0) {
+      types[nfields]   = MPI_UINT32_T;
+      ops[nfields]     = DTCMP_OP_UINT32T_ASCEND;
+      fields[nfields]  = GROUPID;
+      lengths[nfields] = 4;
+    } else if (strcmp(token, "-gid") == 0) {
+      types[nfields]   = MPI_UINT32_T;
+      ops[nfields]     = DTCMP_OP_UINT32T_DESCEND;
+      fields[nfields]  = GROUPID;
+      lengths[nfields] = 4;
+    } else if (strcmp(token, "atime") == 0) {
+      types[nfields]   = MPI_UINT32_T;
+      ops[nfields]     = DTCMP_OP_UINT32T_ASCEND;
+      fields[nfields]  = ATIME;
+      lengths[nfields] = 4;
+    } else if (strcmp(token, "-atime") == 0) {
+      types[nfields]   = MPI_UINT32_T;
+      ops[nfields]     = DTCMP_OP_UINT32T_DESCEND;
+      fields[nfields]  = ATIME;
+      lengths[nfields] = 4;
+    } else if (strcmp(token, "mtime") == 0) {
+      types[nfields]   = MPI_UINT32_T;
+      ops[nfields]     = DTCMP_OP_UINT32T_ASCEND;
+      fields[nfields]  = MTIME;
+      lengths[nfields] = 4;
+    } else if (strcmp(token, "-mtime") == 0) {
+      types[nfields]   = MPI_UINT32_T;
+      ops[nfields]     = DTCMP_OP_UINT32T_DESCEND;
+      fields[nfields]  = MTIME;
+      lengths[nfields] = 4;
+    } else if (strcmp(token, "ctime") == 0) {
+      types[nfields]   = MPI_UINT32_T;
+      ops[nfields]     = DTCMP_OP_UINT32T_ASCEND;
+      fields[nfields]  = CTIME;
+      lengths[nfields] = 4;
+    } else if (strcmp(token, "-ctime") == 0) {
+      types[nfields]   = MPI_UINT32_T;
+      ops[nfields]     = DTCMP_OP_UINT32T_DESCEND;
+      fields[nfields]  = CTIME;
+      lengths[nfields] = 4;
+    } else if (strcmp(token, "size") == 0) {
+      types[nfields]   = MPI_UINT64_T;
+      ops[nfields]     = DTCMP_OP_UINT64T_ASCEND;
+      fields[nfields]  = FILESIZE;
+      lengths[nfields] = 8;
+    } else if (strcmp(token, "-size") == 0) {
+      types[nfields]   = MPI_UINT64_T;
+      ops[nfields]     = DTCMP_OP_UINT64T_DESCEND;
+      fields[nfields]  = FILESIZE;
+      lengths[nfields] = 8;
     } else {
       /* invalid token */
       valid = 0;
@@ -141,286 +427,8 @@ static int sort_files_readdir(const char* sortfields, bayer_flist flist)
   MPI_Type_get_extent(dt_keysat, &keysat_lb, &keysat_extent);
 
   /* get extent of sat type */
-  MPI_Aint sat_lb, sat_extent;
-  MPI_Type_get_extent(dt_sat, &sat_lb, &sat_extent);
-
-  /* compute size of sort element and allocate buffer */
-  size_t sortbufsize = keysat_extent * incount;
-  void* sortbuf = bayer_malloc(sortbufsize, "presort buffer", __FILE__, __LINE__);
-
-  /* copy data into sort elements */
-  int index = 0;
-  char* inptr   = (char*) inbuf;
-  char* sortptr = (char*) sortbuf;
-  while (index < incount) {
-    /* copy in access time */
-    int i;
-    for (i = 0; i < nfields; i++) {
-      memcpy(sortptr, inptr + offsets[i], lengths[i]);
-      sortptr += lengths[i];
-    }
-
-    /* TODO: copy sat info via function */
-    memcpy(sortptr, inptr, sat_extent);
-    sortptr += sat_extent;
-    inptr   += sat_extent;
-
-    index++;
-  }
-
-  /* sort data */
-  void* outsortbuf;
-  int outsortcount;
-  DTCMP_Handle handle;
-  DTCMP_Sortz(
-    sortbuf, incount, &outsortbuf, &outsortcount,
-    dt_key, dt_keysat, op_key, DTCMP_FLAG_NONE,
-    MPI_COMM_WORLD, &handle
-  );
-
-  /* allocate array to hold sorted info */
-  size_t newbufsize = sat_extent * outsortcount;
-  void* newbuf = bayer_malloc(newbufsize, "postsort buffer", __FILE__, __LINE__);
-
-  /* step through sorted data filenames */
-  index = 0;
-  sortptr = (char*) outsortbuf;
-  char* newptr = (char*) newbuf;
-  while (index < outsortcount) {
-    sortptr += key_extent;
-    memcpy(newptr, sortptr, sat_extent);
-    sortptr += sat_extent;
-    newptr  += sat_extent;
-    index++;
-  }
-
-  /* free memory */
-  DTCMP_Free(&handle);
-    
-  /* free ops */
-  DTCMP_Op_free(&op_key);
-  DTCMP_Op_free(&op_filepath_rev);
-  DTCMP_Op_free(&op_filepath);
-
-  /* free types */
-  MPI_Type_free(&dt_keysat);
-  MPI_Type_free(&dt_key);
-  MPI_Type_free(&dt_filepath);
-
-  /* free input buffer holding sort elements */
-  bayer_free(&sortbuf);
-
-  /* set output params */
-  bayer_free(&(files->buf));
-  files->buf   = newbuf;
-  files->count = outsortcount;
-
-  return 0;
-}
-
-static int sort_files_stat(const char* sortfields, bayer_flist flist)
-{
-  void* inbuf      = files->buf;
-  uint64_t incount = bayer_flist_size(flist);
-  int chars        = bayer_flist_file_max_name(flist);
-  int chars_user   = bayer_flist_user_max_name(flist);
-  int chars_group  = bayer_flist_group_max_name(flist);
-  MPI_Datatype dt_stat = files->dt;
-
-  /* get our rank and the size of comm_world */
-  int rank, ranks;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-  /* build type for file path */
-  MPI_Datatype dt_filepath, dt_user, dt_group;
-  MPI_Type_contiguous(chars,       MPI_CHAR, &dt_filepath);
-  MPI_Type_contiguous(chars_user,  MPI_CHAR, &dt_user);
-  MPI_Type_contiguous(chars_group, MPI_CHAR, &dt_group);
-  MPI_Type_commit(&dt_filepath);
-  MPI_Type_commit(&dt_user);
-  MPI_Type_commit(&dt_group);
-
-  /* build comparison op for filenames */
-  DTCMP_Op op_filepath, op_user, op_group;
-  DTCMP_Op_create(dt_filepath, my_strcmp, &op_filepath);
-  DTCMP_Op_create(dt_user,     my_strcmp, &op_user);
-  DTCMP_Op_create(dt_group,    my_strcmp, &op_group);
-
-  /* build comparison op for filenames */
-  DTCMP_Op op_filepath_rev, op_user_rev, op_group_rev;
-  DTCMP_Op_create(dt_filepath, my_strcmp_rev, &op_filepath_rev);
-  DTCMP_Op_create(dt_user,     my_strcmp_rev, &op_user_rev);
-  DTCMP_Op_create(dt_group,    my_strcmp_rev, &op_group_rev);
-
-  /* TODO: process sort fields */
-  MPI_Datatype types[7];
-  DTCMP_Op ops[7];
-  size_t offsets[7];
-  size_t lengths[7];
-  int    sources[7];
-  int nfields = 0;
-  for (nfields = 0; nfields < 7; nfields++) {
-    types[nfields]   = MPI_DATATYPE_NULL;
-    ops[nfields]     = DTCMP_OP_NULL;
-    sources[nfields] = 0;
-  }
-  nfields = 0;
-  char* sortfields_copy = bayer_strdup(sortfields, "sort fields", __FILE__, __LINE__);
-  char* token = strtok(sortfields_copy, ",");
-  while (token != NULL) {
-    int valid = 1;
-    if (strcmp(token, "name") == 0) {
-      types[nfields]   = dt_filepath;
-      ops[nfields]     = op_filepath;
-      offsets[nfields] = 0;
-      lengths[nfields] = chars;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "-name") == 0) {
-      types[nfields]   = dt_filepath;
-      ops[nfields]     = op_filepath_rev;
-      offsets[nfields] = 0;
-      lengths[nfields] = chars;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "user") == 0) {
-      types[nfields]   = dt_user;
-      ops[nfields]     = op_user;
-      offsets[nfields] = chars + 1 * 4;
-      lengths[nfields] = chars_user;
-      sources[nfields] = 2;
-    } else if (strcmp(token, "-user") == 0) {
-      types[nfields]   = dt_user;
-      ops[nfields]     = op_user_rev;
-      offsets[nfields] = chars + 1 * 4;
-      lengths[nfields] = chars_user;
-      sources[nfields] = 2;
-    } else if (strcmp(token, "group") == 0) {
-      types[nfields]   = dt_group;
-      ops[nfields]     = op_group;
-      offsets[nfields] = chars + 2 * 4;
-      lengths[nfields] = chars_group;
-      sources[nfields] = 3;
-    } else if (strcmp(token, "-group") == 0) {
-      types[nfields]   = dt_group;
-      ops[nfields]     = op_group_rev;
-      offsets[nfields] = chars + 2 * 4;
-      lengths[nfields] = chars_group;
-      sources[nfields] = 3;
-    } else if (strcmp(token, "uid") == 0) {
-      types[nfields]   = MPI_UINT32_T;
-      ops[nfields]     = DTCMP_OP_UINT32T_ASCEND;
-      offsets[nfields] = chars + 1 * 4;
-      lengths[nfields] = 4;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "-uid") == 0) {
-      types[nfields]   = MPI_UINT32_T;
-      ops[nfields]     = DTCMP_OP_UINT32T_DESCEND;
-      offsets[nfields] = chars + 1 * 4;
-      lengths[nfields] = 4;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "gid") == 0) {
-      types[nfields]   = MPI_UINT32_T;
-      ops[nfields]     = DTCMP_OP_UINT32T_ASCEND;
-      offsets[nfields] = chars + 2 * 4;
-      lengths[nfields] = 4;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "-gid") == 0) {
-      types[nfields]   = MPI_UINT32_T;
-      ops[nfields]     = DTCMP_OP_UINT32T_DESCEND;
-      offsets[nfields] = chars + 2 * 4;
-      lengths[nfields] = 4;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "atime") == 0) {
-      types[nfields]   = MPI_UINT32_T;
-      ops[nfields]     = DTCMP_OP_UINT32T_ASCEND;
-      offsets[nfields] = chars + 3 * 4;
-      lengths[nfields] = 4;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "-atime") == 0) {
-      types[nfields]   = MPI_UINT32_T;
-      ops[nfields]     = DTCMP_OP_UINT32T_DESCEND;
-      offsets[nfields] = chars + 3 * 4;
-      lengths[nfields] = 4;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "mtime") == 0) {
-      types[nfields]   = MPI_UINT32_T;
-      ops[nfields]     = DTCMP_OP_UINT32T_ASCEND;
-      offsets[nfields] = chars + 4 * 4;
-      lengths[nfields] = 4;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "-mtime") == 0) {
-      types[nfields]   = MPI_UINT32_T;
-      ops[nfields]     = DTCMP_OP_UINT32T_DESCEND;
-      offsets[nfields] = chars + 4 * 4;
-      lengths[nfields] = 4;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "ctime") == 0) {
-      types[nfields]   = MPI_UINT32_T;
-      ops[nfields]     = DTCMP_OP_UINT32T_ASCEND;
-      offsets[nfields] = chars + 5 * 4;
-      lengths[nfields] = 4;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "-ctime") == 0) {
-      types[nfields]   = MPI_UINT32_T;
-      ops[nfields]     = DTCMP_OP_UINT32T_DESCEND;
-      offsets[nfields] = chars + 5 * 4;
-      lengths[nfields] = 4;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "size") == 0) {
-      types[nfields]   = MPI_UINT64_T;
-      ops[nfields]     = DTCMP_OP_UINT64T_ASCEND;
-      offsets[nfields] = chars + 6 * 4;
-      lengths[nfields] = 8;
-      sources[nfields] = 1;
-    } else if (strcmp(token, "-size") == 0) {
-      types[nfields]   = MPI_UINT64_T;
-      ops[nfields]     = DTCMP_OP_UINT64T_DESCEND;
-      offsets[nfields] = chars + 6 * 4;
-      lengths[nfields] = 8;
-      sources[nfields] = 1;
-    } else {
-      /* invalid token */
-      valid = 0;
-      if (rank == 0) {
-        printf("Invalid sort field: %s\n", token);
-      }
-    }
-    if (valid) {
-      nfields++;
-    }
-    if (nfields > 7) {
-      /* TODO: print warning if we have too many fields */
-      break;
-    }
-    token = strtok(NULL, ",");
-  }
-  bayer_free(&sortfields_copy);
-
-  /* build key type */
-  MPI_Datatype dt_key;
-  DTCMP_Type_create_series(nfields, types, &dt_key);
-
-  /* create op to sort by access time, then filename */
-  DTCMP_Op op_key;
-  DTCMP_Op_create_series(nfields, ops, &op_key);
-
-  /* build keysat type */
-  MPI_Datatype dt_keysat, keysat_types[2];
-  keysat_types[0] = dt_key;
-  keysat_types[1] = dt_stat;
-  DTCMP_Type_create_series(2, keysat_types, &dt_keysat);
-
-  /* get extent of key type */
-  MPI_Aint key_lb, key_extent;
-  MPI_Type_get_extent(dt_key, &key_lb, &key_extent);
-
-  /* get extent of keysat type */
-  MPI_Aint keysat_lb, keysat_extent;
-  MPI_Type_get_extent(dt_keysat, &keysat_lb, &keysat_extent);
-
-  /* get extent of stat type */
   MPI_Aint stat_lb, stat_extent;
-  MPI_Type_get_extent(dt_stat, &stat_lb, &stat_extent);
+  MPI_Type_get_extent(dt_sat, &stat_lb, &stat_extent);
 
   /* compute size of sort element and allocate buffer */
   size_t sortbufsize = keysat_extent * incount;
@@ -428,30 +436,46 @@ static int sort_files_stat(const char* sortfields, bayer_flist flist)
 
   /* copy data into sort elements */
   int index = 0;
-  char* inptr   = (char*) inbuf;
   char* sortptr = (char*) sortbuf;
   while (index < incount) {
     /* copy in access time */
     int i;
     for (i = 0; i < nfields; i++) {
-      if (sources[i] == 1) {
-        memcpy(sortptr, inptr + offsets[i], lengths[i]);
-      } else if (sources[i] == 2) {
-        uint32_t id = *(uint32_t*)(inptr + offsets[i]);
-        const char* name = get_name_from_id(id, chars_user, user_id2name);
-        strncpy(sortptr, name, lengths[i]);
-      } else if (sources[i] == 3) {
-        uint32_t id = *(uint32_t*)(inptr + offsets[i]);
-        const char* name = get_name_from_id(id, chars_group, group_id2name);
-        strncpy(sortptr, name, lengths[i]);
+      if (fields[i] == FILENAME) {
+        char* name;
+        bayer_flist_file_name(flist, index, &name);
+        strcpy(sortptr, name);
+      } else if (fields[i] == USERNAME) {
+        const char* name = bayer_flist_file_get_username(flist, index);
+        strcpy(sortptr, name);
+      } else if (fields[i] == GROUPNAME) {
+        const char* name = bayer_flist_file_get_groupname(flist, index);
+        strcpy(sortptr, name);
+      } else if (fields[i] == USERID) {
+        uint32_t val32 = bayer_flist_file_get_uid(flist, index);
+        memcpy(sortptr, &val32, 4);
+      } else if (fields[i] == GROUPID) {
+        uint32_t val32 = bayer_flist_file_get_gid(flist, index);
+        memcpy(sortptr, &val32, 4);
+      } else if (fields[i] == ATIME) {
+        uint32_t val32 = bayer_flist_file_get_atime(flist, index);
+        memcpy(sortptr, &val32, 4);
+      } else if (fields[i] == MTIME) {
+        uint32_t val32 = bayer_flist_file_get_mtime(flist, index);
+        memcpy(sortptr, &val32, 4);
+      } else if (fields[i] == CTIME) {
+        uint32_t val32 = bayer_flist_file_get_ctime(flist, index);
+        memcpy(sortptr, &val32, 4);
+      } else if (fields[i] == FILESIZE) {
+        uint64_t val64 = bayer_flist_file_get_size(flist, index);
+        memcpy(sortptr, &val64, 8);
       }
+      
       sortptr += lengths[i];
     }
 
-    /* TODO: copy stat info via function */
-    memcpy(sortptr, inptr, stat_extent);
-    sortptr += stat_extent;
-    inptr   += stat_extent;
+    /* pack file element */
+    sortptr += bayer_flist_file_pack(sortptr, flist, index);
 
     index++;
   }
@@ -466,21 +490,17 @@ static int sort_files_stat(const char* sortfields, bayer_flist flist)
     MPI_COMM_WORLD, &handle
   );
 
-  /* allocate array to hold sorted info */
-  size_t newbufsize = stat_extent * outsortcount;
-  void* newbuf = bayer_malloc(newbufsize, "postsort buffer", __FILE__, __LINE__);
-
   /* step through sorted data filenames */
   index = 0;
   sortptr = (char*) outsortbuf;
-  char* newptr = (char*) newbuf;
   while (index < outsortcount) {
     sortptr += key_extent;
-    memcpy(newptr, sortptr, stat_extent);
-    sortptr += stat_extent;
-    newptr  += stat_extent;
+    sortptr += bayer_flist_file_unpack(sortptr, flist2, 1, chars);
     index++;
   }
+
+  /* build summary of new list */
+  bayer_flist_summarize(flist2);
 
   /* free memory */
   DTCMP_Free(&handle);
@@ -504,14 +524,15 @@ static int sort_files_stat(const char* sortfields, bayer_flist flist)
   /* free input buffer holding sort elements */
   bayer_free(&sortbuf);
 
-  /* set output params */
-  bayer_free(&(files->buf));
-  files->buf   = newbuf;
-  files->count = outsortcount;
+  /* free the satellite type */
+  MPI_Type_free(&dt_sat);
+
+  /* return new list and free old one */
+  *pflist = flist2;
+  bayer_flist_free(&flist);
 
   return 0;
 }
-#endif
 
 static void print_summary(bayer_flist flist)
 {
@@ -780,7 +801,8 @@ static void print_usage()
   printf("Usage: dwalk [options] <path>\n");
   printf("\n");
   printf("Options:\n");
-  printf("  -c, --cache <file>  - read/write directories using cache file\n");
+  printf("  -i, --input <file>  - read list from file\n");
+  printf("  -o, --output <file> - write processed list to file\n");
   printf("  -l, --lite          - walk file system without stat\n");
   printf("  -s, --sort <fields> - sort output by comma-delimited fields\n");
   printf("  -p, --print         - print files to screen\n");
@@ -814,14 +836,16 @@ int main(int argc, char **argv)
    *   - allow user to sort by different fields
    *   - allow user to group output (sum all bytes, group by user) */
 
-  char* cachename = NULL;
+  char* inputname  = NULL;
+  char* outputname = NULL;
   char* sortfields = NULL;
   int walk = 0;
   int print = 0;
 
   int option_index = 0;
   static struct option long_options[] = {
-    {"cache",    1, 0, 'c'},
+    {"input",    1, 0, 'i'},
+    {"output",   1, 0, 'o'},
     {"lite",     0, 0, 'l'},
     {"sort",     1, 0, 's'},
     {"print",    0, 0, 'p'},
@@ -833,7 +857,7 @@ int main(int argc, char **argv)
   int usage = 0;
   while (1) {
     int c = getopt_long(
-      argc, argv, "c:ls:phv",
+      argc, argv, "i:o:ls:phv",
       long_options, &option_index
     );
 
@@ -842,8 +866,11 @@ int main(int argc, char **argv)
     }
 
     switch (c) {
-    case 'c':
-      cachename = bayer_strdup(optarg, "cache file", __FILE__, __LINE__);
+    case 'i':
+      inputname = bayer_strdup(optarg, "input file", __FILE__, __LINE__);
+      break;
+    case 'o':
+      outputname = bayer_strdup(optarg, "output file", __FILE__, __LINE__);
       break;
     case 'l':
       walk_stat = 0;
@@ -885,10 +912,15 @@ int main(int argc, char **argv)
     if (argc - optind > 1) {
       usage = 1;
     }
+
+    /* don't allow user to specify input file with walk */
+    if (inputname != NULL) {
+      usage = 1;
+    }
   } else {
     /* if we're not walking, we must be reading,
      * and for that we need a file */
-    if (cachename == NULL) {
+    if (inputname == NULL) {
       usage = 1;
     }
   }
@@ -1022,7 +1054,7 @@ int main(int argc, char **argv)
   } else {
     /* read data from cache file */
     double start_read = MPI_Wtime();
-    bayer_flist_read_cache(cachename, &flist);
+    bayer_flist_read_cache(inputname, &flist);
     double end_read = MPI_Wtime();
 
     /* get total file count */
@@ -1041,36 +1073,6 @@ int main(int argc, char **argv)
     }
   }
 
-  bayer_flist flist2;
-  bayer_flist_subset(flist, &flist2);
-  bayer_flist_free(&flist2);
-
-  /* write data to cache file */
-  if (walk && cachename != NULL) {
-    /* report the filename we're writing to */
-    if (verbose && rank == 0) {
-      printf("Writing to cache file: %s\n", cachename);
-      fflush(stdout);
-    }
-
-    double start_write = MPI_Wtime();
-    bayer_flist_write_cache(cachename, flist);
-    double end_write = MPI_Wtime();
-
-    /* report write count, time, and rate */
-    if (verbose && rank == 0) {
-      double time = end_write - start_write;
-      double rate = 0.0;
-      if (time > 0.0) {
-        rate = ((double)all_count) / time;
-      }
-      printf("Wrote %lu files in %f seconds (%f files/sec)\n",
-        all_count, time, rate
-      );
-    }
-  }
-
-#if 0
   /* TODO: filter files */
 
   /* sort files */
@@ -1082,9 +1084,9 @@ int main(int argc, char **argv)
 
     double start_sort = MPI_Wtime();
     if (walk_stat) {
-      sort_files_stat(sortfields, &users, &groups, &files, user_id2name, group_id2name);
+      sort_files_stat(sortfields, &flist);
     } else {
-      sort_files_readdir(sortfields, &files);
+      sort_files_readdir(sortfields, &flist);
     }
     double end_sort = MPI_Wtime();
 
@@ -1100,7 +1102,6 @@ int main(int argc, char **argv)
       );
     }
   }
-#endif
 
   /* print files */
   if (print) {
@@ -1109,12 +1110,38 @@ int main(int argc, char **argv)
 
   print_summary(flist);
 
+  /* write data to cache file */
+  if (outputname != NULL) {
+    /* report the filename we're writing to */
+    if (verbose && rank == 0) {
+      printf("Writing to output file: %s\n", outputname);
+      fflush(stdout);
+    }
+
+    double start_write = MPI_Wtime();
+    bayer_flist_write_cache(outputname, flist);
+    double end_write = MPI_Wtime();
+
+    /* report write count, time, and rate */
+    if (verbose && rank == 0) {
+      double time = end_write - start_write;
+      double rate = 0.0;
+      if (time > 0.0) {
+        rate = ((double)all_count) / time;
+      }
+      printf("Wrote %lu files in %f seconds (%f files/sec)\n",
+        all_count, time, rate
+      );
+    }
+  }
+
   /* free users, groups, and files objects */
   bayer_flist_free(&flist);
 
   /* free memory allocated for options */
   bayer_free(&sortfields);
-  bayer_free(&cachename);
+  bayer_free(&outputname);
+  bayer_free(&inputname);
 
   /* shut down the sorting library */
   DTCMP_Finalize();
