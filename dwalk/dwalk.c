@@ -248,12 +248,6 @@ static void filter_files(bayer_flist* pflist)
 {
   bayer_flist flist = *pflist;
 
-  size_t bufsize = bayer_flist_file_pack_size(flist);
-  void* buf = BAYER_MALLOC(bufsize);
-
-  uint64_t chars = bayer_flist_file_max_name(flist);
-  int details = bayer_flist_have_detail(flist);
-
   // for each file, if (now - atime) > 60d and (now - ctime) > 60d, add to list
   bayer_flist eligible;
   bayer_flist_subset(flist, &eligible);
@@ -271,16 +265,13 @@ static void filter_files(bayer_flist* pflist)
       if ((now - atime) > limit && (now - ctime) > limit) {
         /* only purge items that have not been
          * accessed or changed in past limit seconds */
-        bayer_flist_file_pack(buf, flist, index);
-        bayer_flist_file_unpack(buf, eligible, details, chars);
+        bayer_flist_file_copy(flist, index, eligible);
       }
     }
     index++;
   }
 
   bayer_flist_summarize(eligible);
-
-  bayer_free(&buf);
 
   bayer_flist_free(&flist);
   *pflist = eligible;
@@ -745,97 +736,177 @@ static void prepare_mode_format(mode_t mode)
 }
 
 static char type_str_unknown[] = "UNK";
-static char type_str_dir[]  = "DIR";
-static char type_str_file[] = "REG";
-static char type_str_link[] = "LNK";
+static char type_str_dir[]     = "DIR";
+static char type_str_file[]    = "REG";
+static char type_str_link[]    = "LNK";
+
+static void print_file(bayer_flist flist, int index, int rank)
+{
+  /* get filename */
+  const char* file = bayer_flist_file_get_name(flist, index);
+
+  if (bayer_flist_have_detail(flist)) {
+    /* get mode */
+    mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, index);
+
+    uint32_t uid = bayer_flist_file_get_uid(flist, index);
+    uint32_t gid = bayer_flist_file_get_gid(flist, index);
+    uint32_t access = bayer_flist_file_get_atime(flist, index);
+    uint32_t modify = bayer_flist_file_get_mtime(flist, index);
+    uint32_t create = bayer_flist_file_get_ctime(flist, index);
+    uint64_t size = bayer_flist_file_get_size(flist, index);
+    const char* username  = bayer_flist_file_get_username(flist, index);
+    const char* groupname = bayer_flist_file_get_groupname(flist, index);
+
+    char access_s[30];
+    char modify_s[30];
+    char create_s[30];
+    time_t access_t = (time_t) access;
+    time_t modify_t = (time_t) modify;
+    time_t create_t = (time_t) create;
+    size_t access_rc = strftime(access_s, sizeof(access_s)-1, "%FT%T", localtime(&access_t));
+    size_t modify_rc = strftime(modify_s, sizeof(modify_s)-1, "%FT%T", localtime(&modify_t));
+    size_t create_rc = strftime(create_s, sizeof(create_s)-1, "%FT%T", localtime(&create_t));
+    if (access_rc == 0 || modify_rc == 0 || create_rc == 0) {
+      /* error */
+      access_s[0] = '\0';
+      modify_s[0] = '\0';
+      create_s[0] = '\0';
+    }
+
+    prepare_mode_format(mode);
+
+    printf("Mode=%lx(%s) UID=%d(%s) GUI=%d(%s) Access=%s Modify=%s Create=%s Size=%lu File=%s\n",
+      mode, mode_format, uid, username, gid, groupname,
+      access_s, modify_s, create_s, (unsigned long)size, file
+    );
+  } else {
+    /* get type */
+    bayer_filetype type = bayer_flist_file_get_type(flist, index);
+    char* type_str = type_str_unknown;
+    if (type == TYPE_DIR) {
+      type_str = type_str_dir;
+    } else if (type == TYPE_FILE) {
+      type_str = type_str_file;
+    } else if (type == TYPE_LINK) {
+      type_str = type_str_link;
+    }
+
+    printf("Type=%s File=%s\n",
+      type_str, file
+    );
+  }
+}
 
 static void print_files(bayer_flist flist)
 {
-  /* gather first 10 to rank 0 */
+  /* number of items to print from start and end of list */
+  int range = 10;
+
+  /* allocate send and receive buffers */
+  size_t pack_size = bayer_flist_file_pack_size(flist);
+  size_t bufsize = 2 * range * pack_size;
+  void* sendbuf = BAYER_MALLOC(bufsize);
+  void* recvbuf = BAYER_MALLOC(bufsize);
 
   /* get our rank and the size of comm_world */
   int rank, ranks;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-  /* step through and print data */
-  int index = 0;
-  uint64_t max = bayer_flist_size(flist);
-  while (index < max) {
-    /* get filename */
-    const char* file = bayer_flist_file_get_name(flist, index);
+  /* identify the number of items we have, the total number,
+   * and our offset in the global list */
+  uint64_t count  = bayer_flist_size(flist);
+  uint64_t total  = bayer_flist_global_size(flist);
+  uint64_t offset = bayer_flist_global_offset(flist);
 
-    if (bayer_flist_have_detail(flist)) {
-      /* get mode */
-      mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, index);
-
-      uint32_t uid = bayer_flist_file_get_uid(flist, index);
-      uint32_t gid = bayer_flist_file_get_gid(flist, index);
-      uint32_t access = bayer_flist_file_get_atime(flist, index);
-      uint32_t modify = bayer_flist_file_get_mtime(flist, index);
-      uint32_t create = bayer_flist_file_get_ctime(flist, index);
-      uint64_t size = bayer_flist_file_get_size(flist, index);
-      const char* username  = bayer_flist_file_get_username(flist, index);
-      const char* groupname = bayer_flist_file_get_groupname(flist, index);
-
-      char access_s[30];
-      char modify_s[30];
-      char create_s[30];
-      time_t access_t = (time_t) access;
-      time_t modify_t = (time_t) modify;
-      time_t create_t = (time_t) create;
-      size_t access_rc = strftime(access_s, sizeof(access_s)-1, "%FT%T", localtime(&access_t));
-      size_t modify_rc = strftime(modify_s, sizeof(modify_s)-1, "%FT%T", localtime(&modify_t));
-      size_t create_rc = strftime(create_s, sizeof(create_s)-1, "%FT%T", localtime(&create_t));
-      if (access_rc == 0 || modify_rc == 0 || create_rc == 0) {
-        /* error */
-        access_s[0] = '\0';
-        modify_s[0] = '\0';
-        create_s[0] = '\0';
-      }
-
-      prepare_mode_format(mode);
-
-      if (index < 10 || (max - index) <= 10) {
-        //printf("Rank %d: Mode=%lx UID=%d GUI=%d Access=%lu Modify=%lu Create=%lu Size=%lu File=%s\n",
-        //  rank, mode, uid, gid, (unsigned long)access, (unsigned long)modify,
-        printf("Rank %d: Mode=%lx(%s) UID=%d(%s) GUI=%d(%s) Access=%s Modify=%s Create=%s Size=%lu File=%s\n",
-          rank, mode, mode_format, uid, username, gid, groupname,
-          access_s, modify_s, create_s, (unsigned long)size, file
-        );
-      } else if (index == 10) {
-        printf("<snip>\n");
-      }
-    } else {
-      /* get type */
-      bayer_filetype type = bayer_flist_file_get_type(flist, index);
-
-      char* type_str = type_str_unknown;
-      if (type == TYPE_DIR) {
-        type_str = type_str_dir;
-      } else if (type == TYPE_FILE) {
-        type_str = type_str_file;
-      } else if (type == TYPE_LINK) {
-        type_str = type_str_link;
-      }
-
-        printf("Rank %d: Type=%s File=%s\n",
-          rank, type_str, file
-        );
-#if 0
-      if (index < 10 || (max - index) <= 10) {
-        printf("Rank %d: Type=%s File=%s\n",
-          rank, type_str, file
-        );
-      } else if (index == 10) {
-        printf("<snip>\n");
-      }
-#endif
+  /* count the number of items we'll send */
+  int num = 0;
+  uint64_t index = 0;
+  while (index < count) {
+    uint64_t global = offset + index;
+    if (global < range || (total - global) <= range) {
+      num++;
     }
-
-    /* go to next file */
     index++;
   }
+
+  /* allocate arrays to store counts and displacements */
+  int* counts = BAYER_MALLOC(ranks * sizeof(int));
+  int* disps  = BAYER_MALLOC(ranks * sizeof(int));
+
+  /* tell rank 0 where the data is coming from */
+  int bytes = num * pack_size;
+  MPI_Gather(&bytes, 1, MPI_INT, counts, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+  /* pack items into sendbuf */
+  index = 0;
+  char* ptr = (char*) sendbuf;
+  while (index < count) {
+    uint64_t global = offset + index;
+    if (global < range || (total - global) <= range) {
+      ptr += bayer_flist_file_pack(ptr, flist, index);
+    }
+    index++;
+  }
+
+  /* compute displacements and total bytes */
+  int total_bytes = 0;
+  if (rank == 0) {
+    int i;
+    disps[0] = 0;
+    total_bytes += counts[0];
+    for (i = 1; i < ranks; i++) {
+      disps[i] = disps[i-1] + counts[i-1];
+      total_bytes += counts[i];
+    }
+  }
+
+  /* gather data to rank 0 */
+  MPI_Gatherv(sendbuf, bytes, MPI_BYTE, recvbuf, counts, disps, MPI_BYTE, 0, MPI_COMM_WORLD);
+
+  /* create temporary list to unpack items into */
+  bayer_flist tmplist;
+  bayer_flist_subset(flist, &tmplist);
+
+  /* unpack items into new list */
+  int detail = bayer_flist_have_detail(flist);
+  uint64_t chars = bayer_flist_file_max_name(flist);
+  if (rank == 0) {
+    char* ptr = (char*) recvbuf;
+    char* end = ptr + total_bytes;
+    while (ptr < end) {
+      bayer_flist_file_unpack(ptr, tmplist, detail, chars);
+      ptr += pack_size;
+    }
+  }
+
+  /* summarize list */
+  bayer_flist_summarize(tmplist);
+
+  /* print files */
+  if (rank == 0) {
+    printf("\n");
+    int tmpindex = 0;
+    uint64_t tmpsize = bayer_flist_size(tmplist);
+    while (tmpindex < tmpsize) {
+      print_file(tmplist, tmpindex, rank);
+      tmpindex++;
+      if (tmpindex == range) {
+        printf("\n<snip>\n\n");
+      }
+    }
+    printf("\n");
+  }
+
+  /* free our temporary list */
+  bayer_flist_free(&tmplist);
+
+  /* free memory */
+  bayer_free(&disps);
+  bayer_free(&counts);
+  bayer_free(&sendbuf);
+  bayer_free(&recvbuf);
 
   return;
 }

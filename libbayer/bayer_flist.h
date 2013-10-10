@@ -65,6 +65,8 @@ void bayer_flist_write_cache(
 /* free resouces in file list */
 void bayer_flist_free(bayer_flist* flist);
 
+void bayer_flist_file_copy(bayer_flist src, int index, bayer_flist dest);
+
 size_t bayer_flist_file_pack_size(bayer_flist flist);
 size_t bayer_flist_file_pack(void* buf, bayer_flist flist, int index);
 size_t bayer_flist_file_unpack(const void* buf, bayer_flist flist, int detail, uint64_t chars);
@@ -74,6 +76,10 @@ int bayer_flist_summarize(bayer_flist flist);
 
 /* return number of files across all procs */
 uint64_t bayer_flist_global_size(bayer_flist flist);
+
+/* returns the global index of first item on this rank,
+ * when placing items in rank order */
+uint64_t bayer_flist_global_offset(bayer_flist flist);
 
 /* return number of files in local list */
 uint64_t bayer_flist_size(bayer_flist flist);
@@ -92,6 +98,9 @@ uint64_t bayer_flist_user_max_name(bayer_flist flist);
 
 /* return maximum length of group names */
 uint64_t bayer_flist_group_max_name(bayer_flist flist);
+
+int bayer_flist_min_depth(bayer_flist flist);
+int bayer_flist_max_depth(bayer_flist flist);
 
 /* determines which properties are readable */
 int bayer_flist_have_detail(bayer_flist flist);

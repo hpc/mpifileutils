@@ -57,6 +57,7 @@ typedef struct {
 /* abstraction for distributed file list */
 typedef struct flist {
   int detail;              /* set to 1 if we have stat, 0 if just file name */
+  uint64_t offset;         /* global offset of our file across all procs */
   uint64_t total_files;    /* total file count in list across all procs */
   uint64_t total_users;    /* number of users (valid if detail is 1) */
   uint64_t total_groups;   /* number of groups (valid if detail is 1) */
@@ -382,6 +383,29 @@ static void list_insert_stat(flist_t* flist, const char *fpath, mode_t mode, con
   return;
 }
 
+static void list_insert_copy(flist_t* flist, elem_t* src)
+{
+  /* create new element */
+  elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
+
+  /* copy values from source */
+  elem->file   = BAYER_STRDUP(src->file);
+  elem->depth  = src->depth;
+  elem->type   = src->type;
+  elem->detail = src->detail;
+  elem->mode   = src->mode;
+  elem->uid    = src->uid;
+  elem->gid    = src->gid;
+  elem->atime  = src->atime;
+  elem->mtime  = src->mtime;
+  elem->ctime  = src->ctime;
+  elem->size   = src->size;
+
+  /* append element to tail of linked list */
+  list_insert_elem(flist, elem);
+
+}
+
 /* insert a file given a pointer to packed data */
 static size_t list_insert_ptr(flist_t* flist, char* ptr, int detail, uint64_t chars)
 {
@@ -456,6 +480,12 @@ static void list_compute_summary(flist_t* flist)
   flist->min_depth      = 0;
   flist->max_depth      = 0;
   flist->total_files    = 0;
+  flist->offset         = 0;
+
+  /* get our rank and the size of comm_world */
+  int rank, ranks;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
   /* get total number of files in list */
   uint64_t total;
@@ -467,6 +497,14 @@ static void list_compute_summary(flist_t* flist)
   if (total <= 0) {
     return;
   }
+
+  /* compute the global offset of our first item */
+  uint64_t offset;
+  MPI_Exscan(&count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+  if (rank == 0) {
+    offset = 0;
+  }
+  flist->offset = offset;
 
   /* compute local min/max values */
   int min_depth = -1;
@@ -697,67 +735,88 @@ void bayer_flist_free(bayer_flist* pbflist)
 uint64_t bayer_flist_global_size(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
-  uint64_t size = flist->total_files;
-  return size;
+  uint64_t val = flist->total_files;
+  return val;
+}
+
+/* returns the global index of first item on this rank,
+ * when placing items in rank order */
+uint64_t bayer_flist_global_offset(bayer_flist bflist)
+{
+  flist_t* flist = (flist_t*) bflist;
+  uint64_t val = flist->offset;
+  return val;
 }
 
 /* return number of files in local list */
 uint64_t bayer_flist_size(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
-  uint64_t size = flist->list_count;
-  return size;
+  uint64_t val = flist->list_count;
+  return val;
 }
 
 /* return number of users */
 uint64_t bayer_flist_user_count(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
-  uint64_t count = flist->total_users;
-  return count;
+  uint64_t val = flist->total_users;
+  return val;
 }
 
 /* return number of groups */
 uint64_t bayer_flist_group_count(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
-  uint64_t count = flist->total_groups;
-  return count;
+  uint64_t val = flist->total_groups;
+  return val;
 }
 
 /* return maximum length of file names */
 uint64_t bayer_flist_file_max_name(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
-  uint64_t count = flist->max_file_name;
-  return count;
+  uint64_t val = flist->max_file_name;
+  return val;
 }
 
 /* return maximum length of user names */
 uint64_t bayer_flist_user_max_name(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
-  uint64_t count = flist->max_user_name;
-  return count;
+  uint64_t val = flist->max_user_name;
+  return val;
 }
 
 /* return maximum length of group names */
 uint64_t bayer_flist_group_max_name(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
-  uint64_t count = flist->max_group_name;
-  return count;
+  uint64_t val = flist->max_group_name;
+  return val;
 }
 
-/* return max/min user,group,filename string
- * return max/min depth
- */
+/* return min depth */
+int bayer_flist_min_depth(bayer_flist bflist)
+{
+  flist_t* flist = (flist_t*) bflist;
+  int val = flist->min_depth;
+  return val;
+}
+
+/* return max depth */
+int bayer_flist_max_depth(bayer_flist bflist)
+{
+  flist_t* flist = (flist_t*) bflist;
+  int val = flist->max_depth;
+  return val;
+}
 
 int bayer_flist_have_detail(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
-  int detail = flist->detail;
-  return detail;
+  int val = flist->detail;
+  return val;
 }
 
 const char* bayer_flist_file_get_name(bayer_flist bflist, int index)
@@ -2010,6 +2069,18 @@ void bayer_flist_write_cache(
     write_cache_readdir(name, 0, 0, flist);
   }
 
+  return;
+}
+
+void bayer_flist_file_copy(bayer_flist bsrc, int index, bayer_flist bdst)
+{
+  /* convert handle to flist_t */
+  flist_t* flist = (flist_t*) bsrc;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL) {
+    flist_t* dstlist = (flist_t*) bdst;
+    list_insert_copy(dstlist, elem);
+  }
   return;
 }
 

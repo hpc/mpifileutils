@@ -89,11 +89,8 @@ static void free_list()
 {
   rm_elem_t* elem = rm_head;
   while (elem != NULL) {
-    if (elem->name != NULL) {
-      bayer_free(&elem->name);
-    }
-
     rm_elem_t* next = elem->next;
+    bayer_free(&elem->name);
     bayer_free(&elem);
     elem = next;
   }
@@ -728,20 +725,13 @@ static void remove_files(bayer_flist flist)
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* get max depth across all procs */
-    int max_depth;
-    int depth = -1;
-    const rm_elem_t* elem = rm_head;
-    while (elem != NULL) {
-        if (elem->depth > depth) {
-            depth = elem->depth;
-        }
-        elem = elem->next;
-    }
-    MPI_Allreduce(&depth, &max_depth, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+    int min_depth = bayer_flist_min_depth(flist);
+    int max_depth = bayer_flist_max_depth(flist);
 
     /* from top to bottom, ensure all directories have write bit set */
-    for (depth = 0; depth <= max_depth; depth++) {
-        elem = rm_head;
+    int depth;
+    for (depth = min_depth; depth <= max_depth; depth++) {
+        rm_elem_t* elem = rm_head;
         while (elem != NULL) {
             if (elem->depth == depth) {
                 if (elem->type == TYPE_DIR) {
@@ -764,7 +754,7 @@ static void remove_files(bayer_flist flist)
     }
 
     /* now remove files starting from deepest level */
-    for (depth = max_depth; depth >= 0; depth--) {
+    for (depth = max_depth; depth >= min_depth; depth--) {
         double start = MPI_Wtime();
 
         /* remove all files at this level */
@@ -833,17 +823,6 @@ int main(int argc, char **argv)
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-  /* TODO: extend options
-   *   - allow user to cache scan result in file
-   *   - allow user to load cached scan as input
-   *
-   *   - allow user to filter by user, group, or filename using keyword or regex
-   *   - allow user to specify time window
-   *   - allow user to specify file sizes
-   *
-   *   - allow user to sort by different fields
-   *   - allow user to group output (sum all bytes, group by user) */
-
   char* inputname = NULL;
   int walk = 0;
 
@@ -903,6 +882,11 @@ int main(int argc, char **argv)
 
     /* currently only allow one path */
     if (argc - optind > 1) {
+      usage = 1;
+    }
+
+    /* don't allow input file and walk */
+    if (inputname != NULL) {
       usage = 1;
     }
   } else {
