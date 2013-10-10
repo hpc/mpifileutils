@@ -827,7 +827,7 @@ static void print_usage()
   printf("Usage: drm [options] <path>\n");
   printf("\n");
   printf("Options:\n");
-  printf("  -c, --cache <file>  - read/write directories using cache file\n");
+  printf("  -i, --input <file>  - read list from file\n");
   printf("  -l, --lite          - walk file system without stat\n");
   printf("  -v, --verbose       - verbose output\n");
   printf("  -h, --help          - print usage\n");
@@ -857,12 +857,12 @@ int main(int argc, char **argv)
    *   - allow user to sort by different fields
    *   - allow user to group output (sum all bytes, group by user) */
 
-  char* cachename = NULL;
+  char* inputname = NULL;
   int walk = 0;
 
   int option_index = 0;
   static struct option long_options[] = {
-    {"cache",    1, 0, 'c'},
+    {"input",    1, 0, 'i'},
     {"lite",     0, 0, 'l'},
     {"help",     0, 0, 'h'},
     {"verbose",  0, 0, 'v'},
@@ -872,7 +872,7 @@ int main(int argc, char **argv)
   int usage = 0;
   while (1) {
     int c = getopt_long(
-      argc, argv, "c:lhv",
+      argc, argv, "i:lhv",
       long_options, &option_index
     );
 
@@ -881,8 +881,8 @@ int main(int argc, char **argv)
     }
 
     switch (c) {
-    case 'c':
-      cachename = bayer_strdup(optarg, "input cache", __FILE__, __LINE__);
+    case 'i':
+      inputname = bayer_strdup(optarg, "input cache", __FILE__, __LINE__);
       break;
     case 'l':
       walk_stat = 0;
@@ -921,7 +921,7 @@ int main(int argc, char **argv)
   } else {
     /* if we're not walking, we must be reading,
      * and for that we need a file */
-    if (cachename == NULL) {
+    if (inputname == NULL) {
       usage = 1;
     }
   }
@@ -992,7 +992,7 @@ int main(int argc, char **argv)
   } else {
     /* read data from cache file */
     double start_read = MPI_Wtime();
-    bayer_flist_read_cache(cachename, &flist);
+    bayer_flist_read_cache(inputname, &flist);
     double end_read = MPI_Wtime();
 
     /* get total file count */
@@ -1030,7 +1030,7 @@ int main(int argc, char **argv)
 
   bayer_flist_free(&flist);
 
-  bayer_free(&cachename);
+  bayer_free(&inputname);
 
   /* shut down the sorting library */
   DTCMP_Finalize();
