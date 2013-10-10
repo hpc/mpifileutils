@@ -21,7 +21,7 @@ void bayer_abort(int rc, const char *fmt, ...)
 
 /* if size > 0 allocates size bytes and returns pointer,
  * calls bayer_abort if malloc fails, returns NULL if size == 0 */
-void* bayer_malloc(size_t size, const char* desc, const char* file, int line)
+void* bayer_malloc(size_t size, const char* file, int line)
 {
   /* only bother if size > 0 */
   if (size > 0) {
@@ -29,8 +29,8 @@ void* bayer_malloc(size_t size, const char* desc, const char* file, int line)
     void* ptr = malloc(size);
     if (ptr == NULL) {
       /* allocate failed, abort */
-      bayer_abort(1, "Failed to allocate %llu bytes for %s @ %s:%d",
-        (unsigned long long) size, desc, file, line
+      bayer_abort(1, "Failed to allocate %llu bytes @ %s:%d",
+        (unsigned long long) size, file, line
       );
     }
 
@@ -130,7 +130,7 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
     /* If the string is non-zero bytes, allocate space and bcast it. */
     if(len > 0) {
         /* allocate space to receive string */
-        *recv = (char*) bayer_malloc((size_t)len, "bcast recv str", __FILE__, __LINE__);
+        *recv = (char*) BAYER_MALLOC((size_t)len);
 
         /* Broadcast the string. */
         if(rank == root) {

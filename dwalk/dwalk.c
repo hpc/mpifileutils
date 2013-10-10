@@ -164,7 +164,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
 
   /* compute size of sort element and allocate buffer */
   size_t sortbufsize = keysat_extent * incount;
-  void* sortbuf = bayer_malloc(sortbufsize, "presort buffer", __FILE__, __LINE__);
+  void* sortbuf = BAYER_MALLOC(sortbufsize);
 
   /* copy data into sort elements */
   int index = 0;
@@ -249,7 +249,7 @@ static void filter_files(bayer_flist* pflist)
   bayer_flist flist = *pflist;
 
   size_t bufsize = bayer_flist_file_pack_size(flist);
-  void* buf = bayer_malloc(bufsize, "pack buffer", __FILE__, __LINE__);
+  void* buf = BAYER_MALLOC(bufsize);
 
   uint64_t chars = bayer_flist_file_max_name(flist);
   int details = bayer_flist_have_detail(flist);
@@ -484,7 +484,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
 
   /* compute size of sort element and allocate buffer */
   size_t sortbufsize = keysat_extent * incount;
-  void* sortbuf = bayer_malloc(sortbufsize, "presort buffer", __FILE__, __LINE__);
+  void* sortbuf = BAYER_MALLOC(sortbufsize);
 
   /* copy data into sort elements */
   int index = 0;

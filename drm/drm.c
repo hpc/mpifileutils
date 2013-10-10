@@ -46,7 +46,7 @@ static void create_list(bayer_flist flist)
   int size = bayer_flist_size(flist);
   while (index < size) {
     /* allocate element for remove list */
-    rm_elem_t* elem = (rm_elem_t*) bayer_malloc(sizeof(rm_elem_t), "Remove element", __FILE__, __LINE__);
+    rm_elem_t* elem = (rm_elem_t*) BAYER_MALLOC(sizeof(rm_elem_t));
 
     /* get file name */
     const char* file = bayer_flist_file_get_name(flist, index);
@@ -90,10 +90,12 @@ static void free_list()
   rm_elem_t* elem = rm_head;
   while (elem != NULL) {
     if (elem->name != NULL) {
-      free(elem->name);
+      bayer_free(&elem->name);
     }
-    free(elem);
-    elem = elem->next;
+
+    rm_elem_t* next = elem->next;
+    bayer_free(&elem);
+    elem = next;
   }
   rm_head = NULL;
   rm_tail = NULL;
@@ -278,11 +280,11 @@ static void remove_spread()
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
   
-    int* sendcounts = (int*) malloc(ranks * sizeof(int));
-    int* sendsizes  = (int*) malloc(ranks * sizeof(int));
-    int* senddisps  = (int*) malloc(ranks * sizeof(int));
-    int* recvsizes  = (int*) malloc(ranks * sizeof(int));
-    int* recvdisps  = (int*) malloc(ranks * sizeof(int));
+    int* sendcounts = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* sendsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* senddisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* recvsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* recvdisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
 
     /* compute number of items we have for this depth */
     uint64_t my_count = 0;
@@ -358,10 +360,7 @@ static void remove_spread()
     }
 
     /* allocate space */
-    char* sendbuf = NULL;
-    if (sendbytes > 0) {
-        sendbuf = (char*) malloc(sendbytes);
-    }
+    char* sendbuf = (char*) BAYER_MALLOC(sendbytes);
 
     /* copy data into buffer */
     elem = rm_head;
@@ -429,10 +428,7 @@ static void remove_spread()
     }
 
     /* allocate recvbuf */
-    char* recvbuf = NULL;
-    if (recvbytes > 0) {
-        recvbuf = (char*) malloc(recvbytes);
-    }
+    char* recvbuf = (char*) BAYER_MALLOC(recvbytes);
 
     /* alltoallv to send data */
     MPI_Alltoallv(
@@ -478,11 +474,11 @@ static void remove_map()
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
   
-    int* sendsizes  = (int*) malloc(ranks * sizeof(int));
-    int* senddisps  = (int*) malloc(ranks * sizeof(int));
-    int* sendoffset = (int*) malloc(ranks * sizeof(int));
-    int* recvsizes  = (int*) malloc(ranks * sizeof(int));
-    int* recvdisps  = (int*) malloc(ranks * sizeof(int));
+    int* sendsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* senddisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* sendoffset = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* recvsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* recvdisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
 
     /* initialize sendsizes and offsets */
     int i;
@@ -502,7 +498,7 @@ static void remove_map()
             size_t dir_len = strlen(dir);
             uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
             int rank = (int) (hash % (uint32_t)ranks);
-            free(dir);
+            bayer_free(&dir);
 
             /* total number of bytes we'll send to each rank and the total overall */
             size_t count = strlen(elem->name) + 2;
@@ -519,10 +515,7 @@ static void remove_map()
     }
 
     /* allocate space */
-    char* sendbuf = NULL;
-    if (sendbytes > 0) {
-        sendbuf = (char*) malloc(sendbytes);
-    }
+    char* sendbuf = (char*) BAYER_MALLOC(sendbytes);
 
     /* TODO: cache results from above */
     /* copy data into buffer */
@@ -535,7 +528,7 @@ static void remove_map()
             size_t dir_len = strlen(dir);
             uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
             int rank = (int) (hash % (uint32_t)ranks);
-            free(dir);
+            bayer_free(&dir);
 
             /* identify region to be sent to rank */
             size_t count = strlen(elem->name) + 2;
@@ -573,10 +566,7 @@ static void remove_map()
     }
 
     /* allocate recvbuf */
-    char* recvbuf = NULL;
-    if (recvbytes > 0) {
-        recvbuf = (char*) malloc(recvbytes);
-    }
+    char* recvbuf =  (char*) BAYER_MALLOC(recvbytes);
 
     /* alltoallv to send data */
     MPI_Alltoallv(
@@ -656,12 +646,9 @@ static void remove_sort()
     DTCMP_Type_create_series(2, types, &dt_keysat);
 
     /* allocate send buffer */
-    char* sendbuf = NULL;
     int sendcount = (int) my_count;
     size_t sendbufsize = sendcount * (chars + 1);
-    if (sendbufsize > 0) {
-        sendbuf = (char*) malloc(sendbufsize);
-    }
+    char* sendbuf = (char*) BAYER_MALLOC(sendbufsize);
 
     /* copy data into buffer */
     elem = rm_head;

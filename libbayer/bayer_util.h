@@ -23,9 +23,9 @@ void bayer_abort(
 
 /* if size > 0 allocates size bytes and returns pointer,
  * calls bayer_abort if malloc fails, returns NULL if size == 0 */
+#define BAYER_MALLOC(X) bayer_malloc(X, __FILE__, __LINE__)
 void* bayer_malloc(
   size_t size,
-  const char* desc,
   const char* file,
   int line
 );

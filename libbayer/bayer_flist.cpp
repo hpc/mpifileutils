@@ -108,7 +108,7 @@ static void buft_init(buf_t* items)
 static void buft_copy(buf_t* src, buf_t* dst)
 {
   dst->bufsize = src->bufsize;
-  dst->buf = bayer_malloc(dst->bufsize, "buffer", __FILE__, __LINE__);
+  dst->buf = BAYER_MALLOC(dst->bufsize);
   memcpy(dst->buf, src->buf, dst->bufsize);
 
   dst->count = src->count;
@@ -349,7 +349,7 @@ static void list_insert_elem(flist_t* flist, elem_t* elem)
 static void list_insert_stat(flist_t* flist, const char *fpath, mode_t mode, const struct stat *sb)
 {
   /* create new element to record file path, file type, and stat info */
-  elem_t* elem = (elem_t*) bayer_malloc(sizeof(elem_t), "File element", __FILE__, __LINE__);
+  elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
 
   /* copy path */
   elem->file = bayer_strdup(fpath, "File name", __FILE__, __LINE__);
@@ -386,7 +386,7 @@ static void list_insert_stat(flist_t* flist, const char *fpath, mode_t mode, con
 static size_t list_insert_ptr(flist_t* flist, char* ptr, int detail, uint64_t chars)
 {
   /* create new element to record file path, file type, and stat info */
-  elem_t* elem = (elem_t*) bayer_malloc(sizeof(elem_t), "File element", __FILE__, __LINE__);
+  elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
 
   /* get name and advance pointer */
   size_t bytes = list_elem_unpack(ptr, detail, chars, elem);
@@ -427,7 +427,7 @@ static elem_t* list_get_elem(flist_t* flist, int index)
   if (flist->list_index == NULL) {
     /* allocate array to record pointer to each element */
     size_t index_size = max * sizeof(elem_t*);
-    flist->list_index = (elem_t**) bayer_malloc(index_size, "List index", __FILE__, __LINE__);
+    flist->list_index = (elem_t**) BAYER_MALLOC(index_size);
 
     /* get pointer to each element */
     uint64_t i = 0;
@@ -556,7 +556,7 @@ static int list_convert_to_dt(flist_t* flist, buf_t* items)
   /* allocate buffer */
   uint64_t count = flist->list_count;
   size_t bufsize = extent * count;
-  void* buf = bayer_malloc(bufsize, "array for stat data", __FILE__, __LINE__);
+  void* buf = BAYER_MALLOC(bufsize);
 
   /* copy stat data into stat datatypes */
   char* ptr = (char*) buf;
@@ -643,7 +643,7 @@ bayer_flist BAYER_FLIST_NULL = &flist_null;
 static bayer_flist bayer_flist_new()
 {
   /* allocate memory for file list, cast it to handle, initialize and return */
-  flist_t* flist = (flist_t*) bayer_malloc(sizeof(flist_t), "File list handle", __FILE__, __LINE__);
+  flist_t* flist = (flist_t*) BAYER_MALLOC(sizeof(flist_t));
 
   flist->detail = 0;
   flist->total_files = 0;
@@ -1264,7 +1264,7 @@ retry:
 
   /* allocate an array to hold all user names and ids */
   size_t bufsize = count * extent;
-  char* buf = (char*) bayer_malloc(bufsize, "User array", __FILE__, __LINE__);
+  char* buf = (char*) BAYER_MALLOC(bufsize);
 
   /* copy items from list into array */
   if (rank == 0) {
@@ -1356,7 +1356,7 @@ retry:
 
   /* allocate an array to hold all user names and ids */
   size_t bufsize = count * extent;
-  char* buf = (char*) bayer_malloc(bufsize, "Group array", __FILE__, __LINE__);
+  char* buf = (char*) BAYER_MALLOC(bufsize);
 
   /* copy items from list into array */
   if (rank == 0) {
@@ -1540,7 +1540,7 @@ static void read_cache_v2(
 
     /* allocate memory to hold data */
     size_t bufsize_file = files.count * extent_file;
-    files.buf = (void*) bayer_malloc(bufsize_file, "File data buffer", __FILE__, __LINE__);
+    files.buf = (void*) BAYER_MALLOC(bufsize_file);
 
     /* collective read of stat info */
     MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
@@ -1652,7 +1652,7 @@ static void read_cache_v3(
 
     /* allocate memory to hold data */
     size_t bufsize_user = users->count * extent_user;
-    users->buf = (void*) bayer_malloc(bufsize_user, "User data buffer", __FILE__, __LINE__);
+    users->buf = (void*) BAYER_MALLOC(bufsize_user);
     users->bufsize = bufsize_user;
 
     /* read data */
@@ -1675,7 +1675,7 @@ static void read_cache_v3(
 
     /* allocate memory to hold data */
     size_t bufsize_group = groups->count * extent_group;
-    groups->buf = (void*) bayer_malloc(bufsize_group, "Group data buffer", __FILE__, __LINE__);
+    groups->buf = (void*) BAYER_MALLOC(bufsize_group);
     groups->bufsize = bufsize_group;
 
     /* read data */
@@ -1698,7 +1698,7 @@ static void read_cache_v3(
 
     /* allocate memory to hold data */
     size_t bufsize_file = files.count * extent_file;
-    files.buf = (void*) bayer_malloc(bufsize_file, "File data buffer", __FILE__, __LINE__);
+    files.buf = (void*) BAYER_MALLOC(bufsize_file);
     files.bufsize = bufsize_file;
 
     /* collective read of stat info */
