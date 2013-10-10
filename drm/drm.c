@@ -50,7 +50,7 @@ static void create_list(bayer_flist flist)
 
     /* get file name */
     const char* file = bayer_flist_file_get_name(flist, index);
-    elem->name = bayer_strdup(file, "File name", __FILE__, __LINE__);
+    elem->name = BAYER_STRDUP(file);
 
     /* get file depth */
     elem->depth = bayer_flist_file_get_depth(flist, index);
@@ -493,7 +493,7 @@ static void remove_map()
     while (elem != NULL) {
         if (elem->depth == rm_depth) {
             /* identify a rank responsible for this item */
-            char* dir = strdup(elem->name);
+            char* dir = BAYER_STRDUP(elem->name);
             dirname(dir);
             size_t dir_len = strlen(dir);
             uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
@@ -523,7 +523,7 @@ static void remove_map()
     while (elem != NULL) {
         if (elem->depth == rm_depth) {
             /* identify a rank responsible for this item */
-            char* dir = strdup(elem->name);
+            char* dir = BAYER_STRDUP(elem->name);
             dirname(dir);
             size_t dir_len = strlen(dir);
             uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
@@ -869,7 +869,7 @@ int main(int argc, char **argv)
 
     switch (c) {
     case 'i':
-      inputname = bayer_strdup(optarg, "input cache", __FILE__, __LINE__);
+      inputname = BAYER_STRDUP(optarg);
       break;
     case 'l':
       walk_stat = 0;

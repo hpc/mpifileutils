@@ -277,7 +277,7 @@ static size_t list_elem_unpack(const void* buf, int detail, uint64_t chars, elem
   ptr += chars;
 
   /* copy path */
-  elem->file = bayer_strdup(file, "File name", __FILE__, __LINE__);
+  elem->file = BAYER_STRDUP(file);
 
   /* set depth */
   elem->depth = get_depth(file);
@@ -352,7 +352,7 @@ static void list_insert_stat(flist_t* flist, const char *fpath, mode_t mode, con
   elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
 
   /* copy path */
-  elem->file = bayer_strdup(fpath, "File name", __FILE__, __LINE__);
+  elem->file = BAYER_STRDUP(fpath);
 
   /* set depth */
   elem->depth = get_depth(fpath);
@@ -1125,7 +1125,7 @@ static void strid_insert(
 {
   /* add username and id to linked list */
   strid_t* elem = (strid_t*) malloc(sizeof(strid_t));
-  elem->name = strdup(name);
+  elem->name = BAYER_STRDUP(name);
   elem->id = id;
   elem->next = NULL;
   if (*head == NULL) {

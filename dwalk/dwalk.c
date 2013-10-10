@@ -104,7 +104,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
     ops[nfields]     = DTCMP_OP_NULL;
   }
   nfields = 0;
-  char* sortfields_copy = bayer_strdup(sortfields, "sort fields", __FILE__, __LINE__);
+  char* sortfields_copy = BAYER_STRDUP(sortfields);
   char* token = strtok(sortfields_copy, ",");
   while (token != NULL) {
     int valid = 1;
@@ -344,7 +344,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
     ops[nfields]     = DTCMP_OP_NULL;
   }
   nfields = 0;
-  char* sortfields_copy = bayer_strdup(sortfields, "sort fields", __FILE__, __LINE__);
+  char* sortfields_copy = BAYER_STRDUP(sortfields);
   char* token = strtok(sortfields_copy, ",");
   while (token != NULL) {
     int valid = 1;
@@ -912,16 +912,16 @@ int main(int argc, char **argv)
 
     switch (c) {
     case 'i':
-      inputname = bayer_strdup(optarg, "input file", __FILE__, __LINE__);
+      inputname = BAYER_STRDUP(optarg);
       break;
     case 'o':
-      outputname = bayer_strdup(optarg, "output file", __FILE__, __LINE__);
+      outputname = BAYER_STRDUP(optarg);
       break;
     case 'l':
       walk_stat = 0;
       break;
     case 's':
-      sortfields = bayer_strdup(optarg, "sort fields", __FILE__, __LINE__);
+      sortfields = BAYER_STRDUP(optarg);
       break;
     case 'p':
       print = 1;
@@ -974,7 +974,7 @@ int main(int argc, char **argv)
   if (sortfields != NULL) {
     int maxfields;
     int nfields = 0;
-    char* sortfields_copy = bayer_strdup(sortfields, "sort fields", __FILE__, __LINE__);
+    char* sortfields_copy = BAYER_STRDUP(sortfields);
     if (walk_stat) {
       maxfields = 7;
       char* token = strtok(sortfields_copy, ",");

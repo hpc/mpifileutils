@@ -66,15 +66,15 @@ void* bayer_memalign(size_t size, size_t alignment, const char* desc, const char
 }
 
 /* if str != NULL, call strdup and return pointer, calls bayer_abort if strdup fails */
-char* bayer_strdup(const char* str, const char* desc, const char* file, int line)
+char* bayer_strdup(const char* str, const char* file, int line)
 {
   if (str != NULL) {
     /* TODO: check that str length is below some max? */
     char* ptr = strdup(str);
     if (ptr == NULL) {
       /* allocate failed, abort */
-      bayer_abort(1, "Failed to allocate string for %s @ %s:%d",
-        desc, file, line
+      bayer_abort(1, "Failed to allocate string @ %s:%d",
+        file, line
       );
     }
 

@@ -43,9 +43,9 @@ void* bayer_memalign(
 
 /* if str != NULL, call strdup and return pointer, calls bayer_abort
  * if strdup fails */
+#define BAYER_STRDUP(X) bayer_strdup(X, __FILE__, __LINE__)
 char* bayer_strdup(
   const char* str,
-  const char* desc,
   const char* file,
   int line
 );
