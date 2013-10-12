@@ -201,7 +201,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
   sortptr = (char*) outsortbuf;
   while (index < outsortcount) {
     sortptr += key_extent;
-    sortptr += bayer_flist_file_unpack(sortptr, flist2, 0, chars);
+    sortptr += bayer_flist_file_unpack(sortptr, flist2);
     index++;
   }
 
@@ -537,7 +537,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
   sortptr = (char*) outsortbuf;
   while (index < outsortcount) {
     sortptr += key_extent;
-    sortptr += bayer_flist_file_unpack(sortptr, flist2, 1, chars);
+    sortptr += bayer_flist_file_unpack(sortptr, flist2);
     index++;
   }
 
@@ -870,13 +870,11 @@ static void print_files(bayer_flist flist)
   bayer_flist_subset(flist, &tmplist);
 
   /* unpack items into new list */
-  int detail = bayer_flist_have_detail(flist);
-  uint64_t chars = bayer_flist_file_max_name(flist);
   if (rank == 0) {
     char* ptr = (char*) recvbuf;
     char* end = ptr + total_bytes;
     while (ptr < end) {
-      bayer_flist_file_unpack(ptr, tmplist, detail, chars);
+      bayer_flist_file_unpack(ptr, tmplist);
       ptr += pack_size;
     }
   }

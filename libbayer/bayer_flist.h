@@ -69,7 +69,7 @@ void bayer_flist_file_copy(bayer_flist src, uint64_t index, bayer_flist dest);
 
 size_t bayer_flist_file_pack_size(bayer_flist flist);
 size_t bayer_flist_file_pack(void* buf, bayer_flist flist, uint64_t index);
-size_t bayer_flist_file_unpack(const void* buf, bayer_flist flist, int detail, uint64_t chars);
+size_t bayer_flist_file_unpack(const void* buf, bayer_flist flist);
 
 /* run this to enable query functions on list after adding elements */
 int bayer_flist_summarize(bayer_flist flist);

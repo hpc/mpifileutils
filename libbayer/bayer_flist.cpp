@@ -328,6 +328,133 @@ static size_t list_elem_unpack(const void* buf, int detail, uint64_t chars, elem
   return bytes;
 }
 
+static void pack_uint32(char** pptr, uint32_t value)
+{
+  /* TODO: convert to network order */
+  uint32_t* ptr = *(uint32_t**)pptr;
+  *ptr = value;
+  *pptr += 4;
+}
+
+static void unpack_uint32(const char** pptr, uint32_t* value)
+{
+  /* TODO: convert to host order */
+  uint32_t* ptr = *(uint32_t**)pptr;
+  *value = *ptr;
+  *pptr += 4;
+}
+
+static void pack_uint64(char** pptr, uint64_t value)
+{
+  /* TODO: convert to network order */
+  uint64_t* ptr = *(uint64_t**)pptr;
+  *ptr = value;
+  *pptr += 8;
+}
+
+static void unpack_uint64(const char** pptr, uint64_t* value)
+{
+  /* TODO: convert to host order */
+  uint64_t* ptr = *(uint64_t**)pptr;
+  *value = *ptr;
+  *pptr += 8;
+}
+
+static size_t list_elem_pack2_size(int detail, uint64_t chars, const elem_t* elem)
+{
+  size_t size;
+  if (detail) {
+    size = 2 * 4 + chars + 6 * 4 + 1 * 8;
+  } else {
+    size = 2 * 4 + chars + 1 * 4;
+  }
+  return size;
+}
+
+static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_t* elem)
+{
+  /* set pointer to start of buffer */
+  char* start = (char*) buf;
+  char* ptr = start;
+
+  /* copy in detail flag */
+  pack_uint32(&ptr, (uint32_t) detail);
+
+  /* copy in length of file name field */
+  pack_uint32(&ptr, (uint32_t) chars);
+
+  /* copy in file name */
+  char* file = elem->file;
+  strcpy(ptr, file);
+  ptr += chars;
+
+  if (detail) {
+    /* copy in fields */
+    pack_uint32(&ptr, elem->mode);
+    pack_uint32(&ptr, elem->uid);
+    pack_uint32(&ptr, elem->gid);
+    pack_uint32(&ptr, elem->atime);
+    pack_uint32(&ptr, elem->mtime);
+    pack_uint32(&ptr, elem->ctime);
+    pack_uint64(&ptr, elem->size);
+  } else {
+    /* just have the file type */
+    pack_uint32(&ptr, elem->type);
+  }
+
+  size_t bytes = (size_t) (ptr - start);
+  return bytes;
+}
+
+static size_t list_elem_unpack2(const void* buf, elem_t* elem)
+{
+  /* set pointer to start of buffer */
+  const char* start = (const char*) buf;
+  const char* ptr = start;
+
+  /* extract detail field */
+  uint32_t detail;
+  unpack_uint32(&ptr, &detail);
+
+  /* extract length of file name field */
+  uint32_t chars;
+  unpack_uint32(&ptr, &chars);
+
+  /* get name and advance pointer */
+  const char* file = ptr;
+  ptr += chars;
+
+  /* copy path */
+  elem->file = BAYER_STRDUP(file);
+
+  /* set depth */
+  elem->depth = get_depth(file);
+
+  elem->detail = (int) detail;
+
+  if (detail) {
+    /* extract fields */
+    unpack_uint32(&ptr, &elem->mode);
+    unpack_uint32(&ptr, &elem->uid);
+    unpack_uint32(&ptr, &elem->gid);
+    unpack_uint32(&ptr, &elem->atime);
+    unpack_uint32(&ptr, &elem->mtime);
+    unpack_uint32(&ptr, &elem->ctime);
+    unpack_uint64(&ptr, &elem->size);
+
+    /* use mode to set file type */
+    elem->type = get_bayer_filetype((mode_t)elem->mode);
+  } else {
+    /* only have type */
+    uint32_t type;
+    unpack_uint32(&ptr, &type);
+    elem->type = (bayer_filetype) type;
+  }
+
+  size_t bytes = (size_t) (ptr - start);
+  return bytes;
+}
+
 /* append element to tail of linked list */
 static void list_insert_elem(flist_t* flist, elem_t* elem)
 {
@@ -2254,7 +2381,7 @@ void bayer_flist_file_copy(bayer_flist bsrc, uint64_t index, bayer_flist bdst)
 size_t bayer_flist_file_pack_size(bayer_flist bflist)
 {
   flist_t* flist = (flist_t*) bflist;
-  size_t size = list_elem_pack_size(flist->detail, flist->max_file_name, NULL);
+  size_t size = list_elem_pack2_size(flist->detail, flist->max_file_name, NULL);
   return size;
 }
 
@@ -2264,18 +2391,19 @@ size_t bayer_flist_file_pack(void* buf, bayer_flist bflist, uint64_t index)
   flist_t* flist = (flist_t*) bflist;
   elem_t* elem = list_get_elem(flist, index);
   if (elem != NULL) {
-    size_t size = list_elem_pack(buf, flist->detail, flist->max_file_name, elem);
+    size_t size = list_elem_pack2(buf, flist->detail, flist->max_file_name, elem);
     return size;
   }
   return 0;
 }
 
-size_t bayer_flist_file_unpack(const void* buf, bayer_flist bflist, int detail, uint64_t chars)
+size_t bayer_flist_file_unpack(const void* buf, bayer_flist bflist)
 {
   /* convert handle to flist_t */
   flist_t* flist = (flist_t*) bflist;
-  char* ptr = (char*) buf;
-  size_t size = list_insert_ptr(flist, ptr, detail, chars);
+  elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
+  size_t size = list_elem_unpack2(buf, elem);
+  list_insert_elem(flist, elem);
   return size;
 }
 
