@@ -9,6 +9,15 @@
 #include <getopt.h>
 #include <time.h> /* asctime / localtime */
 
+//#define LUSTRE_STAT
+#ifdef LUSTRE_STAT
+//#include <stropts.h>
+#include <sys/ioctl.h>
+//#include <lustre/liblustreapi.h>
+//#include <lustre/lustre_user.h>
+#include "lustre_user.h"
+#endif /* LUSTRE_STAT */
+
 #include <pwd.h> /* for getpwent */
 #include <grp.h> /* for getgrent */
 #include <errno.h>
@@ -443,7 +452,7 @@ static void list_delete(flist_t* flist)
 
 /* given an index, return pointer to that file element,
  * NULL if index is not in range */
-static elem_t* list_get_elem(flist_t* flist, int index)
+static elem_t* list_get_elem(flist_t* flist, uint64_t index)
 {
   uint64_t max = flist->list_count;
 
@@ -819,7 +828,7 @@ int bayer_flist_have_detail(bayer_flist bflist)
   return val;
 }
 
-const char* bayer_flist_file_get_name(bayer_flist bflist, int index)
+const char* bayer_flist_file_get_name(bayer_flist bflist, uint64_t index)
 {
   const char* name = NULL;
   flist_t* flist = (flist_t*) bflist;
@@ -830,7 +839,7 @@ const char* bayer_flist_file_get_name(bayer_flist bflist, int index)
   return name;
 }
 
-int bayer_flist_file_get_depth(bayer_flist bflist, int index)
+int bayer_flist_file_get_depth(bayer_flist bflist, uint64_t index)
 {
   int depth = -1;
   flist_t* flist = (flist_t*) bflist;
@@ -841,7 +850,7 @@ int bayer_flist_file_get_depth(bayer_flist bflist, int index)
   return depth;
 }
 
-bayer_filetype bayer_flist_file_get_type(bayer_flist bflist, int index)
+bayer_filetype bayer_flist_file_get_type(bayer_flist bflist, uint64_t index)
 {
   bayer_filetype type = TYPE_NULL;
   flist_t* flist = (flist_t*) bflist;
@@ -852,7 +861,7 @@ bayer_filetype bayer_flist_file_get_type(bayer_flist bflist, int index)
   return type;
 }
 
-uint32_t bayer_flist_file_get_mode(bayer_flist bflist, int index)
+uint32_t bayer_flist_file_get_mode(bayer_flist bflist, uint64_t index)
 {
   uint32_t mode = 0;
   flist_t* flist = (flist_t*) bflist;
@@ -863,7 +872,7 @@ uint32_t bayer_flist_file_get_mode(bayer_flist bflist, int index)
   return mode;
 }
 
-uint32_t bayer_flist_file_get_uid(bayer_flist bflist, int index)
+uint32_t bayer_flist_file_get_uid(bayer_flist bflist, uint64_t index)
 {
   uint32_t ret = (uint32_t) -1;
   flist_t* flist = (flist_t*) bflist;
@@ -874,7 +883,7 @@ uint32_t bayer_flist_file_get_uid(bayer_flist bflist, int index)
   return ret;
 }
 
-uint32_t bayer_flist_file_get_gid(bayer_flist bflist, int index)
+uint32_t bayer_flist_file_get_gid(bayer_flist bflist, uint64_t index)
 {
   uint32_t ret = (uint32_t) -1;
   flist_t* flist = (flist_t*) bflist;
@@ -885,7 +894,7 @@ uint32_t bayer_flist_file_get_gid(bayer_flist bflist, int index)
   return ret;
 }
 
-uint32_t bayer_flist_file_get_atime(bayer_flist bflist, int index)
+uint32_t bayer_flist_file_get_atime(bayer_flist bflist, uint64_t index)
 {
   uint32_t ret = (uint32_t) -1;
   flist_t* flist = (flist_t*) bflist;
@@ -896,7 +905,7 @@ uint32_t bayer_flist_file_get_atime(bayer_flist bflist, int index)
   return ret;
 }
 
-uint32_t bayer_flist_file_get_mtime(bayer_flist bflist, int index)
+uint32_t bayer_flist_file_get_mtime(bayer_flist bflist, uint64_t index)
 {
   uint32_t ret = (uint32_t) -1;
   flist_t* flist = (flist_t*) bflist;
@@ -907,7 +916,7 @@ uint32_t bayer_flist_file_get_mtime(bayer_flist bflist, int index)
   return ret;
 }
 
-uint32_t bayer_flist_file_get_ctime(bayer_flist bflist, int index)
+uint32_t bayer_flist_file_get_ctime(bayer_flist bflist, uint64_t index)
 {
   uint32_t ret = (uint32_t) -1;
   flist_t* flist = (flist_t*) bflist;
@@ -918,7 +927,7 @@ uint32_t bayer_flist_file_get_ctime(bayer_flist bflist, int index)
   return ret;
 }
 
-uint64_t bayer_flist_file_get_size(bayer_flist bflist, int index)
+uint64_t bayer_flist_file_get_size(bayer_flist bflist, uint64_t index)
 {
   uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
@@ -929,7 +938,7 @@ uint64_t bayer_flist_file_get_size(bayer_flist bflist, int index)
   return ret;
 }
 
-const char* bayer_flist_file_get_username(bayer_flist bflist, int index)
+const char* bayer_flist_file_get_username(bayer_flist bflist, uint64_t index)
 {
   const char* ret = NULL;
   flist_t* flist = (flist_t*) bflist;
@@ -940,7 +949,7 @@ const char* bayer_flist_file_get_username(bayer_flist bflist, int index)
   return ret;
 }
 
-const char* bayer_flist_file_get_groupname(bayer_flist bflist, int index)
+const char* bayer_flist_file_get_groupname(bayer_flist bflist, uint64_t index)
 {
   const char* ret = NULL;
   flist_t* flist = (flist_t*) bflist;
@@ -950,6 +959,162 @@ const char* bayer_flist_file_get_groupname(bayer_flist bflist, int index)
   }
   return ret;
 }
+
+#ifdef LUSTRE_STAT
+/****************************************
+ * Walk directory tree using stat at top level and readdir
+ ***************************************/
+
+static int lustre_mds_stat(int fd, char *fname, struct stat *sb)
+{
+  /* allocate a buffer */
+  size_t pathlen = strlen(fname) + 1;
+  size_t bufsize = pathlen;
+  //size_t datasize = sizeof(lstat_t) + lov_user_md_size(LOV_MAX_STRIPE_COUNT, LOV_USER_MAGIC_V3);
+  size_t datasize = sizeof(lstat_t) + 1024 * sizeof(struct lov_user_ost_data_v1);
+  if (datasize > bufsize) {
+    bufsize = datasize;
+  }
+  char* buf = (char*) BAYER_MALLOC(bufsize);
+
+  /* Usage: ioctl(fd, IOC_MDC_GETFILEINFO, buf)
+   * IN: fd open file descriptor of file's parent directory
+   * IN: buf file name (no path)
+   * OUT: buf lstat_t */
+  strcpy(buf, fname);
+//  strncpy(buf, fname, bufsize);
+
+  int ret = ioctl(fd, IOC_MDC_GETFILEINFO, buf);
+
+  /* Copy lstat_t to struct stat */
+  if (ret != -1) {
+    lstat_t* ls = (lstat_t*) buf;
+    sb->st_dev     = ls->st_dev;
+    sb->st_ino     = ls->st_ino;
+    sb->st_mode    = ls->st_mode;
+    sb->st_nlink   = ls->st_nlink;
+    sb->st_uid     = ls->st_uid;
+    sb->st_gid     = ls->st_gid;
+    sb->st_rdev    = ls->st_rdev;
+    sb->st_size    = ls->st_size;
+    sb->st_blksize = ls->st_blksize;
+    sb->st_blocks  = ls->st_blocks;
+    sb->st_atime   = ls->st_atime;
+    sb->st_mtime   = ls->st_mtime;
+    sb->st_ctime   = ls->st_ctime;
+  } else {
+    printf("ioctl errno=%d %s\n", errno, strerror(errno));
+  }
+
+  /* free the buffer */
+  bayer_free(&buf);
+
+  return ret;
+}
+
+static void walk_lustrestat_process_dir(char* dir, CIRCLE_handle* handle)
+{
+  /* TODO: may need to try these functions multiple times */
+  DIR* dirp = bayer_opendir(dir);
+
+  if (! dirp) {
+    /* TODO: print error */
+  } else {
+    /* get file descriptor for open directory */
+    int fd = dirfd(dirp);
+    if (fd < 0) {
+      /* TODO: print error */
+      goto done;
+    }
+
+    /* Read all directory entries */
+    while (1) {
+      /* read next directory entry */
+      struct dirent* entry = bayer_readdir(dirp);
+      if (entry == NULL) {
+        break;
+      }
+
+      /* process component, unless it's "." or ".." */
+      char* name = entry->d_name;
+      if((strncmp(name, ".", 2)) && (strncmp(name, "..", 3))) {
+        /* <dir> + '/' + <name> + '/0' */
+        char newpath[CIRCLE_MAX_STRING_LEN];
+        size_t len = strlen(dir) + 1 + strlen(name) + 1;
+        if (len < sizeof(newpath)) {
+          /* build full path to item */
+          strcpy(newpath, dir);
+          strcat(newpath, "/");
+          strcat(newpath, name);
+
+          /* stat item */
+          mode_t mode;
+          int have_mode = 0;
+          struct stat st;
+          int status = lustre_mds_stat(fd, name, &st);
+          if (status != -1) {
+            have_mode = 1;
+            mode = st.st_mode;
+            list_insert_stat(CURRENT_LIST, newpath, mode, &st);
+          } else {
+            /* error */
+          }
+
+          /* recurse into directories */
+          if (have_mode && S_ISDIR(mode)) {
+            handle->enqueue(newpath);
+          }
+        } else {
+          /* TODO: print error in correct format */
+          /* name is too long */
+          printf("Path name is too long: %lu chars exceeds limit %lu\n", len, sizeof(newpath));
+          fflush(stdout);
+        }
+      }
+    }
+  }
+
+done:
+  bayer_closedir(dirp);
+
+  return;
+}
+
+/** Call back given to initialize the dataset. */
+static void walk_lustrestat_create(CIRCLE_handle* handle)
+{
+  char* path = CURRENT_DIR;
+
+  /* stat top level item */
+  struct stat st;
+  int status = bayer_lstat(path, &st);
+  if (status != 0) {
+    /* TODO: print error */
+    return;
+  }
+
+  /* record item info */
+  list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+
+  /* recurse into directory */
+  if (S_ISDIR(st.st_mode)) {
+    walk_lustrestat_process_dir(path, handle);
+  }
+
+  return;
+}
+
+/** Callback given to process the dataset. */
+static void walk_lustrestat_process(CIRCLE_handle* handle)
+{
+  /* in this case, only items on queue are directories */
+  char path[CIRCLE_MAX_STRING_LEN];
+  handle->dequeue(path);
+  walk_lustrestat_process_dir(path, handle);
+  return;
+}
+
+#endif /* LUSTRE_STAT */
 
 /****************************************
  * Walk directory tree using stat at top level and readdir
@@ -1507,6 +1672,8 @@ void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist* pbfli
     /* walk directories by calling stat on every item */
     CIRCLE_cb_create(&walk_stat_create);
     CIRCLE_cb_process(&walk_stat_process);
+//    CIRCLE_cb_create(&walk_lustrestat_create);
+//    CIRCLE_cb_process(&walk_lustrestat_process);
   } else {
     /* walk directories using file types in readdir */
     CIRCLE_cb_create(&walk_readdir_create);
@@ -2072,7 +2239,7 @@ void bayer_flist_write_cache(
   return;
 }
 
-void bayer_flist_file_copy(bayer_flist bsrc, int index, bayer_flist bdst)
+void bayer_flist_file_copy(bayer_flist bsrc, uint64_t index, bayer_flist bdst)
 {
   /* convert handle to flist_t */
   flist_t* flist = (flist_t*) bsrc;
@@ -2091,7 +2258,7 @@ size_t bayer_flist_file_pack_size(bayer_flist bflist)
   return size;
 }
 
-size_t bayer_flist_file_pack(void* buf, bayer_flist bflist, int index)
+size_t bayer_flist_file_pack(void* buf, bayer_flist bflist, uint64_t index)
 {
   /* convert handle to flist_t */
   flist_t* flist = (flist_t*) bflist;

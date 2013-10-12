@@ -42,8 +42,8 @@ static rm_elem_t* rm_tail = NULL;
 static void create_list(bayer_flist flist)
 {
   /* step through and print data */
-  int index = 0;
-  int size = bayer_flist_size(flist);
+  uint64_t index = 0;
+  uint64_t size = bayer_flist_size(flist);
   while (index < size) {
     /* allocate element for remove list */
     rm_elem_t* elem = (rm_elem_t*) BAYER_MALLOC(sizeof(rm_elem_t));
@@ -100,6 +100,69 @@ static void free_list()
 
 static int rm_depth;      /* tracks current level at which to remove items */
 static uint64_t rm_count; /* tracks number of items local process has removed */
+
+static void flist_split_levels(bayer_flist srclist, int* outlevels, int* outmin, bayer_flist** outlists)
+{
+  int i;
+
+  if (outlevels == NULL || outmin == NULL || outlists == NULL) {
+    return;
+  }
+
+  *outlevels = 0;
+  *outmin    = -1;
+  *outlists  = NULL;
+
+  uint64_t total = bayer_flist_global_size(srclist);
+  if (total == 0) {
+    return;
+  }
+
+  int min = bayer_flist_min_depth(srclist);
+  int max = bayer_flist_max_depth(srclist);
+  int levels = max - min + 1;
+  bayer_flist* lists = (bayer_flist*) BAYER_MALLOC(levels * sizeof(bayer_flist));
+
+  for (i = 0; i < levels; i++) {
+    bayer_flist_subset(srclist, &lists[i]);
+  }
+
+  uint64_t index = 0;
+  uint64_t size = bayer_flist_size(srclist);
+  while (index < size) {
+    int depth = bayer_flist_file_get_depth(srclist, index);
+    int depth_index = depth - min;
+    bayer_flist dstlist = lists[depth_index];
+    bayer_flist_file_copy(srclist, index, dstlist);
+    index++;
+  }
+
+  for (i = 0; i < levels; i++) {
+    bayer_flist_summarize(lists[i]);
+  }
+
+  *outlevels = levels;
+  *outmin    = min;
+  *outlists  = lists;
+
+  return;
+}
+
+static void flist_free_levels(int levels, bayer_flist** outlists)
+{
+  if (outlists == NULL) {
+    return;
+  }
+
+  int i;
+  bayer_flist* lists = *outlists;
+  for (i = 0; i < levels; i++) {
+    bayer_flist_free(&lists[i]);
+  }
+
+  bayer_free(outlists);
+  return;
+}
 
 static void remove_type(char type, const char* name)
 {
@@ -270,44 +333,39 @@ static int get_first_nonzero(const int* buf, int size)
 
 /* for given depth, evenly spread the files among processes for
  * improved load balancing */
-static void remove_spread()
+static void remove_spread(bayer_flist flist, uint64_t* rmcount)
 {
+    uint64_t index;
+
     /* get our rank and number of ranks in job */
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
   
+    /* allocate memory for alltoall exchanges */
     int* sendcounts = (int*) BAYER_MALLOC(ranks * sizeof(int));
     int* sendsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
     int* senddisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
     int* recvsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
     int* recvdisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
 
-    /* compute number of items we have for this depth */
-    uint64_t my_count = 0;
+    /* get number of items */
+    uint64_t my_count  = bayer_flist_size(flist);
+    uint64_t all_count = bayer_flist_global_size(flist);
+    uint64_t offset    = bayer_flist_global_offset(flist);
+
+    /* for this implementation, we remove our portion of the list */
+    *rmcount = my_count;
+
+    /* compute number of bytes we'll send */
     size_t sendbytes = 0;
-    const rm_elem_t* elem = rm_head;
-    while (elem != NULL) {
-        if (elem->depth == rm_depth) {
-            size_t len = strlen(elem->name) + 2;
-            sendbytes += len;
-            my_count++;
-        }
-        elem = elem->next;
+    for (index = 0; index < my_count; index++) {
+        const char* name = bayer_flist_file_get_name(flist, index);
+        size_t len = strlen(name) + 2;
+        sendbytes += len;
     }
 
-    /* compute total number of items */
-    uint64_t all_count;
-    MPI_Allreduce(&my_count, &all_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-    /* get our global offset */
-    uint64_t offset;
-    MPI_Exscan(&my_count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    if (rank == 0) {
-        offset = 0;
-    }
-
-    /* compute the number that each rank should have */
+    /* compute the number of items that each rank should have */
     uint64_t low = all_count / (uint64_t)ranks;
     uint64_t extra = all_count - low * (uint64_t)ranks;
 
@@ -360,49 +418,49 @@ static void remove_spread()
     char* sendbuf = (char*) BAYER_MALLOC(sendbytes);
 
     /* copy data into buffer */
-    elem = rm_head;
     int dest = -1;
     int disp = 0;
-    while (elem != NULL) {
-        if (elem->depth == rm_depth) {
-            /* get rank that we're packing data for */
-            if (dest == -1) {
-              dest = get_first_nonzero(sendcounts, ranks);
-              if (dest == -1) {
-                /* error */
-              }
-              /* about to copy first item for this rank,
-               * record its displacement */
-              senddisps[dest] = disp;
-            }
+    for (index = 0; index < my_count; index++) {
+        /* get name and type of item */
+        const char* name = bayer_flist_file_get_name(flist, index);
+        bayer_filetype type = bayer_flist_file_get_type(flist, index);
 
-            /* identify region to be sent to rank */
-            char* path = sendbuf + disp;
-
-            /* first character encodes item type */
-            if (elem->type == TYPE_DIR) {
-                path[0] = 'd';
-            } else if (elem->type == TYPE_FILE || elem->type == TYPE_LINK) {
-                path[0] = 'f';
-            } else {
-                path[0] = 'u';
-            }
-
-            /* now copy in the path */
-            strcpy(&path[1], elem->name);
-
-            /* add bytes to sendsizes and increase displacement */
-            size_t count = strlen(elem->name) + 2;
-            sendsizes[dest] += count;
-            disp += count;
-
-            /* decrement the count for this rank */
-            sendcounts[dest]--;
-            if (sendcounts[dest] == 0) {
-              dest = -1;
-            }
+        /* get rank that we're packing data for */
+        if (dest == -1) {
+          dest = get_first_nonzero(sendcounts, ranks);
+          if (dest == -1) {
+            /* error */
+          }
+          /* about to copy first item for this rank,
+           * record its displacement */
+          senddisps[dest] = disp;
         }
-        elem = elem->next;
+
+        /* identify region to be sent to rank */
+        char* path = sendbuf + disp;
+
+        /* first character encodes item type */
+        if (type == TYPE_DIR) {
+            path[0] = 'd';
+        } else if (type == TYPE_FILE || type == TYPE_LINK) {
+            path[0] = 'f';
+        } else {
+            path[0] = 'u';
+        }
+
+        /* now copy in the path */
+        strcpy(&path[1], name);
+
+        /* add bytes to sendsizes and increase displacement */
+        size_t count = strlen(name) + 2;
+        sendsizes[dest] += count;
+        disp += count;
+
+        /* decrement the count for this rank */
+        sendcounts[dest]--;
+        if (sendcounts[dest] == 0) {
+          dest = -1;
+        }
     }
 
     /* compute displacements */
@@ -442,7 +500,6 @@ static void remove_spread()
 
         /* delete item */
         remove_type(type, name);
-        rm_count++;
 
         /* go to next item */
         size_t item_size = strlen(item) + 1;
@@ -716,53 +773,68 @@ static void remove_sort()
  * starting from deepest level and working backwards */
 static void remove_files(bayer_flist flist)
 {
-    /* create linked list of files to be removed */
-    create_list(flist);
+    int level;
 
     /* get our rank and number of ranks in job */
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-    /* get max depth across all procs */
-    int min_depth = bayer_flist_min_depth(flist);
-    int max_depth = bayer_flist_max_depth(flist);
+    /* split files into separate lists by directory depth */
+    int levels, minlevel;
+    bayer_flist* lists;
+    flist_split_levels(flist, &levels, &minlevel, &lists);
 
-    /* from top to bottom, ensure all directories have write bit set */
-    int depth;
-    for (depth = min_depth; depth <= max_depth; depth++) {
-        rm_elem_t* elem = rm_head;
-        while (elem != NULL) {
-            if (elem->depth == depth) {
-                if (elem->type == TYPE_DIR) {
-                    /* TODO: if we know the mode and if the write bit is set, skip this,
-                     * and if we don't have the mode, try to delete, then set perms, then delete again */
-                    if (elem->have_mode == 0 || !(elem->mode & S_IWUSR)) {
-                        int rc = chmod(elem->name, S_IRWXU);
-                        if (rc != 0) {
-                          printf("Failed to chmod directory `%s' (errno=%d %s)\n", elem->name, errno, strerror(errno));
-                        }
+    /* dive from shallow to deep, ensure all directories have write bit set */
+    for (level = 0; level < levels; level++) {
+        /* get list of items for this level */
+        bayer_flist list = lists[level];
+
+        /* determine whether we have details at this level */
+        int detail = bayer_flist_have_detail(list);
+
+        /* iterate over items and set write bit on directories if needed */
+        uint64_t index;
+        uint64_t size = bayer_flist_size(list);
+        for (index = 0; index < size; index++) {
+            /* check whether we have a directory */
+            bayer_filetype type = bayer_flist_file_get_type(list, index);
+            if (type == TYPE_DIR) {
+                /* assume we have to set the bit */
+                int set_write_bit = 1;
+                if (detail) {
+                    mode_t mode = (mode_t) bayer_flist_file_get_mode(list, index);
+                    if (mode & S_IWUSR) {
+                        /* we have the mode of the file, and the bit is already set */
+                        set_write_bit = 0;
+                    }
+                }
+
+                /* set the bit if needed */
+                if (set_write_bit) {
+                    const char* name = bayer_flist_file_get_name(list, index);
+                    int rc = chmod(name, S_IRWXU);
+                    if (rc != 0) {
+                      printf("Failed to chmod directory `%s' (errno=%d %s)\n", name, errno, strerror(errno));
                     }
                 }
             }
-            elem = elem->next;
         }
-        
-        /* wait for all procs to finish before we start
-         * with files at next level */
+
+        /* wait for all procs to finish before we start next level */
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
     /* now remove files starting from deepest level */
-    for (depth = max_depth; depth >= min_depth; depth--) {
+    for (level = levels - 1; level >= 0; level--) {
         double start = MPI_Wtime();
 
-        /* remove all files at this level */
-        rm_depth = depth;
-        rm_count = 0;
+        /* get list of items for this level */
+        bayer_flist list = lists[level];
 
+        uint64_t count = 0;
 //        remove_direct();
-        remove_spread();
+        remove_spread(list, &count);
 //        remove_map();
 //      remove_sort();
 //      TODO: remove spread then sort
@@ -776,9 +848,9 @@ static void remove_files(bayer_flist flist)
 
         if (verbose) {
             uint64_t min, max, sum;
-            MPI_Allreduce(&rm_count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-            MPI_Allreduce(&rm_count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-            MPI_Allreduce(&rm_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(&count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
+            MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+            MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
             double rate = 0.0;
             if (end - start > 0.0) {
               rate = (double)sum / (end - start);
@@ -786,14 +858,14 @@ static void remove_files(bayer_flist flist)
             double time = end - start;
             if (rank == 0) {
                 printf("level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
-                  depth, (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time
+                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time
                 );
                 fflush(stdout);
             }
         }
     }
 
-    free_list();
+    flist_free_levels(levels, &lists);
 
     return;
 }
@@ -982,7 +1054,7 @@ int main(int argc, char **argv)
     }
   }
 
-  /* TODO: remove files */
+  /* remove files */
   double start_remove = MPI_Wtime();
   remove_files(flist);
   double end_remove = MPI_Wtime();

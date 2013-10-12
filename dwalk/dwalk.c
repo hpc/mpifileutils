@@ -167,7 +167,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
   void* sortbuf = BAYER_MALLOC(sortbufsize);
 
   /* copy data into sort elements */
-  int index = 0;
+  uint64_t index = 0;
   char* sortptr = (char*) sortbuf;
   while (index < incount) {
     /* copy in access time */
@@ -254,8 +254,8 @@ static void filter_files(bayer_flist* pflist)
 
   static uint32_t limit = 60 * 24 * 3600; /* 60 days */
   uint32_t now = gettime();
-  int index = 0;
-  int files = bayer_flist_size(flist);
+  uint64_t index = 0;
+  uint64_t files = bayer_flist_size(flist);
   while (index < files) {
     bayer_filetype type = bayer_flist_file_get_type(flist, index);
     if (type == TYPE_FILE || type == TYPE_LINK) {
@@ -478,7 +478,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
   void* sortbuf = BAYER_MALLOC(sortbufsize);
 
   /* copy data into sort elements */
-  int index = 0;
+  uint64_t index = 0;
   char* sortptr = (char*) sortbuf;
   while (index < incount) {
     /* copy in access time */
@@ -584,7 +584,7 @@ static void print_summary(bayer_flist flist)
   MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
   /* step through and print data */
-  int index = 0;
+  uint64_t index = 0;
   uint64_t max = bayer_flist_size(flist);
   while (index < max) {
     /* get filename */
@@ -740,7 +740,7 @@ static char type_str_dir[]     = "DIR";
 static char type_str_file[]    = "REG";
 static char type_str_link[]    = "LNK";
 
-static void print_file(bayer_flist flist, int index, int rank)
+static void print_file(bayer_flist flist, uint64_t index, int rank)
 {
   /* get filename */
   const char* file = bayer_flist_file_get_name(flist, index);

@@ -65,10 +65,10 @@ void bayer_flist_write_cache(
 /* free resouces in file list */
 void bayer_flist_free(bayer_flist* flist);
 
-void bayer_flist_file_copy(bayer_flist src, int index, bayer_flist dest);
+void bayer_flist_file_copy(bayer_flist src, uint64_t index, bayer_flist dest);
 
 size_t bayer_flist_file_pack_size(bayer_flist flist);
-size_t bayer_flist_file_pack(void* buf, bayer_flist flist, int index);
+size_t bayer_flist_file_pack(void* buf, bayer_flist flist, uint64_t index);
 size_t bayer_flist_file_unpack(const void* buf, bayer_flist flist, int detail, uint64_t chars);
 
 /* run this to enable query functions on list after adding elements */
@@ -106,20 +106,20 @@ int bayer_flist_max_depth(bayer_flist flist);
 int bayer_flist_have_detail(bayer_flist flist);
 
 /* always set */
-const char* bayer_flist_file_get_name(bayer_flist flist, int index);
-int bayer_flist_file_get_depth(bayer_flist flist, int index);
-bayer_filetype bayer_flist_file_get_type(bayer_flist flist, int index);
+const char* bayer_flist_file_get_name(bayer_flist flist, uint64_t index);
+int bayer_flist_file_get_depth(bayer_flist flist, uint64_t index);
+bayer_filetype bayer_flist_file_get_type(bayer_flist flist, uint64_t index);
 
 /* valid if detail == 1 */
-uint32_t bayer_flist_file_get_mode(bayer_flist flist, int index);
-uint32_t bayer_flist_file_get_uid(bayer_flist flist, int index);
-uint32_t bayer_flist_file_get_gid(bayer_flist flist, int index);
-uint32_t bayer_flist_file_get_atime(bayer_flist flist, int index);
-uint32_t bayer_flist_file_get_mtime(bayer_flist flist, int index);
-uint32_t bayer_flist_file_get_ctime(bayer_flist flist, int index);
-uint64_t bayer_flist_file_get_size(bayer_flist flist, int index);
-const char* bayer_flist_file_get_username(bayer_flist flist, int index);
-const char* bayer_flist_file_get_groupname(bayer_flist flist, int index);
+uint32_t bayer_flist_file_get_mode(bayer_flist flist, uint64_t index);
+uint32_t bayer_flist_file_get_uid(bayer_flist flist, uint64_t index);
+uint32_t bayer_flist_file_get_gid(bayer_flist flist, uint64_t index);
+uint32_t bayer_flist_file_get_atime(bayer_flist flist, uint64_t index);
+uint32_t bayer_flist_file_get_mtime(bayer_flist flist, uint64_t index);
+uint32_t bayer_flist_file_get_ctime(bayer_flist flist, uint64_t index);
+uint64_t bayer_flist_file_get_size(bayer_flist flist, uint64_t index);
+const char* bayer_flist_file_get_username(bayer_flist flist, uint64_t index);
+const char* bayer_flist_file_get_groupname(bayer_flist flist, uint64_t index);
 
 #endif /* BAYER_FLIST_H */
 
