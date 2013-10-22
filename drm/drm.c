@@ -21,244 +21,183 @@
 #include "dtcmp.h"
 #include "bayer.h"
 
-// getpwent getgrent to read user and group entries
-
 /* TODO: change globals to struct */
 static int verbose   = 0;
 static int walk_stat = 1;
 
-/* globals needed for libcircle callback routines */
-static bayer_flist circle_list; /* list of items we're deleting */
-static uint64_t circle_count;   /* number of items local process has removed */
+/*****************************
+ * Split a list into multiple lists by depth
+ ****************************/
 
-static void flist_split_levels(bayer_flist srclist, int* outlevels, int* outmin, bayer_flist** outlists)
+/* given an input list, split items into separate lists depending
+ * on their depth, returns number of levels, minimum depth, and
+ * array of lists as output */
+static void bayer_flist_split_by_depth(
+  bayer_flist srclist,
+  int* outlevels,
+  int* outmin,
+  bayer_flist** outlists)
 {
-  int i;
+    /* check that our pointers are valid */
+    if (outlevels == NULL || outmin == NULL || outlists == NULL) {
+        return;
+    }
 
-  if (outlevels == NULL || outmin == NULL || outlists == NULL) {
+    /* initialize return values */
+    *outlevels = 0;
+    *outmin    = -1;
+    *outlists  = NULL;
+
+    /* get total file count */
+    uint64_t total = bayer_flist_global_size(srclist);
+    if (total == 0) {
+        return;
+    }
+
+    /* get min and max depths, determine number of levels,
+     * allocate array of lists */
+    int min = bayer_flist_min_depth(srclist);
+    int max = bayer_flist_max_depth(srclist);
+    int levels = max - min + 1;
+    bayer_flist* lists = (bayer_flist*) BAYER_MALLOC(levels * sizeof(bayer_flist));
+
+    /* create a list for each level */
+    int i;
+    for (i = 0; i < levels; i++) {
+        bayer_flist_subset(srclist, &lists[i]);
+    }
+
+    /* copy each item from source list to its corresponding level */
+    uint64_t index = 0;
+    uint64_t size = bayer_flist_size(srclist);
+    while (index < size) {
+        int depth = bayer_flist_file_get_depth(srclist, index);
+        int depth_index = depth - min;
+        bayer_flist dstlist = lists[depth_index];
+        bayer_flist_file_copy(srclist, index, dstlist);
+        index++;
+    }
+
+    /* summarize each list */
+    for (i = 0; i < levels; i++) {
+        bayer_flist_summarize(lists[i]);
+    }
+
+    /* set return parameters */
+    *outlevels = levels;
+    *outmin    = min;
+    *outlists  = lists;
+
     return;
-  }
-
-  *outlevels = 0;
-  *outmin    = -1;
-  *outlists  = NULL;
-
-  uint64_t total = bayer_flist_global_size(srclist);
-  if (total == 0) {
-    return;
-  }
-
-  int min = bayer_flist_min_depth(srclist);
-  int max = bayer_flist_max_depth(srclist);
-  int levels = max - min + 1;
-  bayer_flist* lists = (bayer_flist*) BAYER_MALLOC(levels * sizeof(bayer_flist));
-
-  for (i = 0; i < levels; i++) {
-    bayer_flist_subset(srclist, &lists[i]);
-  }
-
-  uint64_t index = 0;
-  uint64_t size = bayer_flist_size(srclist);
-  while (index < size) {
-    int depth = bayer_flist_file_get_depth(srclist, index);
-    int depth_index = depth - min;
-    bayer_flist dstlist = lists[depth_index];
-    bayer_flist_file_copy(srclist, index, dstlist);
-    index++;
-  }
-
-  for (i = 0; i < levels; i++) {
-    bayer_flist_summarize(lists[i]);
-  }
-
-  *outlevels = levels;
-  *outmin    = min;
-  *outlists  = lists;
-
-  return;
 }
 
-static void flist_free_levels(int levels, bayer_flist** outlists)
+/* frees array of lists created in call to
+ * bayer_flist_split_by_depth */
+static void bayer_flist_free_array(int levels, bayer_flist** outlists)
 {
-  if (outlists == NULL) {
+    /* check that our pointer is valid */
+    if (outlists == NULL) {
+        return;
+    }
+
+    /* free each list */
+    int i;
+    bayer_flist* lists = *outlists;
+    for (i = 0; i < levels; i++) {
+        bayer_flist_free(&lists[i]);
+    }
+
+    /* free the array of lists and set caller's pointer to NULL */
+    bayer_free(outlists);
     return;
-  }
-
-  int i;
-  bayer_flist* lists = *outlists;
-  for (i = 0; i < levels; i++) {
-    bayer_flist_free(&lists[i]);
-  }
-
-  bayer_free(outlists);
-  return;
 }
 
+/*****************************
+ * Global functions used by remove routines
+ ****************************/
+
+/* removes name by calling rmdir, unlink, or remove depending
+ * on item type */
 static void remove_type(char type, const char* name)
 {
-  if (type == 'd') {
-    int rc = bayer_rmdir(name);
-    if (rc != 0) {
-      printf("Failed to rmdir `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-    }
-  } else if (type == 'f') {
-    int rc = bayer_unlink(name);
-    if (rc != 0) {
-      printf("Failed to unlink `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-    }
-  } else if (type == 'u') {
-    int rc = remove(name);
-    if (rc != 0) {
-      printf("Failed to remove `%s' (errno=%d %s)\n", name, errno, strerror(errno));
-    }
-  } else {
-    /* print error */
-    printf("Unknown type=%c name=%s @ %s:%d\n", type, name, __FILE__, __LINE__);
-  }
-
-  return;
-}
-
-static void remove_create(CIRCLE_handle* handle)
-{
-  char path[CIRCLE_MAX_STRING_LEN];
-
-  /* enqueues all items at rm_depth to be deleted */
-  uint64_t index;
-  uint64_t size = bayer_flist_size(circle_list);
-  for (index = 0; index < size; index++) {
-    /* get name and type of item */
-    const char* name = bayer_flist_file_get_name(circle_list, index);
-    bayer_filetype type = bayer_flist_file_get_type(circle_list, index);
-
-    /* encode type */
-    if (type == TYPE_DIR) {
-      path[0] = 'd';
-    } else if (type == TYPE_FILE || type == TYPE_LINK) {
-      path[0] = 'f';
+    /* TODO: don't print message if errno == ENOENT (file already gone) */
+    if (type == 'd') {
+        int rc = bayer_rmdir(name);
+        if (rc != 0) {
+            printf("Failed to rmdir `%s' (errno=%d %s)\n",
+                name, errno, strerror(errno)
+            );
+        }
+    } else if (type == 'f') {
+        int rc = bayer_unlink(name);
+        if (rc != 0) {
+            printf("Failed to unlink `%s' (errno=%d %s)\n",
+                name, errno, strerror(errno)
+            );
+        }
+    } else if (type == 'u') {
+        int rc = remove(name);
+        if (rc != 0) {
+            printf("Failed to remove `%s' (errno=%d %s)\n",
+                name, errno, strerror(errno)
+            );
+        }
     } else {
-      path[0] = 'u';
+        /* print error */
+        printf("Unknown type=%c name=%s @ %s:%d\n",
+            type, name, __FILE__, __LINE__
+        );
     }
 
-    /* encode name */
-    size_t len = strlen(name) + 2;
-    if (len <= CIRCLE_MAX_STRING_LEN) {
-      strcpy(&path[1], name);
-      handle->enqueue(path);
-    } else {
-      printf("Filename longer than %lu\n", (unsigned long)CIRCLE_MAX_STRING_LEN);
-    }
-  }
-
-  return;
+    return;
 }
 
-static void remove_process(CIRCLE_handle* handle)
-{
-  char path[CIRCLE_MAX_STRING_LEN];
-  handle->dequeue(path);
-  
-  char item = path[0];
-  char* name = &path[1];
-  remove_type(item, name);
-  circle_count++;
-
-  return;
-}
-
-/* insert all items to be removed into libcircle for
- * dynamic load balancing */
-static void remove_libcircle(bayer_flist list, uint64_t* rmcount)
-{
-  /* set globals for libcircle callbacks */
-  circle_list  = list;
-  circle_count = 0;
-
-  /* initialize libcircle */
-  CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
-
-  /* set libcircle verbosity level */
-  enum CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
-  if (verbose) {
-//    loglevel = CIRCLE_LOG_INFO;
-  }
-  CIRCLE_enable_logging(loglevel);
-
-  /* register callbacks */
-  CIRCLE_cb_create(&remove_create);
-  CIRCLE_cb_process(&remove_process);
-
-  /* run the libcircle job */
-  CIRCLE_begin();
-  CIRCLE_finalize();
-
-  /* record number of items we deleted */
-  *rmcount = circle_count;
-
-  return;
-}
+/*****************************
+ * Directly remove items in local portion of distributed list
+ ****************************/
 
 /* for given depth, just remove the files we know about */
 static void remove_direct(bayer_flist list, uint64_t* rmcount)
 {
-  /* each process directly removes its elements */
-  uint64_t index;
-  uint64_t size = bayer_flist_size(list);
-  for (index = 0; index < size; index++) {
-    /* get name and type of item */
-    const char* name = bayer_flist_file_get_name(list, index);
-    bayer_filetype type = bayer_flist_file_get_type(list, index);
+    /* each process directly removes its elements */
+    uint64_t index;
+    uint64_t size = bayer_flist_size(list);
+    for (index = 0; index < size; index++) {
+        /* get name and type of item */
+        const char* name = bayer_flist_file_get_name(list, index);
+        bayer_filetype type = bayer_flist_file_get_type(list, index);
 
-    /* delete item */
-    if (type == TYPE_DIR) {
-      remove_type('d', name);
-    } else if (type == TYPE_FILE || type == TYPE_LINK) {
-      remove_type('f', name);
-    } else {
-      remove_type('u', name);
+        /* delete item */
+        if (type == TYPE_DIR) {
+            remove_type('d', name);
+        } else if (type == TYPE_FILE || type == TYPE_LINK) {
+            remove_type('f', name);
+        } else {
+            remove_type('u', name);
+        }
     }
-  }
 
-  /* report the number of items we deleted */
-  *rmcount = size;
+    /* report the number of items we deleted */
+    *rmcount = size;
 
-  return;
+    return;
 }
 
-/* spread with synchronization */
-  /* allreduce to get total count of items */
-  /* sort by name */
-  /* alltoall to determine which processes to send / recv from */
-  /* alltoallv to exchange data */
-  /* pt2pt with left and right neighbors to determine if they have the same dirname */
-  /* delete what we can witout waiting */
-  /* if my right neighbor has same dirname, send him msg when we're done */
-  /* if my left neighbor has same dirname, wait for msg */
+/*****************************
+ * Distribute items evenly across processes, then remove
+ ****************************/
 
-/* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
-static uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len)
-{
-  uint32_t hash, i;
-  for(hash = i = 0; i < len; ++i) {
-      hash += key[i];
-      hash += (hash << 10);
-      hash ^= (hash >> 6);
-  }
-  hash += (hash << 3);
-  hash ^= (hash >> 11);
-  hash += (hash << 15);
-  return hash;
-}
-
+/* given an array of integers and its size, find and return
+ * index of first non-zero element, returns -1 if not found */
 static int get_first_nonzero(const int* buf, int size)
 {
-  int i;
-  for (i = 0; i < size; i++) {
-    if (buf[i] != 0) {
-      return i;
+    int i;
+    for (i = 0; i < size; i++) {
+        if (buf[i] != 0) {
+            return i;
+        }
     }
-  }
-  return -1;
+    return -1;
 }
 
 /* for given depth, evenly spread the files among processes for
@@ -448,6 +387,25 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
     return;
 }
 
+/*****************************
+ * Randomly hash items to processes by filename, then remove
+ ****************************/
+
+/* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
+static uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len)
+{
+    uint32_t hash, i;
+    for(hash = i = 0; i < len; ++i) {
+        hash += key[i];
+        hash += (hash << 10);
+        hash ^= (hash >> 6);
+    }
+    hash += (hash << 3);
+    hash ^= (hash >> 11);
+    hash += (hash << 15);
+    return hash;
+}
+
 /* for given depth, hash directory name and map to processes to
  * test whether having all files in same directory on one process
  * matters */
@@ -592,6 +550,11 @@ static void remove_map(bayer_flist list, uint64_t* rmcount)
     return;
 }
 
+/*****************************
+ * Globally sort items by filename, then remove,
+ * may reduce locking if need to lock by directories
+ ****************************/
+
 /* for each depth, sort files by filename and then remove, to test
  * whether it matters to limit the number of directories each process
  * has to reference (e.g., locking) */
@@ -689,8 +652,110 @@ static void remove_sort(bayer_flist list, uint64_t* rmcount)
     return;
 }
 
-/* iterate through linked list of files and set ownership, timestamps, and permissions
- * starting from deepest level and working backwards */
+/*****************************
+ * Remove items using libcircle for dynamic load balancing
+ ****************************/
+
+/* globals needed for libcircle callback routines */
+static bayer_flist circle_list; /* list of items we're deleting */
+static uint64_t circle_count;   /* number of items local process has removed */
+
+static void remove_create(CIRCLE_handle* handle)
+{
+    char path[CIRCLE_MAX_STRING_LEN];
+
+    /* enqueues all items at rm_depth to be deleted */
+    uint64_t index;
+    uint64_t size = bayer_flist_size(circle_list);
+    for (index = 0; index < size; index++) {
+        /* get name and type of item */
+        const char* name = bayer_flist_file_get_name(circle_list, index);
+        bayer_filetype type = bayer_flist_file_get_type(circle_list, index);
+
+        /* encode type */
+        if (type == TYPE_DIR) {
+            path[0] = 'd';
+        } else if (type == TYPE_FILE || type == TYPE_LINK) {
+            path[0] = 'f';
+        } else {
+            path[0] = 'u';
+        }
+
+        /* encode name */
+        size_t len = strlen(name) + 2;
+        if (len <= CIRCLE_MAX_STRING_LEN) {
+            strcpy(&path[1], name);
+            handle->enqueue(path);
+        } else {
+            printf("Filename longer than %lu\n", (unsigned long)CIRCLE_MAX_STRING_LEN);
+        }
+    }
+
+    return;
+}
+
+static void remove_process(CIRCLE_handle* handle)
+{
+    char path[CIRCLE_MAX_STRING_LEN];
+    handle->dequeue(path);
+  
+    char item = path[0];
+    char* name = &path[1];
+    remove_type(item, name);
+    circle_count++;
+
+    return;
+}
+
+/* insert all items to be removed into libcircle for
+ * dynamic load balancing */
+static void remove_libcircle(bayer_flist list, uint64_t* rmcount)
+{
+    /* set globals for libcircle callbacks */
+    circle_list  = list;
+    circle_count = 0;
+
+    /* initialize libcircle */
+    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
+
+    /* set libcircle verbosity level */
+    enum CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
+    if (verbose) {
+//        loglevel = CIRCLE_LOG_INFO;
+    }
+    CIRCLE_enable_logging(loglevel);
+
+    /* register callbacks */
+    CIRCLE_cb_create(&remove_create);
+    CIRCLE_cb_process(&remove_process);
+
+    /* run the libcircle job */
+    CIRCLE_begin();
+    CIRCLE_finalize();
+
+    /* record number of items we deleted */
+    *rmcount = circle_count;
+
+    return;
+}
+
+/* TODO: sort w/ spread and synchronization */
+  /* allreduce to get total count of items */
+  /* sort by name */
+  /* alltoall to determine which processes to send / recv from */
+  /* alltoallv to exchange data */
+  /* pt2pt with left and right neighbors to determine if they have the same dirname */
+  /* delete what we can witout waiting */
+  /* if my right neighbor has same dirname, send him msg when we're done */
+  /* if my left neighbor has same dirname, wait for msg */
+
+/*****************************
+ * Driver functions
+ ****************************/
+
+/* removes list of items, sets write bits on directories from
+ * top-to-bottom, then removes items one level at a time starting
+ * from the deepest */
 static void remove_files(bayer_flist flist)
 {
     int level;
@@ -703,7 +768,7 @@ static void remove_files(bayer_flist flist)
     /* split files into separate lists by directory depth */
     int levels, minlevel;
     bayer_flist* lists;
-    flist_split_levels(flist, &levels, &minlevel, &lists);
+    bayer_flist_split_by_depth(flist, &levels, &minlevel, &lists);
 
     /* dive from shallow to deep, ensure all directories have write bit set */
     for (level = 0; level < levels; level++) {
@@ -757,8 +822,8 @@ static void remove_files(bayer_flist flist)
         remove_spread(list, &count);
 //        remove_map(list, &count);
 //        remove_sort(list, &count);
-//        TODO: remove spread then sort
 //        remove_libcircle(list, &count);
+//        TODO: remove sort w/ spread
         
         /* wait for all procs to finish before we start
          * with files at next level */
@@ -785,224 +850,227 @@ static void remove_files(bayer_flist flist)
         }
     }
 
-    flist_free_levels(levels, &lists);
+    bayer_flist_free_array(levels, &lists);
 
     return;
 }
 
 static void print_usage()
 {
-  printf("\n");
-  printf("Usage: drm [options] <path>\n");
-  printf("\n");
-  printf("Options:\n");
-  printf("  -i, --input <file>  - read list from file\n");
-  printf("  -l, --lite          - walk file system without stat\n");
-  printf("  -v, --verbose       - verbose output\n");
-  printf("  -h, --help          - print usage\n");
-  printf("\n");
-  fflush(stdout);
-  return;
+    printf("\n");
+    printf("Usage: drm [options] <path>\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -i, --input <file>  - read list from file\n");
+    printf("  -l, --lite          - walk file system without stat\n");
+    printf("  -v, --verbose       - verbose output\n");
+    printf("  -h, --help          - print usage\n");
+    printf("\n");
+    fflush(stdout);
+    return;
 }
 
 int main(int argc, char **argv)
 {
-  /* initialize MPI */
-  MPI_Init(&argc, &argv);
+    /* initialize MPI */
+    MPI_Init(&argc, &argv);
 
-  /* get our rank and the size of comm_world */
-  int rank, ranks;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+    /* get our rank and the size of comm_world */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-  char* inputname = NULL;
-  int walk = 0;
+    /* parse command line options */
+    char* inputname = NULL;
+    int walk = 0;
 
-  int option_index = 0;
-  static struct option long_options[] = {
-    {"input",    1, 0, 'i'},
-    {"lite",     0, 0, 'l'},
-    {"help",     0, 0, 'h'},
-    {"verbose",  0, 0, 'v'},
-    {0, 0, 0, 0}
-  };
+    int option_index = 0;
+    static struct option long_options[] = {
+        {"input",    1, 0, 'i'},
+        {"lite",     0, 0, 'l'},
+        {"help",     0, 0, 'h'},
+        {"verbose",  0, 0, 'v'},
+        {0, 0, 0, 0}
+    };
 
-  int usage = 0;
-  while (1) {
-    int c = getopt_long(
-      argc, argv, "i:lhv",
-      long_options, &option_index
-    );
+    int usage = 0;
+    while (1) {
+        int c = getopt_long(
+            argc, argv, "i:lhv",
+            long_options, &option_index
+        );
 
-    if (c == -1) {
-      break;
+        if (c == -1) {
+            break;
+        }
+
+        switch (c) {
+        case 'i':
+            inputname = BAYER_STRDUP(optarg);
+            break;
+        case 'l':
+            walk_stat = 0;
+            break;
+        case 'h':
+            usage = 1;
+            break;
+        case 'v':
+            verbose = 1;
+            break;
+        case '?':
+            usage = 1;
+            break;
+        default:
+            if (rank == 0) {
+                printf("?? getopt returned character code 0%o ??\n", c);
+            }
+        }
     }
 
-    switch (c) {
-    case 'i':
-      inputname = BAYER_STRDUP(optarg);
-      break;
-    case 'l':
-      walk_stat = 0;
-      break;
-    case 'h':
-      usage = 1;
-      break;
-    case 'v':
-      verbose = 1;
-      break;
-    case '?':
-      usage = 1;
-      break;
-    default:
-      if (rank == 0) {
-        printf("?? getopt returned character code 0%o ??\n", c);
-      }
-    }
-  }
+    /* paths to walk come after the options */
+    char* target = NULL;
+    if (optind < argc) {
+        /* got a path to walk */
+        walk = 1;
 
-  /* paths to walk come after the options */
-  char* target = NULL;
-  if (optind < argc) {
-    /* got a path to walk */
-    walk = 1;
+        /* get absolute path and remove ".", "..", consecutive "/",
+         * and trailing "/" characters */
+        char* path = argv[optind];
+        target = bayer_path_strdup_abs_reduce_str(path);
 
-    /* get absolute path and remove ".", "..", consecutive "/",
-     * and trailing "/" characters */
-    char* path = argv[optind];
-    target = bayer_path_strdup_abs_reduce_str(path);
+        /* currently only allow one path */
+        if (argc - optind > 1) {
+            usage = 1;
+        }
 
-    /* currently only allow one path */
-    if (argc - optind > 1) {
-      usage = 1;
+        /* don't allow input file and walk */
+        if (inputname != NULL) {
+            usage = 1;
+        }
+    } else {
+        /* if we're not walking, we must be reading,
+         * and for that we need a file */
+        if (inputname == NULL) {
+            usage = 1;
+        }
     }
 
-    /* don't allow input file and walk */
-    if (inputname != NULL) {
-      usage = 1;
-    }
-  } else {
-    /* if we're not walking, we must be reading,
-     * and for that we need a file */
-    if (inputname == NULL) {
-      usage = 1;
-    }
-  }
-
-  if (usage) {
-    if (rank == 0) {
-      print_usage();
-    }
-    MPI_Finalize();
-    return 0;
-  }
-
-  /* TODO: check stat fields fit within MPI types */
-  // if (sizeof(st_uid) > uint64_t) error(); etc...
-
-  /* initialize our sorting library */
-  DTCMP_Init();
-
-  uint64_t all_count = 0;
-  uint64_t walk_start, walk_end;
-
-  /* create an empty file list */
-  bayer_flist flist;
-
-  if (walk) {
-    time_t walk_start_t = time(NULL);
-    if (walk_start_t == (time_t)-1) {
-      /* TODO: ERROR! */
-    }
-    walk_start = (uint64_t) walk_start_t;
-
-    /* report walk count, time, and rate */
-    if (verbose && rank == 0) {
-      char walk_s[30];
-      size_t rc = strftime(walk_s, sizeof(walk_s)-1, "%FT%T", localtime(&walk_start_t));
-      if (rc == 0) {
-        walk_s[0] = '\0';
-      }
-      printf("%s: Walking directory: %s\n", walk_s, target);
-      fflush(stdout);
+    /* print usage if we need to */
+    if (usage) {
+        if (rank == 0) {
+            print_usage();
+        }
+        MPI_Finalize();
+        return 1;
     }
 
-    /* walk file tree and record stat data for each file */
-    double start_walk = MPI_Wtime();
-    bayer_flist_walk_path(target, walk_stat, &flist);
-    double end_walk = MPI_Wtime();
+    /* initialize our sorting library */
+    DTCMP_Init();
 
-    time_t walk_end_t = time(NULL);
-    if (walk_end_t == (time_t)-1) {
-      /* TODO: ERROR! */
+    uint64_t all_count = 0;
+    uint64_t walk_start, walk_end;
+
+    /* create an empty file list */
+    bayer_flist flist;
+
+    /* get our list of files, either by walking or reading an
+     * input file */
+    if (walk) {
+        time_t walk_start_t = time(NULL);
+        if (walk_start_t == (time_t)-1) {
+            /* TODO: ERROR! */
+        }
+        walk_start = (uint64_t) walk_start_t;
+
+        /* report walk count, time, and rate */
+        if (verbose && rank == 0) {
+            char walk_s[30];
+            size_t rc = strftime(walk_s, sizeof(walk_s)-1, "%FT%T", localtime(&walk_start_t));
+            if (rc == 0) {
+                walk_s[0] = '\0';
+            }
+            printf("%s: Walking directory: %s\n", walk_s, target);
+            fflush(stdout);
+        }
+
+        /* walk file tree and record stat data for each file */
+        double start_walk = MPI_Wtime();
+        bayer_flist_walk_path(target, walk_stat, &flist);
+        double end_walk = MPI_Wtime();
+
+        time_t walk_end_t = time(NULL);
+        if (walk_end_t == (time_t)-1) {
+            /* TODO: ERROR! */
+        }
+        walk_end = (uint64_t) walk_end_t;
+
+        /* get total file count */
+        all_count = bayer_flist_global_size(flist);
+
+        /* report walk count, time, and rate */
+        if (verbose && rank == 0) {
+            double time = end_walk - start_walk;
+            double rate = 0.0;
+            if (time > 0.0) {
+                rate = ((double)all_count) / time;
+            }
+            printf("Walked %lu files in %f seconds (%f files/sec)\n",
+                all_count, time, rate
+            );
+        }
+    } else {
+        /* read list from file */
+        double start_read = MPI_Wtime();
+        bayer_flist_read_cache(inputname, &flist);
+        double end_read = MPI_Wtime();
+
+        /* get total file count */
+        all_count = bayer_flist_global_size(flist);
+
+        /* report read count, time, and rate */
+        if (verbose && rank == 0) {
+            double time = end_read - start_read;
+            double rate = 0.0;
+            if (time > 0.0) {
+                rate = ((double)all_count) / time;
+            }
+            printf("Read %lu files in %f seconds (%f files/sec)\n",
+                all_count, time, rate
+            );
+        }
     }
-    walk_end = (uint64_t) walk_end_t;
 
-    /* get total file count */
-    all_count = bayer_flist_global_size(flist);
-
-    /* report walk count, time, and rate */
-    if (verbose && rank == 0) {
-      double time = end_walk - start_walk;
-      double rate = 0.0;
-      if (time > 0.0) {
-        rate = ((double)all_count) / time;
-      }
-      printf("Walked %lu files in %f seconds (%f files/sec)\n",
-        all_count, time, rate
-      );
-    }
-  } else {
-    /* read data from cache file */
-    double start_read = MPI_Wtime();
-    bayer_flist_read_cache(inputname, &flist);
-    double end_read = MPI_Wtime();
-
-    /* get total file count */
-    all_count = bayer_flist_global_size(flist);
+    /* remove files */
+    double start_remove = MPI_Wtime();
+    remove_files(flist);
+    double end_remove = MPI_Wtime();
 
     /* report read count, time, and rate */
     if (verbose && rank == 0) {
-      double time = end_read - start_read;
-      double rate = 0.0;
-      if (time > 0.0) {
-        rate = ((double)all_count) / time;
-      }
-      printf("Read %lu files in %f seconds (%f files/sec)\n",
-        all_count, time, rate
-      );
+        double time = end_remove - start_remove;
+        double rate = 0.0;
+        if (time > 0.0) {
+            rate = ((double)all_count) / time;
+        }
+        printf("Removed %lu files in %f seconds (%f files/sec)\n",
+            all_count, time, rate
+        );
     }
-  }
 
-  /* remove files */
-  double start_remove = MPI_Wtime();
-  remove_files(flist);
-  double end_remove = MPI_Wtime();
+    /* free the file list */
+    bayer_flist_free(&flist);
 
-  /* report read count, time, and rate */
-  if (verbose && rank == 0) {
-    double time = end_remove - start_remove;
-    double rate = 0.0;
-    if (time > 0.0) {
-      rate = ((double)all_count) / time;
-    }
-    printf("Removed %lu files in %f seconds (%f files/sec)\n",
-      all_count, time, rate
-    );
-  }
+    /* shut down the sorting library */
+    DTCMP_Finalize();
 
-  bayer_flist_free(&flist);
+    /* free target directory */
+    bayer_free(&target);
 
-  bayer_free(&inputname);
+    /* free the input file name */
+    bayer_free(&inputname);
 
-  /* shut down the sorting library */
-  DTCMP_Finalize();
+    /* shut down MPI */
+    MPI_Finalize();
 
-  /* free target directory */
-  bayer_free(&target);
-
-  /* shut down MPI */
-  MPI_Finalize();
-
-  return 0;
+    return 0;
 }
