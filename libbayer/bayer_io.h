@@ -51,6 +51,9 @@ int bayer_lstat64(const char* path, struct stat64* buf);
 /* call mknod, retry a few times on EINTR or EIO */
 int bayer_mknod(const char* path, mode_t mode, dev_t dev);
 
+/* call remove, retry a few times on EINTR or EIO */
+int bayer_remove(const char* path);
+
 /*****************************
  * Links
  ****************************/

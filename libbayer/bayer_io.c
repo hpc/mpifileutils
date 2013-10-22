@@ -73,6 +73,26 @@ retry:
     return rc;
 }
 
+/* call remove, retry a few times on EINTR or EIO */
+int bayer_remove(const char* path)
+{
+    int rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = remove(path);
+    if (rc < 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
 /*****************************
  * Links
  ****************************/
