@@ -65,10 +65,30 @@ void bayer_flist_write_cache(
 /* free resouces in file list */
 void bayer_flist_free(bayer_flist* flist);
 
+/* given an input list, split items into separate lists depending
+ * on their depth, returns number of levels, minimum depth, and
+ * array of lists as output */
+void bayer_flist_array_by_depth(
+  bayer_flist srclist,   /* IN  - input list */
+  int* outlevels,        /* OUT - number of depth levels */
+  int* outmin,           /* OUT - minimum depth number */
+  bayer_flist** outlists /* OUT - array of lists split by depth */
+);
+
+/* frees array of lists created in call to
+ * bayer_flist_split_by_depth */
+void bayer_flist_array_free(int levels, bayer_flist** outlists);
+
+/* copy specified source file into destination list */
 void bayer_flist_file_copy(bayer_flist src, uint64_t index, bayer_flist dest);
 
+/* get number of bytes to pack a file from the specified list */
 size_t bayer_flist_file_pack_size(bayer_flist flist);
+
+/* pack specified file into buf, return number of bytes used */
 size_t bayer_flist_file_pack(void* buf, bayer_flist flist, uint64_t index);
+
+/* unpack file from buf and insert into list, return number of bytes read */
 size_t bayer_flist_file_unpack(const void* buf, bayer_flist flist);
 
 /* run this to enable query functions on list after adding elements */
@@ -99,7 +119,10 @@ uint64_t bayer_flist_user_max_name(bayer_flist flist);
 /* return maximum length of group names */
 uint64_t bayer_flist_group_max_name(bayer_flist flist);
 
+/* return minimum depth of all files */
 int bayer_flist_min_depth(bayer_flist flist);
+
+/* return maximum depth of all files */
 int bayer_flist_max_depth(bayer_flist flist);
 
 /* determines which properties are readable */

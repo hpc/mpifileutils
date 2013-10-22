@@ -26,93 +26,6 @@ static int verbose   = 0;
 static int walk_stat = 1;
 
 /*****************************
- * Split a list into multiple lists by depth
- ****************************/
-
-/* given an input list, split items into separate lists depending
- * on their depth, returns number of levels, minimum depth, and
- * array of lists as output */
-static void bayer_flist_split_by_depth(
-  bayer_flist srclist,
-  int* outlevels,
-  int* outmin,
-  bayer_flist** outlists)
-{
-    /* check that our pointers are valid */
-    if (outlevels == NULL || outmin == NULL || outlists == NULL) {
-        return;
-    }
-
-    /* initialize return values */
-    *outlevels = 0;
-    *outmin    = -1;
-    *outlists  = NULL;
-
-    /* get total file count */
-    uint64_t total = bayer_flist_global_size(srclist);
-    if (total == 0) {
-        return;
-    }
-
-    /* get min and max depths, determine number of levels,
-     * allocate array of lists */
-    int min = bayer_flist_min_depth(srclist);
-    int max = bayer_flist_max_depth(srclist);
-    int levels = max - min + 1;
-    bayer_flist* lists = (bayer_flist*) BAYER_MALLOC(levels * sizeof(bayer_flist));
-
-    /* create a list for each level */
-    int i;
-    for (i = 0; i < levels; i++) {
-        bayer_flist_subset(srclist, &lists[i]);
-    }
-
-    /* copy each item from source list to its corresponding level */
-    uint64_t index = 0;
-    uint64_t size = bayer_flist_size(srclist);
-    while (index < size) {
-        int depth = bayer_flist_file_get_depth(srclist, index);
-        int depth_index = depth - min;
-        bayer_flist dstlist = lists[depth_index];
-        bayer_flist_file_copy(srclist, index, dstlist);
-        index++;
-    }
-
-    /* summarize each list */
-    for (i = 0; i < levels; i++) {
-        bayer_flist_summarize(lists[i]);
-    }
-
-    /* set return parameters */
-    *outlevels = levels;
-    *outmin    = min;
-    *outlists  = lists;
-
-    return;
-}
-
-/* frees array of lists created in call to
- * bayer_flist_split_by_depth */
-static void bayer_flist_free_array(int levels, bayer_flist** outlists)
-{
-    /* check that our pointer is valid */
-    if (outlists == NULL) {
-        return;
-    }
-
-    /* free each list */
-    int i;
-    bayer_flist* lists = *outlists;
-    for (i = 0; i < levels; i++) {
-        bayer_flist_free(&lists[i]);
-    }
-
-    /* free the array of lists and set caller's pointer to NULL */
-    bayer_free(outlists);
-    return;
-}
-
-/*****************************
  * Global functions used by remove routines
  ****************************/
 
@@ -768,7 +681,7 @@ static void remove_files(bayer_flist flist)
     /* split files into separate lists by directory depth */
     int levels, minlevel;
     bayer_flist* lists;
-    bayer_flist_split_by_depth(flist, &levels, &minlevel, &lists);
+    bayer_flist_array_by_depth(flist, &levels, &minlevel, &lists);
 
     /* dive from shallow to deep, ensure all directories have write bit set */
     for (level = 0; level < levels; level++) {
@@ -850,7 +763,7 @@ static void remove_files(bayer_flist flist)
         }
     }
 
-    bayer_flist_free_array(levels, &lists);
+    bayer_flist_array_free(levels, &lists);
 
     return;
 }
@@ -967,23 +880,18 @@ int main(int argc, char **argv)
     /* initialize our sorting library */
     DTCMP_Init();
 
-    uint64_t all_count = 0;
-    uint64_t walk_start, walk_end;
-
     /* create an empty file list */
     bayer_flist flist;
 
     /* get our list of files, either by walking or reading an
      * input file */
     if (walk) {
-        time_t walk_start_t = time(NULL);
-        if (walk_start_t == (time_t)-1) {
-            /* TODO: ERROR! */
-        }
-        walk_start = (uint64_t) walk_start_t;
-
-        /* report walk count, time, and rate */
+        /* print message and timestamp of when we start walk */
         if (verbose && rank == 0) {
+            time_t walk_start_t = time(NULL);
+            if (walk_start_t == (time_t)-1) {
+                /* TODO: ERROR! */
+            }
             char walk_s[30];
             size_t rc = strftime(walk_s, sizeof(walk_s)-1, "%FT%T", localtime(&walk_start_t));
             if (rc == 0) {
@@ -998,17 +906,9 @@ int main(int argc, char **argv)
         bayer_flist_walk_path(target, walk_stat, &flist);
         double end_walk = MPI_Wtime();
 
-        time_t walk_end_t = time(NULL);
-        if (walk_end_t == (time_t)-1) {
-            /* TODO: ERROR! */
-        }
-        walk_end = (uint64_t) walk_end_t;
-
-        /* get total file count */
-        all_count = bayer_flist_global_size(flist);
-
         /* report walk count, time, and rate */
         if (verbose && rank == 0) {
+            uint64_t all_count = bayer_flist_global_size(flist);
             double time = end_walk - start_walk;
             double rate = 0.0;
             if (time > 0.0) {
@@ -1024,11 +924,9 @@ int main(int argc, char **argv)
         bayer_flist_read_cache(inputname, &flist);
         double end_read = MPI_Wtime();
 
-        /* get total file count */
-        all_count = bayer_flist_global_size(flist);
-
         /* report read count, time, and rate */
         if (verbose && rank == 0) {
+            uint64_t all_count = bayer_flist_global_size(flist);
             double time = end_read - start_read;
             double rate = 0.0;
             if (time > 0.0) {
@@ -1045,8 +943,9 @@ int main(int argc, char **argv)
     remove_files(flist);
     double end_remove = MPI_Wtime();
 
-    /* report read count, time, and rate */
+    /* report remove count, time, and rate */
     if (verbose && rank == 0) {
+        uint64_t all_count = bayer_flist_global_size(flist);
         double time = end_remove - start_remove;
         double rate = 0.0;
         if (time > 0.0) {

@@ -867,6 +867,89 @@ void bayer_flist_free(bayer_flist* pbflist)
   return;
 }
 
+/* given an input list, split items into separate lists depending
+ * on their depth, returns number of levels, minimum depth, and
+ * array of lists as output */
+void bayer_flist_array_by_depth(
+  bayer_flist srclist,
+  int* outlevels,
+  int* outmin,
+  bayer_flist** outlists)
+{
+    /* check that our pointers are valid */
+    if (outlevels == NULL || outmin == NULL || outlists == NULL) {
+        return;
+    }
+
+    /* initialize return values */
+    *outlevels = 0;
+    *outmin    = -1;
+    *outlists  = NULL;
+
+    /* get total file count */
+    uint64_t total = bayer_flist_global_size(srclist);
+    if (total == 0) {
+        return;
+    }
+
+    /* get min and max depths, determine number of levels,
+     * allocate array of lists */
+    int min = bayer_flist_min_depth(srclist);
+    int max = bayer_flist_max_depth(srclist);
+    int levels = max - min + 1;
+    bayer_flist* lists = (bayer_flist*) BAYER_MALLOC(levels * sizeof(bayer_flist));
+
+    /* create a list for each level */
+    int i;
+    for (i = 0; i < levels; i++) {
+        bayer_flist_subset(srclist, &lists[i]);
+    }
+
+    /* copy each item from source list to its corresponding level */
+    uint64_t index = 0;
+    uint64_t size = bayer_flist_size(srclist);
+    while (index < size) {
+        int depth = bayer_flist_file_get_depth(srclist, index);
+        int depth_index = depth - min;
+        bayer_flist dstlist = lists[depth_index];
+        bayer_flist_file_copy(srclist, index, dstlist);
+        index++;
+    }
+
+    /* summarize each list */
+    for (i = 0; i < levels; i++) {
+        bayer_flist_summarize(lists[i]);
+    }
+
+    /* set return parameters */
+    *outlevels = levels;
+    *outmin    = min;
+    *outlists  = lists;
+
+    return;
+}
+
+/* frees array of lists created in call to
+ * bayer_flist_split_by_depth */
+void bayer_flist_array_free(int levels, bayer_flist** outlists)
+{
+    /* check that our pointer is valid */
+    if (outlists == NULL) {
+        return;
+    }
+
+    /* free each list */
+    int i;
+    bayer_flist* lists = *outlists;
+    for (i = 0; i < levels; i++) {
+        bayer_flist_free(&lists[i]);
+    }
+
+    /* free the array of lists and set caller's pointer to NULL */
+    bayer_free(outlists);
+    return;
+}
+
 /* return number of files across all procs */
 uint64_t bayer_flist_global_size(bayer_flist bflist)
 {
