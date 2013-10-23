@@ -28,11 +28,7 @@
 #include "libcircle.h"
 #include "dtcmp.h"
 #include "bayer.h"
-
-#include <map>
-#include <string>
-
-using namespace std;
+#include "strmap.h"
 
 /****************************************
  * Define types
@@ -87,10 +83,8 @@ typedef struct flist {
   buf_t groups;
 
   /* map linux userid to user name, and map groupid to group name */
-  map<string,uint32_t>* user_name2id;
-  map<uint32_t,string>* user_id2name;
-  map<string,uint32_t>* group_name2id;
-  map<uint32_t,string>* group_id2name;
+  strmap* user_id2name;
+  strmap* group_id2name;
 } flist_t;
 
 /****************************************
@@ -753,10 +747,7 @@ static int list_convert_to_dt(flist_t* flist, buf_t* items)
 }
 
 /* build a name-to-id map and an id-to-name map */
-static void create_maps(
-  const buf_t* items,
-  map<string,uint32_t>* name2id,
-  map<uint32_t,string>* id2name)
+static void create_maps(const buf_t* items, strmap* id2name)
 {
   int i;
   const char* ptr = (const char*)items->buf;
@@ -767,42 +758,41 @@ static void create_maps(
     uint32_t id = *(uint32_t*)ptr;
     ptr += 4;
 
-    (*name2id)[name] = id;
-    (*id2name)[id] = name;
+    /* convert id number to string */
+    char id_str[20];
+    size_t len = snprintf(id_str, sizeof(id_str), "%llu", (unsigned long long) id);
+    if (len > (sizeof(id_str) - 1)) {
+      /* TODO: ERROR! */
+      printf("ERROR!!!\n");
+    }
+
+    strmap_set(id2name, id_str, name);
   }
   return;
 }
 
 /* given an id, lookup its corresponding name, returns id converted
  * to a string if no matching name is found */
-static const char* get_name_from_id(uint32_t id, int chars, map<uint32_t,string>* id2name)
+static const char* get_name_from_id(strmap* id2name, uint32_t id)
 {
-  map<uint32_t,string>::iterator it = id2name->find(id);
-  if (it != id2name->end()) {
-    const char* name = (*it).second.c_str();
-    return name;
-  } else {
-    /* store id as name and return that */
-    char temp[12];
-    size_t len = snprintf(temp, sizeof(temp), "%d", id);
-    if (len > (sizeof(temp) - 1) || len > (chars - 1)) {
-      /* TODO: ERROR! */
-      printf("ERROR!!!\n");
-    }
-
-    string newname = temp;
-    (*id2name)[id] = newname;
-
-    it = id2name->find(id);
-    if (it != id2name->end()) {
-      const char* name = (*it).second.c_str();
-      return name;
-    } else {
-      /* TODO: ERROR! */
-      printf("ERROR!!!\n");
-    }
+  /* convert id number to string representation */
+  char id_str[20];
+  size_t len = snprintf(id_str, sizeof(id_str), "%llu", (unsigned long long) id);
+  if (len > (sizeof(id_str) - 1)) {
+    /* TODO: ERROR! */
+    printf("ERROR!!!\n");
   }
-  return NULL;
+
+  /* lookup name by id */
+  const char* name = strmap_get(id2name, id_str);
+
+  /* if not found, store id as name and return that */
+  if (name == NULL) {
+    strmap_set(id2name, id_str, id_str);
+    name = strmap_get(id2name, id_str);
+  }
+
+  return name;
 }
 
 /****************************************
@@ -833,10 +823,8 @@ static bayer_flist bayer_flist_new()
   buft_init(&flist->groups);
 
   /* allocate memory for maps */
-  flist->user_name2id  = new map<string,uint32_t>;
-  flist->user_id2name  = new map<uint32_t,string>;
-  flist->group_name2id = new map<string,uint32_t>;
-  flist->group_id2name = new map<uint32_t,string>;
+  flist->user_id2name  = NULL;
+  flist->group_id2name = NULL;
 
   bayer_flist bflist = (bayer_flist) flist;
   return bflist;
@@ -854,10 +842,8 @@ void bayer_flist_free(bayer_flist* pbflist)
   buft_free(&flist->users);
   buft_free(&flist->groups);
 
-  delete flist->user_name2id;
-  delete flist->user_id2name;
-  delete flist->group_name2id;
-  delete flist->group_id2name;
+  strmap_delete(&flist->user_id2name);
+  strmap_delete(&flist->group_id2name);
 
   bayer_free(&flist);
 
@@ -1154,7 +1140,7 @@ const char* bayer_flist_file_get_username(bayer_flist bflist, uint64_t index)
   flist_t* flist = (flist_t*) bflist;
   if (flist->detail) {
     uint32_t id = bayer_flist_file_get_uid(bflist, index);
-    ret = get_name_from_id(id, flist->users.chars, flist->user_id2name);
+    ret = get_name_from_id(flist->user_id2name, id);
   }
   return ret;
 }
@@ -1165,7 +1151,7 @@ const char* bayer_flist_file_get_groupname(bayer_flist bflist, uint64_t index)
   flist_t* flist = (flist_t*) bflist;
   if (flist->detail) {
     uint32_t id = bayer_flist_file_get_gid(bflist, index);
-    ret = get_name_from_id(id, flist->groups.chars, flist->group_id2name);
+    ret = get_name_from_id(flist->group_id2name, id);
   }
   return ret;
 }
@@ -1833,10 +1819,10 @@ void bayer_flist_subset(bayer_flist src, bayer_flist* pbflist)
   if (srclist->detail) {
     buft_copy(&srclist->users, &flist->users);
     buft_copy(&srclist->groups, &flist->groups);
-    *(flist->user_name2id) = *(srclist->user_name2id);
-    *(flist->user_id2name) = *(srclist->user_id2name);
-    *(flist->group_id2name) = *(srclist->group_id2name);
-    *(flist->group_id2name) = *(srclist->group_id2name);
+    flist->user_id2name = strmap_new();
+    flist->group_id2name = strmap_new();
+    strmap_merge(flist->user_id2name, srclist->user_id2name);
+    strmap_merge(flist->group_id2name, srclist->group_id2name);
   }
 
   return;
@@ -1873,8 +1859,8 @@ void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist* pbfli
     flist->detail = 1;
     get_users(&flist->users);
     get_groups(&flist->groups);
-    create_maps(&flist->users, flist->user_name2id, flist->user_id2name);
-    create_maps(&flist->groups, flist->group_name2id, flist->group_id2name);
+    create_maps(&flist->users, flist->user_id2name);
+    create_maps(&flist->groups, flist->group_id2name);
   }
 
   /* register callbacks */
@@ -2154,8 +2140,8 @@ static void read_cache_v3(
   }
 
   /* create maps of users and groups */
-  create_maps(&flist->users, flist->user_name2id, flist->user_id2name);
-  create_maps(&flist->groups, flist->group_name2id, flist->group_id2name);
+  create_maps(&flist->users, flist->user_id2name);
+  create_maps(&flist->groups, flist->group_id2name);
 
   /* free buffer */
   buft_free(&files);
