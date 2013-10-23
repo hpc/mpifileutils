@@ -32,21 +32,25 @@ mkdir ${installdir}/bin
 
 # build libbayer
 pushd libbayer
-  mpicc  ${OPT} -o bayer_util.o  -c bayer_util.c
-  mpicc  ${OPT} -o bayer_path.o  -c bayer_path.c
-  mpicc  ${OPT} -o bayer_io.o    -c bayer_io.c
-  mpicxx ${OPT} -o bayer_flist.o -c bayer_flist.cpp -I${installdir}/include
+  mpicc ${OPT} -o bayer_util.o  -c bayer_util.c
+  mpicc ${OPT} -o bayer_path.o  -c bayer_path.c
+  mpicc ${OPT} -o bayer_io.o    -c bayer_io.c
+  mpicc ${OPT} -o strmap.o      -c strmap.c
+  mpicc ${OPT} -o bayer_flist.o -c bayer_flist.c -I${installdir}/include
 
   ar cru libbayer.a \
     bayer_util.o \
     bayer_path.o \
     bayer_io.o \
+    strmap.o \
     bayer_flist.o
   ranlib libbayer.a
 
   cp bayer*.h   $installdir/include/.
   cp libbayer.a $installdir/lib/.
 popd
+
+exit 0
 
 # build dwalk command
 pushd dwalk
@@ -63,6 +67,19 @@ pushd drm
 
   cp drm ${installdir}/bin
 popd
+
+# build dtar command
+
+# build dfind command
+#pushd dfind
+#  make clean
+#  make \
+#    CC=mpicc \
+#    CFLAGS="${OPT} -I${installdir}/include" \
+#    LDFLAGS="-L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle"
+#
+#  cp dfind ${installdir}/bin
+#popd
 
 # build dcp command
 mkdir -p dcp
