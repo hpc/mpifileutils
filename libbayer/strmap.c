@@ -46,11 +46,11 @@ static strmap_node* strmap_node_new(const char* key, const char* value)
     }
     if (node->key == NULL || node->value == NULL) {
       /* error */
-      BAYER_ERR("Failed to allocate key or value");
+      //BAYER_ERR("Failed to allocate key or value");
     }
   } else {
     /* error */
-    BAYER_ERR("Failed to allocate AVL node");
+    //BAYER_ERR("Failed to allocate AVL node");
   }
   return node;
 }
@@ -97,7 +97,7 @@ void strmap_merge(strmap* dst, const strmap* src)
        node = strmap_node_next(node))
   {
     const char* key = strmap_node_key(node);
-    const char* val = strmap_node_key(node);
+    const char* val = strmap_node_value(node);
     strmap_set(dst, key, val);
   }
   return;
@@ -811,6 +811,7 @@ int strmap_unsetf(strmap* map, const char* format, ...)
   return strmap_unset(map, NULL);
 }
 
+#if 0
 size_t strmap_pack_size(const strmap* tree)
 {
   size_t size = 8; /* uint64_t */
@@ -890,3 +891,4 @@ void strmap_print(const strmap* map)
 
   return;
 }
+#endif

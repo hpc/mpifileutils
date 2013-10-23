@@ -113,6 +113,7 @@ pack and unpack data structure into array of bytes
 =========================================
 */
 
+#if 0
 /* returns number of bytes needed to pack map */
 size_t strmap_pack_size(const strmap* map);
 
@@ -124,6 +125,7 @@ size_t strmap_unpack(const void* buf, strmap* map);
 
 /* print map to stdout for debugging */
 void strmap_print(const strmap* map);
+#endif
 
 #ifdef __cplusplus
 }
