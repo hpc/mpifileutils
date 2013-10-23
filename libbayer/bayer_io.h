@@ -38,6 +38,10 @@ extern "C" {
  * abort on fatal conditions to avoid checking condition at every call.
  * May also automatically retry on things like EINTR. */
 
+/* TODO: fix this */
+/* do this to avoid warning about undefined stat64 struct */
+struct stat64;
+
 /*****************************
  * Any object
  ****************************/

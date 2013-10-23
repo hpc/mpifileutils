@@ -823,8 +823,8 @@ static bayer_flist bayer_flist_new()
   buft_init(&flist->groups);
 
   /* allocate memory for maps */
-  flist->user_id2name  = NULL;
-  flist->group_id2name = NULL;
+  flist->user_id2name  = strmap_new();
+  flist->group_id2name = strmap_new();
 
   bayer_flist bflist = (bayer_flist) flist;
   return bflist;

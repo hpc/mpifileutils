@@ -46,11 +46,9 @@ pushd libbayer
     bayer_flist.o
   ranlib libbayer.a
 
-  cp bayer*.h   $installdir/include/.
+  cp bayer*.h strmap.h $installdir/include/.
   cp libbayer.a $installdir/lib/.
 popd
-
-exit 0
 
 # build dwalk command
 pushd dwalk
