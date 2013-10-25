@@ -13,6 +13,26 @@
 #define BAYER_IO_TRIES  (5)
 #define BAYER_IO_USLEEP (100)
 
+/* calls access, and retries a few times if we get EIO or EINTR */
+int bayer_access(const char* path, int amode)
+{
+    int rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = access(path, amode);
+    if (rc != 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
 /* calls lstat, and retries a few times if we get EIO or EINTR */
 int bayer_lstat(const char* path, struct stat* buf)
 {

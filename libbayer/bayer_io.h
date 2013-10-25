@@ -46,6 +46,9 @@ struct stat64;
  * Any object
  ****************************/
 
+/* calls access, and retries a few times if we get EIO or EINTR */
+int bayer_access(const char* path, int amode);
+
 /* calls lstat, and retries a few times if we get EIO or EINTR */
 int bayer_lstat(const char* path, struct stat* buf);
 
