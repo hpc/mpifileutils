@@ -7,8 +7,8 @@
 #. /usr/share/[mM]odules/init/bash
 #module load mvapich2-gnu-psm/1.7
 
-. /usr/local/tools/dotkit/init.sh
-use mvapich2-gnu
+#. /usr/local/tools/dotkit/init.sh
+#use mvapich2-gnu
 
 # MVAPICH
 #curdir=`pwd`
@@ -33,10 +33,30 @@ mkdir ${installdir}/bin
 # build libbayer
 pushd libbayer
   mpicc ${OPT} -o bayer_util.o  -c bayer_util.c
+  if [ $? -ne 0 ]; then
+    echo "failed to build bayer_util"
+    exit 1
+  fi
   mpicc ${OPT} -o bayer_path.o  -c bayer_path.c
+  if [ $? -ne 0 ]; then
+    echo "failed to build bayer_path"
+    exit 1
+  fi
   mpicc ${OPT} -o bayer_io.o    -c bayer_io.c
+  if [ $? -ne 0 ]; then
+    echo "failed to build bayer_io"
+    exit 1
+  fi
   mpicc ${OPT} -o strmap.o      -c strmap.c
+  if [ $? -ne 0 ]; then
+    echo "failed to build strmap"
+    exit 1
+  fi
   mpicc ${OPT} -o bayer_flist.o -c bayer_flist.c -I${installdir}/include
+  if [ $? -ne 0 ]; then
+    echo "failed to build bayer_flist"
+    exit 1
+  fi
 
   ar cru libbayer.a \
     bayer_util.o \
@@ -52,17 +72,23 @@ popd
 
 # build dwalk command
 pushd dwalk
-  mpicc ${OPT} -o dwalk dwalk.c \
+  mpicxx ${OPT} -o dwalk dwalk.c \
     -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
-
+  if [ $? -ne 0 ]; then
+    echo "failed to build dwalk"
+    exit 1
+  fi
   cp dwalk ${installdir}/bin/.
 popd
 
 # build drm command
 pushd drm
-  mpicc ${OPT} -o drm drm.c \
+  mpicxx ${OPT} -o drm drm.c \
     -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
-
+  if [ $? -ne 0 ]; then
+    echo "failed to build drm"
+    exit 1
+  fi
   cp drm ${installdir}/bin
 popd
 
@@ -103,9 +129,12 @@ pushd dcp
 
     # build dcp command
     pushd src
-      mpicc ${OPT} -o dcp common.c handle_args.c treewalk.c copy.c cleanup.c compare.c dcp.c \
+      mpicxx ${OPT} -D__STDC_FORMAT_MACROS -o dcp common.c handle_args.c treewalk.c copy.c cleanup.c compare.c dcp.c \
         -I../. -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -lbayer
-
+      if [ $? -ne 0 ]; then
+        echo "failed to build dcp"
+        exit 1
+      fi
       cp dcp ${installdir}/bin
     popd
   popd

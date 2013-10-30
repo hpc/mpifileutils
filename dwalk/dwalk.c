@@ -832,8 +832,8 @@ static void print_files(bayer_flist flist)
   }
 
   /* allocate arrays to store counts and displacements */
-  int* counts = BAYER_MALLOC(ranks * sizeof(int));
-  int* disps  = BAYER_MALLOC(ranks * sizeof(int));
+  int* counts = (int*) BAYER_MALLOC(ranks * sizeof(int));
+  int* disps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
 
   /* tell rank 0 where the data is coming from */
   int bytes = num * pack_size;
