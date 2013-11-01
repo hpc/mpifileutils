@@ -139,3 +139,14 @@ pushd dcp
     popd
   popd
 popd
+
+# build dcmp command
+pushd dcmp
+  mpicxx ${OPT} -o dcmp dcmp.c \
+    -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
+  if [ $? -ne 0 ]; then
+    echo "failed to build dcmp"
+    exit 1
+  fi
+  cp dcmp ${installdir}/bin/.
+popd
