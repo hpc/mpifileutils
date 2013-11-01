@@ -19,12 +19,9 @@
 extern DTAR_options_t DTAR_user_opts;
 extern DTAR_writer_t DTAR_writer;
 
-int DTAR_open_input_fd(DTAR_operation_t* op, off64_t offset, off64_t len) {
-
-    char path[PATH_MAX];
-    strcpy(path, op->dir);
-    strcat(path, "/");
-    strcat(path, op->operand);
+int DTAR_open_input_fd(DTAR_operation_t* op, off64_t offset, off64_t len)
+{
+    const char* path = op->operand;
 
     int in_fd = open64(path, O_RDONLY | O_NOATIME);
 
@@ -33,44 +30,15 @@ int DTAR_open_input_fd(DTAR_operation_t* op, off64_t offset, off64_t len) {
         return in_fd;
     }
 
-    posix_fadvise64(in_fd, offset, len, POSIX_FADV_SEQUENTIAL);
     return in_fd;
 }
 
-void DTAR_do_copy(DTAR_operation_t* op, CIRCLE_handle* handle) {
-
-    LOG(DTAR_LOG_DBG, "rank %d is going to do copy\n", CIRCLE_global_rank);
-
-    off64_t offset = DTAR_CHUNK_SIZE * op->chunk;
-
-    int in_fd = DTAR_open_input_fd(op, offset, DTAR_CHUNK_SIZE);
-
-    if (in_fd < 0) {
-        LOG(DTAR_LOG_ERR, "In DTAR_do_copy in_fd is invalid\n");
-        return;
-    }
-
-    int out_fd = DTAR_writer.fd_tar;
-
-    if (out_fd < 0) {
-        LOG(DTAR_LOG_ERR, "In DTAR_do_copy in_fd in invalid\n");
-        return;
-    }
-
-    if (DTAR_perform_copy(op, in_fd, out_fd, offset) < 0) {
-        LOG(DTAR_LOG_ERR, "In DTAR_do_copy perform copy failed\n");
-        return;
-    }
-
-    if (close(in_fd) < 0) {
-        LOG(DTAR_LOG_ERR, "In DTAR_do_copy close failed\n");
-    }
-
-    return;
-}
-
-int DTAR_perform_copy(DTAR_operation_t* op, int in_fd, int out_fd,
-        off64_t offset) {
+int DTAR_perform_copy(
+    DTAR_operation_t* op,
+    int in_fd,
+    int out_fd,
+    off64_t offset)
+{
     ssize_t num_of_bytes_read = 0;
     ssize_t num_of_bytes_written = 0;
     ssize_t total_bytes_written = 0;
@@ -126,6 +94,39 @@ int DTAR_perform_copy(DTAR_operation_t* op, int in_fd, int out_fd,
     }
 
     return 1;
+}
+
+void DTAR_do_copy(DTAR_operation_t* op)
+{
+    LOG(DTAR_LOG_DBG, "rank %d is going to do copy\n", CIRCLE_global_rank);
+
+    off64_t offset = DTAR_CHUNK_SIZE * op->chunk;
+
+    int in_fd = DTAR_open_input_fd(op, offset, DTAR_CHUNK_SIZE);
+
+    if (in_fd < 0) {
+        LOG(DTAR_LOG_ERR, "In DTAR_do_copy in_fd is invalid\n");
+        return;
+    }
+
+    int out_fd = DTAR_writer.fd_tar;
+
+    if (out_fd < 0) {
+        LOG(DTAR_LOG_ERR, "In DTAR_do_copy in_fd in invalid\n");
+        return;
+    }
+
+printf("Writing data at %llu, chunk %d of %s\n", (unsigned long long)op->offset + offset, op->chunk, op->operand);
+    if (DTAR_perform_copy(op, in_fd, out_fd, offset) < 0) {
+        LOG(DTAR_LOG_ERR, "In DTAR_do_copy perform copy failed\n");
+        return;
+    }
+
+    if (close(in_fd) < 0) {
+        LOG(DTAR_LOG_ERR, "In DTAR_do_copy close failed\n");
+    }
+
+    return;
 }
 
 /* EOF */

@@ -92,18 +92,17 @@ typedef struct {
 //    struct archive_entry *entry;
 //    ssize_t len;
 //    int     fd_src;
+    const char* name;
     int fd_tar;
     int flags;
 } DTAR_writer_t;
 
 typedef struct {
-
     int64_t file_size;
     int64_t chunk;
     int64_t offset;
     DTAR_operation_code_t code;
     char* operand;
-    char* dir;
 } DTAR_operation_t;
 
 extern MPI_Comm new_comm;
@@ -125,7 +124,7 @@ void DTAR_process_objects(CIRCLE_handle * handle);
 void DTAR_enqueue_work_objects(CIRCLE_handle* handle);
 
 char* DTAR_encode_operation(DTAR_operation_code_t code, int64_t chunk,
-        char* operand, uint64_t offset, int64_t file_size, char* dir);
+        const char* operand, uint64_t offset, int64_t file_size);
 
 DTAR_operation_t* DTAR_decode_operation(char* op);
 
@@ -134,7 +133,7 @@ void DTAR_parse_path_args(char * filename, char compress, char ** argv);
 void DTAR_abort(int code);
 void DTAR_exit(int code);
 
-void DTAR_do_copy(DTAR_operation_t* op, CIRCLE_handle* handle);
+void DTAR_do_copy(DTAR_operation_t* op);
 
 int DTAR_perform_copy(DTAR_operation_t* op, int in_fd, int out_fd,
         off64_t offset);

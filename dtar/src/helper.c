@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "helper.h"
+#include "bayer.h"
 
 extern DTAR_options_t DTAR_user_opts;
 extern DTAR_writer_t DTAR_writer;
@@ -23,6 +24,7 @@ extern void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
 
 void DTAR_writer_init() {
     char * filename = DTAR_user_opts.dest_path;
+    DTAR_writer.name = filename;
     //DTAR_writer.flags= O_WRONLY | O_CREAT | O_TRUNC | O_BINARY | O_CLOEXEC;
     DTAR_writer.flags = O_WRONLY | O_CREAT | O_BINARY | O_CLOEXEC;
     DTAR_writer.fd_tar = open(filename, DTAR_writer.flags, 0666);
@@ -85,7 +87,7 @@ void DTAR_enqueue_work_objects(CIRCLE_handle* handle) {
             bname = basename(basec);
 
             size_t src_len = strlen(src_path) + 1;
-            char* op = DTAR_encode_operation(TREEWALK, 0, bname, 0, 0, dname);
+            char* op = DTAR_encode_operation(TREEWALK, 0, bname, 0, 0);
             handle->enqueue(op);
         }
         free(basec);
@@ -102,29 +104,23 @@ void DTAR_enqueue_work_objects(CIRCLE_handle* handle) {
  * Encode an operation code for use on the distributed queue structure.
  */
 char* DTAR_encode_operation(DTAR_operation_code_t code, int64_t chunk,
-        char* operand, uint64_t offset, int64_t file_size, char * dir) {
-    char* op = (char*) malloc(sizeof(char) * CIRCLE_MAX_STRING_LEN);
-    char* ptr = op;
-    size_t remaining = CIRCLE_MAX_STRING_LEN;
+        const char* operand, uint64_t offset, int64_t file_size)
+{
+    size_t opsize = (size_t) CIRCLE_MAX_STRING_LEN;
+    char* op = (char*) BAYER_MALLOC(opsize);
 
     size_t len = strlen(operand);
-    size_t len_dir = strlen(dir);
 
-    int written = snprintf(ptr, remaining,
-            "%" PRId64 ":%" PRId64 ":%" PRIu64 ":%d:%d:%s:%d:%s", file_size,
-            chunk, offset, code, (int) len, operand, (int) len_dir, dir);
+    int written = snprintf(op, opsize,
+            "%" PRId64 ":%" PRId64 ":%" PRIu64 ":%d:%d:%s", file_size,
+            chunk, offset, code, (int) len, operand);
 
-    if (written >= remaining) {
-        LOG(DTAR_LOG_DBG,
+    if (written >= opsize) {
+        LOG(DTAR_LOG_ERR,
                 "Exceeded libcircle message size due to large file path. "
                         "This is a known bug in dcp that we intend to fix. Sorry!");
         DTAR_abort(EXIT_FAILURE);
     }
-
-    ptr += written;
-    remaining -= written;
-
-    LOG(DTAR_LOG_DBG, "rank %d, %s\n", CIRCLE_global_rank, op);
 
     return op;
 }
@@ -132,8 +128,9 @@ char* DTAR_encode_operation(DTAR_operation_code_t code, int64_t chunk,
 /**
  * Decode the operation code from a message on the distributed queue structure.
  */
-DTAR_operation_t* DTAR_decode_operation(char* op) {
-    DTAR_operation_t* ret = (DTAR_operation_t*) malloc(
+DTAR_operation_t* DTAR_decode_operation(char* op)
+{
+    DTAR_operation_t* ret = (DTAR_operation_t*) BAYER_MALLOC(
             sizeof(DTAR_operation_t));
 
     if (sscanf(strtok(op, ":"), "%" SCNd64, &(ret->file_size)) != 1) {
@@ -169,19 +166,6 @@ DTAR_operation_t* DTAR_decode_operation(char* op) {
     operand[op_len] = '\0';
     ret->operand = operand;
     str = operand + op_len + 1;
-
-    int dir_len;
-    str = strtok(str, ":");
-    if (sscanf(str, "%d", &dir_len) != 1) {
-        LOG(DTAR_LOG_ERR, "Could not decode operand string length.");
-        DTAR_abort(EXIT_FAILURE);
-    }
-
-    char* dir = str + strlen(str) + 1;
-    ret->dir = dir;
-
-    LOG(DTAR_LOG_DBG, "rank %d, op is %s, dir is %s\n", CIRCLE_global_rank, ret->operand,
-            ret->dir);
 
     return ret;
 }
