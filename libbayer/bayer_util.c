@@ -8,11 +8,22 @@
 
 static int bayer_initialized = 0;
 
+/* set globals */
+int bayer_rank = -1;
+
+/* users may override these to change settings */
+FILE* bayer_debug_stream = NULL;
+bayer_loglevel bayer_debug_level = BAYER_LOG_ERR;
+
 /* initialize bayer library,
  * reference counting allows for multiple init/finalize pairs */
 int bayer_init()
 {
   if (bayer_initialized == 0) {
+    /* set globals */
+    MPI_Comm_rank(MPI_COMM_WORLD, &bayer_rank);
+    FILE* bayer_debug_stream = stdout;
+
     DTCMP_Init();
     bayer_initialized++;
   }

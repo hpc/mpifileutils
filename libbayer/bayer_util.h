@@ -14,6 +14,44 @@ extern "C" {
 #include <stdint.h>
 #include "mpi.h"
 
+#include <stdio.h>
+#include <time.h>
+
+typedef enum {
+    BAYER_LOG_FATAL = 1,
+    BAYER_LOG_ERR   = 2,
+    BAYER_LOG_WARN  = 3,
+    BAYER_LOG_INFO  = 4,
+    BAYER_LOG_DBG   = 5
+} bayer_loglevel;
+
+/* set during bayer_init, used in BAYER_LOG */
+extern int bayer_rank;
+extern FILE* bayer_debug_stream;
+extern bayer_loglevel bayer_debug_level;
+
+#define BAYER_LOG(level, ...) do {  \
+        if (level <= bayer_debug_level) { \
+            char timestamp[256]; \
+            time_t ltime = time(NULL); \
+            struct tm *ttime = localtime(&ltime); \
+            strftime(timestamp, sizeof(timestamp), \
+                     "%Y-%m-%dT%H:%M:%S", ttime); \
+            if(level == BAYER_LOG_DBG) { \
+                fprintf(bayer_debug_stream,"[%s] [%d] [%s:%d] ", \
+                        timestamp, bayer_rank, \
+                        __FILE__, __LINE__); \
+            } else { \
+                fprintf(bayer_debug_stream,"[%s] [%d] [%s:%d] ", \
+                        timestamp, bayer_rank, \
+                        __FILE__, __LINE__); \
+            } \
+            fprintf(bayer_debug_stream, __VA_ARGS__); \
+            fprintf(bayer_debug_stream, "\n"); \
+            fflush(bayer_debug_stream); \
+        } \
+    } while (0)
+
 /* initialize bayer library,
  * reference counting allows for multiple init/finalize pairs */
 int bayer_init();
