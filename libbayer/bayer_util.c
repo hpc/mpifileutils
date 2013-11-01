@@ -50,7 +50,7 @@ void bayer_abort(int rc, const char *fmt, ...)
   va_end(argp);
   fprintf(stderr, "\n");
 
-  MPI_Abort(MPI_COMM_WORLD, 0);
+  MPI_Abort(MPI_COMM_WORLD, rc);
 }
 
 /* if size > 0 allocates size bytes and returns pointer,

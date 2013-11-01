@@ -129,8 +129,10 @@ pushd dcp
 
     # build dcp command
     pushd src
-      mpicc ${OPT} -D__STDC_FORMAT_MACROS -o dcp common.c handle_args.c treewalk.c copy.c cleanup.c compare.c dcp.c \
-        -I../. -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lbayer -lcircle -ldtcmp -llwgrp
+      mpicc ${OPT} -D__STDC_FORMAT_MACROS -o dcp \
+        common.c handle_args.c treewalk.c copy.c cleanup.c compare.c dcp.c \
+        -I../. -I${installdir}/include \
+        -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lbayer -lcircle -ldtcmp -llwgrp
       if [ $? -ne 0 ]; then
         echo "failed to build dcp"
         exit 1
@@ -143,7 +145,8 @@ popd
 # build dcmp command
 pushd dcmp
   mpicc ${OPT} -o dcmp dcmp.c \
-    -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
+    -I${installdir}/include \
+    -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
   if [ $? -ne 0 ]; then
     echo "failed to build dcmp"
     exit 1

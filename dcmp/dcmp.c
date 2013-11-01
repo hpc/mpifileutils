@@ -7,7 +7,11 @@
 #include <linux/limits.h>
 #include <libgen.h>
 #include <errno.h>
-#include "log.h"
+
+/* for bool type, true/false macros */
+#include <stdbool.h>
+
+#include "bayer.h"
 
 typedef struct {
     char* dest_path;
@@ -16,12 +20,6 @@ typedef struct {
 
 /** Where we should store options specified by the user. */
 DCMP_options_t DCMP_user_opts;
-
-/** The loglevel that this instance of DCMP will output. */
-DCMP_loglevel DCMP_debug_level;
-
-/** Where debug output should go. */
-FILE* DCMP_debug_stream;
 
 extern int CIRCLE_global_rank;
 /**
@@ -53,6 +51,7 @@ void DCMP_abort(int code)
 void DCMP_exit(int code)
 {
     /* CIRCLE_finalize or will this hang? */
+    bayer_finalize();
     MPI_Finalize();
     exit(code);
 }
@@ -67,7 +66,7 @@ static bool DCMP_bcast_str(char* send, char** recv)
     int len = 0;
 
     if(recv == NULL) {
-        LOG(DCMP_LOG_ERR, "Attempted to receive a broadcast into invalid memory. " \
+        BAYER_LOG(BAYER_LOG_ERR, "Attempted to receive a broadcast into invalid memory. " \
                 "Please report this as a bug!");
         return false;
     }
@@ -77,7 +76,7 @@ static bool DCMP_bcast_str(char* send, char** recv)
             len = (int)(strlen(send) + 1);
 
             if(len > CIRCLE_MAX_STRING_LEN) {
-                LOG(DCMP_LOG_ERR, "Attempted to send a larger string (`%d') than what "
+                BAYER_LOG(BAYER_LOG_ERR, "Attempted to send a larger string (`%d') than what "
                         "libcircle supports. Please report this as a bug!", len);
                 return false;
             }
@@ -85,7 +84,7 @@ static bool DCMP_bcast_str(char* send, char** recv)
     }
 
     if(MPI_SUCCESS != MPI_Bcast(&len, 1, MPI_INT, 0, MPI_COMM_WORLD)) {
-        LOG(DCMP_LOG_DBG, "While preparing to copy, broadcasting the length of a string over MPI failed.");
+        BAYER_LOG(BAYER_LOG_DBG, "While preparing to copy, broadcasting the length of a string over MPI failed.");
         return false;
     }
 
@@ -95,7 +94,7 @@ static bool DCMP_bcast_str(char* send, char** recv)
         *recv = (char*) malloc((size_t)len);
 
         if(*recv == NULL) {
-            LOG(DCMP_LOG_ERR, "Failed to allocate string of %d bytes", len);
+            BAYER_LOG(BAYER_LOG_ERR, "Failed to allocate string of %d bytes", len);
             return false;
         }
 
@@ -105,7 +104,7 @@ static bool DCMP_bcast_str(char* send, char** recv)
         }
 
         if(MPI_SUCCESS != MPI_Bcast(*recv, len, MPI_CHAR, 0, MPI_COMM_WORLD)) {
-            LOG(DCMP_LOG_DBG, "While preparing to copy, broadcasting the length of a string over MPI failed.");
+            BAYER_LOG(BAYER_LOG_DBG, "While preparing to copy, broadcasting the length of a string over MPI failed.");
             return false;
         }
 
@@ -135,7 +134,7 @@ static void DCMP_parse_path(char* path, char **buff)
 
             if(realpath(dir_path, tmp_path) == NULL) {
                 /* If realpath didn't work this time, we're really in trouble. */
-                LOG(DCMP_LOG_ERR, "Could not determine the path for `%s'. %s", \
+                BAYER_LOG(BAYER_LOG_ERR, "Could not determine the path for `%s'. %s", \
                     path, strerror(errno));
                 DCMP_abort(EXIT_FAILURE);
             }
@@ -151,12 +150,12 @@ static void DCMP_parse_path(char* path, char **buff)
             strncpy(tmp_path, norm_path, PATH_MAX);
         }
 
-        LOG(DCMP_LOG_DBG, "Using path `%s'.", tmp_path);
+        BAYER_LOG(BAYER_LOG_DBG, "Using path `%s'.", tmp_path);
     }
 
     /* Copy the destination path to user opts structure on each rank. */
     if(!DCMP_bcast_str(tmp_path, buff)) {
-        LOG(DCMP_LOG_ERR, "Could not send the proper path to other nodes (`%s'). "
+        BAYER_LOG(BAYER_LOG_ERR, "Could not send the proper path to other nodes (`%s'). "
             "The MPI broadcast operation failed. %s",
             path, strerror(errno));
         DCMP_abort(EXIT_FAILURE);
@@ -183,7 +182,7 @@ void DCMP_parse_path_args(char** argv,
      if(argv == NULL || argc - optind_local != 2) {
           if(CIRCLE_global_rank == 0) {
                DCMP_print_usage(argv);
-               LOG(DCMP_LOG_ERR, "You must specify a source and destination path.");
+               BAYER_LOG(BAYER_LOG_ERR, "You must specify a source and destination path.");
           }
 
           DCMP_exit(EXIT_FAILURE);
@@ -206,13 +205,11 @@ int main(int argc, char **argv)
     int c;
 
     MPI_Init(&argc, &argv);
+    bayer_init();
     CIRCLE_global_rank = CIRCLE_init(argc, argv, CIRCLE_DEFAULT_FLAGS);
-
-    DCMP_debug_stream = stdout;
 
     /* By default, show info log messages. */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_INFO;
-    DCMP_debug_level = DCMP_LOG_INFO;
 
     while ((c = getopt_long(argc, argv, shortopts, longopts, NULL)) != -1)
     {
