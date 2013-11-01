@@ -6,6 +6,29 @@
 #include <string.h>
 #include <stdarg.h>
 
+static int bayer_initialized = 0;
+
+/* initialize bayer library,
+ * reference counting allows for multiple init/finalize pairs */
+int bayer_init()
+{
+  if (bayer_initialized == 0) {
+    DTCMP_Init();
+    bayer_initialized++;
+  }
+  return BAYER_SUCCESS;
+}
+
+/* finalize bayer library */
+int bayer_finalize()
+{
+  if (bayer_initialized > 0) {
+    DTCMP_Finalize();
+    bayer_initialized--;
+  }
+  return BAYER_SUCCESS;
+}
+
 /* print abort message and call MPI_Abort to kill run */
 void bayer_abort(int rc, const char *fmt, ...)
 {

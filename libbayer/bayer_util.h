@@ -14,6 +14,13 @@ extern "C" {
 #include <stdint.h>
 #include "mpi.h"
 
+/* initialize bayer library,
+ * reference counting allows for multiple init/finalize pairs */
+int bayer_init();
+
+/* finalize bayer library */
+int bayer_finalize();
+
 /* print abort message and call MPI_Abort to kill run */
 void bayer_abort(
   int rc,
