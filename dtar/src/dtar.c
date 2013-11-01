@@ -202,6 +202,8 @@ printf("Writing entry at %llu for %s\n", (unsigned long long)offset, name);
     archive_entry_set_pathname(entry, name);
 
 #if 0
+    /* since we already have stat info in bayer_flist,
+     * use flist to avoid this extra stat call */
     struct stat stbuf;
     bayer_lstat(name, &stbuf);
     archive_entry_copy_stat(entry, &stbuf);
@@ -292,6 +294,8 @@ static bayer_flist g_flist;
 static uint64_t g_offset;
 static uint64_t* g_sizes = NULL;
 
+/* marches through items in g_flist, identifies files, and inserts
+ * copy work elements in libcircle */
 static void copy_enqueue(CIRCLE_handle* handle)
 {
     /* get our offset within the archive file */
@@ -342,6 +346,7 @@ static void copy_enqueue(CIRCLE_handle* handle)
     return;
 }
 
+/* process a copy work element */
 static void copy_process(CIRCLE_handle* handle)
 {
     char opstr[CIRCLE_MAX_STRING_LEN];
@@ -375,6 +380,7 @@ static void create(
     DTAR_writer_init();
 
     /* TODO: handle input paths consistently among tools */
+    /* TODO: support multiple source paths here */
 
     /* recursively walk path to get stat info on all files */
     bayer_flist flist;
