@@ -55,7 +55,6 @@
 #define _GNU_SOURCE
 #endif
 
-#include "log.h"
 #include <libcircle.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -69,6 +68,8 @@
 #include <mpi.h>
 #include <dirent.h>
 #include <sys/xattr.h>
+
+#include "bayer.h"
 
 #define XATTR_SIZE 10000
 
@@ -113,8 +114,6 @@ extern int verbose;
 
 extern DTAR_options_t DTAR_user_opts;
 extern DTAR_writer_t DTAR_writer;
-extern DTAR_loglevel DTAR_debug_level;
-extern FILE* DTAR_debug_stream;
 
 extern void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
 

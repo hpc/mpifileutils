@@ -1,5 +1,5 @@
 #include "dtar.h"
-#include "log.h"
+
 #include <archive.h>
 #include <archive_entry.h>
 
@@ -24,8 +24,6 @@ int verbose = 0;
 
 DTAR_options_t DTAR_user_opts;
 DTAR_writer_t DTAR_writer;
-DTAR_loglevel DTAR_debug_level;
-FILE * DTAR_debug_stream;
 int xattr_flag = 0;
 
 void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
@@ -60,10 +58,6 @@ int main(int argc, char **argv) {
 
     MPI_Init(&argc, &argv);
     bayer_init();
-
-    /* By default, show info log message */
-    DTAR_debug_stream = stdout;
-    DTAR_debug_level = DTAR_LOG_INFO;
 
     mode = 'x';
     verbose = 0;
@@ -174,7 +168,7 @@ inline static struct archive* new_archive()
     int r = archive_write_set_format_pax(a);
 
     if ( r != ARCHIVE_OK ) {
-        LOG(DTAR_LOG_ERR, archive_error_string(a));
+        BAYER_LOG(BAYER_LOG_ERR, archive_error_string(a));
         return NULL;
     }
 

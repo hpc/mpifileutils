@@ -1,7 +1,8 @@
 #include "dtar.h"
-#include "log.h"
+
 #include <archive.h>
 #include <archive_entry.h>
+
 #include <libcircle.h>
 
 #include <dirent.h>
@@ -68,7 +69,7 @@ void DTAR_enqueue_work_objects(CIRCLE_handle* handle) {
     uint32_t number_of_source_files = DTAR_user_opts.num_src_paths;
 
     if (number_of_source_files < 1) {
-        LOG(DTAR_LOG_ERR, "At least one valid source file must be specified.");
+        BAYER_LOG(BAYER_LOG_ERR, "At least one valid source file must be specified.");
         DTAR_abort(EXIT_FAILURE);
     }
 
@@ -94,7 +95,7 @@ void DTAR_enqueue_work_objects(CIRCLE_handle* handle) {
         free(dirc);
     } else {
 
-        LOG(DTAR_LOG_ERR, "Destination File Already Exists\n");
+        BAYER_LOG(BAYER_LOG_ERR, "Destination File Already Exists\n");
         DTAR_abort(EXIT_FAILURE);
     }
 
@@ -116,7 +117,7 @@ char* DTAR_encode_operation(DTAR_operation_code_t code, int64_t chunk,
             chunk, offset, code, (int) len, operand);
 
     if (written >= opsize) {
-        LOG(DTAR_LOG_ERR,
+        BAYER_LOG(BAYER_LOG_ERR,
                 "Exceeded libcircle message size due to large file path. "
                         "This is a known bug in dcp that we intend to fix. Sorry!");
         DTAR_abort(EXIT_FAILURE);
@@ -134,22 +135,22 @@ DTAR_operation_t* DTAR_decode_operation(char* op)
             sizeof(DTAR_operation_t));
 
     if (sscanf(strtok(op, ":"), "%" SCNd64, &(ret->file_size)) != 1) {
-        LOG(DTAR_LOG_ERR, "Could not decode file size attribute.");
+        BAYER_LOG(BAYER_LOG_ERR, "Could not decode file size attribute.");
         DTAR_abort(EXIT_FAILURE);
     }
 
     if (sscanf(strtok(NULL, ":"), "%" SCNd64, &(ret->chunk)) != 1) {
-        LOG(DTAR_LOG_ERR, "Could not decode chunk index attribute.");
+        BAYER_LOG(BAYER_LOG_ERR, "Could not decode chunk index attribute.");
         DTAR_abort(EXIT_FAILURE);
     }
 
     if (sscanf(strtok(NULL, ":"), "%" SCNu64, &(ret->offset)) != 1) {
-        LOG(DTAR_LOG_ERR, "Could not decode source base offset attribute.");
+        BAYER_LOG(BAYER_LOG_ERR, "Could not decode source base offset attribute.");
         DTAR_abort(EXIT_FAILURE);
     }
 
     if (sscanf(strtok(NULL, ":"), "%d", (int*) &(ret->code)) != 1) {
-        LOG(DTAR_LOG_ERR, "Could not decode stage code attribute.");
+        BAYER_LOG(BAYER_LOG_ERR, "Could not decode stage code attribute.");
         DTAR_abort(EXIT_FAILURE);
     }
 
@@ -157,7 +158,7 @@ DTAR_operation_t* DTAR_decode_operation(char* op)
     int op_len;
     char* str = strtok(NULL, ":");
     if (sscanf(str, "%d", &op_len) != 1) {
-        LOG(DTAR_LOG_ERR, "Could not decode operand string length.");
+        BAYER_LOG(BAYER_LOG_ERR, "Could not decode operand string length.");
         DTAR_abort(EXIT_FAILURE);
     }
 
