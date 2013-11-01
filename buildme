@@ -72,7 +72,7 @@ popd
 
 # build dwalk command
 pushd dwalk
-  mpicxx ${OPT} -o dwalk dwalk.c \
+  mpicc ${OPT} -o dwalk dwalk.c \
     -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
   if [ $? -ne 0 ]; then
     echo "failed to build dwalk"
@@ -83,7 +83,7 @@ popd
 
 # build drm command
 pushd drm
-  mpicxx ${OPT} -o drm drm.c \
+  mpicc ${OPT} -o drm drm.c \
     -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
   if [ $? -ne 0 ]; then
     echo "failed to build drm"
@@ -129,8 +129,8 @@ pushd dcp
 
     # build dcp command
     pushd src
-      mpicxx ${OPT} -D__STDC_FORMAT_MACROS -o dcp common.c handle_args.c treewalk.c copy.c cleanup.c compare.c dcp.c \
-        -I../. -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -lbayer
+      mpicc ${OPT} -D__STDC_FORMAT_MACROS -o dcp common.c handle_args.c treewalk.c copy.c cleanup.c compare.c dcp.c \
+        -I../. -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lbayer -lcircle -ldtcmp -llwgrp
       if [ $? -ne 0 ]; then
         echo "failed to build dcp"
         exit 1
@@ -142,7 +142,7 @@ popd
 
 # build dcmp command
 pushd dcmp
-  mpicxx ${OPT} -o dcmp dcmp.c \
+  mpicc ${OPT} -o dcmp dcmp.c \
     -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
   if [ $? -ne 0 ]; then
     echo "failed to build dcmp"
