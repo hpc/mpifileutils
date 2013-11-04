@@ -17,6 +17,11 @@ extern "C" {
 #include <stdio.h>
 #include <time.h>
 
+/* for struct stat */
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 typedef enum {
     BAYER_LOG_FATAL = 1,
     BAYER_LOG_ERR   = 2,
@@ -116,6 +121,25 @@ void bayer_format_bytes(uint64_t bytes, double* val, const char** units);
 
 /* given a bandwidth in bytes/sec, return value converted to returned units */
 void bayer_format_bw(double bw, double* val, const char** units);
+
+typedef struct bayer_param_path_t {
+    char* orig;              /* original path as specified by user */
+    char* path;              /* reduced path, but still includes symlinks */
+    int   path_stat_valid;   /* flag to indicate whether path_stat is valid */
+    struct stat path_stat;   /* stat of path */
+    char* target;            /* fully resolved path, no more symlinks */
+    int   target_stat_valid; /* flag to indicate whether target_stat is valid */
+    struct stat target_stat; /* stat of target path */
+} bayer_param_path;
+
+/* initialize fields in param */
+void bayer_param_init(bayer_param_path* param);
+
+/* set fields in param according to path */
+void bayer_param_set(const char* path, bayer_param_path* param);
+
+/* free memory associated with param */
+void bayer_param_free(bayer_param_path* param);
 
 #endif /* BAYER_UTIL_H */
 

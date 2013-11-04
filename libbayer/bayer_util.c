@@ -228,3 +228,73 @@ void bayer_format_bw(double bw, double* val, const char** units)
     bayer_format_1024(bw, units_bw, NUM_UNITS_BW, val, units);
     return;
 }
+
+/* initialize fields in param */
+void bayer_param_path_init(bayer_param_path* param)
+{
+    /* initialize all fields */
+    if(param != NULL) {
+        param->orig = NULL;
+        param->path = NULL;
+        param->path_stat_valid = 0;
+        param->target = NULL;
+        param->target_stat_valid = 0;
+    }
+
+    return;
+}
+
+/* set fields in param according to path */
+void bayer_param_path_set(const char* path, bayer_param_path* param)
+{
+    /* initialize all fields */
+    bayer_param_path_init(param);
+
+    if(path != NULL) {
+        /* make a copy of original path */
+        param->orig = BAYER_STRDUP(path);
+
+        /* get absolute path and remove ".", "..", consecutive "/",
+         * and trailing "/" characters */
+        param->path = bayer_path_strdup_abs_reduce_str(path);
+
+        /* get stat info for simplified path */
+        if(bayer_lstat(param->path, &param->path_stat) == 0) {
+            param->path_stat_valid = 1;
+        }
+
+        /* TODO: we use realpath below, which is nice since it takes out
+         * ".", "..", symlinks, and adds the absolute path, however, it
+         * fails if the file/directory does not already exist, which is
+         * often the case for dest path. */
+
+        /* resolve any symlinks */
+        char target[PATH_MAX];
+        if(realpath(path, target) != NULL) {
+            /* make a copy of resolved name */
+            param->target = BAYER_STRDUP(target);
+
+            /* get stat info for resolved path */
+            if(bayer_lstat(param->target, &param->target_stat) == 0) {
+                param->target_stat_valid = 1;
+            }
+        }
+    }
+
+    return;
+}
+
+/* free memory associated with param */
+void bayer_param_path_free(bayer_param_path* param)
+{
+    if(param != NULL) {
+        /* free all mememory */
+        bayer_free(&param->orig);
+        bayer_free(&param->path);
+        bayer_free(&param->target);
+
+        /* initialize all fields */
+        bayer_param_path_init(param);
+    }
+    return;
+}
