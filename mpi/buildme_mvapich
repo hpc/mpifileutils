@@ -6,7 +6,7 @@ set -x
 export PATH=`pwd`/autotools/install/bin:$PATH
 
 dir=`pwd`/mvapich2
-mkdir $dir
+mkdir -p $dir
 cd $dir
 
 PREFIX=`pwd`/install

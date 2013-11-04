@@ -21,9 +21,13 @@ pushd autotools
   rm -rf autoconf-2.69
   tar -zxf autoconf-2.69.tar.gz
   pushd autoconf-2.69
-    ./configure --prefix=$toolsinstalldir
-    make
+    ./configure --prefix=$toolsinstalldir && \
+    make && \
     make install
+    if [ $? -ne 0 ]; then
+      echo "failed to configure, build, or install autoconf"
+      exit 1
+    fi
   popd
 
   # build automake
@@ -33,9 +37,13 @@ pushd autotools
   rm -rf automake-1.13
   tar -zxf automake-1.13.tar.gz
   pushd automake-1.13
-    ./configure --prefix=$toolsinstalldir
-    make
+    ./configure --prefix=$toolsinstalldir && \
+    make && \
     make install
+    if [ $? -ne 0 ]; then
+      echo "failed to configure, build, or install autoconf"
+      exit 1
+    fi
   popd
 
   # build libtool
@@ -45,8 +53,12 @@ pushd autotools
   rm -rf libtool-2.4
   tar -zxf libtool-2.4.tar.gz
   pushd libtool-2.4
-    ./configure --prefix=$toolsinstalldir
-    make
+    ./configure --prefix=$toolsinstalldir && \
+    make && \
     make install
+    if [ $? -ne 0 ]; then
+      echo "failed to configure, build, or install autoconf"
+      exit 1
+    fi
   popd
 popd
