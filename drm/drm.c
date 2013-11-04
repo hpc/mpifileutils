@@ -37,28 +37,28 @@ static void remove_type(char type, const char* name)
     if (type == 'd') {
         int rc = bayer_rmdir(name);
         if (rc != 0) {
-            printf("Failed to rmdir `%s' (errno=%d %s)\n",
+            BAYER_LOG(BAYER_LOG_ERR, "Failed to rmdir `%s' (errno=%d %s)",
                 name, errno, strerror(errno)
             );
         }
     } else if (type == 'f') {
         int rc = bayer_unlink(name);
         if (rc != 0) {
-            printf("Failed to unlink `%s' (errno=%d %s)\n",
+            BAYER_LOG(BAYER_LOG_ERR, "Failed to unlink `%s' (errno=%d %s)",
                 name, errno, strerror(errno)
             );
         }
     } else if (type == 'u') {
         int rc = remove(name);
         if (rc != 0) {
-            printf("Failed to remove `%s' (errno=%d %s)\n",
+            BAYER_LOG(BAYER_LOG_ERR, "Failed to remove `%s' (errno=%d %s)",
                 name, errno, strerror(errno)
             );
         }
     } else {
         /* print error */
-        printf("Unknown type=%c name=%s @ %s:%d\n",
-            type, name, __FILE__, __LINE__
+        BAYER_LOG(BAYER_LOG_ERR, "Unknown type=%c name=%s",
+            type, name
         );
     }
 
@@ -600,7 +600,9 @@ static void remove_create(CIRCLE_handle* handle)
             strcpy(&path[1], name);
             handle->enqueue(path);
         } else {
-            printf("Filename longer than %lu\n", (unsigned long)CIRCLE_MAX_STRING_LEN);
+            BAYER_LOG(BAYER_LOG_ERR, "Filename longer than %lu",
+                (unsigned long)CIRCLE_MAX_STRING_LEN
+            );
         }
     }
 
@@ -713,7 +715,9 @@ static void remove_files(bayer_flist flist)
                     const char* name = bayer_flist_file_get_name(list, index);
                     int rc = chmod(name, S_IRWXU);
                     if (rc != 0) {
-                      printf("Failed to chmod directory `%s' (errno=%d %s)\n", name, errno, strerror(errno));
+                        BAYER_LOG(BAYER_LOG_ERR, "Failed to chmod directory `%s' (errno=%d %s)",
+                            name, errno, strerror(errno)
+                        );
                     }
                 }
             }
@@ -787,6 +791,7 @@ int main(int argc, char **argv)
 {
     /* initialize MPI */
     MPI_Init(&argc, &argv);
+    bayer_init();
 
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -873,6 +878,7 @@ int main(int argc, char **argv)
         if (rank == 0) {
             print_usage();
         }
+        bayer_finalize();
         MPI_Finalize();
         return 1;
     }
@@ -969,6 +975,7 @@ int main(int argc, char **argv)
     bayer_free(&inputname);
 
     /* shut down MPI */
+    bayer_finalize();
     MPI_Finalize();
 
     return 0;
