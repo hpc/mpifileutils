@@ -33,6 +33,46 @@ retry:
     return rc;
 }
 
+/* calls lchown, and retries a few times if we get EIO or EINTR */
+int bayer_lchown(const char* path, uid_t owner, gid_t group)
+{
+    int rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = lchown(path, owner, group);
+    if (rc != 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
+/* calls chmod, and retries a few times if we get EIO or EINTR */
+int bayer_chmod(const char* path, mode_t mode)
+{
+    int rc;
+    int tries = BAYER_IO_TRIES;
+retry:
+    rc = chmod(path, mode);
+    if (rc != 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(BAYER_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
 /* calls lstat, and retries a few times if we get EIO or EINTR */
 int bayer_lstat(const char* path, struct stat* buf)
 {

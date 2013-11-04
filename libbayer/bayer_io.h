@@ -49,6 +49,12 @@ struct stat64;
 /* calls access, and retries a few times if we get EIO or EINTR */
 int bayer_access(const char* path, int amode);
 
+/* calls lchown, and retries a few times if we get EIO or EINTR */
+int bayer_lchown(const char* path, uid_t owner, gid_t group);
+
+/* calls chmod, and retries a few times if we get EIO or EINTR */
+int bayer_chmod(const char* path, mode_t mode);
+
 /* calls lstat, and retries a few times if we get EIO or EINTR */
 int bayer_lstat(const char* path, struct stat* buf);
 
