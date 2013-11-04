@@ -28,7 +28,7 @@ OPT="-g -O0"
 
 installdir=`pwd`/install
 
-mkdir deps
+mkdir -p deps
 cd deps
 
 # fetch dependencies
@@ -59,7 +59,6 @@ fi
 pushd libcircle.git
   export CFLAGS=${OPT}
   ./configure --prefix=$installdir && \
-  make clean && \
   make VERBOSE=1 && \
   make VERBOSE=1 install
   if [ $? -ne 0 ]; then
@@ -73,7 +72,6 @@ pushd lwgrp.git
 #  ./autogen.sh
   export CFLAGS=${OPT}
   ./configure --prefix=${installdir} && \
-  make clean && \
   make && \
   make install
   if [ $? -ne 0 ]; then
@@ -87,7 +85,6 @@ pushd dtcmp.git
 #  ./autogen.sh
   export CFLAGS=${OPT}
   ./configure --prefix=${installdir} --with-lwgrp=${installdir} && \
-  make clean && \
   make && \
   make install
   if [ $? -ne 0 ]; then
