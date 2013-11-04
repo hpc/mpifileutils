@@ -25,13 +25,15 @@ typedef enum {
     BAYER_LOG_DBG   = 5
 } bayer_loglevel;
 
+extern int bayer_initialized;
+
 /* set during bayer_init, used in BAYER_LOG */
 extern int bayer_rank;
 extern FILE* bayer_debug_stream;
 extern bayer_loglevel bayer_debug_level;
 
 #define BAYER_LOG(level, ...) do {  \
-        if (level <= bayer_debug_level) { \
+        if (bayer_initialized && level <= bayer_debug_level) { \
             char timestamp[256]; \
             time_t ltime = time(NULL); \
             struct tm *ttime = localtime(&ltime); \
@@ -78,10 +80,10 @@ void* bayer_malloc(
 /* if size > 0, allocates size bytes aligned with specified alignment
  * and returns pointer, calls bayer_abort on failure,
  * returns NULL if size == 0 */
+#define BAYER_MEMALIGN(X, Y) bayer_memalign(X, Y, __FILE__, __LINE__)
 void* bayer_memalign(
   size_t size,
   size_t alignment,
-  const char* desc,
   const char* file,
   int line
 );

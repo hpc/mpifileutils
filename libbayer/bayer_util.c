@@ -6,7 +6,7 @@
 #include <string.h>
 #include <stdarg.h>
 
-static int bayer_initialized = 0;
+int bayer_initialized = 0;
 
 /* set globals */
 int bayer_rank = -1;
@@ -22,7 +22,7 @@ int bayer_init()
   if (bayer_initialized == 0) {
     /* set globals */
     MPI_Comm_rank(MPI_COMM_WORLD, &bayer_rank);
-    FILE* bayer_debug_stream = stdout;
+    bayer_debug_stream = stdout;
 
     DTCMP_Init();
     bayer_initialized++;
@@ -78,7 +78,7 @@ void* bayer_malloc(size_t size, const char* file, int line)
 /* if size > 0, allocates size bytes aligned with specified alignment
  * and returns pointer, calls bayer_abort on failure,
  * returns NULL if size == 0 */
-void* bayer_memalign(size_t size, size_t alignment, const char* desc, const char* file, int line)
+void* bayer_memalign(size_t size, size_t alignment, const char* file, int line)
 {
   /* only bother if size > 0 */
   if (size > 0) {
@@ -87,8 +87,8 @@ void* bayer_memalign(size_t size, size_t alignment, const char* desc, const char
     int rc = posix_memalign(&ptr, alignment, size);
     if (rc != 0) {
       /* allocate failed, abort */
-      bayer_abort(1, "Failed to allocate %llu bytes for %s posix_memalign rc=%d @ %s:%d",
-        (unsigned long long) size, desc, rc, file, line
+      bayer_abort(1, "Failed to allocate %llu bytes posix_memalign rc=%d @ %s:%d",
+        (unsigned long long) size, rc, file, line
       );
     }
 
