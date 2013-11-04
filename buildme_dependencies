@@ -32,41 +32,66 @@ mkdir deps
 cd deps
 
 # fetch dependencies
-if [ ! -f libcircle.git ] ; then
+if [ ! -d libcircle.git ] ; then
   git clone git://github.com/hpc/libcircle.git libcircle.git
 fi
-if [ ! -f lwgrp.git ] ; then
+if [ ! -d lwgrp.git ] ; then
   git clone git://github.com/hpc/lwgrp.git lwgrp.git
 fi
-if [ ! -f dtcmp.git ] ; then
+if [ ! -d dtcmp.git ] ; then
   git clone git://github.com/hpc/dtcmp.git dtcmp.git
+fi
+
+if [ ! -d libcircle.git ]; then
+  echo "missing libcircle"
+  exit 1
+fi
+if [ ! -d lwgrp.git ]; then
+  echo "missing lwgrp"
+  exit 1
+fi
+if [ ! -d dtcmp.git ]; then
+  echo "missing dtcmp"
+  exit 1
 fi
 
 # build dependencies
 pushd libcircle.git
   export CFLAGS=${OPT}
-  ./configure --prefix=$installdir
-  make clean
-  make VERBOSE=1
+  ./configure --prefix=$installdir && \
+  make clean && \
+  make VERBOSE=1 && \
   make VERBOSE=1 install
+  if [ $? -ne 0 ]; then
+    echo "failed to configure, build, or install libcircle"
+    exit 1
+  fi
 popd
 
 pushd lwgrp.git
 #  make distclean
 #  ./autogen.sh
   export CFLAGS=${OPT}
-  ./configure --prefix=${installdir}
-  make clean
-  make
+  ./configure --prefix=${installdir} && \
+  make clean && \
+  make && \
   make install
+  if [ $? -ne 0 ]; then
+    echo "failed to configure, build, or install liblwgrp"
+    exit 1
+  fi
 popd
 
 pushd dtcmp.git
 #  make distclean
 #  ./autogen.sh
   export CFLAGS=${OPT}
-  ./configure --prefix=${installdir} --with-lwgrp=${installdir}
-  make clean
-  make
+  ./configure --prefix=${installdir} --with-lwgrp=${installdir} && \
+  make clean && \
+  make && \
   make install
+  if [ $? -ne 0 ]; then
+    echo "failed to configure, build, or install libdtcmp"
+    exit 1
+  fi
 popd
