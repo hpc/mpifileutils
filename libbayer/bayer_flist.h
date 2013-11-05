@@ -33,33 +33,32 @@ typedef void* bayer_flist;
 /* create a NULL handle */
 extern bayer_flist BAYER_FLIST_NULL;
 
-/* initialize file list */
-//void flist_init(bayer_list flist);
+/* create new, empty file list */
+bayer_flist bayer_flist_new();
 
 /* create list as subset of another list
  * (returns emtpy list with same user and group maps) */
-void bayer_flist_subset(
-  bayer_flist srclist,
-  bayer_flist* bflist
+bayer_flist bayer_flist_subset(
+  bayer_flist srclist
 );
 
 /* create file list by walking directory */
 void bayer_flist_walk_path(
   const char* path,
   int use_stat,
-  bayer_flist* bflist
+  bayer_flist flist
 );
 
 /* read file list from file */
 void bayer_flist_read_cache(
   const char* name,
-  bayer_flist* bflist
+  bayer_flist flist
 );
 
 /* write file list to file */
 void bayer_flist_write_cache(
   const char* name,
-  bayer_flist bflist
+  bayer_flist flist
 );
 
 /* free resouces in file list */

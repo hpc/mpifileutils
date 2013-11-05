@@ -204,23 +204,23 @@ printf("Writing entry at %llu for %s\n", (unsigned long long)offset, name);
 #endif
 
     /* set file type */
-    if (type == TYPE_FILE) {
+    if (type == BAYER_TYPE_FILE) {
         archive_entry_set_filetype(entry, AE_IFREG);
-    } else if (type == TYPE_DIR) {
+    } else if (type == BAYER_TYPE_DIR) {
         archive_entry_set_filetype(entry, AE_IFDIR);
-    } else if (type == TYPE_LINK) {
+    } else if (type == BAYER_TYPE_LINK) {
         archive_entry_set_filetype(entry, AE_IFLNK);
     }
 
     /* if object is a link, copy the link target */
-    if (type == TYPE_LINK) {
+    if (type == BAYER_TYPE_LINK) {
         char target[PATH_MAX];
         bayer_readlink(name, target, sizeof(target));
         archive_entry_set_symlink(entry, target);
     }
         
     /* if file, set file size */
-    if (type == TYPE_FILE) {
+    if (type == BAYER_TYPE_FILE) {
         uint64_t bsize = bayer_flist_file_get_size(flist, index);
         archive_entry_set_size(entry, (int64_t)bsize);
     }
@@ -303,7 +303,7 @@ static void copy_enqueue(CIRCLE_handle* handle)
         bayer_filetype type = bayer_flist_file_get_type(g_flist, index);
 
         /* add copy items if it's a file */
-        if (type == TYPE_FILE) {
+        if (type == BAYER_TYPE_FILE) {
             uint64_t dataoffset = offset + HDR_LENGTH;
             uint64_t chunk_index;
 
@@ -377,8 +377,8 @@ static void create(
     /* TODO: support multiple source paths here */
 
     /* recursively walk path to get stat info on all files */
-    bayer_flist flist;
-    bayer_flist_walk_path(DTAR_user_opts.src_path[0], 1, &flist);
+    bayer_flist flist = bayer_flist_new();
+    bayer_flist_walk_path(DTAR_user_opts.src_path[0], 1, flist);
 
     /* TODO: better to order items by directory or depth for extraction? */
 
@@ -400,10 +400,10 @@ static void create(
         bayer_filetype type = bayer_flist_file_get_type(flist, index);
 
         /* based on the type, compute its archive size */
-        if (type == TYPE_DIR) {
+        if (type == BAYER_TYPE_DIR) {
             /* for a directory, we just write a header */
             g_sizes[index] = HDR_LENGTH;
-        } else if (type == TYPE_FILE) {
+        } else if (type == BAYER_TYPE_FILE) {
             /* for a file, we write a header plus the file contents */
 
             /* get file size */
@@ -417,7 +417,7 @@ static void create(
 
             /* also include header size */
             g_sizes[index] = HDR_LENGTH + data;
-        } else if (type == TYPE_LINK) {
+        } else if (type == BAYER_TYPE_LINK) {
             /* for a link, we just write a header */
             g_sizes[index] += HDR_LENGTH;
         }
@@ -445,9 +445,9 @@ static void create(
         bayer_filetype type = bayer_flist_file_get_type(flist, index);
 
         /* writer header for supported types */
-        if (type == TYPE_FILE ||
-            type == TYPE_DIR ||
-            type == TYPE_LINK)
+        if (type == BAYER_TYPE_FILE ||
+            type == BAYER_TYPE_DIR ||
+            type == BAYER_TYPE_LINK)
         {
             write_header(a, flist, index, offset);
         }

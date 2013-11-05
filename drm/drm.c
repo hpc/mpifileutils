@@ -887,7 +887,7 @@ int main(int argc, char **argv)
     DTCMP_Init();
 
     /* create an empty file list */
-    bayer_flist flist;
+    bayer_flist flist = bayer_flist_new();
 
     /* get our list of files, either by walking or reading an
      * input file */
@@ -909,7 +909,7 @@ int main(int argc, char **argv)
 
         /* walk file tree and record stat data for each file */
         double start_walk = MPI_Wtime();
-        bayer_flist_walk_path(target, walk_stat, &flist);
+        bayer_flist_walk_path(target, walk_stat, flist);
         double end_walk = MPI_Wtime();
 
         /* report walk count, time, and rate */
@@ -927,7 +927,7 @@ int main(int argc, char **argv)
     } else {
         /* read list from file */
         double start_read = MPI_Wtime();
-        bayer_flist_read_cache(inputname, &flist);
+        bayer_flist_read_cache(inputname, flist);
         double end_read = MPI_Wtime();
 
         /* report read count, time, and rate */

@@ -63,8 +63,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
   bayer_flist flist = *pflist;
 
   /* create a new list as subset of original list */
-  bayer_flist flist2;
-  bayer_flist_subset(flist, &flist2);
+  bayer_flist flist2 = bayer_flist_subset(flist);
 
   uint64_t incount = bayer_flist_size(flist);
   int chars        = bayer_flist_file_max_name(flist);
@@ -249,8 +248,7 @@ static void filter_files(bayer_flist* pflist)
   bayer_flist flist = *pflist;
 
   // for each file, if (now - atime) > 60d and (now - ctime) > 60d, add to list
-  bayer_flist eligible;
-  bayer_flist_subset(flist, &eligible);
+  bayer_flist eligible = bayer_flist_subset(flist);
 
   static uint32_t limit = 60 * 24 * 3600; /* 60 days */
   uint32_t now = gettime();
@@ -284,8 +282,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
   bayer_flist flist = *pflist;
 
   /* create a new list as subset of original list */
-  bayer_flist flist2;
-  bayer_flist_subset(flist, &flist2);
+  bayer_flist flist2 = bayer_flist_subset(flist);
 
   uint64_t incount = bayer_flist_size(flist);
   int chars        = bayer_flist_file_max_name(flist);
@@ -866,8 +863,7 @@ static void print_files(bayer_flist flist)
   MPI_Gatherv(sendbuf, bytes, MPI_BYTE, recvbuf, counts, disps, MPI_BYTE, 0, MPI_COMM_WORLD);
 
   /* create temporary list to unpack items into */
-  bayer_flist tmplist;
-  bayer_flist_subset(flist, &tmplist);
+  bayer_flist tmplist = bayer_flist_subset(flist);
 
   /* unpack items into new list */
   if (rank == 0) {
@@ -1120,7 +1116,7 @@ int main(int argc, char **argv)
   uint64_t walk_start, walk_end;
 
   /* create an empty file list */
-  bayer_flist flist;
+  bayer_flist flist = bayer_flist_new();
 
   if (walk) {
     time_t walk_start_t = time(NULL);
@@ -1142,7 +1138,7 @@ int main(int argc, char **argv)
 
     /* walk file tree and record stat data for each file */
     double start_walk = MPI_Wtime();
-    bayer_flist_walk_path(target, walk_stat, &flist);
+    bayer_flist_walk_path(target, walk_stat, flist);
     double end_walk = MPI_Wtime();
 
     time_t walk_end_t = time(NULL);
@@ -1168,7 +1164,7 @@ int main(int argc, char **argv)
   } else {
     /* read data from cache file */
     double start_read = MPI_Wtime();
-    bayer_flist_read_cache(inputname, &flist);
+    bayer_flist_read_cache(inputname, flist);
     double end_read = MPI_Wtime();
 
     /* get total file count */

@@ -804,7 +804,7 @@ static flist_t flist_null;
 bayer_flist BAYER_FLIST_NULL = &flist_null;
 
 /* initialize file list */
-static bayer_flist bayer_flist_new()
+bayer_flist bayer_flist_new()
 {
   /* allocate memory for file list, cast it to handle, initialize and return */
   flist_t* flist = (flist_t*) BAYER_MALLOC(sizeof(flist_t));
@@ -888,7 +888,7 @@ void bayer_flist_array_by_depth(
     /* create a list for each level */
     int i;
     for (i = 0; i < levels; i++) {
-        bayer_flist_subset(srclist, &lists[i]);
+        lists[i] = bayer_flist_subset(srclist);
     }
 
     /* copy each item from source list to its corresponding level */
@@ -1801,17 +1801,13 @@ retry:
   return;
 }
 
-void bayer_flist_subset(bayer_flist src, bayer_flist* pbflist)
+bayer_flist bayer_flist_subset(bayer_flist src)
 {
-  /* check that we got a valid pointer */
-  if (pbflist == NULL) {
-  }
-
   /* allocate a new file list */
-  *pbflist = bayer_flist_new();
+  bayer_flist bflist = bayer_flist_new();
 
   /* convert handle to flist_t */
-  flist_t* flist = *(flist_t**)pbflist;
+  flist_t* flist =  (flist_t*) bflist;
   flist_t* srclist = (flist_t*)src;
 
   /* copy user and groups if we have them */
@@ -1825,21 +1821,14 @@ void bayer_flist_subset(bayer_flist src, bayer_flist* pbflist)
     strmap_merge(flist->group_id2name, srclist->group_id2name);
   }
 
-  return;
+  return bflist;
 }
 
 /* Set up and execute directory walk */
-void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist* pbflist)
+void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist)
 {
-  /* check that we got a valid pointer */
-  if (pbflist == NULL) {
-  }
-
-  /* allocate a new file list */
-  *pbflist = bayer_flist_new();
-
   /* convert handle to flist_t */
-  flist_t* flist = *(flist_t**)pbflist;
+  flist_t* flist = (flist_t*) bflist;
 
   /* initialize libcircle */
   CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL);
@@ -2152,17 +2141,10 @@ static void read_cache_v3(
 
 void bayer_flist_read_cache(
   const char* name,
-  bayer_flist* pbflist)
+  bayer_flist bflist)
 {
-  /* check that we got a valid pointer */
-  if (pbflist == NULL) {
-  }
-
-  /* allocate a new file list */
-  *pbflist = bayer_flist_new();
-
   /* convert handle to flist_t */
-  flist_t* flist = *(flist_t**)pbflist;
+  flist_t* flist = (flist_t*) bflist;
 
   /* get our rank */
   int rank;
