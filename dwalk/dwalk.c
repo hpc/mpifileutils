@@ -1144,7 +1144,7 @@ int main(int argc, char **argv)
         if (rc == 0) {
           walk_s[0] = '\0';
         }
-        printf("%s: Walking directory: %s\n", walk_s, target);
+        printf("%s: Walking %s\n", walk_s, target);
         fflush(stdout);
       }
 
