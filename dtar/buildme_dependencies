@@ -16,24 +16,22 @@ OPT="-g -O0"
 installdir=`pwd`/dtar_ext
 rm -rf $installdir
 
+#tar zxvf  libcircle.tar.gz
 tar zxvf  libarchive-3.1.2.tar.gz
-tar zxvf  libcircle.tar.gz
 
 # build dependencies
-pushd libcircle
-  export CFLAGS=${OPT}
-  ./configure --prefix=$installdir
-  make clean
-  make
-  make install
-popd
+#pushd libcircle
+#  export CFLAGS=${OPT}
+#  ./configure --prefix=$installdir
+#  make
+#  make install
+#popd
 
 pushd libarchive-3.1.2
-  #make distclean
-  #./autogen.sh
+#  make distclean
+#  ./autogen.sh
   export CFLAGS=${OPT}
   ./configure --prefix=${installdir}
-#  make clean
   make
   make install
 popd

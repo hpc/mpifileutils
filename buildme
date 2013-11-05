@@ -28,7 +28,7 @@ OPT="-g -O0"
 
 installdir=`pwd`/install
 
-mkdir ${installdir}/bin
+mkdir -p ${installdir}/bin
 
 # build libbayer
 pushd libbayer
@@ -92,7 +92,17 @@ pushd drm
   cp drm ${installdir}/bin
 popd
 
-# build dtar command
+# build dtar
+pushd dtar/src
+  mpicc ${OPT} -o dtar \
+    copy.c helper.c dtar.c \
+    -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -larchive -llwgrp -ldtcmp -lbayer
+  if [ $? -ne 0 ]; then
+    echo "failed to build dtar"
+    exit 1
+  fi
+  cp dtar ${installdir}/bin
+popd
 
 # build dfind command
 #pushd dfind
@@ -104,6 +114,18 @@ popd
 #
 #  cp dfind ${installdir}/bin
 #popd
+
+# build dcmp command
+pushd dcmp
+  mpicc ${OPT} -o dcmp dcmp.c \
+    -I${installdir}/include \
+    -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
+  if [ $? -ne 0 ]; then
+    echo "failed to build dcmp"
+    exit 1
+  fi
+  cp dcmp ${installdir}/bin/.
+popd
 
 # build dcp command
 mkdir -p dcp
@@ -125,6 +147,7 @@ pushd dcp
       export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
       export CFLAGS="-g -O0"
       ./configure --prefix=$installdir --disable-silent-rules
+      #./configure --prefix=$installdir --disable-silent-rules --disable-xattr
     fi
 
     # build dcp command
@@ -140,16 +163,4 @@ pushd dcp
       cp dcp ${installdir}/bin
     popd
   popd
-popd
-
-# build dcmp command
-pushd dcmp
-  mpicc ${OPT} -o dcmp dcmp.c \
-    -I${installdir}/include \
-    -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
-  if [ $? -ne 0 ]; then
-    echo "failed to build dcmp"
-    exit 1
-  fi
-  cp dcmp ${installdir}/bin/.
 popd

@@ -55,6 +55,12 @@ if [ ! -d dtcmp.git ]; then
   exit 1
 fi
 
+# clean out our autotools install directory
+toolsdir=`pwd`/autotools/install
+
+# add autotools install bin to our path
+export PATH=${toolsdir}/bin:$PATH
+
 # build dependencies
 pushd libcircle.git
   export CFLAGS=${OPT}
@@ -89,6 +95,22 @@ pushd dtcmp.git
   make install
   if [ $? -ne 0 ]; then
     echo "failed to configure, build, or install libdtcmp"
+    exit 1
+  fi
+popd
+
+rm -rf libarchive-3.1.2
+cp ../dtar/libarchive-3.1.2.tar.gz .
+tar zxvf libarchive-3.1.2.tar.gz
+pushd libarchive-3.1.2
+#  make distclean
+#  ./autogen.sh
+  export CFLAGS=${OPT}
+  ./configure --prefix=${installdir} && \
+  make && \
+  make install
+  if [ $? -ne 0 ]; then
+    echo "failed to configure, build, or install libarchive"
     exit 1
   fi
 popd
