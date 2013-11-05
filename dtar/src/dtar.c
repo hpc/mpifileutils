@@ -493,7 +493,9 @@ static void create(
     }
 
     /* free archive */
-    archive_write_free(a);
+//    archive_write_free(a);
+// for now, this is a really ugly hack
+    fsync(DTAR_writer.fd_tar);
 
     /* free sizes array */
     bayer_free(&g_sizes);

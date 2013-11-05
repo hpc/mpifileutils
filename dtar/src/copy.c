@@ -78,17 +78,20 @@ int DTAR_perform_copy(
         total_bytes_written += num_of_bytes_written;
     }
 
-    int num_chunks = op->file_size / DTAR_CHUNK_SIZE;
-    int rem = op->file_size - DTAR_CHUNK_SIZE * num_chunks;
-    int last_chunk = (rem) ? num_chunks : num_chunks - 1;
-
-    if (op->chunk == last_chunk) {
-
-        int padding = 512 - op->file_size % 512;
+    /* pad out final 512 byte block with zeros */
+    int64_t bytes_written = (op->chunk + 1) * DTAR_CHUNK_SIZE;
+    int64_t file_size = op->file_size;
+    if (bytes_written >= file_size) {
+        /* we're on the last chunk, determine number of pad bytes
+         * needed if any */
+        int64_t blocks = file_size / 512;
+        size_t padding = (size_t) (file_size - blocks * 512);
         if (padding > 0) {
-            char * buff_null = (char*) calloc(padding, sizeof(char));
-            int num_of_bytes_written = write(out_fd, buff_null,
-                    (size_t) padding);
+            /* write zeros to finish off last 512 byte block */
+            char* buf = (char*) BAYER_MALLOC(padding);
+            memset(buf, 0, padding);
+            int num_of_bytes_written = write(out_fd, buf, padding);
+            bayer_free(&buf);
         }
     }
 
