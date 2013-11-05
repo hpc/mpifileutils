@@ -81,10 +81,10 @@ typedef struct flist {
   /* buffers of users, groups, and files */
   buf_t users;
   buf_t groups;
-
-  /* map linux userid to user name, and map groupid to group name */
-  strmap* user_id2name;
-  strmap* group_id2name;
+  int have_users;        /* set to 1 if user map is valid */
+  int have_groups;       /* set to 1 if group map is valid */
+  strmap* user_id2name;  /* map linux uid to user name */
+  strmap* group_id2name; /* map linux gid to group name */
 } flist_t;
 
 /****************************************
@@ -747,7 +747,7 @@ static int list_convert_to_dt(flist_t* flist, buf_t* items)
 }
 
 /* build a name-to-id map and an id-to-name map */
-static void create_maps(const buf_t* items, strmap* id2name)
+static void create_map(const buf_t* items, strmap* id2name)
 {
   int i;
   const char* ptr = (const char*)items->buf;
@@ -823,6 +823,8 @@ bayer_flist bayer_flist_new()
   buft_init(&flist->groups);
 
   /* allocate memory for maps */
+  flist->have_users  = 0;
+  flist->have_groups = 0;
   flist->user_id2name  = strmap_new();
   flist->group_id2name = strmap_new();
 
@@ -1819,6 +1821,8 @@ bayer_flist bayer_flist_subset(bayer_flist src)
     flist->group_id2name = strmap_new();
     strmap_merge(flist->user_id2name, srclist->user_id2name);
     strmap_merge(flist->group_id2name, srclist->group_id2name);
+    flist->have_users  = 1;
+    flist->have_groups = 1;
   }
 
   return bflist;
@@ -1846,10 +1850,16 @@ void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist
   flist->detail = 0;
   if (use_stat) {
     flist->detail = 1;
-    get_users(&flist->users);
-    get_groups(&flist->groups);
-    create_maps(&flist->users, flist->user_id2name);
-    create_maps(&flist->groups, flist->group_id2name);
+    if (flist->have_users == 0) {
+      get_users(&flist->users);
+      create_map(&flist->users, flist->user_id2name);
+      flist->have_users = 1;
+    }
+    if (flist->have_groups == 0) {
+      get_groups(&flist->groups);
+      create_map(&flist->groups, flist->group_id2name);
+      flist->have_groups = 1;
+    }
   }
 
   /* register callbacks */
@@ -2129,8 +2139,8 @@ static void read_cache_v3(
   }
 
   /* create maps of users and groups */
-  create_maps(&flist->users, flist->user_id2name);
-  create_maps(&flist->groups, flist->group_id2name);
+  create_map(&flist->users, flist->user_id2name);
+  create_map(&flist->groups, flist->group_id2name);
 
   /* free buffer */
   buft_free(&files);

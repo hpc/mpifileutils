@@ -908,7 +908,7 @@ static void print_files(bayer_flist flist)
 static void print_usage()
 {
   printf("\n");
-  printf("Usage: dwalk [options] <path>\n");
+  printf("Usage: dwalk [options] <path> ...\n");
   printf("\n");
   printf("Options:\n");
   printf("  -i, --input <file>  - read list from file\n");
@@ -927,6 +927,8 @@ static void print_usage()
 
 int main(int argc, char **argv)
 {
+  int i;
+
   /* initialize MPI */
   MPI_Init(&argc, &argv);
 
@@ -1008,19 +1010,23 @@ int main(int argc, char **argv)
   }
 
   /* paths to walk come after the options */
-  char* target = NULL;
+  int numpaths = 0;
+  bayer_param_path* paths = NULL;
   if (optind < argc) {
     /* got a path to walk */
     walk = 1;
 
-    /* get absolute path and remove ".", "..", consecutive "/",
-     * and trailing "/" characters */
-    char* path = argv[optind];
-    target = bayer_path_strdup_abs_reduce_str(path);
+    /* determine number of paths specified by user */
+    numpaths = argc - optind;
 
-    /* currently only allow one path */
-    if (argc - optind > 1) {
-      usage = 1;
+    /* allocate space for each path */
+    paths = (bayer_param_path*) BAYER_MALLOC(numpaths * sizeof(bayer_param_path));
+
+    /* process each path */
+    for (i = 0; i < numpaths; i++) {
+      const char* path = argv[optind];
+      bayer_param_path_set(path, &paths[i]);
+      optind++;
     }
 
     /* don't allow user to specify input file with walk */
@@ -1126,19 +1132,25 @@ int main(int argc, char **argv)
     walk_start = (uint64_t) walk_start_t;
 
     /* report walk count, time, and rate */
-    if (verbose && rank == 0) {
-      char walk_s[30];
-      size_t rc = strftime(walk_s, sizeof(walk_s)-1, "%FT%T", localtime(&walk_start_t));
-      if (rc == 0) {
-        walk_s[0] = '\0';
-      }
-      printf("%s: Walking directory: %s\n", walk_s, target);
-      fflush(stdout);
-    }
-
-    /* walk file tree and record stat data for each file */
     double start_walk = MPI_Wtime();
-    bayer_flist_walk_path(target, walk_stat, flist);
+    for (i = 0; i < numpaths; i++) {
+      /* get path for this step */
+      const char* target = paths[i].path;
+
+      /* print message to user that we're starting */
+      if (verbose && rank == 0) {
+        char walk_s[30];
+        size_t rc = strftime(walk_s, sizeof(walk_s)-1, "%FT%T", localtime(&walk_start_t));
+        if (rc == 0) {
+          walk_s[0] = '\0';
+        }
+        printf("%s: Walking directory: %s\n", walk_s, target);
+        fflush(stdout);
+      }
+
+      /* walk file tree and record stat data for each file */
+      bayer_flist_walk_path(target, walk_stat, flist);
+    }
     double end_walk = MPI_Wtime();
 
     time_t walk_end_t = time(NULL);
@@ -1257,7 +1269,11 @@ int main(int argc, char **argv)
   /* shut down the sorting library */
   DTCMP_Finalize();
 
-  bayer_free(&target);
+  /* free the path parameters */
+  for (i = 0; i < numpaths; i++) {
+    bayer_param_path_free(&paths[i]);
+  }
+  bayer_free(&paths);
 
   /* shut down MPI */
   MPI_Finalize();
