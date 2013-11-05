@@ -81,9 +81,9 @@ static void remove_direct(bayer_flist list, uint64_t* rmcount)
         bayer_filetype type = bayer_flist_file_get_type(list, index);
 
         /* delete item */
-        if (type == TYPE_DIR) {
+        if (type == BAYER_TYPE_DIR) {
             remove_type('d', name);
-        } else if (type == TYPE_FILE || type == TYPE_LINK) {
+        } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
             remove_type('f', name);
         } else {
             remove_type('u', name);
@@ -222,9 +222,9 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
         char* path = sendbuf + disp;
 
         /* first character encodes item type */
-        if (type == TYPE_DIR) {
+        if (type == BAYER_TYPE_DIR) {
             path[0] = 'd';
-        } else if (type == TYPE_FILE || type == TYPE_LINK) {
+        } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
             path[0] = 'f';
         } else {
             path[0] = 'u';
@@ -394,9 +394,9 @@ static void remove_map(bayer_flist list, uint64_t* rmcount)
         char* path = sendbuf + senddisps[rank] + sendoffset[rank];
 
         /* first character encodes item type */
-        if (type == TYPE_DIR) {
+        if (type == BAYER_TYPE_DIR) {
             path[0] = 'd';
-        } else if (type == TYPE_FILE || type == TYPE_LINK) {
+        } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
             path[0] = 'f';
         } else {
             path[0] = 'u';
@@ -510,9 +510,9 @@ static void remove_sort(bayer_flist list, uint64_t* rmcount)
 
         /* last character encodes item type */
         bayer_filetype type = bayer_flist_file_get_type(list, index);
-        if (type == TYPE_DIR) {
+        if (type == BAYER_TYPE_DIR) {
             ptr[0] = 'd';
-        } else if (type == TYPE_FILE || type == TYPE_LINK) {
+        } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
             ptr[0] = 'f';
         } else {
             ptr[0] = 'u';
@@ -586,9 +586,9 @@ static void remove_create(CIRCLE_handle* handle)
         bayer_filetype type = bayer_flist_file_get_type(circle_list, index);
 
         /* encode type */
-        if (type == TYPE_DIR) {
+        if (type == BAYER_TYPE_DIR) {
             path[0] = 'd';
-        } else if (type == TYPE_FILE || type == TYPE_LINK) {
+        } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
             path[0] = 'f';
         } else {
             path[0] = 'u';
@@ -699,7 +699,7 @@ static void remove_files(bayer_flist flist)
         for (index = 0; index < size; index++) {
             /* check whether we have a directory */
             bayer_filetype type = bayer_flist_file_get_type(list, index);
-            if (type == TYPE_DIR) {
+            if (type == BAYER_TYPE_DIR) {
                 /* assume we have to set the bit */
                 int set_write_bit = 1;
                 if (detail) {

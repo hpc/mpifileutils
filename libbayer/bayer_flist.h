@@ -20,11 +20,11 @@ extern "C" {
 
 /* TODO: these types may be encoded in files */
 typedef enum bayer_filetypes_e {
-  TYPE_NULL    = 0,
-  TYPE_UNKNOWN = 1,
-  TYPE_FILE    = 2,
-  TYPE_DIR     = 3,
-  TYPE_LINK    = 4,
+  BAYER_TYPE_NULL    = 0,
+  BAYER_TYPE_UNKNOWN = 1,
+  BAYER_TYPE_FILE    = 2,
+  BAYER_TYPE_DIR     = 3,
+  BAYER_TYPE_LINK    = 4,
 } bayer_filetype;
 
 /* define handle type to a file list */

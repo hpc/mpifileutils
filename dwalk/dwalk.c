@@ -258,7 +258,7 @@ static void filter_files(bayer_flist* pflist)
   uint64_t files = bayer_flist_size(flist);
   while (index < files) {
     bayer_filetype type = bayer_flist_file_get_type(flist, index);
-    if (type == TYPE_FILE || type == TYPE_LINK) {
+    if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
       /* we only purge files and links */
       uint32_t atime = bayer_flist_file_get_atime(flist, index);
       uint32_t ctime = bayer_flist_file_get_ctime(flist, index);
@@ -612,11 +612,11 @@ static void print_summary(bayer_flist flist)
       /* get type */
       bayer_filetype type = bayer_flist_file_get_type(flist, index);
 
-      if (type == TYPE_DIR) {
+      if (type == BAYER_TYPE_DIR) {
         total_dirs++;
-      } else if (type == TYPE_FILE) {
+      } else if (type == BAYER_TYPE_FILE) {
         total_files++;
-      } else if (type == TYPE_LINK) {
+      } else if (type == BAYER_TYPE_LINK) {
         total_links++;
       } else {
         /* unknown file type */
@@ -784,11 +784,11 @@ static void print_file(bayer_flist flist, uint64_t index, int rank)
     /* get type */
     bayer_filetype type = bayer_flist_file_get_type(flist, index);
     char* type_str = type_str_unknown;
-    if (type == TYPE_DIR) {
+    if (type == BAYER_TYPE_DIR) {
       type_str = type_str_dir;
-    } else if (type == TYPE_FILE) {
+    } else if (type == BAYER_TYPE_FILE) {
       type_str = type_str_file;
-    } else if (type == TYPE_LINK) {
+    } else if (type == BAYER_TYPE_LINK) {
       type_str = type_str_link;
     }
 

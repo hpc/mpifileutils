@@ -145,14 +145,14 @@ static bayer_filetype get_bayer_filetype(mode_t mode)
   /* set file type */
   bayer_filetype type;
   if (S_ISDIR(mode)) {
-    type = TYPE_DIR;
+    type = BAYER_TYPE_DIR;
   } else if (S_ISREG(mode)) {
-    type = TYPE_FILE;
+    type = BAYER_TYPE_FILE;
   } else if (S_ISLNK(mode)) {
-    type = TYPE_LINK;
+    type = BAYER_TYPE_LINK;
   } else {
     /* unknown file type */
-    type = TYPE_UNKNOWN;
+    type = BAYER_TYPE_UNKNOWN;
   }
   return type;
 }
@@ -1048,7 +1048,7 @@ int bayer_flist_file_get_depth(bayer_flist bflist, uint64_t index)
 
 bayer_filetype bayer_flist_file_get_type(bayer_flist bflist, uint64_t index)
 {
-  bayer_filetype type = TYPE_NULL;
+  bayer_filetype type = BAYER_TYPE_NULL;
   flist_t* flist = (flist_t*) bflist;
   elem_t* elem = list_get_elem(flist, index);
   if (elem != NULL) {
