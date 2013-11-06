@@ -13,9 +13,9 @@
 
 #include "bayer.h"
 
-/* globals to hold user-input paths (only valid on rank 0) */
-static bayer_param_path src_param_path;
-static bayer_param_path dst_param_path;
+/* globals to hold user-input paths */
+static bayer_param_path param1;
+static bayer_param_path param2;
 
 /* Print a usage message */
 static void print_usage()
@@ -96,22 +96,22 @@ int main(int argc, char **argv)
     }
 
     /* parse the source path */
-    const char* srcpath = argv[optind];
-    bayer_param_path_set(srcpath, &src_param_path);
+    const char* usrpath1 = argv[optind];
+    bayer_param_path_set(usrpath1, &param1);
 
     /* parse the destination path */
-    const char* dstpath = argv[optind + 1];
-    bayer_param_path_set(dstpath, &dst_param_path);
+    const char* usrpath2 = argv[optind + 1];
+    bayer_param_path_set(usrpath2, &param2);
 
     /* allocate lists for source and destinations */
     bayer_flist flist1 = bayer_flist_new();
     bayer_flist flist2 = bayer_flist_new();
 
     /* walk source and destination paths */
-    const char* path1 = src_param_path.path;
+    const char* path1 = param1.path;
     bayer_flist_walk_path(path1, 0, flist1);
 
-    const char* path2 = dst_param_path.path;
+    const char* path2 = param2.path;
     bayer_flist_walk_path(path2, 0, flist2);
 
     /* TODO: do stuff ... */
@@ -121,8 +121,8 @@ int main(int argc, char **argv)
     bayer_flist_free(&flist2);
 
     /* free source and dest params */
-    bayer_param_path_free(&src_param_path);
-    bayer_param_path_free(&dst_param_path);
+    bayer_param_path_free(&param1);
+    bayer_param_path_free(&param2);
 
     /* shut down */
     bayer_finalize();
