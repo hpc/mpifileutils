@@ -316,7 +316,7 @@ ssize_t bayer_read(const char* file, int fd, void* buf, size_t size)
             tries--;
             if (tries <= 0) {
                 /* too many failed retries, give up */
-                bayer_abort(-1, "Failed to read file %s errno=%d (%s)\n",
+                BAYER_ABORT(-1, "Failed to read file %s errno=%d (%s)",
                     file, errno, strerror(errno)
                 );
             }
@@ -340,7 +340,7 @@ ssize_t bayer_write(const char* file, int fd, const void* buf, size_t size)
             n += rc;
         } else if (rc == 0) {
             /* something bad happened, print an error and abort */
-            bayer_abort(-1, "Failed to write file %s errno=%d (%s)\n",
+            BAYER_ABORT(-1, "Failed to write file %s errno=%d (%s)",
                 file, errno, strerror(errno)
             );
         } else { /* (rc < 0) */
@@ -355,7 +355,7 @@ ssize_t bayer_write(const char* file, int fd, const void* buf, size_t size)
             tries--;
             if (tries <= 0) {
                 /* too many failed retries, give up */
-                bayer_abort(-1, "Failed to write file %s errno=%d (%s)\n",
+                BAYER_ABORT(-1, "Failed to write file %s errno=%d (%s)",
                     file, errno, strerror(errno)
                 );
             }
@@ -416,7 +416,7 @@ void bayer_getcwd(char* buf, size_t size)
 {
     char* p = getcwd(buf, size);
     if (p == NULL) {
-        bayer_abort(-1, "Failed to get current working directory errno=%d (%s)\n",
+        BAYER_ABORT(-1, "Failed to get current working directory errno=%d (%s)",
             errno, strerror(errno)
         );
     }

@@ -128,7 +128,7 @@ static void bayer_stat_bcast(struct stat* s)
 static void bayer_str_bcast(char** pstr)
 {
     if (pstr == NULL) {
-        bayer_abort(1, "Invalid string");
+        BAYER_ABORT(1, "Invalid string");
     }
 
     /* get pointer to string */

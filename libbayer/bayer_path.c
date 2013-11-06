@@ -43,9 +43,7 @@ static bayer_path_elem* bayer_path_elem_alloc()
   if (elem != NULL) {
     bayer_path_elem_init(elem);
   } else {
-    bayer_abort(-1, "Failed to allocate memory for path element @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path element");
   }
   return elem;
 }
@@ -76,9 +74,7 @@ static bayer_path* bayer_path_alloc()
   if (path != NULL) {
     bayer_path_init(path);
   } else {
-    bayer_abort(-1, "Failed to allocate memory for path object @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path object");
   }
   return path;
 }
@@ -95,9 +91,7 @@ static bayer_path_elem* bayer_path_elem_dup(const bayer_path_elem* elem)
   /* allocate new element */
   bayer_path_elem* dup_elem = bayer_path_elem_alloc();
   if (dup_elem == NULL) {
-    bayer_abort(-1, "Failed to allocate memory for path element @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path element");
   }
 
   /* set component and chars fields (next and prev will be set later) */
@@ -114,15 +108,13 @@ static bayer_path_elem* bayer_path_elem_index(const bayer_path* path, int index)
 {
   /* check that we got a path */
   if (path == NULL) {
-    bayer_abort(-1, "Assert that path are not NULL @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Assert that path are not NULL");
   }
 
   /* check that index is in range */
   if (index < 0 || index >= path->components) {
-    bayer_abort(-1, "Offset %d is out of range [0,%d) @ %s:%d",
-      index, path->components, __FILE__, __LINE__
+    BAYER_ABORT(-1, "Offset %d is out of range [0,%d)",
+      index, path->components
     );
   }
 
@@ -158,15 +150,13 @@ static int bayer_path_elem_insert(bayer_path* path, int offset, bayer_path_elem*
 {
   /* check that we got a path and element */
   if (path == NULL || elem == NULL) {
-    bayer_abort(-1, "Assert that path and elem are not NULL @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Assert that path and elem are not NULL");
   }
 
   /* check that offset is in range */
   if (offset < 0 || offset > path->components) {
-    bayer_abort(-1, "Offset %d is out of range @ %s:%d",
-      offset, path->components, __FILE__, __LINE__
+    BAYER_ABORT(-1, "Offset %d is out of range",
+      offset, path->components
     );
   }
 
@@ -236,9 +226,7 @@ static int bayer_path_elem_extract(bayer_path* path, bayer_path_elem* elem)
   /* check that we got a path and element */
   if (path == NULL || elem == NULL) {
     /* nothing to do in this case */
-    bayer_abort(-1, "Assert that path and elem are not NULL @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Assert that path and elem are not NULL");
   }
 
   /* TODO: would be nice to verify that elem is part of path */
@@ -284,9 +272,7 @@ static char* bayer_path_alloc_strf(const char* format, va_list args1, va_list ar
   size_t strlen = chars + 1;
   char* str = (char*) malloc(strlen);
   if (str == NULL) {
-    bayer_abort(-1, "Failed to allocate memory for path component string @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path component string");
   }
 
   /* copy formatted string into new memory */
@@ -307,9 +293,7 @@ bayer_path* bayer_path_new()
 {
   bayer_path* path = bayer_path_alloc();
   if (path == NULL) {
-    bayer_abort(-1, "Failed to allocate memory for path object @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path object");
   }
   return path;
 }
@@ -320,9 +304,7 @@ bayer_path* bayer_path_from_str(const char* str)
   /* allocate a path object */
   bayer_path* path = bayer_path_alloc();
   if (path == NULL) {
-    bayer_abort(-1, "Failed to allocate memory for path object @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path object");
   }
 
   /* check that str is not NULL */
@@ -341,9 +323,7 @@ bayer_path* bayer_path_from_str(const char* str)
       size_t buflen = end - start + 1;
       char* buf = (char*) malloc(buflen);
       if (buf == NULL) {
-        bayer_abort(-1, "Failed to allocate memory for component string @ %s:%d",
-          __FILE__, __LINE__
-        );
+        BAYER_ABORT(-1, "Failed to allocate memory for component string");
       }
 
       /* copy characters into string buffer and add terminating NUL */
@@ -356,9 +336,7 @@ bayer_path* bayer_path_from_str(const char* str)
       /* allocate new element */
       bayer_path_elem* elem = bayer_path_elem_alloc();
       if (elem == NULL) {
-        bayer_abort(-1, "Failed to allocate memory for path component @ %s:%d",
-          __FILE__, __LINE__
-        );
+        BAYER_ABORT(-1, "Failed to allocate memory for path component");
       }
 
       /* record string in element */
@@ -393,9 +371,7 @@ bayer_path* bayer_path_from_strf(const char* format, ...)
   va_end(args2);
   va_end(args1);
   if (str == NULL) {
-    bayer_abort(-1, "Failed to allocate memory for path component string @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path component string");
   }
 
   /* create path from string */
@@ -418,9 +394,7 @@ bayer_path* bayer_path_dup(const bayer_path* path)
   /* allocate a new path */
   bayer_path* dup_path = bayer_path_new();
   if (dup_path == NULL) {
-    bayer_abort(-1, "Failed to allocate path object @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate path object");
   }
 
   /* get pointer to first element and delete elements in list */
@@ -430,9 +404,7 @@ bayer_path* bayer_path_dup(const bayer_path* path)
      * and set current to next */
     bayer_path_elem* dup_elem = bayer_path_elem_dup(current);
     if (dup_elem == NULL) {
-      bayer_abort(-1, "Failed to allocate path element object @ %s:%d",
-        __FILE__, __LINE__
-      );
+      BAYER_ABORT(-1, "Failed to allocate path element object");
     }
 
     /* insert new element at end of path */
@@ -551,16 +523,12 @@ size_t bayer_path_strcpy(char* buf, size_t n, const bayer_path* path)
 {
   /* check that we have a pointer to a path */
   if (path == NULL) {
-    bayer_abort(-1, "Cannot copy NULL pointer to string @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Cannot copy NULL pointer to string");
   }
 
   /* we can't copy a NULL path */
   if (bayer_path_is_null(path)) {
-    bayer_abort(-1, "Cannot copy a NULL path to string @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Cannot copy a NULL path to string");
   }
 
   /* get length of path */
@@ -568,8 +536,8 @@ size_t bayer_path_strcpy(char* buf, size_t n, const bayer_path* path)
 
   /* if user buffer is too small, abort */
   if (n < strlen) {
-    bayer_abort(-1, "User buffer of %d bytes is too small to hold string of %d bytes @ %s:%d",
-      n, strlen, __FILE__, __LINE__
+    BAYER_ABORT(-1, "User buffer of %d bytes is too small to hold string of %d bytes",
+      n, strlen, __LINE__
     );
   }
 
@@ -597,9 +565,7 @@ char* bayer_path_strdup(const bayer_path* path)
   size_t buflen = bayer_path_strlen(path) + 1;
   char* buf = (char*) malloc(buflen);
   if (buf == NULL) {
-    bayer_abort(-1, "Failed to allocate buffer for path @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate buffer for path");
   }
 
   /* copy contents into string buffer */
@@ -626,8 +592,8 @@ static int bayer_path_combine(bayer_path* path1, int offset, bayer_path** ptr_pa
     /* check that offset is in range */
     int components = path1->components;
     if (offset < 0 || offset > components) {
-      bayer_abort(-1, "Offset %d is out of range [0,%d] @ %s:%d",
-        offset, components, __FILE__, __LINE__
+      BAYER_ABORT(-1, "Offset %d is out of range [0,%d]",
+        offset, components
       );
     }
 
@@ -699,9 +665,7 @@ static int bayer_path_combine(bayer_path* path1, int offset, bayer_path** ptr_pa
     /* free the path2 struct */
     bayer_free(ptr_path2);
   } else {
-    bayer_abort(-1, "Cannot attach a path to a NULL path @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Cannot attach a path to a NULL path");
   }
 
   return BAYER_SUCCESS;
@@ -721,9 +685,7 @@ int bayer_path_insert(bayer_path* path1, int offset, const bayer_path* path2)
     bayer_path* path2_copy = bayer_path_dup(path2);
     rc = bayer_path_combine(path1, offset, &path2_copy);
   } else {
-    bayer_abort(-1, "Cannot attach a path to a NULL path @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Cannot attach a path to a NULL path");
   }
   return rc;
 }
@@ -742,9 +704,7 @@ int bayer_path_append(bayer_path* path1, const bayer_path* path2)
   if (path1 != NULL) {
     rc = bayer_path_insert(path1, path1->components, path2);
   } else {
-    bayer_abort(-1, "Cannot attach a path to a NULL path @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Cannot attach a path to a NULL path");
   }
   return rc;
 }
@@ -758,17 +718,13 @@ int bayer_path_insert_str(bayer_path* path, int offset, const char* str)
 {
   /* verify that we got a path as input */
   if (path == NULL) {
-    bayer_abort(-1, "Cannot insert string to a NULL path @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Cannot insert string to a NULL path");
   }
 
   /* create a path from this string */
   bayer_path* newpath = bayer_path_from_str(str);
   if (newpath == NULL) {
-    bayer_abort(-1, "Failed to allocate path for insertion @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate path for insertion");
   }
 
   /* attach newpath to original path */
@@ -790,9 +746,7 @@ int bayer_path_append_str(bayer_path* path, const char* str)
   if (path != NULL) {
     rc = bayer_path_insert_str(path, path->components, str);
   } else {
-    bayer_abort(-1, "Cannot attach string to a NULL path @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Cannot attach string to a NULL path");
   }
   return rc;
 }
@@ -806,9 +760,7 @@ int bayer_path_insert_strf(bayer_path* path, int offset, const char* format, ...
 {
   /* verify that we got a path as input */
   if (path == NULL) {
-    bayer_abort(-1, "Cannot append string to a NULL path @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Cannot append string to a NULL path");
   }
 
   /* allocate formatted string */
@@ -819,9 +771,7 @@ int bayer_path_insert_strf(bayer_path* path, int offset, const char* format, ...
   va_end(args2);
   va_end(args1);
   if (str == NULL) {
-    bayer_abort(-1, "Failed to allocate memory for path component string @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path component string");
   }
 
   /* attach str to path */
@@ -838,9 +788,7 @@ int bayer_path_prepend_strf(bayer_path* path, const char* format, ...)
 {
   /* verify that we got a path as input */
   if (path == NULL) {
-    bayer_abort(-1, "Cannot append string to a NULL path @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Cannot append string to a NULL path");
   }
 
   /* allocate formatted string */
@@ -851,9 +799,7 @@ int bayer_path_prepend_strf(bayer_path* path, const char* format, ...)
   va_end(args2);
   va_end(args1);
   if (str == NULL) {
-    bayer_abort(-1, "Failed to allocate memory for path component string @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path component string");
   }
 
   /* attach str to path */
@@ -870,9 +816,7 @@ int bayer_path_append_strf(bayer_path* path, const char* format, ...)
 {
   /* verify that we got a path as input */
   if (path == NULL) {
-    bayer_abort(-1, "Cannot append string to a NULL path @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Cannot append string to a NULL path");
   }
 
   /* allocate formatted string */
@@ -883,9 +827,7 @@ int bayer_path_append_strf(bayer_path* path, const char* format, ...)
   va_end(args2);
   va_end(args1);
   if (str == NULL) {
-    bayer_abort(-1, "Failed to allocate memory for path component string @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path component string");
   }
 
   /* attach str to path */
@@ -1032,9 +974,7 @@ bayer_path* bayer_path_sub(bayer_path* path, int offset, int length)
   /* allocate and initialize an empty path object */
   bayer_path* newpath = bayer_path_alloc();
   if (newpath == NULL) {
-    bayer_abort(-1, "Failed to allocate memory for path object @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path object");
   }
 
   /* return the empty path if source path is empty */
@@ -1050,9 +990,7 @@ bayer_path* bayer_path_sub(bayer_path* path, int offset, int length)
     /* duplicate element */
     bayer_path_elem* elem = bayer_path_elem_dup(current);
     if (elem == NULL) {
-      bayer_abort(-1, "Failed to duplicate element of path object @ %s:%d",
-        __FILE__, __LINE__
-      );
+      BAYER_ABORT(-1, "Failed to duplicate element of path object");
     }
 
     /* insert element into newpath */
@@ -1081,9 +1019,7 @@ bayer_path* bayer_path_cut(bayer_path* path, int offset)
   /* allocate and initialize an empty path object */
   bayer_path* newpath = bayer_path_alloc();
   if (newpath == NULL) {
-    bayer_abort(-1, "Failed to allocate memory for path object @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for path object");
   }
 
   /* if path is empty, return an empty path */
@@ -1218,9 +1154,7 @@ int bayer_path_reduce(bayer_path* path)
             bayer_path_elem_extract(path, current);
             bayer_path_elem_free(&current);
           } else {
-            bayer_abort(-1, "Cannot pop past root directory @ %s:%d",
-              __FILE__, __LINE__
-            );
+            BAYER_ABORT(-1, "Cannot pop past root directory");
           }
         } else {
           /* previous is also "..", so keep going */
@@ -1331,26 +1265,20 @@ bayer_path* bayer_path_relative(const bayer_path* src, const bayer_path* dst)
 {
   /* check that we don't have NULL pointers */
   if (src == NULL || dst == NULL) {
-    bayer_abort(-1, "Either src or dst pointer is NULL @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Either src or dst pointer is NULL");
   }
 
   /* we can't get to a NULL path from a non-NULL path */
   int src_components = src->components;
   int dst_components = dst->components;
   if (src_components > 0 && dst_components == 0) {
-    bayer_abort(-1, "Cannot get from non-NULL path to NULL path @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Cannot get from non-NULL path to NULL path");
   }
 
   /* allocate a new path to record relative path */
   bayer_path* rel = bayer_path_new();
   if (rel == NULL) {
-    bayer_abort(-1, "Failed to allocate memory for relative path @ %s:%d",
-      __FILE__, __LINE__
-    );
+    BAYER_ABORT(-1, "Failed to allocate memory for relative path");
   }
 
   /* walk down both paths until we find the first location where they

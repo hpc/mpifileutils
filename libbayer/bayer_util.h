@@ -67,7 +67,10 @@ int bayer_init();
 int bayer_finalize();
 
 /* print abort message and call MPI_Abort to kill run */
+#define BAYER_ABORT(X, ...) bayer_abort(__FILE__, __LINE__, X, __VA_ARGS__)
 void bayer_abort(
+  const char* file,
+  int line,
   int rc,
   const char *fmt,
   ...

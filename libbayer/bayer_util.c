@@ -41,14 +41,14 @@ int bayer_finalize()
 }
 
 /* print abort message and call MPI_Abort to kill run */
-void bayer_abort(int rc, const char *fmt, ...)
+void bayer_abort(const char* file, int line, int rc, const char *fmt, ...)
 {
   va_list argp;
   fprintf(stderr, "ABORT: rank X on HOST: ");
   va_start(argp, fmt);
   vfprintf(stderr, fmt, argp);
   va_end(argp);
-  fprintf(stderr, "\n");
+  fprintf(stderr, " @ %s:%d\n", file, line);
 
   MPI_Abort(MPI_COMM_WORLD, rc);
 }
@@ -63,8 +63,8 @@ void* bayer_malloc(size_t size, const char* file, int line)
     void* ptr = malloc(size);
     if (ptr == NULL) {
       /* allocate failed, abort */
-      bayer_abort(1, "Failed to allocate %llu bytes @ %s:%d",
-        (unsigned long long) size, file, line
+      BAYER_ABORT(1, "Failed to allocate %llu bytes",
+        (unsigned long long) size
       );
     }
 
@@ -87,8 +87,8 @@ void* bayer_memalign(size_t size, size_t alignment, const char* file, int line)
     int rc = posix_memalign(&ptr, alignment, size);
     if (rc != 0) {
       /* allocate failed, abort */
-      bayer_abort(1, "Failed to allocate %llu bytes posix_memalign rc=%d @ %s:%d",
-        (unsigned long long) size, rc, file, line
+      BAYER_ABORT(1, "Failed to allocate %llu bytes posix_memalign rc=%d",
+        (unsigned long long) size, rc
       );
     }
 
@@ -107,9 +107,7 @@ char* bayer_strdup(const char* str, const char* file, int line)
     char* ptr = strdup(str);
     if (ptr == NULL) {
       /* allocate failed, abort */
-      bayer_abort(1, "Failed to allocate string @ %s:%d",
-        file, line
-      );
+      BAYER_ABORT(1, "Failed to allocate string");
     }
 
     return ptr;
@@ -141,7 +139,7 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
 
     /* check that caller gave us a pointer to a char pointer */
     if(recv == NULL) {
-        bayer_abort(1, "Invalid recv pointer @ %s:%d", __FILE__, __LINE__);
+        BAYER_ABORT(1, "Invalid recv pointer");
     }
 
     /* First, broadcast length of string. */
@@ -156,9 +154,7 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
     }
 
     if(MPI_SUCCESS != MPI_Bcast(&len, 1, MPI_INT, root, comm)) {
-        bayer_abort(1, "Failed to broadcast length of string @ %s:%d",
-            __FILE__, __LINE__
-        );
+        BAYER_ABORT(1, "Failed to broadcast length of string");
     }
 
     /* If the string is non-zero bytes, allocate space and bcast it. */
@@ -172,9 +168,7 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
         }
 
         if(MPI_SUCCESS != MPI_Bcast(*recv, len, MPI_CHAR, root, comm)) {
-            bayer_abort(1, "Failed to bcast string @ %s:%d",
-                __FILE__, __LINE__
-            );
+            BAYER_ABORT(1, "Failed to bcast string");
         }
 
     }
