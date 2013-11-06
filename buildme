@@ -52,6 +52,11 @@ pushd libbayer
     echo "failed to build strmap"
     exit 1
   fi
+  mpicc ${OPT} -o bayer_param_path.o -c bayer_param_path.c -I${installdir}/include
+  if [ $? -ne 0 ]; then
+    echo "failed to build bayer_param_path"
+    exit 1
+  fi
   mpicc ${OPT} -o bayer_flist.o -c bayer_flist.c -I${installdir}/include
   if [ $? -ne 0 ]; then
     echo "failed to build bayer_flist"
@@ -63,6 +68,7 @@ pushd libbayer
     bayer_path.o \
     bayer_io.o \
     strmap.o \
+    bayer_param_path.o \
     bayer_flist.o
   ranlib libbayer.a
 

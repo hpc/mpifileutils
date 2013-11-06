@@ -12,6 +12,7 @@ extern "C" {
 #include "bayer_util.h"
 #include "bayer_path.h"
 #include "bayer_io.h"
+#include "bayer_param_path.h"
 #include "bayer_flist.h"
 #include "strmap.h"
 
