@@ -482,12 +482,13 @@ static void create(
     /* write archive trailer */
     if (rank == 0) {
         /* write two consecutive 512-blocks of 0's at end */
-        char* buf = (char*) BAYER_MALLOC(1024);
-        memset(buf, 0, 1024);
+        size_t bufsize = 2 * 512;
+        char* buf = (char*) BAYER_MALLOC(bufsize);
+        memset(buf, 0, bufsize);
 
         off_t trailer_offset = (off_t) archive_size;
         bayer_lseek(DTAR_writer.name, DTAR_writer.fd_tar, trailer_offset, SEEK_SET);
-        bayer_write(DTAR_writer.name, DTAR_writer.fd_tar, buf, 1024);
+        bayer_write(DTAR_writer.name, DTAR_writer.fd_tar, buf, bufsize);
 
         bayer_free(&buf);
     }
