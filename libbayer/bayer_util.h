@@ -122,6 +122,22 @@ void bayer_format_bytes(uint64_t bytes, double* val, const char** units);
 /* given a bandwidth in bytes/sec, return value converted to returned units */
 void bayer_format_bw(double bw, double* val, const char** units);
 
+/* given address of pointer to buffer, pack value into buffer in
+ * network order and advance pointer */
+void bayer_pack_uint32(char** pptr, uint32_t value);
+
+/* given address of pointer to buffer, unpack value into buffer in
+ * host order and advance pointer */
+void bayer_unpack_uint32(const char** pptr, uint32_t* value);
+
+/* given address of pointer to buffer, pack value into buffer in
+ * network order and advance pointer */
+void bayer_pack_uint64(char** pptr, uint64_t value);
+
+/* given address of pointer to buffer, unpack value into buffer in
+ * host order and advance pointer */
+void bayer_unpack_uint64(const char** pptr, uint64_t* value);
+
 #endif /* BAYER_UTIL_H */
 
 /* enable C++ codes to include this header directly */

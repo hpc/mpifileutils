@@ -6,20 +6,6 @@
 #include <string.h>
 #include <stdarg.h>
 
-static size_t bayer_pack_uint64(void* buf, uint64_t val)
-{
-    uint64_t* ptr = (uint64_t*) buf;
-    *ptr = val;
-    return 8;
-}
-
-static size_t bayer_unpack_uint64(void* buf, uint64_t* val)
-{
-    uint64_t* ptr = (uint64_t*) buf;
-    *val = *ptr;
-    return 8;
-}
-
 /* pack all fields as 64-bit values, except for times which we
  * pack as two 64-bit values */
 static size_t bayer_stat_pack_size()
@@ -32,22 +18,22 @@ static size_t bayer_stat_pack(void* buf, const struct stat* s)
 {
     char* ptr = (char*) buf;
 
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_dev);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_ino);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_mode);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_nlink);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_uid);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_gid);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_rdev);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_size);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_blksize);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_blocks);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_atime);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) 0);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_mtime);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) 0);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) s->st_ctime);
-    ptr += bayer_pack_uint64(ptr, (uint64_t) 0);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_dev);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_ino);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_mode);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_nlink);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_uid);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_gid);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_rdev);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_size);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_blksize);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_blocks);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_atime);
+    bayer_pack_uint64(&ptr, (uint64_t) 0);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_mtime);
+    bayer_pack_uint64(&ptr, (uint64_t) 0);
+    bayer_pack_uint64(&ptr, (uint64_t) s->st_ctime);
+    bayer_pack_uint64(&ptr, (uint64_t) 0);
 
     size_t bytes = (ptr - (char*)buf);
     return bytes;
@@ -56,57 +42,57 @@ static size_t bayer_stat_pack(void* buf, const struct stat* s)
 static size_t bayer_stat_unpack(const void* buf, struct stat* s)
 {
     uint64_t val;
-    char* ptr = (char*) buf;
+    const char* ptr = (const char*) buf;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_dev = (dev_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_ino = (ino_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_mode = (mode_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_nlink = (nlink_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_uid = (uid_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_gid = (gid_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_rdev = (dev_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_size = (off_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_blksize = (blksize_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_blocks = (blkcnt_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_atime = (time_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     /* atime nsecs */
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_mtime = (time_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     /* mtime nsecs */
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     s->st_ctime = (time_t) val;
 
-    ptr += bayer_unpack_uint64(ptr, &val);
+    bayer_unpack_uint64(&ptr, &val);
     /* ctime nsecs */
 
-    size_t bytes = (ptr - (char*)buf);
+    size_t bytes = (ptr - (const char*)buf);
     return bytes;
 }
 
