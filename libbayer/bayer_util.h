@@ -132,14 +132,11 @@ typedef struct bayer_param_path_t {
     struct stat target_stat; /* stat of target path */
 } bayer_param_path;
 
-/* initialize fields in param */
-void bayer_param_init(bayer_param_path* param);
-
 /* set fields in param according to path */
-void bayer_param_set(const char* path, bayer_param_path* param);
+void bayer_param_path_set(const char* path, bayer_param_path* param);
 
 /* free memory associated with param */
-void bayer_param_free(bayer_param_path* param);
+void bayer_param_path_free(bayer_param_path* param);
 
 #endif /* BAYER_UTIL_H */
 
