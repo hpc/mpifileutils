@@ -9,6 +9,13 @@ extern "C" {
 #define BAYER_SUCCESS (0)
 #define BAYER_FAILURE (1)
 
+/* TODO: ugly hack until we get a configure test */
+// HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+#define HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC 1
+// HAVE_STRUCT_STAT_ST_MTIME_N
+// HAVE_STRUCT_STAT_ST_UMTIME
+// HAVE_STRUCT_STAT_ST_MTIME_USEC
+
 #include "bayer_util.h"
 #include "bayer_path.h"
 #include "bayer_io.h"
