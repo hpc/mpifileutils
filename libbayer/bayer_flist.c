@@ -9,6 +9,10 @@
 #include <getopt.h>
 #include <time.h> /* asctime / localtime */
 
+/* These headers are needed to query the Lustre MDS for stat
+ * information.  This information may be incomplete, but it
+ * is faster than a normal stat, which requires communication
+ * with the MDS plus every OST a file is striped across. */
 //#define LUSTRE_STAT
 #ifdef LUSTRE_STAT
 //#include <stropts.h>
@@ -40,12 +44,15 @@ typedef struct list_elem {
   int depth;              /* depth within directory tree */
   bayer_filetype type;    /* type of file object */
   int detail;             /* flag to indicate whether we have stat data */
-  uint32_t mode;          /* stat mode */
-  uint32_t uid;           /* user id */
-  uint32_t gid;           /* group id */
-  uint32_t atime;         /* access time */
-  uint32_t mtime;         /* modify time */
-  uint32_t ctime;         /* create time */
+  uint64_t mode;          /* stat mode */
+  uint64_t uid;           /* user id */
+  uint64_t gid;           /* group id */
+  uint64_t atime;         /* access time */
+  uint64_t atime_nsec;    /* access time nanoseconds */
+  uint64_t mtime;         /* modify time */
+  uint64_t mtime_nsec;    /* modify time nanoseconds */
+  uint64_t ctime;         /* create time */
+  uint64_t ctime_nsec;    /* create time nanoseconds */
   uint64_t size;          /* file size in bytes */
   struct list_elem* next; /* pointer to next item */
 } elem_t;
@@ -140,6 +147,7 @@ static void buft_free(buf_t* items)
   return;
 }
 
+/* given a mode_t from stat, return the corresponding BAYER filetype */
 static bayer_filetype get_bayer_filetype(mode_t mode)
 {
   /* set file type */
@@ -157,7 +165,9 @@ static bayer_filetype get_bayer_filetype(mode_t mode)
   return type;
 }
 
-/* given path, return level within directory tree */
+/* given path, return level within directory tree,
+ * counts '/' characters assuming path is standardized
+ * and absolute */
 static int get_depth(const char* path)
 {
     const char* c;
@@ -170,6 +180,7 @@ static int get_depth(const char* path)
     return depth;
 }
 
+/* create a datatype to hold file name and stat info */
 static void create_stattype(int detail, int chars, MPI_Datatype* dt_stat)
 {
   /* build type for file path */
@@ -178,17 +189,20 @@ static void create_stattype(int detail, int chars, MPI_Datatype* dt_stat)
 
   /* build keysat type */
   int fields;
-  MPI_Datatype types[8];
+  MPI_Datatype types[11];
   if (detail) {
-    fields = 8;
-    types[0] = dt_filepath;  /* file name */
-    types[1] = MPI_UINT32_T; /* mode */
-    types[2] = MPI_UINT32_T; /* uid */
-    types[3] = MPI_UINT32_T; /* gid */
-    types[4] = MPI_UINT32_T; /* atime */
-    types[5] = MPI_UINT32_T; /* mtime */
-    types[6] = MPI_UINT32_T; /* ctime */
-    types[7] = MPI_UINT64_T; /* size */
+    fields = 11;
+    types[0]  = dt_filepath;  /* file name */
+    types[1]  = MPI_UINT64_T; /* mode */
+    types[2]  = MPI_UINT64_T; /* uid */
+    types[3]  = MPI_UINT64_T; /* gid */
+    types[4]  = MPI_UINT64_T; /* atime secs */
+    types[5]  = MPI_UINT64_T; /* atime nsecs */
+    types[6]  = MPI_UINT64_T; /* mtime secs */
+    types[7]  = MPI_UINT64_T; /* mtime nsecs */
+    types[8]  = MPI_UINT64_T; /* ctime secs */
+    types[9]  = MPI_UINT64_T; /* ctime nsecs */
+    types[10] = MPI_UINT64_T; /* size */
   } else {
     fields = 2;
     types[0] = dt_filepath;  /* file name */
@@ -200,22 +214,21 @@ static void create_stattype(int detail, int chars, MPI_Datatype* dt_stat)
   return;
 }
 
+/* return number of bytes needed to pack element */
 static size_t list_elem_pack_size(int detail, uint64_t chars, const elem_t* elem)
 {
   size_t size;
   if (detail) {
-    size = chars + 6 * 4 + 1 * 8;
+    size = chars + 0 * 4 + 10 * 8;
   } else {
     size = chars + 1 * 4;
   }
   return size;
 }
 
+/* pack element into buffer and return number of bytes written */
 static size_t list_elem_pack(void* buf, int detail, uint64_t chars, const elem_t* elem)
 {
-  uint32_t* ptr_uint32t;
-  uint64_t* ptr_uint64t;
-
   /* set pointer to start of buffer */
   char* start = (char*) buf;
   char* ptr = start;
@@ -226,51 +239,26 @@ static size_t list_elem_pack(void* buf, int detail, uint64_t chars, const elem_t
   ptr += chars;
 
   if (detail) {
-    /* copy in mode */
-    ptr_uint32t = (uint32_t*) ptr;
-    *ptr_uint32t = elem->mode;
-    ptr += 4;
-
-    /* copy in user id */
-    ptr_uint32t = (uint32_t*) ptr;
-    *ptr_uint32t = elem->uid;
-    ptr += 4;
-
-    /* copy in group id */
-    ptr_uint32t = (uint32_t*) ptr;
-    *ptr_uint32t = elem->gid;
-    ptr += 4;
-
-    /* copy in access time */
-    ptr_uint32t = (uint32_t*) ptr;
-    *ptr_uint32t = elem->atime;
-    ptr += 4;
-
-    /* copy in modify time */
-    ptr_uint32t = (uint32_t*) ptr;
-    *ptr_uint32t = elem->mtime;
-    ptr += 4;
-
-    /* copy in create time */
-    ptr_uint32t = (uint32_t*) ptr;
-    *ptr_uint32t = elem->ctime;
-    ptr += 4;
-
-    /* copy in size */
-    ptr_uint64t = (uint64_t*) ptr;
-    *ptr_uint64t = elem->size;
-    ptr += 8;
+    bayer_pack_uint64(&ptr, elem->mode);
+    bayer_pack_uint64(&ptr, elem->uid);
+    bayer_pack_uint64(&ptr, elem->gid);
+    bayer_pack_uint64(&ptr, elem->atime);
+    bayer_pack_uint64(&ptr, elem->atime_nsec);
+    bayer_pack_uint64(&ptr, elem->mtime);
+    bayer_pack_uint64(&ptr, elem->mtime_nsec);
+    bayer_pack_uint64(&ptr, elem->ctime);
+    bayer_pack_uint64(&ptr, elem->ctime_nsec);
+    bayer_pack_uint64(&ptr, elem->size);
   } else {
     /* just have the file type */
-    ptr_uint32t = (uint32_t*) ptr;
-    *ptr_uint32t = (uint32_t) elem->type;
-    ptr += 4;
+    bayer_pack_uint32(&ptr, elem->type);
   }
 
   size_t bytes = (size_t) (ptr - start);
   return bytes;
 }
 
+/* unpack element from buffer and return number of bytes read */
 static size_t list_elem_unpack(const void* buf, int detail, uint64_t chars, elem_t* elem)
 {
   const char* start = (const char*) buf;
@@ -289,82 +277,41 @@ static size_t list_elem_unpack(const void* buf, int detail, uint64_t chars, elem
   elem->detail = detail;
 
   if (detail) {
-    /* set file mode */
-    elem->mode = *(uint32_t*)ptr;
-    ptr += 4;
+    /* extract fields */
+    bayer_unpack_uint64(&ptr, &elem->mode);
+    bayer_unpack_uint64(&ptr, &elem->uid);
+    bayer_unpack_uint64(&ptr, &elem->gid);
+    bayer_unpack_uint64(&ptr, &elem->atime);
+    bayer_unpack_uint64(&ptr, &elem->atime_nsec);
+    bayer_unpack_uint64(&ptr, &elem->mtime);
+    bayer_unpack_uint64(&ptr, &elem->mtime_nsec);
+    bayer_unpack_uint64(&ptr, &elem->ctime);
+    bayer_unpack_uint64(&ptr, &elem->ctime_nsec);
+    bayer_unpack_uint64(&ptr, &elem->size);
 
     /* use mode to set file type */
     elem->type = get_bayer_filetype((mode_t)elem->mode);
-
-    elem->uid = *(uint32_t*)ptr;
-    ptr += 4;
-
-    elem->gid = *(uint32_t*)ptr;
-    ptr += 4;
-
-    elem->atime = *(uint32_t*)ptr;
-    ptr += 4;
-
-    elem->mtime = *(uint32_t*)ptr;
-    ptr += 4;
-
-    elem->ctime = *(uint32_t*)ptr;
-    ptr += 4;
-
-    elem->size  = *(uint64_t*)ptr;
-    ptr += 8;
   } else {
-    elem->type = (bayer_filetype) *(uint32_t*)ptr;
-    ptr += 4;
+    bayer_unpack_uint32(&ptr, &elem->type);
   }
 
   size_t bytes = (size_t) (ptr - start);
   return bytes;
 }
 
-static void pack_uint32(char** pptr, uint32_t value)
-{
-  /* TODO: convert to network order */
-  uint32_t* ptr = *(uint32_t**)pptr;
-  *ptr = value;
-  *pptr += 4;
-}
-
-static void unpack_uint32(const char** pptr, uint32_t* value)
-{
-  /* TODO: convert to host order */
-  uint32_t* ptr = *(uint32_t**)pptr;
-  *value = *ptr;
-  *pptr += 4;
-}
-
-static void pack_uint64(char** pptr, uint64_t value)
-{
-  /* TODO: convert to network order */
-  uint64_t* ptr = *(uint64_t**)pptr;
-  *ptr = value;
-  *pptr += 8;
-}
-
-static void unpack_uint64(const char** pptr, uint64_t* value)
-{
-  /* TODO: convert to host order */
-  uint64_t* ptr = *(uint64_t**)pptr;
-  *value = *ptr;
-  *pptr += 8;
-}
-
+/* return number of bytes needed to pack element */
 static size_t list_elem_pack2_size(int detail, uint64_t chars, const elem_t* elem)
 {
   size_t size;
   if (detail) {
-    size = 2 * 4 + chars + 6 * 4 + 1 * 8;
+    size = 2 * 4 + chars + 0 * 4 + 10 * 8;
   } else {
     size = 2 * 4 + chars + 1 * 4;
   }
   return size;
 }
 
+/* pack element into buffer and return number of bytes written */
 static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_t* elem)
 {
   /* set pointer to start of buffer */
@@ -372,10 +319,10 @@ static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_
   char* ptr = start;
 
   /* copy in detail flag */
-  pack_uint32(&ptr, (uint32_t) detail);
+  bayer_pack_uint32(&ptr, (uint32_t) detail);
 
   /* copy in length of file name field */
-  pack_uint32(&ptr, (uint32_t) chars);
+  bayer_pack_uint32(&ptr, (uint32_t) chars);
 
   /* copy in file name */
   char* file = elem->file;
@@ -384,22 +331,26 @@ static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_
 
   if (detail) {
     /* copy in fields */
-    pack_uint32(&ptr, elem->mode);
-    pack_uint32(&ptr, elem->uid);
-    pack_uint32(&ptr, elem->gid);
-    pack_uint32(&ptr, elem->atime);
-    pack_uint32(&ptr, elem->mtime);
-    pack_uint32(&ptr, elem->ctime);
-    pack_uint64(&ptr, elem->size);
+    bayer_pack_uint64(&ptr, elem->mode);
+    bayer_pack_uint64(&ptr, elem->uid);
+    bayer_pack_uint64(&ptr, elem->gid);
+    bayer_pack_uint64(&ptr, elem->atime);
+    bayer_pack_uint64(&ptr, elem->atime_nsec);
+    bayer_pack_uint64(&ptr, elem->mtime);
+    bayer_pack_uint64(&ptr, elem->mtime_nsec);
+    bayer_pack_uint64(&ptr, elem->ctime);
+    bayer_pack_uint64(&ptr, elem->ctime_nsec);
+    bayer_pack_uint64(&ptr, elem->size);
   } else {
     /* just have the file type */
-    pack_uint32(&ptr, elem->type);
+    bayer_pack_uint32(&ptr, elem->type);
   }
 
   size_t bytes = (size_t) (ptr - start);
   return bytes;
 }
 
+/* unpack element from buffer and return number of bytes read */
 static size_t list_elem_unpack2(const void* buf, elem_t* elem)
 {
   /* set pointer to start of buffer */
@@ -408,11 +359,11 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
 
   /* extract detail field */
   uint32_t detail;
-  unpack_uint32(&ptr, &detail);
+  bayer_unpack_uint32(&ptr, &detail);
 
   /* extract length of file name field */
   uint32_t chars;
-  unpack_uint32(&ptr, &chars);
+  bayer_unpack_uint32(&ptr, &chars);
 
   /* get name and advance pointer */
   const char* file = ptr;
@@ -428,20 +379,23 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
 
   if (detail) {
     /* extract fields */
-    unpack_uint32(&ptr, &elem->mode);
-    unpack_uint32(&ptr, &elem->uid);
-    unpack_uint32(&ptr, &elem->gid);
-    unpack_uint32(&ptr, &elem->atime);
-    unpack_uint32(&ptr, &elem->mtime);
-    unpack_uint32(&ptr, &elem->ctime);
-    unpack_uint64(&ptr, &elem->size);
+    bayer_unpack_uint64(&ptr, &elem->mode);
+    bayer_unpack_uint64(&ptr, &elem->uid);
+    bayer_unpack_uint64(&ptr, &elem->gid);
+    bayer_unpack_uint64(&ptr, &elem->atime);
+    bayer_unpack_uint64(&ptr, &elem->atime_nsec);
+    bayer_unpack_uint64(&ptr, &elem->mtime);
+    bayer_unpack_uint64(&ptr, &elem->mtime_nsec);
+    bayer_unpack_uint64(&ptr, &elem->ctime);
+    bayer_unpack_uint64(&ptr, &elem->ctime_nsec);
+    bayer_unpack_uint64(&ptr, &elem->size);
 
     /* use mode to set file type */
     elem->type = get_bayer_filetype((mode_t)elem->mode);
   } else {
     /* only have type */
     uint32_t type;
-    unpack_uint32(&ptr, &type);
+    bayer_unpack_uint32(&ptr, &type);
     elem->type = (bayer_filetype) type;
   }
 
@@ -494,13 +448,39 @@ static void list_insert_stat(flist_t* flist, const char *fpath, mode_t mode, con
   /* copy stat info */
   if (sb != NULL) {
     elem->detail = 1;
-    elem->mode  = (uint32_t) sb->st_mode;
-    elem->uid   = (uint32_t) sb->st_uid;
-    elem->gid   = (uint32_t) sb->st_gid;
-    elem->atime = (uint32_t) sb->st_atime;
-    elem->mtime = (uint32_t) sb->st_mtime;
-    elem->ctime = (uint32_t) sb->st_ctime;
+    elem->mode  = (uint64_t) sb->st_mode;
+    elem->uid   = (uint64_t) sb->st_uid;
+    elem->gid   = (uint64_t) sb->st_gid;
+    elem->atime = (uint64_t) sb->st_atime;
+    elem->mtime = (uint64_t) sb->st_mtime;
+    elem->ctime = (uint64_t) sb->st_ctime;
     elem->size  = (uint64_t) sb->st_size;
+
+#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+    elem->atime_nsec = (uint64_t) sb->st_atimespec.tv_nsec;
+    elem->ctime_nsec = (uint64_t) sb->st_ctimespec.tv_nsec;
+    elem->mtime_nsec = (uint64_t) sb->st_mtimespec.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+    elem->atime_nsec = (uint64_t) sb->st_atim.tv_nsec;
+    elem->ctime_nsec = (uint64_t) sb->st_ctim.tv_nsec;
+    elem->mtime_nsec = (uint64_t) sb->st_mtim.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIME_N
+    elem->atime_nsec = (uint64_t) sb->st_atime_n;
+    elem->ctime_nsec = (uint64_t) sb->st_ctime_n;
+    elem->mtime_nsec = (uint64_t) sb->st_mtime_n;
+#elif HAVE_STRUCT_STAT_ST_UMTIME
+    elem->atime_nsec = (uint64_t) sb->st_uatime * 1000;
+    elem->ctime_nsec = (uint64_t) sb->st_uctime * 1000;
+    elem->mtime_nsec = (uint64_t) sb->st_umtime * 1000;
+#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
+    elem->atime_nsec = (uint64_t) sb->st_atime_usec * 1000;
+    elem->ctime_nsec = (uint64_t) sb->st_ctime_usec * 1000;
+    elem->mtime_nsec = (uint64_t) sb->st_mtime_usec * 1000;
+#else
+    elem->atime_nsec = 0;
+    elem->ctime_nsec = 0;
+    elem->mtime_nsec = 0;
+#endif
 
     /* TODO: link to user and group names? */
   } else {
@@ -513,27 +493,32 @@ static void list_insert_stat(flist_t* flist, const char *fpath, mode_t mode, con
   return;
 }
 
+/* insert copy of specified element into list */
 static void list_insert_copy(flist_t* flist, elem_t* src)
 {
   /* create new element */
   elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
 
   /* copy values from source */
-  elem->file   = BAYER_STRDUP(src->file);
-  elem->depth  = src->depth;
-  elem->type   = src->type;
-  elem->detail = src->detail;
-  elem->mode   = src->mode;
-  elem->uid    = src->uid;
-  elem->gid    = src->gid;
-  elem->atime  = src->atime;
-  elem->mtime  = src->mtime;
-  elem->ctime  = src->ctime;
-  elem->size   = src->size;
+  elem->file       = BAYER_STRDUP(src->file);
+  elem->depth      = src->depth;
+  elem->type       = src->type;
+  elem->detail     = src->detail;
+  elem->mode       = src->mode;
+  elem->uid        = src->uid;
+  elem->gid        = src->gid;
+  elem->atime      = src->atime;
+  elem->atime_nsec = src->atime_nsec;
+  elem->mtime      = src->mtime;
+  elem->mtime_nsec = src->mtime_nsec;
+  elem->ctime      = src->ctime;
+  elem->ctime_nsec = src->ctime_nsec;
+  elem->size       = src->size;
 
   /* append element to tail of linked list */
   list_insert_elem(flist, elem);
 
+  return;
 }
 
 /* insert a file given a pointer to packed data */
@@ -755,8 +740,8 @@ static void create_map(const buf_t* items, strmap* id2name)
     const char* name = ptr;
     ptr += items->chars;
 
-    uint32_t id = *(uint32_t*)ptr;
-    ptr += 4;
+    uint64_t id;
+    bayer_unpack_uint64(&ptr, &id);
 
     /* convert id number to string */
     char id_str[20];
@@ -773,7 +758,7 @@ static void create_map(const buf_t* items, strmap* id2name)
 
 /* given an id, lookup its corresponding name, returns id converted
  * to a string if no matching name is found */
-static const char* get_name_from_id(strmap* id2name, uint32_t id)
+static const char* get_name_from_id(strmap* id2name, uint64_t id)
 {
   /* convert id number to string representation */
   char id_str[20];
@@ -803,7 +788,7 @@ static const char* get_name_from_id(strmap* id2name, uint32_t id)
 static flist_t flist_null;
 bayer_flist BAYER_FLIST_NULL = &flist_null;
 
-/* initialize file list */
+/* allocate and initialize a new file list object */
 bayer_flist bayer_flist_new()
 {
   /* allocate memory for file list, cast it to handle, initialize and return */
@@ -1059,9 +1044,9 @@ bayer_filetype bayer_flist_file_get_type(bayer_flist bflist, uint64_t index)
   return type;
 }
 
-uint32_t bayer_flist_file_get_mode(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_mode(bayer_flist bflist, uint64_t index)
 {
-  uint32_t mode = 0;
+  uint64_t mode = 0;
   flist_t* flist = (flist_t*) bflist;
   elem_t* elem = list_get_elem(flist, index);
   if (elem != NULL && flist->detail > 0) {
@@ -1070,9 +1055,9 @@ uint32_t bayer_flist_file_get_mode(bayer_flist bflist, uint64_t index)
   return mode;
 }
 
-uint32_t bayer_flist_file_get_uid(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_uid(bayer_flist bflist, uint64_t index)
 {
-  uint32_t ret = (uint32_t) -1;
+  uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
   elem_t* elem = list_get_elem(flist, index);
   if (elem != NULL && flist->detail) {
@@ -1081,9 +1066,9 @@ uint32_t bayer_flist_file_get_uid(bayer_flist bflist, uint64_t index)
   return ret;
 }
 
-uint32_t bayer_flist_file_get_gid(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_gid(bayer_flist bflist, uint64_t index)
 {
-  uint32_t ret = (uint32_t) -1;
+  uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
   elem_t* elem = list_get_elem(flist, index);
   if (elem != NULL && flist->detail) {
@@ -1092,9 +1077,9 @@ uint32_t bayer_flist_file_get_gid(bayer_flist bflist, uint64_t index)
   return ret;
 }
 
-uint32_t bayer_flist_file_get_atime(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_atime(bayer_flist bflist, uint64_t index)
 {
-  uint32_t ret = (uint32_t) -1;
+  uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
   elem_t* elem = list_get_elem(flist, index);
   if (elem != NULL && flist->detail) {
@@ -1103,9 +1088,20 @@ uint32_t bayer_flist_file_get_atime(bayer_flist bflist, uint64_t index)
   return ret;
 }
 
-uint32_t bayer_flist_file_get_mtime(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_atime_nsec(bayer_flist bflist, uint64_t index)
 {
-  uint32_t ret = (uint32_t) -1;
+  uint64_t ret = (uint64_t) -1;
+  flist_t* flist = (flist_t*) bflist;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL && flist->detail) {
+    ret = elem->atime_nsec;
+  }
+  return ret;
+}
+
+uint64_t bayer_flist_file_get_mtime(bayer_flist bflist, uint64_t index)
+{
+  uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
   elem_t* elem = list_get_elem(flist, index);
   if (elem != NULL && flist->detail) {
@@ -1114,13 +1110,35 @@ uint32_t bayer_flist_file_get_mtime(bayer_flist bflist, uint64_t index)
   return ret;
 }
 
-uint32_t bayer_flist_file_get_ctime(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_mtime_nsec(bayer_flist bflist, uint64_t index)
 {
-  uint32_t ret = (uint32_t) -1;
+  uint64_t ret = (uint64_t) -1;
+  flist_t* flist = (flist_t*) bflist;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL && flist->detail) {
+    ret = elem->mtime_nsec;
+  }
+  return ret;
+}
+
+uint64_t bayer_flist_file_get_ctime(bayer_flist bflist, uint64_t index)
+{
+  uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
   elem_t* elem = list_get_elem(flist, index);
   if (elem != NULL && flist->detail) {
     ret = elem->ctime;
+  }
+  return ret;
+}
+
+uint64_t bayer_flist_file_get_ctime_nsec(bayer_flist bflist, uint64_t index)
+{
+  uint64_t ret = (uint64_t) -1;
+  flist_t* flist = (flist_t*) bflist;
+  elem_t* elem = list_get_elem(flist, index);
+  if (elem != NULL && flist->detail) {
+    ret = elem->ctime_nsec;
   }
   return ret;
 }
@@ -1141,7 +1159,7 @@ const char* bayer_flist_file_get_username(bayer_flist bflist, uint64_t index)
   const char* ret = NULL;
   flist_t* flist = (flist_t*) bflist;
   if (flist->detail) {
-    uint32_t id = bayer_flist_file_get_uid(bflist, index);
+    uint64_t id = bayer_flist_file_get_uid(bflist, index);
     ret = get_name_from_id(flist->user_id2name, id);
   }
   return ret;
@@ -1152,7 +1170,7 @@ const char* bayer_flist_file_get_groupname(bayer_flist bflist, uint64_t index)
   const char* ret = NULL;
   flist_t* flist = (flist_t*) bflist;
   if (flist->detail) {
-    uint32_t id = bayer_flist_file_get_gid(bflist, index);
+    uint64_t id = bayer_flist_file_get_gid(bflist, index);
     ret = get_name_from_id(flist->group_id2name, id);
   }
   return ret;
@@ -1521,7 +1539,7 @@ static void create_stridtype(int chars, MPI_Datatype* dt)
   /* build keysat type */
   MPI_Datatype types[2];
   types[0] = dt_str;       /* file name */
-  types[1] = MPI_UINT32_T; /* id */
+  types[1] = MPI_UINT64_T; /* id */
   DTCMP_Type_create_series(2, types, dt);
 
   MPI_Type_free(&dt_str);
@@ -1531,7 +1549,7 @@ static void create_stridtype(int chars, MPI_Datatype* dt)
 /* element for a linked list of name/id pairs */
 typedef struct strid {
   char* name;
-  uint32_t id;
+  uint64_t id;
   struct strid* next;
 } strid_t;
 
@@ -1539,17 +1557,19 @@ typedef struct strid {
  * head, tail, and count, also increase maxchars if needed */
 static void strid_insert(
   const char* name,
-  uint32_t id,
+  uint64_t id,
   strid_t** head,
   strid_t** tail,
   int* count,
   int* maxchars)
 {
-  /* add username and id to linked list */
+  /* allocate and fill in new element */
   strid_t* elem = (strid_t*) malloc(sizeof(strid_t));
   elem->name = BAYER_STRDUP(name);
-  elem->id = id;
+  elem->id   = id;
   elem->next = NULL;
+
+  /* insert element into linked list */
   if (*head == NULL) {
     *head = elem;
   }
@@ -1559,17 +1579,17 @@ static void strid_insert(
   *tail = elem;
   (*count)++;
 
-  /* increase maximum username if we need to */
+  /* increase maximum name if we need to */
   size_t len = strlen(name) + 1;
   if (*maxchars < (int)len) {
-    /* round up to nearest multiple of 4 */
-    size_t len4 = len / 4;
-    if (len4 * 4 < len) {
-      len4++;
+    /* round up to nearest multiple of 8 */
+    size_t len8 = len / 8;
+    if (len8 * 8 < len) {
+      len8++;
     }
-    len4 *= 4;
+    len8 *= 8;
 
-    *maxchars = (int)len4;
+    *maxchars = (int)len8;
   }
 
   return;
@@ -1582,14 +1602,12 @@ static void strid_serialize(strid_t* head, int chars, void* buf)
   strid_t* current = head;
   while (current != NULL) {
     char* name  = current->name;
-    uint32_t id = current->id;
+    uint64_t id = current->id;
 
     strcpy(ptr, name);
     ptr += chars;
 
-    uint32_t* p32 = (uint32_t*) ptr;
-    *p32 = id;
-    ptr += 4;
+    bayer_pack_uint64(&ptr, id);
 
     current = current->next;
   }
@@ -1660,7 +1678,7 @@ retry:
         );
         */
         char* name  = p->pw_name;
-        uint32_t id = p->pw_uid;
+        uint64_t id = p->pw_uid;
         strid_insert(name, id, &head, &tail, &count, &chars);
       } else {
         /* hit the end of the user list */
@@ -1752,7 +1770,7 @@ retry:
         );
 */
         char* name  = p->gr_name;
-        uint32_t id = p->gr_gid;
+        uint64_t id = p->gr_gid;
         strid_insert(name, id, &head, &tail, &count, &chars);
       } else {
         /* hit the end of the group list */
@@ -1995,8 +2013,8 @@ static void read_cache_v2(
  *   uint64_t max groupname length
  *   uint64_t total number of files
  *   uint64_t max filename length
- *   list of <username(str), userid(uint32_t)>
- *   list of <groupname(str), groupid(uint32_t)>
+ *   list of <username(str), userid(uint64_t)>
+ *   list of <groupname(str), groupid(uint64_t)>
  *   list of <files(str)>
  *   */
 static void read_cache_v3(
