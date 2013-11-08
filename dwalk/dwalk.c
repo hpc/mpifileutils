@@ -642,7 +642,7 @@ static void print_summary(bayer_flist flist)
     printf("  Links: %lu\n", (unsigned long long) all_links);
     /* printf("  Unknown: %lu\n", (unsigned long long) all_unknown); */
 
-    if (walk_stat) {
+    if (bayer_flist_have_detail(flist)) {
       double agg_size_tmp;
       const char* agg_size_units;
       bayer_format_bytes(all_bytes, &agg_size_tmp, &agg_size_units);
@@ -1206,7 +1206,7 @@ int main(int argc, char **argv)
     /* TODO: don't sort unless all_count > 0 */
 
     double start_sort = MPI_Wtime();
-    if (walk_stat) {
+    if (bayer_flist_have_detail(flist)) {
       sort_files_stat(sortfields, &flist);
     } else {
       sort_files_readdir(sortfields, &flist);
