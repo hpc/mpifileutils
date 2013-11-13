@@ -29,6 +29,28 @@ static void print_usage()
     fflush(stdout);
 }
 
+/* Encode the file into a buffer, if the buffer is NULL, return the needed size */
+size_t encode(char *buffer, bayer_flist list, uint64_t index)
+{
+    const char* name = bayer_flist_file_get_name(list, index);
+    bayer_filetype type = bayer_flist_file_get_type(list, index);
+    size_t count = strlen(name) + 2;
+
+    if (buffer == NULL)
+        return count;
+
+    if (type == BAYER_TYPE_DIR) {
+        buffer[0] = 'd';
+    } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
+        buffer[0] = 'f';
+    } else {
+        buffer[0] = 'u';
+    }
+    strcpy(&buffer[1], name);
+
+    return count;
+}
+
 int main(int argc, char **argv)
 {
     int c;
@@ -114,7 +136,19 @@ int main(int argc, char **argv)
     const char* path2 = param2.path;
     bayer_flist_walk_path(path2, 0, flist2);
 
+    size_t recvbytes1;
+    char* recvbuf1;
+    recvbytes1 = bayer_flist_distribute_map(flist1, &recvbuf1, encode);
+
+    char* recvbuf2;
+    size_t recvbytes2;
+    recvbytes2 = bayer_flist_distribute_map(flist2, &recvbuf2, encode);
+
     /* TODO: do stuff ... */
+
+    /* free buffers */
+    bayer_free(&recvbuf1);
+    bayer_free(&recvbuf2);
 
     /* free file lists */
     bayer_flist_free(&flist1);
