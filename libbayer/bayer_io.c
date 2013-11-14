@@ -272,7 +272,7 @@ retry:
 }
 
 /* seek file descriptor to specified position */
-int bayer_lseek(const char* file, int fd, off_t pos, int whence)
+off_t bayer_lseek(const char* file, int fd, off_t pos, int whence)
 {
     int tries = BAYER_IO_TRIES;
 retry:

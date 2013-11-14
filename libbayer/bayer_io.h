@@ -88,7 +88,7 @@ int bayer_open(const char* file, int flags, ...);
 int bayer_close(const char* file, int fd);
 
 /* seek file descriptor to specified position */
-int bayer_lseek(const char* file, int fd, off_t pos, int whence);
+off_t bayer_lseek(const char* file, int fd, off_t pos, int whence);
 
 /* reliable read from opened file descriptor (retries, if necessary, until hard error) */
 ssize_t bayer_read(const char* file, int fd, void* buf, size_t size);
