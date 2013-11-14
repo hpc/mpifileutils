@@ -85,11 +85,15 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
 
   /* build comparison op for filenames */
   DTCMP_Op op_filepath;
-  DTCMP_Op_create(dt_filepath, my_strcmp, &op_filepath);
+  if (DTCMP_Op_create(dt_filepath, my_strcmp, &op_filepath) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create sorting operation for filepath");
+  }
 
   /* build comparison op for filenames */
   DTCMP_Op op_filepath_rev;
-  DTCMP_Op_create(dt_filepath, my_strcmp_rev, &op_filepath_rev);
+  if (DTCMP_Op_create(dt_filepath, my_strcmp_rev, &op_filepath_rev) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create reverse sorting operation for filepath");
+  }
 
   /* TODO: process sort fields */
   const int MAXFIELDS = 1;
@@ -137,17 +141,23 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
 
   /* build key type */
   MPI_Datatype dt_key;
-  DTCMP_Type_create_series(nfields, types, &dt_key);
+  if (DTCMP_Type_create_series(nfields, types, &dt_key) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create type for key");
+  }
 
   /* create sort op */
   DTCMP_Op op_key;
-  DTCMP_Op_create_series(nfields, ops, &op_key);
+  if (DTCMP_Op_create_series(nfields, ops, &op_key) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create sorting operation for key");
+  }
 
   /* build keysat type */
   MPI_Datatype dt_keysat, keysat_types[2];
   keysat_types[0] = dt_key;
   keysat_types[1] = dt_sat;
-  DTCMP_Type_create_series(2, keysat_types, &dt_keysat);
+  if (DTCMP_Type_create_series(2, keysat_types, &dt_keysat) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create type for keysat");
+  }
 
   /* get extent of key type */
   MPI_Aint key_lb, key_extent;
@@ -189,11 +199,14 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
   void* outsortbuf;
   int outsortcount;
   DTCMP_Handle handle;
-  DTCMP_Sortz(
+  int sort_rc = DTCMP_Sortz(
     sortbuf, incount, &outsortbuf, &outsortcount,
     dt_key, dt_keysat, op_key, DTCMP_FLAG_NONE,
     MPI_COMM_WORLD, &handle
   );
+  if (sort_rc != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to sort data");
+  }
 
   /* step through sorted data filenames */
   index = 0;
@@ -310,15 +323,27 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
 
   /* build comparison op for filenames */
   DTCMP_Op op_filepath, op_user, op_group;
-  DTCMP_Op_create(dt_filepath, my_strcmp, &op_filepath);
-  DTCMP_Op_create(dt_user,     my_strcmp, &op_user);
-  DTCMP_Op_create(dt_group,    my_strcmp, &op_group);
+  if (DTCMP_Op_create(dt_filepath, my_strcmp, &op_filepath) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create sorting operation for filepath");
+  }
+  if (DTCMP_Op_create(dt_user, my_strcmp, &op_user) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create sorting operation for username");
+  }
+  if (DTCMP_Op_create(dt_group, my_strcmp, &op_group) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create sorting operation for groupname");
+  }
 
   /* build comparison op for filenames */
   DTCMP_Op op_filepath_rev, op_user_rev, op_group_rev;
-  DTCMP_Op_create(dt_filepath, my_strcmp_rev, &op_filepath_rev);
-  DTCMP_Op_create(dt_user,     my_strcmp_rev, &op_user_rev);
-  DTCMP_Op_create(dt_group,    my_strcmp_rev, &op_group_rev);
+  if (DTCMP_Op_create(dt_filepath, my_strcmp_rev, &op_filepath_rev) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create reverse sorting operation for groupname");
+  }
+  if (DTCMP_Op_create(dt_user, my_strcmp_rev, &op_user_rev) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create reverse sorting operation for groupname");
+  }
+  if (DTCMP_Op_create(dt_group, my_strcmp_rev, &op_group_rev) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create reverse sorting operation for groupname");
+  }
 
   /* TODO: process sort fields */
   const int MAXFIELDS = 7;
@@ -446,17 +471,23 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
 
   /* build key type */
   MPI_Datatype dt_key;
-  DTCMP_Type_create_series(nfields, types, &dt_key);
+  if (DTCMP_Type_create_series(nfields, types, &dt_key) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create key type");
+  }
 
   /* create op to sort by access time, then filename */
   DTCMP_Op op_key;
-  DTCMP_Op_create_series(nfields, ops, &op_key);
+  if (DTCMP_Op_create_series(nfields, ops, &op_key) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create sorting operation for key");
+  }
 
   /* build keysat type */
   MPI_Datatype dt_keysat, keysat_types[2];
   keysat_types[0] = dt_key;
   keysat_types[1] = dt_sat;
-  DTCMP_Type_create_series(2, keysat_types, &dt_keysat);
+  if (DTCMP_Type_create_series(2, keysat_types, &dt_keysat) != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to create keysat type");
+  }
 
   /* get extent of key type */
   MPI_Aint key_lb, key_extent;
@@ -523,11 +554,14 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
   void* outsortbuf;
   int outsortcount;
   DTCMP_Handle handle;
-  DTCMP_Sortz(
+  int sort_rc = DTCMP_Sortz(
     sortbuf, incount, &outsortbuf, &outsortcount,
     dt_key, dt_keysat, op_key, DTCMP_FLAG_NONE,
     MPI_COMM_WORLD, &handle
   );
+  if (sort_rc != DTCMP_SUCCESS) {
+    BAYER_ABORT(1, "Failed to sort data");
+  }
 
   /* step through sorted data filenames */
   index = 0;
