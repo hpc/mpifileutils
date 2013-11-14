@@ -15,3 +15,8 @@
 *.exe
 *.out
 *.app
+
+.pc
+dcp
+deps
+install

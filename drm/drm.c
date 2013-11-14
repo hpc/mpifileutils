@@ -300,136 +300,34 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
     return;
 }
 
-/*****************************
- * Randomly hash items to processes by filename, then remove
- ****************************/
-
-/* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
-static uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len)
+/* Encode the file into a buffer, if the buffer is NULL, return the needed size */
+size_t remove_encode(char *buffer, bayer_flist list, uint64_t index)
 {
-    uint32_t hash, i;
-    for(hash = i = 0; i < len; ++i) {
-        hash += key[i];
-        hash += (hash << 10);
-        hash ^= (hash >> 6);
+    const char* name = bayer_flist_file_get_name(list, index);
+    bayer_filetype type = bayer_flist_file_get_type(list, index);
+    size_t count = strlen(name) + 2;
+
+    if (buffer == NULL)
+    	return count;
+
+    if (type == BAYER_TYPE_DIR) {
+        buffer[0] = 'd';
+    } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
+        buffer[0] = 'f';
+    } else {
+        buffer[0] = 'u';
     }
-    hash += (hash << 3);
-    hash ^= (hash >> 11);
-    hash += (hash << 15);
-    return hash;
+    strcpy(&buffer[1], name);
+
+    return count;
 }
 
-/* for given depth, hash directory name and map to processes to
- * test whether having all files in same directory on one process
- * matters */
 static void remove_map(bayer_flist list, uint64_t* rmcount)
 {
-    uint64_t index;
+    size_t recvbytes;
+    char* recvbuf;
 
-    /* get our rank and number of ranks in job */
-    int rank, ranks;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-  
-    /* allocate arrays for alltoall */
-    int* sendsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* senddisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* sendoffset = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* recvsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* recvdisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-
-    /* initialize sendsizes and offsets */
-    int i;
-    for (i = 0; i < ranks; i++) {
-        sendsizes[i]  = 0;
-        sendoffset[i] = 0;
-    }
-
-    /* compute number of bytes we'll send to each rank */
-    size_t sendbytes = 0;
-    uint64_t size = bayer_flist_size(list);
-    for (index = 0; index < size; index++) {
-        /* get name of item */
-        const char* name = bayer_flist_file_get_name(list, index);
-
-        /* identify a rank responsible for this item */
-        char* dir = BAYER_STRDUP(name);
-        dirname(dir);
-        size_t dir_len = strlen(dir);
-        uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
-        int rank = (int) (hash % (uint32_t)ranks);
-        bayer_free(&dir);
-
-        /* total number of bytes we'll send to each rank and the total overall */
-        size_t count = strlen(name) + 2;
-        sendsizes[rank] += count;
-        sendbytes += count;
-    }
-
-    /* compute displacements */
-    senddisps[0] = 0;
-    for (i = 1; i < ranks; i++) {
-        senddisps[i] = senddisps[i-1] + sendsizes[i-1];
-    }
-
-    /* allocate space */
-    char* sendbuf = (char*) BAYER_MALLOC(sendbytes);
-
-    /* copy data into buffer */
-    for (index = 0; index < size; index++) {
-        /* get name of item */
-        const char* name = bayer_flist_file_get_name(list, index);
-        bayer_filetype type = bayer_flist_file_get_type(list, index);
-
-        /* identify a rank responsible for this item */
-        char* dir = BAYER_STRDUP(name);
-        dirname(dir);
-        size_t dir_len = strlen(dir);
-        uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
-        int rank = (int) (hash % (uint32_t)ranks);
-        bayer_free(&dir);
-
-        /* identify region to be sent to rank */
-        size_t count = strlen(name) + 2;
-        char* path = sendbuf + senddisps[rank] + sendoffset[rank];
-
-        /* first character encodes item type */
-        if (type == BAYER_TYPE_DIR) {
-            path[0] = 'd';
-        } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
-            path[0] = 'f';
-        } else {
-            path[0] = 'u';
-        }
-
-        /* now copy in the path */
-        strcpy(&path[1], name);
-
-        /* bump up the offset for this rank */
-        sendoffset[rank] += count;
-    }
-
-    /* alltoall to specify incoming counts */
-    MPI_Alltoall(sendsizes, 1, MPI_INT, recvsizes, 1, MPI_INT, MPI_COMM_WORLD);
-
-    /* compute size of recvbuf and displacements */
-    size_t recvbytes = 0;
-    recvdisps[0] = 0;
-    for (i = 0; i < ranks; i++) {
-        recvbytes += recvsizes[i];
-        if (i > 0) {
-            recvdisps[i] = recvdisps[i-1] + recvsizes[i-1];
-        }
-    }
-
-    /* allocate recvbuf */
-    char* recvbuf =  (char*) BAYER_MALLOC(recvbytes);
-
-    /* alltoallv to send data */
-    MPI_Alltoallv(
-        sendbuf, sendsizes, senddisps, MPI_CHAR,
-        recvbuf, recvsizes, recvdisps, MPI_CHAR, MPI_COMM_WORLD
-    );
+    recvbytes = bayer_flist_distribute_map(list, &recvbuf, remove_encode);
 
     /* delete data */
     uint64_t itemcount = 0;
@@ -450,17 +348,8 @@ static void remove_map(bayer_flist list, uint64_t* rmcount)
 
     /* free memory */
     bayer_free(&recvbuf);
-    bayer_free(&recvdisps);
-    bayer_free(&recvsizes);
-    bayer_free(&sendbuf);
-    bayer_free(&sendoffset);
-    bayer_free(&senddisps);
-    bayer_free(&sendsizes);
-
     /* report the number of items we deleted */
     *rmcount = itemcount;
-
-    return;
 }
 
 /*****************************

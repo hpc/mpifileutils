@@ -145,6 +145,10 @@ uint64_t bayer_flist_file_get_ctime_nsec(bayer_flist flist, uint64_t index);
 uint64_t bayer_flist_file_get_size(bayer_flist flist, uint64_t index);
 const char* bayer_flist_file_get_username(bayer_flist flist, uint64_t index);
 const char* bayer_flist_file_get_groupname(bayer_flist flist, uint64_t index);
+/* Encode the file into a buffer, if the buffer is NULL, return the needed size */
+typedef size_t (*bayer_flist_name_encode) (char *buf, bayer_flist flist, uint64_t index);
+typedef size_t (*bayer_flist_distribute) (bayer_flist flist, char **buf, bayer_flist_name_encode encode);
+size_t bayer_flist_distribute_map(bayer_flist flist, char **buffer, bayer_flist_name_encode encode);
 
 #endif /* BAYER_FLIST_H */
 
