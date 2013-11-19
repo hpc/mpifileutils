@@ -51,6 +51,51 @@ size_t encode(char *buffer, bayer_flist list, uint64_t index)
     return count;
 }
 
+#define NOT_MATCHED     "N"
+#define MATCHED         "M"
+
+static strmap* map_creat(char* recvbuf, size_t recvbytes, int basename_len)
+{
+    strmap* map = strmap_new();
+
+    char* item = recvbuf;
+    while (item < recvbuf + recvbytes) {
+        /* get item name and type */
+        char type = item[0];
+        char* name = &item[1];
+
+	name += basename_len;
+        /* go to next item */
+        size_t item_size = strlen(item) + 1;
+        item += item_size;
+        strmap_set(map, name, NOT_MATCHED);
+    }
+
+    return map;
+}
+
+/* match entries from src into dst */
+static uint64_t map_match(strmap* dst, strmap* src)
+{
+	uint64_t matched = 0;
+	strmap_node* node;
+	strmap_foreach(src, node) {
+		const char* dst_val;
+		const char* key = strmap_node_key(node);
+		const char* val = strmap_node_value(node);
+		/* Skip matched files */
+		if (strcmp(val, MATCHED) == 0)
+			continue;
+		dst_val = strmap_get(dst, key);
+		if (dst_val != NULL) {
+			strmap_set(src, key, MATCHED);
+			strmap_set(dst, key, MATCHED);
+			matched++;
+		}
+	}
+	return matched;
+}
+
 int main(int argc, char **argv)
 {
     int c;
@@ -144,7 +189,39 @@ int main(int argc, char **argv)
     size_t recvbytes2;
     recvbytes2 = bayer_flist_distribute_map(flist2, &recvbuf2, encode);
 
-    /* TODO: do stuff ... */
+    strmap* map1;
+    map1 = map_creat(recvbuf1, recvbytes1, strlen(path1));
+    strmap* map2;
+    map2 = map_creat(recvbuf2, recvbytes2, strlen(path2));
+
+    uint64_t matched;
+    matched = map_match(map1, map2);
+
+    uint64_t global_matched;
+    MPI_Allreduce(&matched, &global_matched, 1, MPI_UINT64_T, MPI_SUM,
+                  MPI_COMM_WORLD);
+
+    uint64_t unmatched1;
+    uint64_t global_unmatched1;
+    unmatched1 = map1->size - matched;
+    MPI_Allreduce(&unmatched1, &global_unmatched1, 1, MPI_UINT64_T, MPI_SUM,
+                  MPI_COMM_WORLD);
+
+    uint64_t unmatched2;
+    uint64_t global_unmatched2;
+    unmatched2 = map2->size - matched;
+    MPI_Allreduce(&unmatched2, &global_unmatched2, 1, MPI_UINT64_T, MPI_SUM,
+                  MPI_COMM_WORLD);
+
+    if (rank == 0) {
+        printf("Common files: %llu\n", global_matched);
+        printf("Only in %s: %llu\n", path1, global_unmatched1);
+        printf("Only in %s: %llu\n", path2, global_unmatched2);
+        fflush(stdout);
+    }
+
+    strmap_delete(&map1);
+    strmap_delete(&map2);
 
     /* free buffers */
     bayer_free(&recvbuf1);
