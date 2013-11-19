@@ -92,9 +92,7 @@ strmap* strmap_new()
 void strmap_merge(strmap* dst, const strmap* src)
 {
   strmap_node* node;
-  for (node = strmap_node_first(src);
-       node != NULL;
-       node = strmap_node_next(node))
+  strmap_foreach(src, node)
   {
     const char* key = strmap_node_key(node);
     const char* val = strmap_node_value(node);

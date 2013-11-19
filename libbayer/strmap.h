@@ -107,6 +107,11 @@ int strmap_unset(strmap* map, const char* key);
 /* deletes specified key using printf formatting */
 int strmap_unsetf(strmap* map, const char* format, ...);
 
+#define strmap_foreach(strmap, node)       \
+  for ((node) = strmap_node_first(strmap); \
+    (node) != NULL;                        \
+    (node) = strmap_node_next(node))
+
 /*
 =========================================
 pack and unpack data structure into array of bytes
