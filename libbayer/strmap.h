@@ -40,6 +40,7 @@ typedef struct strmap_node_struct {
 typedef struct strmap_struct {
   strmap_node* root;
   size_t len;
+  size_t size; /* nodes number in the tree*/
 } strmap;
 
 /*

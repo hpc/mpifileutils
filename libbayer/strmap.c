@@ -85,6 +85,7 @@ strmap* strmap_new()
   strmap* tree = (strmap*) BAYER_MALLOC(sizeof(strmap));
   tree->root = NULL;
   tree->len = 0;
+  tree->size = 0;
   return tree;
 }
 
@@ -562,6 +563,7 @@ int strmap_set(strmap* tree, const char* key, const char* value)
       /* increase pack size of tree */
       size_t node_len = node->key_len + node->value_len;
       tree->len += node_len;
+      tree->size++;
 
       /* insert the new item as a child to the parent, if we found one,
        * otherwise if the item has no parent, the tree must be empty which means
@@ -708,6 +710,7 @@ int strmap_unset(strmap* tree, const char* key)
       /* decrease the tree pack size */
       size_t node_len = node->key_len + node->value_len;
       tree->len -= node_len;
+      tree->size--;
 
       /* found it, identify the node to replace it */
       if (node->left != NULL && node->right != NULL) {
