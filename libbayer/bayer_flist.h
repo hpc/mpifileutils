@@ -146,10 +146,14 @@ uint64_t bayer_flist_file_get_size(bayer_flist flist, uint64_t index);
 const char* bayer_flist_file_get_username(bayer_flist flist, uint64_t index);
 const char* bayer_flist_file_get_groupname(bayer_flist flist, uint64_t index);
 /* Encode the file into a buffer, if the buffer is NULL, return the needed size */
-typedef size_t (*bayer_flist_name_encode) (char *buf, bayer_flist flist, uint64_t index);
-typedef size_t (*bayer_flist_distribute) (bayer_flist flist, char **buf, bayer_flist_name_encode encode);
-size_t bayer_flist_distribute_map(bayer_flist flist, char **buffer, bayer_flist_name_encode encode);
-
+typedef size_t (*bayer_flist_name_encode) (char *buf, bayer_flist flist,
+                                           uint64_t index, void *args);
+typedef int (*bayer_flist_map) (bayer_flist flist, uint64_t index, int ranks,
+                                void *args);
+size_t bayer_flist_distribute_map(bayer_flist flist, char **buffer,
+                                  bayer_flist_name_encode encode,
+                                  bayer_flist_map map, void *args);
+uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len);
 #endif /* BAYER_FLIST_H */
 
 /* enable C++ codes to include this header directly */

@@ -54,7 +54,7 @@ size_t encode(char *buffer, bayer_flist list, uint64_t index)
 #define NOT_MATCHED     "N"
 #define MATCHED         "M"
 
-static strmap* map_creat(char* recvbuf, size_t recvbytes, int basename_len)
+static strmap* map_creat(char* recvbuf, size_t recvbytes, char* prefix)
 {
     strmap* map = strmap_new();
 
@@ -64,7 +64,7 @@ static strmap* map_creat(char* recvbuf, size_t recvbytes, int basename_len)
         char type = item[0];
         char* name = &item[1];
 
-	name += basename_len;
+	name += strlen(prefix);
         /* go to next item */
         size_t item_size = strlen(item) + 1;
         item += item_size;
@@ -94,6 +94,22 @@ static uint64_t map_match(strmap* dst, strmap* src)
 		}
 	}
 	return matched;
+}
+
+int map_name(bayer_flist flist, uint64_t index, int ranks, void *args)
+{
+    char* prefix = (char *)args;
+    /* get name of item */
+    const char* name = bayer_flist_file_get_name(flist, index);
+
+    /* identify a rank responsible for this item */
+    char* str = BAYER_STRDUP(name);
+    char* ptr = str + strlen(prefix);
+    size_t ptr_len = strlen(ptr);
+    uint32_t hash = jenkins_one_at_a_time_hash(ptr, ptr_len);
+    int rank = (int) (hash % (uint32_t)ranks);
+    bayer_free(&str);
+    return rank;
 }
 
 int main(int argc, char **argv)
@@ -183,16 +199,18 @@ int main(int argc, char **argv)
 
     size_t recvbytes1;
     char* recvbuf1;
-    recvbytes1 = bayer_flist_distribute_map(flist1, &recvbuf1, encode);
+    recvbytes1 = bayer_flist_distribute_map(flist1, &recvbuf1, encode,
+                                            map_name, (void *)path1);
 
     char* recvbuf2;
     size_t recvbytes2;
-    recvbytes2 = bayer_flist_distribute_map(flist2, &recvbuf2, encode);
+    recvbytes2 = bayer_flist_distribute_map(flist2, &recvbuf2, encode,
+                                            map_name, (void *)path2);
 
     strmap* map1;
-    map1 = map_creat(recvbuf1, recvbytes1, strlen(path1));
+    map1 = map_creat(recvbuf1, recvbytes1, path1);
     strmap* map2;
-    map2 = map_creat(recvbuf2, recvbytes2, strlen(path2));
+    map2 = map_creat(recvbuf2, recvbytes2, path2);
 
     uint64_t matched;
     matched = map_match(map1, map2);

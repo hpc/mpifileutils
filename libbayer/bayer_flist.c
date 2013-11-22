@@ -2499,7 +2499,7 @@ int bayer_flist_summarize(bayer_flist bflist)
  ****************************/
 
 /* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
-static uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len)
+uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len)
 {
     uint32_t hash, i;
     for(hash = i = 0; i < len; ++i) {
@@ -2516,7 +2516,9 @@ static uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len)
 /* for given depth, hash directory name and map to processes to
  * test whether having all files in same directory on one process
  * matters */
-size_t bayer_flist_distribute_map(bayer_flist list, char **buffer, bayer_flist_name_encode encode)
+size_t bayer_flist_distribute_map(bayer_flist list, char **buffer,
+                                  bayer_flist_name_encode encode,
+                                  bayer_flist_map map, void *args)
 {
     uint64_t index;
 
@@ -2543,19 +2545,10 @@ size_t bayer_flist_distribute_map(bayer_flist list, char **buffer, bayer_flist_n
     size_t sendbytes = 0;
     uint64_t size = bayer_flist_size(list);
     for (index = 0; index < size; index++) {
-        /* get name of item */
-        const char* name = bayer_flist_file_get_name(list, index);
-
-        /* identify a rank responsible for this item */
-        char* dir = BAYER_STRDUP(name);
-        dirname(dir);
-        size_t dir_len = strlen(dir);
-        uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
-        int rank = (int) (hash % (uint32_t)ranks);
-        bayer_free(&dir);
+    	int rank = map(list, index, ranks, args);
 
         /* total number of bytes we'll send to each rank and the total overall */
-        size_t count = encode(NULL, list, index);
+        size_t count = encode(NULL, list, index, args);
         sendsizes[rank] += count;
         sendbytes += count;
     }
@@ -2571,19 +2564,11 @@ size_t bayer_flist_distribute_map(bayer_flist list, char **buffer, bayer_flist_n
 
     /* copy data into buffer */
     for (index = 0; index < size; index++) {
-        /* get name of item */
-        const char* name = bayer_flist_file_get_name(list, index);
-        /* identify a rank responsible for this item */
-        char* dir = BAYER_STRDUP(name);
-        dirname(dir);
-        size_t dir_len = strlen(dir);
-        uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
-        int rank = (int) (hash % (uint32_t)ranks);
-        bayer_free(&dir);
+        int rank = map(list, index, ranks, args);
 
         /* identify region to be sent to rank */
         char* path = sendbuf + senddisps[rank] + sendoffset[rank];
-        size_t count = encode(path, list, index);
+        size_t count = encode(path, list, index, args);
 
         /* bump up the offset for this rank */
         sendoffset[rank] += count;

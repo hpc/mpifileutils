@@ -322,12 +322,28 @@ size_t remove_encode(char *buffer, bayer_flist list, uint64_t index)
     return count;
 }
 
+static int map_name(bayer_flist flist, uint64_t index, int ranks, void *args)
+{
+    /* get name of item */
+    const char* name = bayer_flist_file_get_name(flist, index);
+
+    /* identify a rank responsible for this item */
+    char* dir = BAYER_STRDUP(name);
+    dirname(dir);
+    size_t dir_len = strlen(dir);
+    uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
+    int rank = (int) (hash % (uint32_t)ranks);
+    bayer_free(&dir);
+    return rank;
+}
+
 static void remove_map(bayer_flist list, uint64_t* rmcount)
 {
     size_t recvbytes;
     char* recvbuf;
 
-    recvbytes = bayer_flist_distribute_map(list, &recvbuf, remove_encode);
+    recvbytes = bayer_flist_distribute_map(list, &recvbuf, remove_encode,
+                                           map_name, NULL);
 
     /* delete data */
     uint64_t itemcount = 0;
