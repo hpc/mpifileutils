@@ -2607,3 +2607,125 @@ size_t bayer_flist_distribute_map(bayer_flist list, char **buffer,
     *buffer = recvbuf;
     return recvbytes;
 }
+
+/* given an input list and a map function pointer, call map function
+ * for each item in list, identify new rank to send item to and then
+ * exchange items among ranks and return new output list */
+int bayer_flist_remap(bayer_flist list, bayer_flist_map map, void* args, bayer_flist* outlist)
+{
+    uint64_t index;
+
+    /* create new list as subset (actually will be a remapping of
+     * input list */
+    bayer_flist newlist = bayer_flist_subset(list);
+
+    /* get our rank and number of ranks in job */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* allocate arrays for alltoall */
+    int* sendsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* senddisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* sendoffset = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* recvsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* recvdisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+
+    /* initialize sendsizes and offsets */
+    int i;
+    for (i = 0; i < ranks; i++) {
+        sendsizes[i]  = 0;
+        sendoffset[i] = 0;
+    }
+
+    /* get number of elements in our local list */
+    uint64_t size = bayer_flist_size(list);
+
+    /* allocate space to record file-to-rank mapping */
+    int* file2rank = (int*) BAYER_MALLOC(size * sizeof(int));
+
+    /* call map function for each item to identify its new rank,
+     * and compute number of bytes we'll send to each rank */
+    size_t sendbytes = 0;
+    for (index = 0; index < size; index++) {
+        /* determine which rank we'll map this file to */
+    	int rank = map(list, index, ranks, args);
+
+        /* cache mapping so we don't have to compute it again
+         * below while packing items for send */
+        file2rank[index] = rank;
+
+        /* total number of bytes we'll send to each rank and the total overall */
+        size_t count = bayer_flist_file_pack_size(list);
+        sendsizes[rank] += count;
+        sendbytes += count;
+    }
+
+    /* compute send buffer displacements */
+    senddisps[0] = 0;
+    for (i = 1; i < ranks; i++) {
+        senddisps[i] = senddisps[i-1] + sendsizes[i-1];
+    }
+
+    /* allocate space for send buffer */
+    char* sendbuf = (char*) BAYER_MALLOC(sendbytes);
+
+    /* copy data into send buffer */
+    for (index = 0; index < size; index++) {
+        /* determine which rank we mapped this file to */
+        int rank = file2rank[index];
+
+        /* get pointer into send buffer and pack item */
+        char* ptr = sendbuf + senddisps[rank] + sendoffset[rank];
+        size_t count = bayer_flist_file_pack(ptr, list, index);
+
+        /* bump up the offset for this rank */
+        sendoffset[rank] += count;
+    }
+
+    /* alltoall to get our incoming counts */
+    MPI_Alltoall(sendsizes, 1, MPI_INT, recvsizes, 1, MPI_INT, MPI_COMM_WORLD);
+
+    /* compute size of recvbuf and displacements */
+    size_t recvbytes = 0;
+    recvdisps[0] = 0;
+    for (i = 0; i < ranks; i++) {
+        recvbytes += recvsizes[i];
+        if (i > 0) {
+            recvdisps[i] = recvdisps[i-1] + recvsizes[i-1];
+        }
+    }
+
+    /* allocate recvbuf */
+    char* recvbuf = (char*) BAYER_MALLOC(recvbytes);
+
+    /* alltoallv to send data */
+    MPI_Alltoallv(
+        sendbuf, sendsizes, senddisps, MPI_CHAR,
+        recvbuf, recvsizes, recvdisps, MPI_CHAR, MPI_COMM_WORLD
+    );
+
+    /* unpack items into new list */
+    char* ptr = recvbuf;
+    char* recvend = recvbuf + recvbytes;
+    while (ptr < recvend) {
+        size_t count = bayer_flist_file_unpack(ptr, newlist);
+        ptr += count;
+    }
+    bayer_flist_summarize(newlist);
+
+    /* free memory */
+    bayer_free(&file2rank);
+    bayer_free(&recvbuf);
+    bayer_free(&recvdisps);
+    bayer_free(&recvsizes);
+    bayer_free(&sendbuf);
+    bayer_free(&sendoffset);
+    bayer_free(&senddisps);
+    bayer_free(&sendsizes);
+
+    /* set output parameter */
+    *outlist = newlist;
+
+    return BAYER_SUCCESS;
+}
