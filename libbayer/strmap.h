@@ -26,21 +26,21 @@ Define AVL tree data structures
 
 /* define the structure for an element of a hash */
 typedef struct strmap_node_struct {
-  const char* key;
-  size_t key_len;
-  const char* value;
-  size_t value_len;
-  int    height;
-  struct strmap_node_struct* parent;
-  struct strmap_node_struct* left;
-  struct strmap_node_struct* right;
+  const char* key;   /* pointer to key string */
+  size_t key_len;    /* number of characters in key string (including terminating NUL) */
+  const char* value; /* pointer to value string */
+  size_t value_len;  /* number of characters in value string (including terminating NUL) */
+  int    height;     /* max height of subtree rooted at this node */
+  struct strmap_node_struct* parent; /* pointer to parent node */
+  struct strmap_node_struct* left;   /* pointer to left child */
+  struct strmap_node_struct* right;  /* pointer to right child */
 } strmap_node;
 
 /* structure to track root of a tree */
 typedef struct strmap_struct {
-  strmap_node* root;
-  size_t len;
-  size_t size; /* nodes number in the tree*/
+  strmap_node* root; /* pointer to the root node in the tree */
+  size_t len;        /* sum of characters in all key/value strings (including terminating NULs) */
+  uint64_t size;     /* number of nodes in the tree */
 } strmap;
 
 /*
@@ -87,6 +87,9 @@ const char* strmap_node_value(const strmap_node* node);
 set, get, and unset key/value pairs
 =========================================
 */
+
+/* return number of key/value pairs in map */
+uint64_t strmap_size(const strmap* map);
 
 /* insert key/value into map, overwrites existing key */
 int strmap_set(strmap* map, const char* key, const char* value);

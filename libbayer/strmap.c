@@ -547,6 +547,15 @@ const char* strmap_node_value(const strmap_node* node)
   return NULL;
 }
 
+/* return number of key/value pairs in tree */
+uint64_t strmap_size(const strmap* tree)
+{
+    if (tree != NULL) {
+        return tree->size;
+    }
+    return 0;
+}
+
 /* insert the specified key and value into the tree */
 int strmap_set(strmap* tree, const char* key, const char* value)
 {
