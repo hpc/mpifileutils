@@ -29,46 +29,30 @@ static void print_usage()
     fflush(stdout);
 }
 
-/* Encode the file into a buffer, if the buffer is NULL, return the needed size */
-size_t encode(char *buffer, bayer_flist list, uint64_t index)
-{
-    const char* name = bayer_flist_file_get_name(list, index);
-    bayer_filetype type = bayer_flist_file_get_type(list, index);
-    size_t count = strlen(name) + 2;
-
-    if (buffer == NULL)
-        return count;
-
-    if (type == BAYER_TYPE_DIR) {
-        buffer[0] = 'd';
-    } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
-        buffer[0] = 'f';
-    } else {
-        buffer[0] = 'u';
-    }
-    strcpy(&buffer[1], name);
-
-    return count;
-}
-
 #define NOT_MATCHED     "N"
 #define MATCHED         "M"
 
-static strmap* map_creat(char* recvbuf, size_t recvbytes, char* prefix)
+static strmap* map_creat(bayer_flist list, const char* prefix)
 {
     strmap* map = strmap_new();
 
-    char* item = recvbuf;
-    while (item < recvbuf + recvbytes) {
-        /* get item name and type */
-        char type = item[0];
-        char* name = &item[1];
+    /* determine length of prefix string */
+    size_t prefix_len = strlen(prefix);
 
-	name += strlen(prefix);
-        /* go to next item */
-        size_t item_size = strlen(item) + 1;
-        item += item_size;
+    uint64_t index = 0;
+    uint64_t count = bayer_flist_size(list);
+    while (index < count) {
+        /* get full path of file name */
+        const char* name = bayer_flist_file_get_name(list, index);
+
+        /* ignore prefix portion of path */
+	name += prefix_len;
+
+        /* add item to map */
         strmap_set(map, name, NOT_MATCHED);
+
+        /* go to next item in list */
+        index++;
     }
 
     return map;
@@ -77,38 +61,42 @@ static strmap* map_creat(char* recvbuf, size_t recvbytes, char* prefix)
 /* match entries from src into dst */
 static uint64_t map_match(strmap* dst, strmap* src)
 {
-	uint64_t matched = 0;
-	strmap_node* node;
-	strmap_foreach(src, node) {
-		const char* dst_val;
-		const char* key = strmap_node_key(node);
-		const char* val = strmap_node_value(node);
-		/* Skip matched files */
-		if (strcmp(val, MATCHED) == 0)
-			continue;
-		dst_val = strmap_get(dst, key);
-		if (dst_val != NULL) {
-			strmap_set(src, key, MATCHED);
-			strmap_set(dst, key, MATCHED);
-			matched++;
-		}
-	}
-	return matched;
+    uint64_t matched = 0;
+    strmap_node* node;
+    strmap_foreach(src, node) {
+        const char* key = strmap_node_key(node);
+        const char* val = strmap_node_value(node);
+
+        /* Skip matched files */
+        if (strcmp(val, MATCHED) == 0) {
+            continue;
+        }
+
+        const char* dst_val = strmap_get(dst, key);
+        if (dst_val != NULL) {
+            strmap_set(src, key, MATCHED);
+            strmap_set(dst, key, MATCHED);
+            matched++;
+        }
+    }
+    return matched;
 }
 
 int map_name(bayer_flist flist, uint64_t index, int ranks, void *args)
 {
+    /* the args pointer is a pointer to the directory prefix to
+     * be ignored in full path name */
     char* prefix = (char *)args;
+    size_t prefix_len = strlen(prefix);
+
     /* get name of item */
     const char* name = bayer_flist_file_get_name(flist, index);
 
     /* identify a rank responsible for this item */
-    char* str = BAYER_STRDUP(name);
-    char* ptr = str + strlen(prefix);
+    const char* ptr = name + prefix_len;
     size_t ptr_len = strlen(ptr);
     uint32_t hash = jenkins_one_at_a_time_hash(ptr, ptr_len);
     int rank = (int) (hash % (uint32_t)ranks);
-    bayer_free(&str);
     return rank;
 }
 
@@ -197,37 +185,26 @@ int main(int argc, char **argv)
     const char* path2 = param2.path;
     bayer_flist_walk_path(path2, 0, flist2);
 
-    size_t recvbytes1;
-    char* recvbuf1;
-    recvbytes1 = bayer_flist_distribute_map(flist1, &recvbuf1, encode,
-                                            map_name, (void *)path1);
+    /* map files to ranks based on portion following prefix directory */
+    bayer_flist flist3 = bayer_flist_remap(flist1, map_name, (void*)path1);
+    bayer_flist flist4 = bayer_flist_remap(flist2, map_name, (void*)path2);
 
-    char* recvbuf2;
-    size_t recvbytes2;
-    recvbytes2 = bayer_flist_distribute_map(flist2, &recvbuf2, encode,
-                                            map_name, (void *)path2);
+    strmap* map1 = map_creat(flist3, path1);
+    strmap* map2 = map_creat(flist4, path2);
 
-    strmap* map1;
-    map1 = map_creat(recvbuf1, recvbytes1, path1);
-    strmap* map2;
-    map2 = map_creat(recvbuf2, recvbytes2, path2);
-
-    uint64_t matched;
-    matched = map_match(map1, map2);
+    uint64_t matched = map_match(map1, map2);
 
     uint64_t global_matched;
     MPI_Allreduce(&matched, &global_matched, 1, MPI_UINT64_T, MPI_SUM,
                   MPI_COMM_WORLD);
 
-    uint64_t unmatched1;
     uint64_t global_unmatched1;
-    unmatched1 = map1->size - matched;
+    uint64_t unmatched1 = strmap_size(map1) - matched;
     MPI_Allreduce(&unmatched1, &global_unmatched1, 1, MPI_UINT64_T, MPI_SUM,
                   MPI_COMM_WORLD);
 
-    uint64_t unmatched2;
     uint64_t global_unmatched2;
-    unmatched2 = map2->size - matched;
+    uint64_t unmatched2 = strmap_size(map2) - matched;
     MPI_Allreduce(&unmatched2, &global_unmatched2, 1, MPI_UINT64_T, MPI_SUM,
                   MPI_COMM_WORLD);
 
@@ -241,13 +218,11 @@ int main(int argc, char **argv)
     strmap_delete(&map1);
     strmap_delete(&map2);
 
-    /* free buffers */
-    bayer_free(&recvbuf1);
-    bayer_free(&recvbuf2);
-
     /* free file lists */
     bayer_flist_free(&flist1);
     bayer_flist_free(&flist2);
+    bayer_flist_free(&flist3);
+    bayer_flist_free(&flist4);
 
     /* free source and dest params */
     bayer_param_path_free(&param1);
