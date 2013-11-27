@@ -300,34 +300,14 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
     return;
 }
 
-/* Encode the file into a buffer, if the buffer is NULL, return the needed size */
-size_t remove_encode(char *buffer, bayer_flist list, uint64_t index)
-{
-    const char* name = bayer_flist_file_get_name(list, index);
-    bayer_filetype type = bayer_flist_file_get_type(list, index);
-    size_t count = strlen(name) + 2;
-
-    if (buffer == NULL)
-    	return count;
-
-    if (type == BAYER_TYPE_DIR) {
-        buffer[0] = 'd';
-    } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
-        buffer[0] = 'f';
-    } else {
-        buffer[0] = 'u';
-    }
-    strcpy(&buffer[1], name);
-
-    return count;
-}
-
+/* we hash file names based on its parent directory to map all
+ * files in the same directory to the same process */
 static int map_name(bayer_flist flist, uint64_t index, int ranks, void *args)
 {
     /* get name of item */
     const char* name = bayer_flist_file_get_name(flist, index);
 
-    /* identify a rank responsible for this item */
+    /* identify rank to send this file to */
     char* dir = BAYER_STRDUP(name);
     dirname(dir);
     size_t dir_len = strlen(dir);
@@ -339,33 +319,16 @@ static int map_name(bayer_flist flist, uint64_t index, int ranks, void *args)
 
 static void remove_map(bayer_flist list, uint64_t* rmcount)
 {
-    size_t recvbytes;
-    char* recvbuf;
+    /* remap files based on parent directory */
+    bayer_flist newlist = bayer_flist_remap(list, map_name, NULL);
 
-    recvbytes = bayer_flist_distribute_map(list, &recvbuf, remove_encode,
-                                           map_name, NULL);
+    /* at this point, we can directly remove files in our list */
+    remove_direct(newlist, rmcount);
 
-    /* delete data */
-    uint64_t itemcount = 0;
-    char* item = recvbuf;
-    while (item < recvbuf + recvbytes) {
-        /* get item name and type */
-        char type = item[0];
-        char* name = &item[1];
+    /* free list of remapped files */
+    bayer_flist_free(&newlist);
 
-        /* delete item */
-        remove_type(type, name);
-        itemcount++;
-
-        /* go to next item */
-        size_t item_size = strlen(item) + 1;
-        item += item_size;
-    }
-
-    /* free memory */
-    bayer_free(&recvbuf);
-    /* report the number of items we deleted */
-    *rmcount = itemcount;
+    return;
 }
 
 /*****************************

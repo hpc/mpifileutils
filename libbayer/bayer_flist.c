@@ -2517,8 +2517,8 @@ uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len)
  * test whether having all files in same directory on one process
  * matters */
 size_t bayer_flist_distribute_map(bayer_flist list, char **buffer,
-                                  bayer_flist_name_encode encode,
-                                  bayer_flist_map map, void *args)
+                                  bayer_flist_name_encode_fn encode,
+                                  bayer_flist_map_fn map, void *args)
 {
     uint64_t index;
 
@@ -2611,7 +2611,7 @@ size_t bayer_flist_distribute_map(bayer_flist list, char **buffer,
 /* given an input list and a map function pointer, call map function
  * for each item in list, identify new rank to send item to and then
  * exchange items among ranks and return new output list */
-int bayer_flist_remap(bayer_flist list, bayer_flist_map map, void* args, bayer_flist* outlist)
+bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* args)
 {
     uint64_t index;
 
@@ -2724,8 +2724,6 @@ int bayer_flist_remap(bayer_flist list, bayer_flist_map map, void* args, bayer_f
     bayer_free(&senddisps);
     bayer_free(&sendsizes);
 
-    /* set output parameter */
-    *outlist = newlist;
-
-    return BAYER_SUCCESS;
+    /* return list to caller */
+    return newlist;
 }

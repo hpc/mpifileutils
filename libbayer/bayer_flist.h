@@ -145,15 +145,29 @@ uint64_t bayer_flist_file_get_ctime_nsec(bayer_flist flist, uint64_t index);
 uint64_t bayer_flist_file_get_size(bayer_flist flist, uint64_t index);
 const char* bayer_flist_file_get_username(bayer_flist flist, uint64_t index);
 const char* bayer_flist_file_get_groupname(bayer_flist flist, uint64_t index);
+
 /* Encode the file into a buffer, if the buffer is NULL, return the needed size */
-typedef size_t (*bayer_flist_name_encode) (char *buf, bayer_flist flist,
-                                           uint64_t index, void *args);
-typedef int (*bayer_flist_map) (bayer_flist flist, uint64_t index, int ranks,
-                                void *args);
-size_t bayer_flist_distribute_map(bayer_flist flist, char **buffer,
-                                  bayer_flist_name_encode encode,
-                                  bayer_flist_map map, void *args);
-uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len);
+typedef size_t (*bayer_flist_name_encode_fn) (char *buf, bayer_flist flist, uint64_t index, void* args);
+
+/* map function pointer: given a list and index as input, along with
+ * number of ranks and pointer to user-provided arguments, compute
+ * rank number specified item should be assigned to */
+typedef int (*bayer_flist_map_fn) (bayer_flist flist, uint64_t index, int ranks, void* args);
+
+//typedef size_t (*bayer_flist_map) (bayer_flist flist, char **buf, bayer_flist_name_encode encode);
+size_t bayer_flist_distribute_map(
+    bayer_flist list,
+    char **buffer,
+    bayer_flist_name_encode_fn encode,
+    bayer_flist_map_fn map,
+    void *args
+);
+
+/* given an input list and a map function pointer, call map function
+ * for each item in list, identify new rank to send item to and then
+ * exchange items among ranks and return new output list */
+bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* args);
+
 #endif /* BAYER_FLIST_H */
 
 /* enable C++ codes to include this header directly */
