@@ -20,6 +20,8 @@ import time
 import thread
 import threading
 import filecmp
+import moab
+import re
 from os import path
 from threading import Thread
 
@@ -32,11 +34,15 @@ class test(object):
 	total_size = '100M'
 	data_string = ''
 	tar_name = 'test.tar'
+	jobname = 'dtest.job'
+	jobid = 0
 	file_count = 10
 	dir_chance = 0.2
 	flat = True
 	run_test = True
 	num_proc = 3
+	procpernode = 1
+	stock = False
 	thread_count = 0
 	thread_complete = 0
 	gen_files = True
@@ -127,7 +133,37 @@ class test(object):
 		if self.verbose: print 'writing files...'
 		self.populate(self.dir_chance+0.1)
 		if self.verbose: print 'files written to '+self.tmp_dir
+	def post_process(self, id):
+		speed = 0
+		mag = 0
+		
+		lines = [line.strip() for line in open('dtest.o%d'%id, 'r')]
+		
+		for line in lines:
+			if 'Aggregate transfer rate is' in line:
+				m = re.search('`(.+?)\'', line)
+				if m:
+				 	speed = int(m.group(1))
 
+		if speed/1024**6 is 0:
+			mag = 5
+		if speed/1024**5 is 0:
+			mag = 4
+		if speed/1024**4 is 0:
+			mag = 3
+		if speed/1024**3 is 0:
+			mag = 2
+		if speed/1024**2 is 0:
+			mag = 1
+		if speed/1024**1 is 0:
+			mag = 0
+		suffix = {0:'B/s',
+			  1:'KB/s',
+			  2:'MB/s',
+			  3:'GB/s',
+			  4:'TB/s',
+			  5:'PB/s'}
+		return '%.2f%s' %(float(speed)/1024**mag, suffix[mag])
 	def do_archive(self):
 		avg_speed = 0
 		bw = []
@@ -140,7 +176,9 @@ class test(object):
 		if 'dtar' in self.bin_path:
 			sum = 0
 			mag = 0
-			spargs = ['mpirun', '-np', str(self.num_proc), self.bin_path, '-cf', self.tar_name, self.tmp_dir]
+			if not self.stock: spargs = ['mpirun', '-np', str(self.num_proc), self.bin_path, '-cf', self.tar_name, self.tmp_dir]
+			else: spargs = ['tar', '-cvf', self.tar_name, self.tmp_dir]
+				
 			spcall = "subprocess.Popen("+str(spargs)+ \
 					",stderr=subprocess.STDOUT, stdout=subprocess.PIPE)"
 			for i in range(self.iterations):
@@ -183,7 +221,34 @@ class test(object):
 		elif 'dcp' in self.bin_path:
 			sum = 0
 			mag = 0
-			spargs = ['mpirun', '-np', str(self.num_proc), self.bin_path, '-r', self.tmp_dir, self.dest_dir]
+			if not self.stock and not self.titan: spargs = ['mpirun', '-np', str(self.num_proc), self.bin_path, '-r', self.tmp_dir, self.dest_dir]
+			elif self.stock: spargs = ['cp', '-r', self.tmp_dir, self.dest_dir]
+			else: 
+				self.job.write('aprun -n %d -N %d %s/%s -r %s %s\n' %(self.num_proc, self.procpernode, self.cwd, self.bin_path, self.tmp_dir, self.dest_dir))
+				if self.verbose: print 'batch job written to -> %s' % self.jobname
+				self.job.close()
+				self.jobid = moab.submit("%s/%s" %(self.cwd, self.jobname))
+				if self.verbose: print 'queued job #%d\nwaiting in the queue' %self.jobid
+				self.jobject = moab.getjob(self.jobid)
+				tick = 0
+				anim = {0:'-',
+					1:'\\',
+					2:'|',
+					3:'/'}
+				 
+				while self.jobject.state() != 'complete':
+					if self.jobject.state() == 'running':
+						if tick == 3: tick = 0
+						else: tick += 1
+						if self.verbose: 
+							sys.stdout.write('\rrunning %s ' % anim[tick])
+							sys.stdout.flush()
+					time.sleep(0.1)
+				if self.verbose: print '\rjob complete\t'
+				print self.post_process(self.jobid)
+				return 
+
+
 			spcall = "subprocess.Popen("+str(spargs)+ \
 					",stderr=subprocess.STDOUT, stdout=subprocess.PIPE)"
 
@@ -222,7 +287,6 @@ class test(object):
 				  3:'GB/s',
 				  4:'TB/s',
 				  5:'PB/s'}
-
 		if not self.validate: print '%.2f%s' %(float(avg_speed)/1024**mag, suffix[mag])
 	
 	def __validate__(self):
@@ -267,6 +331,7 @@ class test(object):
 		parser = argparse.ArgumentParser()
 		parser.add_argument('-s', '--size', help='total tree size to test')
 		parser.add_argument('-np', '--proc', help='number of MPI processes to use while testing', type=int)
+		parser.add_argument('-N', '--ppn', help='number of MPI processes per node', type=int)
 		parser.add_argument('-bs', '--block', help='block size for writing files')
 		parser.add_argument('-c', '--count', help='number of files to test with', type=int)
 		parser.add_argument('-i', '--iterations', help='number of test iterations to run', type=int)
@@ -278,7 +343,9 @@ class test(object):
 		parser.add_argument('test_dir', nargs='?', help='user specified directory used for testing')
 		parser.add_argument('--noclean', help='do not clean up files and directories after test', action='store_true')
 		parser.add_argument('--sparse', help='generate sparse files instead of zero files. (much faster)', action='store_true')
-		
+		parser.add_argument('--stock', 	help='test stock version of binary for control purposes.', action='store_true')
+		parser.add_argument('--titan', help='specify to run batch job distributed execution.', action='store_true')
+		parser.add_argument('--dtn', help='specify to run batch job distributed execution on titan data transfer nodes.', action='store_true')
 		args = parser.parse_args()
 		self.gen_files = args.genfiles
 		self.verbose = args.verbose
@@ -287,6 +354,11 @@ class test(object):
 		self.bin_name = args.binary.split('/')[-1]
 		self.noclean = args.noclean
 		self.sparse = args.sparse
+		self.stock = args.stock
+		self.procpernode = args.ppn
+		self.titan = args.titan
+		self.dtn = args.dtn
+
 		
 		if args.test_dir:
 			self.tmp_dir = args.test_dir
@@ -297,6 +369,7 @@ class test(object):
 		if args.proc: self.num_proc = args.proc
 		if args.validate:
 			self.validate = True
+			self.print_data = False
 			self.iterations = 1
 			self.flat = False
 		if args.size:
@@ -321,6 +394,8 @@ class test(object):
 			shutil.rmtree(self.tmp_dir)
 		if os.path.exists(self.tar_name):
 			os.remove(self.tar_name)
+		if os.path.exists(self.jobname):
+			os.remove(self.jobname)
 
 	def main(self):	
 		self.parseArgs()
@@ -333,13 +408,10 @@ class test(object):
 				print '%s:\tno such file' %self.bin_path
 				sys.exit(2)
 
-		if self.DEBUG:
-			print 'debug mode'
-
 		if self.tmp_dir == '': self.tmp_dir = self.cwd + '/tmp'
 		
 		self.dest_dir = self.cwd + '/dest'
-		
+
 		if not os.path.exists(self.tmp_dir):			
 			os.mkdir(self.tmp_dir)
 			self.gen_files = True
@@ -347,7 +419,20 @@ class test(object):
 			if self.verbose: print 'removing old files...'
 			shutil.rmtree(self.tmp_dir)
 			os.mkdir(self.tmp_dir)
-		
+
+		if self.titan:
+			self.job = open(self.jobname, 'w')
+			self.job.write('#!/bin/bash\n')
+			self.job.write('#	Begin PBS Directives\n')
+			self.job.write('#PBS -A stf008\n')
+			self.job.write('#PBS -N dtest\n')
+			self.job.write('#PBS -j oe\n')
+			self.job.write('#PBS -l walltime=1:00:00,nodes=%s,%s\n' %(str(self.num_proc/self.procpernode) if self.num_proc%self.procpernode == 0 else str(self.num_proc/self.procpernode+1), ('partition=dtn' if self.dtn else '')))
+			self.job.write('#End PBS directives\n')
+			self.job.write('cd %s\n' %self.cwd)
+			self.job.write('export PATH=$PATH:/lustre/widow2/scratch/tag/bayer/dtar/install/include\n')
+			self.job.write('export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/lustre/widow2/scratch/tag/lib\n')
+
 		if self.gen_files:
 			self.gen_tree()
 		self.dir_size = self._total_size(self.tmp_dir)
