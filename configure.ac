@@ -32,6 +32,11 @@ echo
 
 AC_CONFIG_FILES([Makefile              \
                  src/Makefile          \
+                 src/common/Makefile   \
+                 src/dcmp/Makefile     \
+                 src/dfind/Makefile    \
+                 src/drm/Makefile      \
+                 src/dwalk/Makefile    \
                  doc/Makefile          \
                  doc/man/Makefile      \
                  doc/man/man1/Makefile \
