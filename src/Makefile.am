@@ -1,1 +1,1 @@
-SUBDIRS = common dcmp dfind drm dwalk
+SUBDIRS = common #dcmp dfind drm dwalk

@@ -10,8 +10,17 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 # Check for programs
 
+# Check for doxygen.
+X_AC_DOXYGEN
+
 # Check for libcircle
 PKG_CHECK_MODULES([libcircle], libcircle)
+
+# Check for liblwgrp.
+PKG_CHECK_MODULES([liblwgrp], liblwgrp)
+
+# Check for libdtcmp.
+PKG_CHECK_MODULES([libdtcmp], libdtcmp)
 
 # Pull in libtool.
 LT_INIT
@@ -34,9 +43,6 @@ AC_CONFIG_FILES([Makefile              \
                  src/Makefile          \
                  src/common/Makefile   \
                  src/dcmp/Makefile     \
-                 src/dfind/Makefile    \
-                 src/drm/Makefile      \
-                 src/dwalk/Makefile    \
                  doc/Makefile          \
                  doc/man/Makefile      \
                  doc/man/man1/Makefile \
