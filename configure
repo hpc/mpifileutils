@@ -7522,7 +7522,7 @@ echo "  MPI ............................................ $have_C_mpi"
 echo "========================================================"
 echo
 
-ac_config_files="$ac_config_files Makefile src/Makefile src/common/Makefile src/dcmp/Makefile doc/Makefile doc/man/Makefile doc/man/man1/Makefile"
+ac_config_files="$ac_config_files Makefile src/Makefile src/common/Makefile src/dcmp/Makefile src/dfind/Makefile src/drm/Makefile src/dwalk/Makefile doc/Makefile doc/man/Makefile doc/man/man1/Makefile"
 
 
 cat >confcache <<\_ACEOF
@@ -8274,6 +8274,9 @@ do
     "src/Makefile") CONFIG_FILES="$CONFIG_FILES src/Makefile" ;;
     "src/common/Makefile") CONFIG_FILES="$CONFIG_FILES src/common/Makefile" ;;
     "src/dcmp/Makefile") CONFIG_FILES="$CONFIG_FILES src/dcmp/Makefile" ;;
+    "src/dfind/Makefile") CONFIG_FILES="$CONFIG_FILES src/dfind/Makefile" ;;
+    "src/drm/Makefile") CONFIG_FILES="$CONFIG_FILES src/drm/Makefile" ;;
+    "src/dwalk/Makefile") CONFIG_FILES="$CONFIG_FILES src/dwalk/Makefile" ;;
     "doc/Makefile") CONFIG_FILES="$CONFIG_FILES doc/Makefile" ;;
     "doc/man/Makefile") CONFIG_FILES="$CONFIG_FILES doc/man/Makefile" ;;
     "doc/man/man1/Makefile") CONFIG_FILES="$CONFIG_FILES doc/man/man1/Makefile" ;;
