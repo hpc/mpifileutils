@@ -1,0 +1,21 @@
+language: c
+
+before_install:
+ - sudo apt-get update -qq
+ - sudo apt-get install -qq check libopenmpi-dev openmpi-bin check bc libattr1-dev
+ - git clone https://github.com/hpc/libcircle.git
+ - pushd libcircle
+ - ./autogen.sh && ./configure --enable-tests && make && make check && sudo make install
+ - popd
+ - sudo ldconfig
+
+script: ./autogen.sh && ./configure && make && make test
+
+compiler:
+  - clang
+  - gcc
+
+notifications:
+  email:
+    - jonb@lanl.gov
+    - jon@bringhurst.org

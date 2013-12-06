@@ -1,0 +1,14 @@
+--style=kr
+--indent-switches
+--indent-preprocessor
+--indent-col1-comments
+--break-blocks
+--pad-oper
+--unpad-paren
+--break-closing-brackets
+--add-brackets
+--add-one-line-brackets
+--convert-tabs
+--align-pointer=type
+--mode=c
+--lineend=linux
