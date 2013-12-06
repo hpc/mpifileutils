@@ -50,6 +50,9 @@ X_AC_DOXYGEN
 # Check for libcircle
 PKG_CHECK_MODULES([libcircle], libcircle)
 
+# Check for libarchive
+PKG_CHECK_MODULES([libarchive], libarchive)
+
 # Check for libdtcmp.
 X_AC_DTCMP
 
@@ -71,10 +74,15 @@ AC_CONFIG_FILES([Makefile              \
                  doc/man/man1/Makefile \
 ])
 
+# Check if we should build the experimental utilities.
+X_AC_EXPERIMENTAL
+if test [EXPERIMENTAL_ENABLED]; then 
 AC_CONFIG_FILES([experimental/Makefile           \
                  experimental/dfind/Makefile     \
                  experimental/dgrep/Makefile     \
                  experimental/dparallel/Makefile \
+                 experimental/dtar/Makefile      \
 ])
+fi
 
 AC_OUTPUT

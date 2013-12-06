@@ -81,7 +81,8 @@ DIST_COMMON = $(top_srcdir)/common.mk $(srcdir)/Makefile.in \
 bin_PROGRAMS = dfind$(EXEEXT)
 subdir = experimental/dfind
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/lx_find_doxygen.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/lx_experimental.m4 \
+	$(top_srcdir)/m4/lx_find_doxygen.m4 \
 	$(top_srcdir)/m4/lx_find_dtcmp.m4 \
 	$(top_srcdir)/m4/lx_find_mpi.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
@@ -242,6 +243,8 @@ htmldir = ${docdir}
 includedir = ${prefix}/include
 infodir = ${datarootdir}/info
 install_sh = ${SHELL} /home/jonb/fileutils/auxdir/install-sh
+libarchive_CFLAGS =  
+libarchive_LIBS = -larchive  
 libcircle_CFLAGS = -I/usr/local/include/  
 libcircle_LIBS = -L/usr/local/lib -lcircle  
 libdir = ${exec_prefix}/lib

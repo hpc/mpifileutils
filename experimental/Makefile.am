@@ -1,1 +1,1 @@
-SUBDIRS = dgrep dparallel #dtar dfind
+SUBDIRS = dgrep dparallel dtar #dfind

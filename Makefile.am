@@ -1,8 +1,12 @@
 AUTOMAKE_OPTIONS = foreign
 ACLOCAL_AMFLAGS = -I m4
 
-SUBDIRS = src doc experimental
- 
+if EXPERIMENTAL_ENABLED
+  SUBDIRS = src doc experimental
+else
+  SUBDIRS = src doc
+endif
+
 MAINTAINERCLEANFILES = \
 	aclocal.m4 config.guess config.xml              \
 	config.h.in config.sub configure install-sh     \

@@ -78,7 +78,8 @@ POST_UNINSTALL = :
 subdir = experimental
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/lx_find_doxygen.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/lx_experimental.m4 \
+	$(top_srcdir)/m4/lx_find_doxygen.m4 \
 	$(top_srcdir)/m4/lx_find_dtcmp.m4 \
 	$(top_srcdir)/m4/lx_find_mpi.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
@@ -251,6 +252,8 @@ htmldir = @htmldir@
 includedir = @includedir@
 infodir = @infodir@
 install_sh = @install_sh@
+libarchive_CFLAGS = @libarchive_CFLAGS@
+libarchive_LIBS = @libarchive_LIBS@
 libcircle_CFLAGS = @libcircle_CFLAGS@
 libcircle_LIBS = @libcircle_LIBS@
 libdir = @libdir@
@@ -272,7 +275,7 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-SUBDIRS = dgrep dparallel #dtar dfind
+SUBDIRS = dgrep dparallel dtar #dfind
 all: all-recursive
 
 .SUFFIXES:

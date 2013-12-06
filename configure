@@ -621,13 +621,17 @@ ac_includes_default="\
 # include <unistd.h>
 #endif"
 
-ac_subst_vars='HAVE_MPI_FALSE
+ac_subst_vars='EXPERIMENTAL_ENABLED_FALSE
+EXPERIMENTAL_ENABLED_TRUE
+HAVE_MPI_FALSE
 HAVE_MPI_TRUE
 MPI_CLDFLAGS
 MPI_CFLAGS
 MPICC
 LIBDTCMP_LIB
 LIBDTCMP_INCLUDE
+libarchive_LIBS
+libarchive_CFLAGS
 libcircle_LIBS
 libcircle_CFLAGS
 PKG_CONFIG_LIBDIR
@@ -740,6 +744,7 @@ enable_silent_rules
 enable_dependency_tracking
 enable_doxygen
 with_libdtcmp
+enable_experimental
 '
       ac_precious_vars='build_alias
 host_alias
@@ -757,7 +762,9 @@ PKG_CONFIG
 PKG_CONFIG_PATH
 PKG_CONFIG_LIBDIR
 libcircle_CFLAGS
-libcircle_LIBS'
+libcircle_LIBS
+libarchive_CFLAGS
+libarchive_LIBS'
 
 
 # Initialize some variables set by options.
@@ -1379,6 +1386,7 @@ Optional Features:
   --disable-dependency-tracking
                           speeds up one-time build
   --enable-doxygen        enable doxygen documentation
+  --with-experimental     enable experimental utilities
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -1405,6 +1413,10 @@ Some influential environment variables:
               C compiler flags for libcircle, overriding pkg-config
   libcircle_LIBS
               linker flags for libcircle, overriding pkg-config
+  libarchive_CFLAGS
+              C compiler flags for libarchive, overriding pkg-config
+  libarchive_LIBS
+              linker flags for libarchive, overriding pkg-config
 
 Use these variables to override the choices made by `configure' or to help
 it to find libraries and programs with nonstandard names/locations.
@@ -7270,6 +7282,99 @@ $as_echo "yes" >&6; }
 
 fi
 
+# Check for libarchive
+
+pkg_failed=no
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for libarchive" >&5
+$as_echo_n "checking for libarchive... " >&6; }
+
+if test -n "$libarchive_CFLAGS"; then
+    pkg_cv_libarchive_CFLAGS="$libarchive_CFLAGS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"libarchive\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "libarchive") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_libarchive_CFLAGS=`$PKG_CONFIG --cflags "libarchive" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+if test -n "$libarchive_LIBS"; then
+    pkg_cv_libarchive_LIBS="$libarchive_LIBS"
+ elif test -n "$PKG_CONFIG"; then
+    if test -n "$PKG_CONFIG" && \
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"libarchive\""; } >&5
+  ($PKG_CONFIG --exists --print-errors "libarchive") 2>&5
+  ac_status=$?
+  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
+  test $ac_status = 0; }; then
+  pkg_cv_libarchive_LIBS=`$PKG_CONFIG --libs "libarchive" 2>/dev/null`
+		      test "x$?" != "x0" && pkg_failed=yes
+else
+  pkg_failed=yes
+fi
+ else
+    pkg_failed=untried
+fi
+
+
+
+if test $pkg_failed = yes; then
+   	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+
+if $PKG_CONFIG --atleast-pkgconfig-version 0.20; then
+        _pkg_short_errors_supported=yes
+else
+        _pkg_short_errors_supported=no
+fi
+        if test $_pkg_short_errors_supported = yes; then
+	        libarchive_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "libarchive" 2>&1`
+        else
+	        libarchive_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "libarchive" 2>&1`
+        fi
+	# Put the nasty error message in config.log where it belongs
+	echo "$libarchive_PKG_ERRORS" >&5
+
+	as_fn_error $? "Package requirements (libarchive) were not met:
+
+$libarchive_PKG_ERRORS
+
+Consider adjusting the PKG_CONFIG_PATH environment variable if you
+installed software in a non-standard prefix.
+
+Alternatively, you may set the environment variables libarchive_CFLAGS
+and libarchive_LIBS to avoid the need to call pkg-config.
+See the pkg-config man page for more details." "$LINENO" 5
+elif test $pkg_failed = untried; then
+     	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+	{ { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "The pkg-config script could not be found or is too old.  Make sure it
+is in your PATH or set the PKG_CONFIG environment variable to the full
+path to pkg-config.
+
+Alternatively, you may set the environment variables libarchive_CFLAGS
+and libarchive_LIBS to avoid the need to call pkg-config.
+See the pkg-config man page for more details.
+
+To get pkg-config, see <http://pkg-config.freedesktop.org/>.
+See \`config.log' for more details" "$LINENO" 5; }
+else
+	libarchive_CFLAGS=$pkg_cv_libarchive_CFLAGS
+	libarchive_LIBS=$pkg_cv_libarchive_LIBS
+        { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+
+fi
+
 # Check for libdtcmp.
 
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for libDTCMP" >&5
@@ -7665,8 +7770,35 @@ fi
 ac_config_files="$ac_config_files Makefile src/Makefile src/common/Makefile src/dcmp/Makefile src/dcp/Makefile src/drm/Makefile src/dwalk/Makefile doc/Makefile doc/man/Makefile doc/man/man1/Makefile"
 
 
-ac_config_files="$ac_config_files experimental/Makefile experimental/dfind/Makefile experimental/dgrep/Makefile experimental/dparallel/Makefile"
+# Check if we should build the experimental utilities.
 
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if experimental tools are enabled" >&5
+$as_echo_n "checking if experimental tools are enabled... " >&6; }
+  # Check whether --enable-experimental was given.
+if test "${enable_experimental+set}" = set; then :
+  enableval=$enable_experimental;
+      x_ac_experimental=yes
+
+else
+
+      x_ac_experimental=no
+
+
+fi
+
+   if test "x$x_ac_experimental" = xyes; then
+  EXPERIMENTAL_ENABLED_TRUE=
+  EXPERIMENTAL_ENABLED_FALSE='#'
+else
+  EXPERIMENTAL_ENABLED_TRUE='#'
+  EXPERIMENTAL_ENABLED_FALSE=
+fi
+
+
+if test EXPERIMENTAL_ENABLED; then
+ac_config_files="$ac_config_files experimental/Makefile experimental/dfind/Makefile experimental/dgrep/Makefile experimental/dparallel/Makefile experimental/dtar/Makefile"
+
+fi
 
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
@@ -7815,6 +7947,10 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${HAVE_MPI_TRUE}" && test -z "${HAVE_MPI_FALSE}"; then
   as_fn_error $? "conditional \"HAVE_MPI\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${EXPERIMENTAL_ENABLED_TRUE}" && test -z "${EXPERIMENTAL_ENABLED_FALSE}"; then
+  as_fn_error $? "conditional \"EXPERIMENTAL_ENABLED\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 
@@ -8427,6 +8563,7 @@ do
     "experimental/dfind/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dfind/Makefile" ;;
     "experimental/dgrep/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dgrep/Makefile" ;;
     "experimental/dparallel/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dparallel/Makefile" ;;
+    "experimental/dtar/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dtar/Makefile" ;;
 
   *) as_fn_error $? "invalid argument: \`$ac_config_target'" "$LINENO" 5;;
   esac

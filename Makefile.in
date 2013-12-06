@@ -83,7 +83,8 @@ DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	auxdir/missing auxdir/ltmain.sh \
 	$(top_srcdir)/auxdir/install-sh $(top_srcdir)/auxdir/missing
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/lx_find_doxygen.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/lx_experimental.m4 \
+	$(top_srcdir)/m4/lx_find_doxygen.m4 \
 	$(top_srcdir)/m4/lx_find_dtcmp.m4 \
 	$(top_srcdir)/m4/lx_find_mpi.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
@@ -150,7 +151,7 @@ am__define_uniq_tagged_files = \
 ETAGS = etags
 CTAGS = ctags
 CSCOPE = cscope
-DIST_SUBDIRS = $(SUBDIRS)
+DIST_SUBDIRS = src doc experimental
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 distdir = $(PACKAGE)-$(VERSION)
 top_distdir = $(distdir)
@@ -276,6 +277,8 @@ htmldir = @htmldir@
 includedir = @includedir@
 infodir = @infodir@
 install_sh = @install_sh@
+libarchive_CFLAGS = @libarchive_CFLAGS@
+libarchive_LIBS = @libarchive_LIBS@
 libcircle_CFLAGS = @libcircle_CFLAGS@
 libcircle_LIBS = @libcircle_LIBS@
 libdir = @libdir@
@@ -299,7 +302,8 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign
 ACLOCAL_AMFLAGS = -I m4
-SUBDIRS = src doc experimental
+@EXPERIMENTAL_ENABLED_FALSE@SUBDIRS = src doc
+@EXPERIMENTAL_ENABLED_TRUE@SUBDIRS = src doc experimental
 MAINTAINERCLEANFILES = \
 	aclocal.m4 config.guess config.xml              \
 	config.h.in config.sub configure install-sh     \
