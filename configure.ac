@@ -77,4 +77,9 @@ AC_CONFIG_FILES([Makefile              \
                  doc/man/man1/Makefile \
 ])
 
+AC_CONFIG_FILES([experimental/Makefile           \
+                 experimental/dgrep/Makefile     \
+                 experimental/dparallel/Makefile \
+])
+
 AC_OUTPUT

@@ -161,7 +161,7 @@ main (int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    DGREP_global_rank = CIRCLE_init(argc, argv);
+    DGREP_global_rank = CIRCLE_init(argc, argv, CIRCLE_DEFAULT_FLAGS);
 
     CIRCLE_cb_create (&DGREP_start);
     CIRCLE_cb_process(&DGREP_search);

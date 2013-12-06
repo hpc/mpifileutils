@@ -7525,6 +7525,9 @@ echo
 ac_config_files="$ac_config_files Makefile src/Makefile src/common/Makefile src/dcmp/Makefile src/dcp/Makefile src/dfind/Makefile src/drm/Makefile src/dwalk/Makefile doc/Makefile doc/man/Makefile doc/man/man1/Makefile"
 
 
+ac_config_files="$ac_config_files experimental/Makefile experimental/dgrep/Makefile experimental/dparallel/Makefile"
+
+
 cat >confcache <<\_ACEOF
 # This file is a shell script that caches the results of configure
 # tests run on this system so they can be shared between configure
@@ -8281,6 +8284,9 @@ do
     "doc/Makefile") CONFIG_FILES="$CONFIG_FILES doc/Makefile" ;;
     "doc/man/Makefile") CONFIG_FILES="$CONFIG_FILES doc/man/Makefile" ;;
     "doc/man/man1/Makefile") CONFIG_FILES="$CONFIG_FILES doc/man/man1/Makefile" ;;
+    "experimental/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/Makefile" ;;
+    "experimental/dgrep/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dgrep/Makefile" ;;
+    "experimental/dparallel/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dparallel/Makefile" ;;
 
   *) as_fn_error $? "invalid argument: \`$ac_config_target'" "$LINENO" 5;;
   esac
