@@ -6,7 +6,7 @@ AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
 
 AM_INIT_AUTOMAKE([foreign])
-m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+#m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 # Check for programs
 
@@ -16,11 +16,11 @@ X_AC_DOXYGEN
 # Check for libcircle
 PKG_CHECK_MODULES([libcircle], libcircle)
 
-# Check for liblwgrp.
-PKG_CHECK_MODULES([liblwgrp], liblwgrp)
+# Check for liblwgrp
+AC_CHECK_HEADER([lwgrp.h])
 
 # Check for libdtcmp.
-PKG_CHECK_MODULES([libdtcmp], libdtcmp)
+AC_CHECK_HEADER([dtcmp.h])
 
 # Pull in libtool.
 LT_INIT
