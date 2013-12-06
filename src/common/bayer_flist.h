@@ -34,7 +34,7 @@ typedef void* bayer_flist;
 extern bayer_flist BAYER_FLIST_NULL;
 
 /* create new, empty file list */
-bayer_flist bayer_flist_new();
+bayer_flist bayer_flist_new(void);
 
 /* create list as subset of another list
  * (returns emtpy list with same user and group maps) */

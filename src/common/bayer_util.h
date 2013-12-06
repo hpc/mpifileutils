@@ -61,10 +61,10 @@ extern bayer_loglevel bayer_debug_level;
 
 /* initialize bayer library,
  * reference counting allows for multiple init/finalize pairs */
-int bayer_init();
+int bayer_init(void);
 
 /* finalize bayer library */
-int bayer_finalize();
+int bayer_finalize(void);
 
 /* print abort message and call MPI_Abort to kill run */
 #define BAYER_ABORT(X, ...) bayer_abort(__FILE__, __LINE__, X, __VA_ARGS__)

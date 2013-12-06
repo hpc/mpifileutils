@@ -55,7 +55,7 @@ Allocate and delete path objects
 */
 
 /* allocates a new path */
-bayer_path* bayer_path_new();
+bayer_path* bayer_path_new(void);
 
 /* allocates a path from string */
 bayer_path* bayer_path_from_str(const char* str);

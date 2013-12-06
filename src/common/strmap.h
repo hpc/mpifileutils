@@ -50,7 +50,7 @@ Allocate and delete map objects
 */
 
 /* allocates a new map */
-strmap* strmap_new();
+strmap* strmap_new(void);
 
 /* copies entries from src into dst */
 void strmap_merge(strmap* dst, const strmap* src);
