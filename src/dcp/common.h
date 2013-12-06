@@ -32,7 +32,7 @@
 #endif
 
 /* Autotool defines. */
-#include "../config.h"
+#include "../../config.h"
 
 #include "mpi.h"
 

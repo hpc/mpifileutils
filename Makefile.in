@@ -78,10 +78,10 @@ POST_UNINSTALL = :
 subdir = .
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/configure $(am__configure_deps) \
-	$(srcdir)/config.h.in auxdir/config.guess auxdir/config.sub \
-	auxdir/depcomp auxdir/install-sh auxdir/missing \
-	auxdir/ltmain.sh $(top_srcdir)/auxdir/install-sh \
-	$(top_srcdir)/auxdir/missing
+	$(srcdir)/config.h.in AUTHORS auxdir/config.guess \
+	auxdir/config.sub auxdir/depcomp auxdir/install-sh \
+	auxdir/missing auxdir/ltmain.sh \
+	$(top_srcdir)/auxdir/install-sh $(top_srcdir)/auxdir/missing
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/lx_find_doxygen.m4 \
 	$(top_srcdir)/m4/lx_find_dtcmp.m4 \

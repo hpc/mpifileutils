@@ -68,6 +68,7 @@ AC_CONFIG_FILES([Makefile              \
                  src/Makefile          \
                  src/common/Makefile   \
                  src/dcmp/Makefile     \
+                 src/dcp/Makefile      \
                  src/dfind/Makefile    \
                  src/drm/Makefile      \
                  src/dwalk/Makefile    \
