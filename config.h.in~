@@ -89,14 +89,23 @@
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #undef HAVE_SYS_STAT_H
 
+/* Define to 1 if you have the <sys/time.h> header file. */
+#undef HAVE_SYS_TIME_H
+
 /* Define to 1 if you have the <sys/types.h> header file. */
 #undef HAVE_SYS_TYPES_H
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
 
+/* Define to 1 if you have the `utime' function. */
+#undef HAVE_UTIME
+
 /* Define to 1 if you have the <utime.h> header file. */
 #undef HAVE_UTIME_H
+
+/* Define to 1 if the system has the type `_Bool'. */
+#undef HAVE__BOOL
 
 /* Define to 1 if `lstat' dereferences a symlink specified with a trailing
    slash. */
@@ -148,6 +157,10 @@
 #undef inline
 #endif
 
+/* Define to the type of a signed integer type of width exactly 32 bits if
+   such a type exists and the standard includes do not define it. */
+#undef int32_t
+
 /* Define to the type of a signed integer type of width exactly 64 bits if
    such a type exists and the standard includes do not define it. */
 #undef int64_t
@@ -169,6 +182,10 @@
 
 /* Define to `int' if <sys/types.h> doesn't define. */
 #undef uid_t
+
+/* Define to the type of an unsigned integer type of width exactly 16 bits if
+   such a type exists and the standard includes do not define it. */
+#undef uint16_t
 
 /* Define to the type of an unsigned integer type of width exactly 32 bits if
    such a type exists and the standard includes do not define it. */
