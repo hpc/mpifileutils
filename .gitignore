@@ -4,6 +4,8 @@
 # Libraries
 *.lib
 *.a
+*.la
+*.lo
 
 # Shared objects (inc. Windows DLLs)
 *.dll
@@ -20,3 +22,11 @@
 dcp
 deps
 install
+
+# Autotool artifacts
+/autom4te.cache
+/stamp-h1
+.deps
+/config.log
+/config.status
+/config.h*
