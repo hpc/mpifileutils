@@ -272,7 +272,7 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-SUBDIRS = common dcmp dcp drm dwalk #dfind
+SUBDIRS = common dcmp dcp drm dwalk
 all: all-recursive
 
 .SUFFIXES:

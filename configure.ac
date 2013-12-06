@@ -64,7 +64,6 @@ AC_CONFIG_FILES([Makefile              \
                  src/common/Makefile   \
                  src/dcmp/Makefile     \
                  src/dcp/Makefile      \
-                 src/dfind/Makefile    \
                  src/drm/Makefile      \
                  src/dwalk/Makefile    \
                  doc/Makefile          \
@@ -73,6 +72,7 @@ AC_CONFIG_FILES([Makefile              \
 ])
 
 AC_CONFIG_FILES([experimental/Makefile           \
+                 experimental/dfind/Makefile     \
                  experimental/dgrep/Makefile     \
                  experimental/dparallel/Makefile \
 ])

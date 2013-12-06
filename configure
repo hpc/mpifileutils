@@ -7662,10 +7662,10 @@ else
 fi
 
 
-ac_config_files="$ac_config_files Makefile src/Makefile src/common/Makefile src/dcmp/Makefile src/dcp/Makefile src/dfind/Makefile src/drm/Makefile src/dwalk/Makefile doc/Makefile doc/man/Makefile doc/man/man1/Makefile"
+ac_config_files="$ac_config_files Makefile src/Makefile src/common/Makefile src/dcmp/Makefile src/dcp/Makefile src/drm/Makefile src/dwalk/Makefile doc/Makefile doc/man/Makefile doc/man/man1/Makefile"
 
 
-ac_config_files="$ac_config_files experimental/Makefile experimental/dgrep/Makefile experimental/dparallel/Makefile"
+ac_config_files="$ac_config_files experimental/Makefile experimental/dfind/Makefile experimental/dgrep/Makefile experimental/dparallel/Makefile"
 
 
 cat >confcache <<\_ACEOF
@@ -8418,13 +8418,13 @@ do
     "src/common/Makefile") CONFIG_FILES="$CONFIG_FILES src/common/Makefile" ;;
     "src/dcmp/Makefile") CONFIG_FILES="$CONFIG_FILES src/dcmp/Makefile" ;;
     "src/dcp/Makefile") CONFIG_FILES="$CONFIG_FILES src/dcp/Makefile" ;;
-    "src/dfind/Makefile") CONFIG_FILES="$CONFIG_FILES src/dfind/Makefile" ;;
     "src/drm/Makefile") CONFIG_FILES="$CONFIG_FILES src/drm/Makefile" ;;
     "src/dwalk/Makefile") CONFIG_FILES="$CONFIG_FILES src/dwalk/Makefile" ;;
     "doc/Makefile") CONFIG_FILES="$CONFIG_FILES doc/Makefile" ;;
     "doc/man/Makefile") CONFIG_FILES="$CONFIG_FILES doc/man/Makefile" ;;
     "doc/man/man1/Makefile") CONFIG_FILES="$CONFIG_FILES doc/man/man1/Makefile" ;;
     "experimental/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/Makefile" ;;
+    "experimental/dfind/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dfind/Makefile" ;;
     "experimental/dgrep/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dgrep/Makefile" ;;
     "experimental/dparallel/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dparallel/Makefile" ;;
 
