@@ -21,9 +21,6 @@
 /* Define to 1 if you have the `dtcmp' library (-ldtcmp). */
 #undef HAVE_LIBDTCMP
 
-/* Define to 1 if you have the `lwgrp' library (-llwgrp). */
-#undef HAVE_LIBLWGRP
-
 /* Define to 1 if you have the <limits.h> header file. */
 #undef HAVE_LIMITS_H
 

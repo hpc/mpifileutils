@@ -24,6 +24,4 @@ deps
 install
 
 # Autotool artifacts
-/autom4te.cache
 .deps
-/config.log
