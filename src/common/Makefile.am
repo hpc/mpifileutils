@@ -1,10 +1,7 @@
 include $(top_srcdir)/common.mk
 
-AM_CPPFLAGS = \
-           -I$(top_srcdir) \
-           -I$(top_srcdir)/src/common
-
 noinst_LIBRARIES = libfileutils_common.a
+
 libfileutils_common_a_SOURCES = \
                                 bayer_flist.c \
                                 bayer_io.c \
@@ -12,3 +9,11 @@ libfileutils_common_a_SOURCES = \
                                 bayer_path.c \
                                 bayer_util.c \
                                 strmap.c
+
+libfileutils_common_a_LDFLAGS = \
+							  $(MPI_CLDFLAGS) \
+							  $(libcircle_LIBS)
+
+libfileutils_common_a_CPPFLAGS = \
+                                 $(MPI_CFLAGS) \
+                                 $(libcircle_CFLAGS)

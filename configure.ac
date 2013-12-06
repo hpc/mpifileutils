@@ -9,6 +9,37 @@ AM_INIT_AUTOMAKE([foreign])
 #m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 # Check for programs
+AC_PROG_CXX
+AC_PROG_AWK
+AC_PROG_CC
+AC_PROG_CPP
+AC_PROG_INSTALL
+AC_PROG_LN_S
+AC_PROG_MAKE_SET
+AC_PROG_RANLIB
+
+# Checks for header files.
+AC_CHECK_HEADERS([fcntl.h inttypes.h limits.h stdint.h stdlib.h string.h sys/ioctl.h unistd.h utime.h])
+
+# Checks for typedefs, structures, and compiler characteristics.
+AC_TYPE_UID_T
+AC_C_INLINE
+AC_TYPE_INT64_T
+AC_TYPE_MODE_T
+AC_TYPE_OFF_T
+AC_TYPE_SIZE_T
+AC_TYPE_SSIZE_T
+AC_CHECK_MEMBERS([struct stat.st_blksize])
+AC_STRUCT_ST_BLOCKS
+AC_CHECK_MEMBERS([struct stat.st_rdev])
+AC_TYPE_UINT32_T
+AC_TYPE_UINT64_T
+
+# Checks for library functions.
+AC_FUNC_ERROR_AT_LINE
+AC_FUNC_LSTAT_FOLLOWS_SLASHED_SYMLINK
+AC_FUNC_MALLOC
+AC_CHECK_FUNCS([endgrent endpwent getcwd lchown memset mkdir realpath rmdir strchr strdup strerror strstr])
 
 # Check for doxygen.
 X_AC_DOXYGEN
@@ -16,14 +47,8 @@ X_AC_DOXYGEN
 # Check for libcircle
 PKG_CHECK_MODULES([libcircle], libcircle)
 
-# Check for liblwgrp
-AC_CHECK_HEADER([lwgrp.h])
-
 # Check for libdtcmp.
-AC_CHECK_HEADER([dtcmp.h])
-
-# Pull in libtool.
-LT_INIT
+X_AC_DTCMP
 
 # Check for MPI
 LX_FIND_MPI
