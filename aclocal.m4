@@ -1198,7 +1198,6 @@ AC_SUBST([am__untar])
 ]) # _AM_PROG_TAR
 
 m4_include([m4/lx_experimental.m4])
-m4_include([m4/lx_find_doxygen.m4])
 m4_include([m4/lx_find_dtcmp.m4])
 m4_include([m4/lx_find_mpi.m4])
 m4_include([m4/lx_find_nose.m4])

@@ -70,8 +70,10 @@ AC_CONFIG_FILES([Makefile              \
                  src/drm/Makefile      \
                  src/dwalk/Makefile    \
                  doc/Makefile          \
+                 doc/html/Makefile     \
                  doc/man/Makefile      \
                  doc/man/man1/Makefile \
+                 doc/pdf/Makefile      \
 ])
 
 # Check if we should build the experimental utilities.

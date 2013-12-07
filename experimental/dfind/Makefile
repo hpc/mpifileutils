@@ -82,7 +82,6 @@ bin_PROGRAMS = dfind$(EXEEXT)
 subdir = experimental/dfind
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/lx_experimental.m4 \
-	$(top_srcdir)/m4/lx_find_doxygen.m4 \
 	$(top_srcdir)/m4/lx_find_dtcmp.m4 \
 	$(top_srcdir)/m4/lx_find_mpi.m4 \
 	$(top_srcdir)/m4/lx_find_nose.m4 $(top_srcdir)/configure.ac
@@ -179,7 +178,6 @@ CXXFLAGS = -g -O2 -I/usr/local/include
 CYGPATH_W = echo
 DEFS = -DHAVE_CONFIG_H
 DEPDIR = .deps
-DOXYGEN = 
 ECHO_C = 
 ECHO_N = -n
 ECHO_T = 
