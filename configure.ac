@@ -56,6 +56,9 @@ PKG_CHECK_MODULES([libarchive], libarchive)
 # Check for libdtcmp.
 X_AC_DTCMP
 
+# Check for nose test program.
+X_AC_NOSETESTS
+
 # Check for MPI
 LX_FIND_MPI
 test "x$have_C_mpi" = xyes || \

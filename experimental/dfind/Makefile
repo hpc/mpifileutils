@@ -84,7 +84,8 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/lx_experimental.m4 \
 	$(top_srcdir)/m4/lx_find_doxygen.m4 \
 	$(top_srcdir)/m4/lx_find_dtcmp.m4 \
-	$(top_srcdir)/m4/lx_find_mpi.m4 $(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/lx_find_mpi.m4 \
+	$(top_srcdir)/m4/lx_find_nose.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
@@ -202,6 +203,7 @@ MKDIR_P = /bin/mkdir -p
 MPICC = /usr/bin/mpicc
 MPI_CFLAGS = -I/usr/lib/openmpi/include  -I/usr/lib/openmpi/include/openmpi
 MPI_CLDFLAGS = -L/usr//lib  -L/usr/lib/openmpi/lib  -lmpi  -ldl  -lhwloc
+NOSETESTS = 
 OBJEXT = o
 PACKAGE = fileutils
 PACKAGE_BUGREPORT = fileutils-discuss@googlegroups.com

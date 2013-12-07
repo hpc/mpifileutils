@@ -13,6 +13,16 @@ MAINTAINERCLEANFILES = \
 	ltconfig ltmain.sh missing mkinstalldirs        \
 	stamp-h.in
 
+if HAVE_NOSETESTS
+test:
+	-(pushd $(top_srcdir)/test>/dev/null && nosetests && popd>/dev/null)
+else
+test:
+	@(echo "The nosetests command could not be found. Please install Nose with your")
+	@(echo "package manager or 'pip install nose', then rerun the configure script.")
+	@false;
+endif
+
 distclean-local:
 	-(cd $(top_srcdir) && rm -rf autom4te*.cache autoscan.*)
 	-(cd $(top_srcdir) && rm -rf $(PACKAGE)-*)
@@ -30,3 +40,5 @@ mrproper: distclean-local clean
 	-find $(top_srcdir)/ -name "Makefile.in" -exec rm {} \;
 	-find $(top_srcdir)/ -name ".dirstamp" -exec rm {} \;
 	-find $(top_srcdir) -depth -name ".deps" -exec rm -rf {} \;
+
+.PHONY: test

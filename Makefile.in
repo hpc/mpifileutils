@@ -86,7 +86,8 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/lx_experimental.m4 \
 	$(top_srcdir)/m4/lx_find_doxygen.m4 \
 	$(top_srcdir)/m4/lx_find_dtcmp.m4 \
-	$(top_srcdir)/m4/lx_find_mpi.m4 $(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/lx_find_mpi.m4 \
+	$(top_srcdir)/m4/lx_find_nose.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 am__CONFIG_DISTCLEAN_FILES = config.status config.cache config.log \
@@ -236,6 +237,7 @@ MKDIR_P = @MKDIR_P@
 MPICC = @MPICC@
 MPI_CFLAGS = @MPI_CFLAGS@
 MPI_CLDFLAGS = @MPI_CLDFLAGS@
+NOSETESTS = @NOSETESTS@
 OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
 PACKAGE_BUGREPORT = @PACKAGE_BUGREPORT@
@@ -776,6 +778,13 @@ uninstall-am:
 	tags-am uninstall uninstall-am
 
 
+@HAVE_NOSETESTS_TRUE@test:
+@HAVE_NOSETESTS_TRUE@	-(pushd $(top_srcdir)/test>/dev/null && nosetests && popd>/dev/null)
+@HAVE_NOSETESTS_FALSE@test:
+@HAVE_NOSETESTS_FALSE@	@(echo "The nosetests command could not be found. Please install Nose with your")
+@HAVE_NOSETESTS_FALSE@	@(echo "package manager or 'pip install nose', then rerun the configure script.")
+@HAVE_NOSETESTS_FALSE@	@false;
+
 distclean-local:
 	-(cd $(top_srcdir) && rm -rf autom4te*.cache autoscan.*)
 	-(cd $(top_srcdir) && rm -rf $(PACKAGE)-*)
@@ -793,6 +802,8 @@ mrproper: distclean-local clean
 	-find $(top_srcdir)/ -name "Makefile.in" -exec rm {} \;
 	-find $(top_srcdir)/ -name ".dirstamp" -exec rm {} \;
 	-find $(top_srcdir) -depth -name ".deps" -exec rm -rf {} \;
+
+.PHONY: test
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

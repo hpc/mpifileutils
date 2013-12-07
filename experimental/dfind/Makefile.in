@@ -84,7 +84,8 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/lx_experimental.m4 \
 	$(top_srcdir)/m4/lx_find_doxygen.m4 \
 	$(top_srcdir)/m4/lx_find_dtcmp.m4 \
-	$(top_srcdir)/m4/lx_find_mpi.m4 $(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/lx_find_mpi.m4 \
+	$(top_srcdir)/m4/lx_find_nose.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
@@ -202,6 +203,7 @@ MKDIR_P = @MKDIR_P@
 MPICC = @MPICC@
 MPI_CFLAGS = @MPI_CFLAGS@
 MPI_CLDFLAGS = @MPI_CLDFLAGS@
+NOSETESTS = @NOSETESTS@
 OBJEXT = @OBJEXT@
 PACKAGE = @PACKAGE@
 PACKAGE_BUGREPORT = @PACKAGE_BUGREPORT@
