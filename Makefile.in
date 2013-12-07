@@ -779,8 +779,14 @@ uninstall-am:
 
 
 @HAVE_NOSETESTS_TRUE@test:
-@HAVE_NOSETESTS_TRUE@	-(pushd $(top_srcdir)/test>/dev/null && nosetests && popd>/dev/null)
+@HAVE_NOSETESTS_TRUE@	-(pushd $(top_srcdir)/test>/dev/null && nosetests single_node && popd>/dev/null)
+@HAVE_NOSETESTS_TRUE@test-multi:
+@HAVE_NOSETESTS_TRUE@	-(pushd $(top_srcdir)/test>/dev/null && nosetests multi_node && popd>/dev/null)
 @HAVE_NOSETESTS_FALSE@test:
+@HAVE_NOSETESTS_FALSE@	@(echo "The nosetests command could not be found. Please install Nose with your")
+@HAVE_NOSETESTS_FALSE@	@(echo "package manager or 'pip install nose', then rerun the configure script.")
+@HAVE_NOSETESTS_FALSE@	@false;
+@HAVE_NOSETESTS_FALSE@test-multi:
 @HAVE_NOSETESTS_FALSE@	@(echo "The nosetests command could not be found. Please install Nose with your")
 @HAVE_NOSETESTS_FALSE@	@(echo "package manager or 'pip install nose', then rerun the configure script.")
 @HAVE_NOSETESTS_FALSE@	@false;

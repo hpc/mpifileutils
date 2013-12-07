@@ -7,21 +7,27 @@ else
   SUBDIRS = src doc
 endif
 
-MAINTAINERCLEANFILES = \
-	aclocal.m4 config.guess config.xml              \
-	config.h.in config.sub configure install-sh     \
-	ltconfig ltmain.sh missing mkinstalldirs        \
-	stamp-h.in
-
 if HAVE_NOSETESTS
 test:
-	-(pushd $(top_srcdir)/test>/dev/null && nosetests && popd>/dev/null)
+	-(pushd $(top_srcdir)/test>/dev/null && nosetests single_node && popd>/dev/null)
+test-multi:
+	-(pushd $(top_srcdir)/test>/dev/null && nosetests multi_node && popd>/dev/null)
 else
 test:
 	@(echo "The nosetests command could not be found. Please install Nose with your")
 	@(echo "package manager or 'pip install nose', then rerun the configure script.")
 	@false;
+test-multi:
+	@(echo "The nosetests command could not be found. Please install Nose with your")
+	@(echo "package manager or 'pip install nose', then rerun the configure script.")
+	@false;
 endif
+
+MAINTAINERCLEANFILES = \
+	aclocal.m4 config.guess config.xml              \
+	config.h.in config.sub configure install-sh     \
+	ltconfig ltmain.sh missing mkinstalldirs        \
+	stamp-h.in
 
 distclean-local:
 	-(cd $(top_srcdir) && rm -rf autom4te*.cache autoscan.*)
