@@ -7,6 +7,14 @@ before_install:
  - pushd libcircle
  - ./autogen.sh && ./configure --enable-tests && make && make check && sudo make install
  - popd
+ - git clone https://github.com/hpc/lwgrp.git
+ - pushd lwgrp
+ - ./autogen.sh && ./configure && make && sudo make install
+ - popd
+ - git clone https://github.com/hpc/dtcmp.git
+ - pushd dtcmp
+ - ./autogen.sh && ./configure --with-lwgrp=/usr/local && make && sudo make install
+ - popd
  - sudo ldconfig
 
 script: ./autogen.sh && ./configure && make && make test
