@@ -54,19 +54,10 @@ If the filesystem is very unreliable, this option may be used to always retry an
 
 Print version information and exit.
 
-### File size limit notes
-Please note that (by default) dcp is designed for copying files up to 16 petabytes in size. If operations are required on larger files, dcp.h must be modified -- for example, increasing the block size to 64 megabytes will allow for files up to 256 petabytes in size. Without moving to a 128 bit address space, the maximum theoretical file size dcp can copy is 8 exabytes (due to the signed nature of off64_t).
-
 ### Known bugs
 When the force option is specified and truncation fails, the copy and truncation will be stuck in an infinite loop until the truncation operation returns with success.
 
 The maximum supported filename length for any file transfered is approximately 4068 characters. This may be less than the number of characters that your operating system supports.
-
-### RPM Creation
-First, check the [![Build Status](https://travis-ci.org/hpc/dcp.png?branch=master)](https://travis-ci.org/hpc/dcp). If all tests are passing, create an rpm using the following instructions:
-
-1. ```rpmbuild -ta dcp-<version>.tar.gz```
-2. ```rpm --install <the appropriate RPM files>```
 
 ### Contributions
 Please view the *HACKING.md* file for more information on how to contribute to dcp.
