@@ -44,9 +44,6 @@ AC_FUNC_LSTAT_FOLLOWS_SLASHED_SYMLINK
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([endgrent endpwent getcwd lchown memset mkdir realpath rmdir strchr strdup strerror strstr utime])
 
-# Check for doxygen.
-X_AC_DOXYGEN
-
 # Check for libcircle
 PKG_CHECK_MODULES([libcircle], libcircle)
 
