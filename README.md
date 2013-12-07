@@ -15,3 +15,6 @@ File utilities designed for scalability and performance.
 To enable experimental utilities, run configure with the enable experimental option.
 
   ./configure --enable-experimental
+
+## Build Status
+The current status of the fileutils master branch is [![Build Status](https://travis-ci.org/hpc/fileutils.png?branch=master)](https://travis-ci.org/hpc/fileutils).
