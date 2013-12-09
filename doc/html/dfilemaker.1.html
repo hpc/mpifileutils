@@ -23,10 +23,13 @@
 <dd><p>Specify the depth of the filesystem tree to generate. The depth will be selected at random within the bounds of min and max. The default depth is set to 10 min, 20 max.</p>
 </dd>
 <dt>-f, --fill=<em>type</em></dt>
-<dd><p>Specify the fill pattern of the file. Currently three options are available, <code>random</code>, <code>true</code>, <code>false</code>, and <code>alternate</code>. <code>random</code> will fill the file using urandom(4). <code>true</code> will fill the file with a 0xFF pattern. <code>false</code> will fill the file with a 0x00 pattern. <code>alternate</code> will fill the file with a 0xAA pattern.</p>
+<dd><p>Specify the fill pattern of the file. Currently three options are available, <code>random</code>, <code>true</code>, <code>false</code>, and <code>alternate</code>. <code>random</code> will fill the file using urandom(4). <code>true</code> will fill the file with a 0xFF pattern. <code>false</code> will fill the file with a 0x00 pattern. <code>alternate</code> will fill the file with a 0xAA pattern. The default fill is <code>random</code>.</p>
 </dd>
 <dt>-r, --ratio=<em>min</em>-<em>max</em></dt>
-<dd><p>Specify the ratio of files to directories as a percentage. The ratio will be chosen at random within the bounds of min and max.</p>
+<dd><p>Specify the ratio of files to directories as a percentage. The ratio will be chosen at random within the bounds of min and max. The default ratio is 5% min to 20% max.</p>
+</dd>
+<dt>-i, --seed=<em>integer</em></dt>
+<dd><p>Specify the seed to use for random number generation. This can be used to create reproducible test runs. The default is to generate a random seed.</p>
 </dd>
 <dt>-s, --size=<em>min</em>-<em>max</em></dt>
 <dd><p>Specify the file sizes to generate. The file size will be chosen at random random within the bounds of min and max. The default file size is set from 1MB to 5MB.</p>

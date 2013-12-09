@@ -24,11 +24,16 @@ suitable for testing.
     `random`, `true`, `false`, and `alternate`. `random` will fill the file
     using urandom(4). `true` will fill the file with a 0xFF pattern. `false`
     will fill the file with a 0x00 pattern. `alternate` will fill the file
-    with a 0xAA pattern.
+    with a 0xAA pattern. The default fill is `random`.
 
 -r, \--ratio=*min*-*max*
 :   Specify the ratio of files to directories as a percentage. The ratio will
-    be chosen at random within the bounds of min and max.
+    be chosen at random within the bounds of min and max. The default ratio
+    is 5% min to 20% max.
+
+-i, \--seed=*integer*
+:   Specify the seed to use for random number generation. This can be used to
+    create reproducible test runs. The default is to generate a random seed.
 
 -s, \--size=*min*-*max*
 :   Specify the file sizes to generate. The file size will be chosen at random

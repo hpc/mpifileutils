@@ -26,12 +26,21 @@ Currently three options are available, \f[C]random\f[], \f[C]true\f[],
 \f[C]true\f[] will fill the file with a 0xFF pattern.
 \f[C]false\f[] will fill the file with a 0x00 pattern.
 \f[C]alternate\f[] will fill the file with a 0xAA pattern.
+The default fill is \f[C]random\f[].
 .RS
 .RE
 .TP
 .B \-r, \-\-ratio=\f[I]min\f[]\-\f[I]max\f[]
 Specify the ratio of files to directories as a percentage.
 The ratio will be chosen at random within the bounds of min and max.
+The default ratio is 5% min to 20% max.
+.RS
+.RE
+.TP
+.B \-i, \-\-seed=\f[I]integer\f[]
+Specify the seed to use for random number generation.
+This can be used to create reproducible test runs.
+The default is to generate a random seed.
 .RS
 .RE
 .TP
