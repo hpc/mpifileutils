@@ -6287,7 +6287,7 @@ else
 fi
 
 
-ac_config_files="$ac_config_files Makefile src/Makefile src/common/Makefile src/dcmp/Makefile src/dcp/Makefile src/drm/Makefile src/dwalk/Makefile doc/Makefile doc/html/Makefile doc/man/Makefile doc/man/man1/Makefile doc/pdf/Makefile"
+ac_config_files="$ac_config_files Makefile src/Makefile src/common/Makefile src/dcmp/Makefile src/dcp/Makefile src/drm/Makefile src/dwalk/Makefile doc/Makefile doc/html/Makefile doc/man/Makefile doc/man/man1/Makefile"
 
 
 # Check if we should build the experimental utilities.
@@ -7075,7 +7075,6 @@ do
     "doc/html/Makefile") CONFIG_FILES="$CONFIG_FILES doc/html/Makefile" ;;
     "doc/man/Makefile") CONFIG_FILES="$CONFIG_FILES doc/man/Makefile" ;;
     "doc/man/man1/Makefile") CONFIG_FILES="$CONFIG_FILES doc/man/man1/Makefile" ;;
-    "doc/pdf/Makefile") CONFIG_FILES="$CONFIG_FILES doc/pdf/Makefile" ;;
     "experimental/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/Makefile" ;;
     "experimental/dfind/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dfind/Makefile" ;;
     "experimental/dgrep/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dgrep/Makefile" ;;

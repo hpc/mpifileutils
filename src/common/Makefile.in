@@ -282,10 +282,6 @@ libfileutils_common_a_SOURCES = \
                                 bayer_util.c \
                                 strmap.c
 
-libfileutils_common_a_LDFLAGS = \
-							  $(MPI_CLDFLAGS) \
-							  $(libcircle_LIBS)
-
 libfileutils_common_a_CPPFLAGS = \
                                  $(MPI_CFLAGS) \
                                  $(libcircle_CFLAGS)

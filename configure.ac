@@ -73,7 +73,6 @@ AC_CONFIG_FILES([Makefile              \
                  doc/html/Makefile     \
                  doc/man/Makefile      \
                  doc/man/man1/Makefile \
-                 doc/pdf/Makefile      \
 ])
 
 # Check if we should build the experimental utilities.

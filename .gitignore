@@ -21,7 +21,7 @@
 .pc
 dcp
 deps
+.deps
 install
 
 # Autotool artifacts
-.deps
