@@ -62,17 +62,18 @@ test "x$have_C_mpi" = xyes || \
     AC_MSG_ERROR([You should check to see if MPI is setup properly.])
 AM_CONDITIONAL(HAVE_MPI, [test "x$have_C_mpi" = xyes])
 
-AC_CONFIG_FILES([Makefile              \
-                 src/Makefile          \
-                 src/common/Makefile   \
-                 src/dcmp/Makefile     \
-                 src/dcp/Makefile      \
-                 src/drm/Makefile      \
-                 src/dwalk/Makefile    \
-                 doc/Makefile          \
-                 doc/html/Makefile     \
-                 doc/man/Makefile      \
-                 doc/man/man1/Makefile \
+AC_CONFIG_FILES([Makefile                \
+                 src/Makefile            \
+                 src/common/Makefile     \
+                 src/dcmp/Makefile       \
+                 src/dcp/Makefile        \
+                 src/dfilemaker/Makefile \
+                 src/drm/Makefile        \
+                 src/dwalk/Makefile      \
+                 doc/Makefile            \
+                 doc/html/Makefile       \
+                 doc/man/Makefile        \
+                 doc/man/man1/Makefile   \
 ])
 
 # Check if we should build the experimental utilities.

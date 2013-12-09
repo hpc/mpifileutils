@@ -1,1 +1,1 @@
-SUBDIRS = common dcmp dcp drm dwalk
+SUBDIRS = common dcmp dcp dfilemaker drm dwalk
