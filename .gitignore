@@ -25,6 +25,7 @@ deps
 install
 
 # Autotool artifacts
+/autom4te.cache
 Makefile
 /config.h
 /config.log
