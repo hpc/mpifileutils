@@ -9,15 +9,9 @@ endif
 
 if HAVE_NOSETESTS
 test:
-	-(pushd $(top_srcdir)/test>/dev/null && nosetests single_node && popd>/dev/null)
-test-multi:
-	-(pushd $(top_srcdir)/test>/dev/null && nosetests multi_node && popd>/dev/null)
+	-(pushd $(top_srcdir)/test>/dev/null && nosetests ./nose && popd>/dev/null)
 else
 test:
-	@(echo "The nosetests command could not be found. Please install Nose with your")
-	@(echo "package manager or 'pip install nose', then rerun the configure script.")
-	@false;
-test-multi:
 	@(echo "The nosetests command could not be found. Please install Nose with your")
 	@(echo "package manager or 'pip install nose', then rerun the configure script.")
 	@false;
