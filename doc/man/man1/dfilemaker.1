@@ -4,9 +4,52 @@
 dfilemaker \- distributed random file generation program
 .SH SYNOPSIS
 .PP
-dfilemaker ...
+dfilemaker [options] path
 .SH DESCRIPTION
+.PP
+dfilemaker is a tool for generating files and file trees which contain
+files suitable for testing.
 .SH OPTIONS
+.TP
+.B \-d, \-\-depth=\f[I]min\f[]\-\f[I]max\f[]
+Specify the depth of the filesystem tree to generate.
+The depth will be selected at random within the bounds of min and max.
+The default depth is set to 10 min, 20 max.
+.RS
+.RE
+.TP
+.B \-f, \-\-fill=\f[I]type\f[]
+Specify the fill pattern of the file.
+Currently three options are available, \f[C]random\f[], \f[C]true\f[],
+\f[C]false\f[], and \f[C]alternate\f[].
+\f[C]random\f[] will fill the file using urandom(4).
+\f[C]true\f[] will fill the file with a 0xFF pattern.
+\f[C]false\f[] will fill the file with a 0x00 pattern.
+\f[C]alternate\f[] will fill the file with a 0xAA pattern.
+.RS
+.RE
+.TP
+.B \-r, \-\-ratio=\f[I]min\f[]\-\f[I]max\f[]
+Specify the ratio of files to directories as a percentage.
+The ratio will be chosen at random within the bounds of min and max.
+.RS
+.RE
+.TP
+.B \-s, \-\-size=\f[I]min\f[]\-\f[I]max\f[]
+Specify the file sizes to generate.
+The file size will be chosen at random random within the bounds of min
+and max.
+The default file size is set from 1MB to 5MB.
+.RS
+.RE
+.TP
+.B \-w, \-\-width=\f[I]min\f[]\-\f[I]max\f[]
+Specify the width of the filesystem tree to generate.
+The width will be selected at random within the bounds of min and max.
+The width of the tree is determined by counting directories.
+The default width is set to 10 min, 20 max.
+.RS
+.RE
 .TP
 .B \-h, \-\-help
 Print a brief message listing the \f[I]dfilemaker(1)\f[] options and
@@ -18,7 +61,6 @@ usage.
 Print version information and exit.
 .RS
 .RE
-.SS Known bugs
 .SH SEE ALSO
 .PP
 \f[C]dcmp\f[] (1).
