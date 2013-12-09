@@ -20,7 +20,7 @@ suitable for testing.
     is set to 10 min, 20 max.
 
 -f, \--fill=*type*
-:   Specify the fill pattern of the file. Currently three options are available,
+:   Specify the fill pattern of the file. Current options available are:
     `random`, `true`, `false`, and `alternate`. `random` will fill the file
     using urandom(4). `true` will fill the file with a 0xFF pattern. `false`
     will fill the file with a 0x00 pattern. `alternate` will fill the file
