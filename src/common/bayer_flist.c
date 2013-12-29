@@ -1835,8 +1835,6 @@ bayer_flist bayer_flist_subset(bayer_flist src)
   if (srclist->detail) {
     buft_copy(&srclist->users, &flist->users);
     buft_copy(&srclist->groups, &flist->groups);
-    flist->user_id2name = strmap_new();
-    flist->group_id2name = strmap_new();
     strmap_merge(flist->user_id2name, srclist->user_id2name);
     strmap_merge(flist->group_id2name, srclist->group_id2name);
     flist->have_users  = 1;
