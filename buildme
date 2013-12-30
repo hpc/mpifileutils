@@ -1,0 +1,34 @@
+#!/bin/bash
+
+. /usr/local/tools/dotkit/init.sh
+use mvapich2-gnu
+
+set -x
+
+topdir=`pwd`
+installdir=$topdir/install
+
+export PATH="${topdir}/autotools/install/bin:$PATH"
+
+#./autogen.sh
+
+rm -rf build
+mkdir -p build
+cd build
+
+which pkg-config
+exit 0
+
+export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
+
+# TODO: avoid this step
+# necessary so configure test of dtcmp links with MPI
+export CC=mpicc
+
+../configure \
+  --prefix=$installdir \
+  --with-libdtcmp=$installdir
+
+make VERBOSE=1
+
+make VERBOSE=1 install
