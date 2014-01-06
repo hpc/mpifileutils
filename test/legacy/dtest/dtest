@@ -240,14 +240,14 @@ class test(object):
 			sum = 0
 			mag = 0
 			if not self.stock and not self.titan: 
-				spargs = ['mpirun', '-np', str(self.num_proc), self.bin_path, '-rp', self.tmp_dir, self.dest_dir]
-				if self.verbose: print 'Exection Command: %s -rp %s %s'%(self.bin_path, self.tmp_dir, self.dest_dir)
+				spargs = ['mpirun', '-np', str(self.num_proc), self.bin_path, '-p', self.tmp_dir, self.dest_dir]
+				if self.verbose: print 'Exection Command: %s' % ' '.join(spargs)
 				if self.hostfile:
 					spargs.insert(3, '--hostfile')
 					spargs.insert(4, self.hostfile)
 			elif self.stock: 
 				spargs = ['cp', '-r', self.tmp_dir, self.dest_dir]
-				if self.verbose: print 'Execution Command: cp -rp %s %s'%(self.tmp_dir, self.dest_dir)
+				if self.verbose: print 'Execution Command: %s' % ' '.join(spargs)
 				if self.hostfile: 
 					spargs.insert(3, '--hostfile')
 					spargs.insert(4, self.hostfile)
@@ -255,7 +255,7 @@ class test(object):
 				for i in range(self.iterations):
 					self.job.write('rm -rf %s'%self.dest_dir)
 					self.job.write('\n')
-					self.job.write('aprun -n %d -N %d %s/%s -r %s %s\n' %(self.num_proc, self.procpernode, self.cwd, self.bin_path, self.tmp_dir, self.dest_dir))
+					self.job.write('aprun -n %d -N %d %s/%s -p %s %s\n' %(self.num_proc, self.procpernode, self.cwd, self.bin_path, self.tmp_dir, self.dest_dir))
 					
 				if self.verbose: print 'batch job written to -> %s' % self.jobname
 				self.job.close()
