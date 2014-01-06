@@ -41,7 +41,7 @@ pushd autotools
     make && \
     make install
     if [ $? -ne 0 ]; then
-      echo "failed to configure, build, or install autoconf"
+      echo "failed to configure, build, or install automake"
       exit 1
     fi
   popd
@@ -57,7 +57,23 @@ pushd autotools
     make && \
     make install
     if [ $? -ne 0 ]; then
-      echo "failed to configure, build, or install autoconf"
+      echo "failed to configure, build, or install libtool"
+      exit 1
+    fi
+  popd
+
+  # build pkg-config
+  if [ ! -f pkg-config-0.28.tar.gz ] ; then
+    wget http://pkgconfig.freedesktop.org/releases/pkg-config-0.28.tar.gz
+  fi
+  rm -rf pkg-config-0.28
+  tar -zxf pkg-config-0.28.tar.gz
+  pushd pkg-config-0.28
+    ./configure --prefix=$toolsinstalldir && \
+    make && \
+    make install
+    if [ $? -ne 0 ]; then
+      echo "failed to configure, build, or install pkg-config"
       exit 1
     fi
   popd

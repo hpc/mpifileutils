@@ -1,0 +1,60 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <title>DCP(1)</title>
+  <style type="text/css">code{white-space: pre;}</style>
+</head>
+<body>
+<div id="header">
+<h1 class="title">DCP(1)</h1>
+</div>
+<h1 id="name">NAME</h1>
+<p>dcp - distributed file copy program</p>
+<h1 id="synopsis">SYNOPSIS</h1>
+<p>dcp [cCdfhpRrUv][--] source_file target_file dcp [cCdfhpRrUv][--] source_file ... target_directory</p>
+<h1 id="description">DESCRIPTION</h1>
+<p>dcp is a file copy tool in the spirit of <em>cp(1)</em> that evenly distributes work across a large cluster without any centralized state. It is designed for copying files which are located on a distributed parallel file system. The method used in the file copy process is a self-stabilization algorithm which enables per-node autonomous processing and a token passing scheme to detect termination.</p>
+<h1 id="options">OPTIONS</h1>
+<dl>
+<dt>-c, --conditional</dt>
+<dd><p>When copying a source directory to a destination directory, copy the source directory over the destination directory. The default behavior is to copy the source directory inside the destination directory.</p>
+</dd>
+<dt>-C, --skip-compare</dt>
+<dd><p>Skip the compare operation to confirm file integrity. When using this option, a file integrity check, such as md5sum, should be performed after the file(s) have been copied.</p>
+</dd>
+<dt>-d, --debug=<em>level</em></dt>
+<dd><p>Specify the level of debug information to output. Level may be one of: <em>fatal</em>, <em>err</em>, <em>warn</em>, <em>info</em>, or <em>dbg</em>. Increasingly verbose debug levels include the output of less verbose debug levels.</p>
+</dd>
+<dt>-f, --force</dt>
+<dd><p>Remove existing destination files if creation or truncation fails. If the destination filesystem is specified to be unreliable (<code>-U</code>, <code>--unreliable-filesystem</code>), this option may lower performance since each failure will cause the entire file to be invalidated and copied again.</p>
+</dd>
+<dt>-h, --help</dt>
+<dd><p>Print a brief message listing the <em>dcp(1)</em> options and usage.</p>
+</dd>
+<dt>-p, --preserve</dt>
+<dd><p>Preserve the original files' owner, group, permissions (including the setuid and setgid bits), time of last modification and time of last access. In case duplication of owner or group fails, the setuid and setgid bits are cleared.</p>
+</dd>
+<dt>-R, --recursive</dt>
+<dd><p>Copy directories recursively, and do the right thing when objects other than ordinary files or directories are encountered.</p>
+</dd>
+<dt>-r, --recursive-unspecified</dt>
+<dd><p>Copy directories recursively, and ignore objects other than ordinary files or directories.</p>
+</dd>
+<dt>-U, --unreliable-filesystem</dt>
+<dd><p>If the filesystem is very unreliable, this option may be used to always retry an operation when a failure occurs. If failures are permanent, this option will cause an infinite loop. Specifying this option when force is enabled (<code>-f</code>, <code>--force</code>) may lower performance.</p>
+</dd>
+<dt>-v, --version</dt>
+<dd><p>Print version information and exit.</p>
+</dd>
+</dl>
+<h3 id="known-bugs">Known bugs</h3>
+<p>When the force option is specified and truncation fails, the copy and truncation will be stuck in an infinite loop until the truncation operation returns with success.</p>
+<p>The maximum supported filename length for any file transfered is approximately 4068 characters. This may be less than the number of characters that your operating system supports.</p>
+<h1 id="see-also">SEE ALSO</h1>
+<p><code>dcmp</code> (1). <code>dcp</code> (1). <code>dfilemaker</code> (1). <code>dfind</code> (1). <code>dgrep</code> (1). <code>dparallel</code> (1). <code>drm</code> (1). <code>dtar</code> (1). <code>dwalk</code> (1).</p>
+<p>The FileUtils source code and all documentation may be downloaded from <a href="http://fileutils.io">http://fileutils.io</a></p>
+</body>
+</html>

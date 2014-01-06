@@ -1,172 +1,34 @@
 #!/bin/bash
 
-##################
-# Load mpicc and mpicxx into $PATH
-##################
-
-#. /usr/share/[mM]odules/init/bash
-#module load mvapich2-gnu-psm/1.7
-
-#. /usr/local/tools/dotkit/init.sh
-#use mvapich2-gnu
-
-# MVAPICH
-#curdir=`pwd`
-#export PATH="${curdir}/mvapich2/install/bin:$PATH"
-
-# Open MPI
-#curdir=`pwd`
-#export PATH="${curdir}/openmpi/install/bin:$PATH"
-
-##################
-# Build software
-##################
+. /usr/local/tools/dotkit/init.sh
+use mvapich2-gnu
 
 set -x
 
-OPT="-g -O0"
+topdir=`pwd`
+installdir=$topdir/install
 
-installdir=`pwd`/install
+export PATH="${topdir}/autotools/install/bin:$PATH"
 
-mkdir -p ${installdir}/bin
+#./autogen.sh
 
-# build libbayer
-pushd libbayer
-  mpicc ${OPT} -o bayer_util.o  -c bayer_util.c
-  if [ $? -ne 0 ]; then
-    echo "failed to build bayer_util"
-    exit 1
-  fi
-  mpicc ${OPT} -o bayer_path.o  -c bayer_path.c
-  if [ $? -ne 0 ]; then
-    echo "failed to build bayer_path"
-    exit 1
-  fi
-  mpicc ${OPT} -o bayer_io.o    -c bayer_io.c
-  if [ $? -ne 0 ]; then
-    echo "failed to build bayer_io"
-    exit 1
-  fi
-  mpicc ${OPT} -o strmap.o      -c strmap.c
-  if [ $? -ne 0 ]; then
-    echo "failed to build strmap"
-    exit 1
-  fi
-  mpicc ${OPT} -o bayer_param_path.o -c bayer_param_path.c -I${installdir}/include
-  if [ $? -ne 0 ]; then
-    echo "failed to build bayer_param_path"
-    exit 1
-  fi
-  mpicc ${OPT} -o bayer_flist.o -c bayer_flist.c -I${installdir}/include
-  if [ $? -ne 0 ]; then
-    echo "failed to build bayer_flist"
-    exit 1
-  fi
+rm -rf build
+mkdir -p build
+cd build
 
-  ar cru libbayer.a \
-    bayer_util.o \
-    bayer_path.o \
-    bayer_io.o \
-    strmap.o \
-    bayer_param_path.o \
-    bayer_flist.o
-  ranlib libbayer.a
+which pkg-config
+exit 0
 
-  cp bayer*.h strmap.h $installdir/include/.
-  cp libbayer.a $installdir/lib/.
-popd
+export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
 
-# build dwalk command
-pushd dwalk
-  mpicc ${OPT} -o dwalk dwalk.c \
-    -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
-  if [ $? -ne 0 ]; then
-    echo "failed to build dwalk"
-    exit 1
-  fi
-  cp dwalk ${installdir}/bin/.
-popd
+# TODO: avoid this step
+# necessary so configure test of dtcmp links with MPI
+export CC=mpicc
 
-# build drm command
-pushd drm
-  mpicc ${OPT} -o drm drm.c \
-    -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
-  if [ $? -ne 0 ]; then
-    echo "failed to build drm"
-    exit 1
-  fi
-  cp drm ${installdir}/bin
-popd
+../configure \
+  --prefix=$installdir \
+  --with-libdtcmp=$installdir
 
-# build dtar
-pushd dtar/src
-  mpicc ${OPT} -o dtar \
-    copy.c helper.c dtar.c \
-    -I${installdir}/include -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -larchive -llwgrp -ldtcmp -lbayer
-  if [ $? -ne 0 ]; then
-    echo "failed to build dtar"
-    exit 1
-  fi
-  cp dtar ${installdir}/bin
-popd
+make VERBOSE=1
 
-# build dfind command
-#pushd dfind
-#  make clean
-#  make \
-#    CC=mpicc \
-#    CFLAGS="${OPT} -I${installdir}/include" \
-#    LDFLAGS="-L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle"
-#
-#  cp dfind ${installdir}/bin
-#popd
-
-# build dcmp command
-pushd dcmp
-  mpicc ${OPT} -o dcmp dcmp.c \
-    -I${installdir}/include \
-    -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lcircle -llwgrp -ldtcmp -lbayer
-  if [ $? -ne 0 ]; then
-    echo "failed to build dcmp"
-    exit 1
-  fi
-  cp dcmp ${installdir}/bin/.
-popd
-
-# build dcp command
-mkdir -p dcp
-pushd dcp
-  # fetch dcp source code, if needed
-  if [ ! -d "dcp.git" ] ; then
-    git clone git://github.com/hpc/dcp.git dcp.git
-
-    # switch to bayer branch
-    pushd dcp.git
-      git checkout bayer
-    popd
-  fi
-
-  # build dcp command
-  pushd dcp.git
-    # need to run configure once to build config.h
-    if [ ! -f config.h ] ; then
-      export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
-      export CFLAGS="-g -O0"
-      ./configure --prefix=$installdir --disable-silent-rules
-      #./configure --prefix=$installdir --disable-silent-rules --disable-xattr
-    fi
-
-    # build dcp command
-    pushd src
-      mpicc ${OPT} -D__STDC_FORMAT_MACROS -o dcp \
-        common.c handle_args.c treewalk.c copy.c cleanup.c compare.c dcp.c \
-        -I../. -I${installdir}/include \
-        -L${installdir}/lib -Wl,-rpath,${installdir}/lib -lbayer -lcircle -ldtcmp -llwgrp
-      if [ $? -ne 0 ]; then
-        echo "failed to build dcp"
-        exit 1
-      fi
-      cp dcp ${installdir}/bin
-    popd
-  popd
-popd
+make VERBOSE=1 install
