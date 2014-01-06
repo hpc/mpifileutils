@@ -17,6 +17,7 @@ import random
 import shutil
 import base64
 import time
+import glob
 import thread
 import threading
 import filecmp
@@ -67,13 +68,27 @@ class test(object):
 		if self.verbose: print 'DTEST\n___________________________________________\n'
 
 		#set up environmental variables for dtest
-		os.environ['PATH'] = self.dtar_path+'/install/include:'+os.environ['PATH']
-		os.environ['LD_LIBRARY_PATH'] = self.dtar_path+'/install/lib:'+os.environ['LD_LIBRARY_PATH']
+		#os.environ['PATH'] = '/lustre/atlas1/stf008/scratch/tag/bayer/install/include:'+os.environ['PATH']
+		#os.environ['LD_LIBRARY_PATH'] = '/lustre/atlas1/stf008/scratch/tag/bayer/install/lib:'+os.environ['LD_LIBRARY_PATH']
 		self.cwd = str(os.getcwd())
 		self.data_string = '0'*self.convert_units(self.block_size)
-				
 		if self.verbose: print self.tmp_dir
 
+	def find_path(self, command):
+		paths = os.environ['PATH'].split(':')
+		found = ''
+		for path in paths:
+			try:
+				os.chdir(path)
+			except OSError: continue
+			if glob.glob(command):
+				found = path+'/'+command	
+		os.chdir(self.cwd)
+		if glob.glob(command):
+			found = os.getcwd()+'/'+command
+		return found
+			
+	
 	def convert_units(self, size):
 		units = {'k':1024,
 			 'm':1024**2,
@@ -135,6 +150,7 @@ class test(object):
 		if self.verbose: print 'files written to '+self.tmp_dir
 	def post_process(self, id):
 		speed = 0
+		sum = 0
 		mag = 0
 		
 		lines = [line.strip() for line in open('dtest.o%d'%id, 'r')]
@@ -143,7 +159,9 @@ class test(object):
 			if 'Aggregate transfer rate is' in line:
 				m = re.search('`(.+?)\'', line)
 				if m:
-				 	speed = int(m.group(1))
+				 	sum += int(m.group(1))
+
+		speed = sum/self.iterations
 
 		if speed/1024**6 is 0:
 			mag = 5
@@ -183,7 +201,7 @@ class test(object):
 					",stderr=subprocess.STDOUT, stdout=subprocess.PIPE)"
 			for i in range(self.iterations):
 
-				if self.verbose and not self.validate: print 'running test %d' %i
+				if self.verbose and not self.validate: print 'running test %d' %i+1
 				start = time.time()
 				p = subprocess.Popen(spargs, \
 					stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
@@ -224,7 +242,11 @@ class test(object):
 			if not self.stock and not self.titan: spargs = ['mpirun', '-np', str(self.num_proc), self.bin_path, '-r', self.tmp_dir, self.dest_dir]
 			elif self.stock: spargs = ['cp', '-r', self.tmp_dir, self.dest_dir]
 			else: 
-				self.job.write('aprun -n %d -N %d %s/%s -r %s %s\n' %(self.num_proc, self.procpernode, self.cwd, self.bin_path, self.tmp_dir, self.dest_dir))
+				for i in range(self.iterations):
+					self.job.write('rm -rf %s'%self.dest_dir)
+					self.job.write('\n')
+					self.job.write('aprun -n %d -N %d %s/%s -r %s %s\n' %(self.num_proc, self.procpernode, self.cwd, self.bin_path, self.tmp_dir, self.dest_dir))
+					
 				if self.verbose: print 'batch job written to -> %s' % self.jobname
 				self.job.close()
 				self.jobid = moab.submit("%s/%s" %(self.cwd, self.jobname))
@@ -241,7 +263,7 @@ class test(object):
 						if tick == 3: tick = 0
 						else: tick += 1
 						if self.verbose: 
-							sys.stdout.write('\rrunning %s ' % anim[tick])
+							sys.stdout.write('\rcopying  files to %s %s ' %(self.dest_dir, anim[tick]))
 							sys.stdout.flush()
 					time.sleep(0.1)
 				if self.verbose: print '\rjob complete\t'
@@ -251,6 +273,8 @@ class test(object):
 
 			spcall = "subprocess.Popen("+str(spargs)+ \
 					",stderr=subprocess.STDOUT, stdout=subprocess.PIPE)"
+			
+			print "copying files to %s" % self.dest_dir
 
 			for i in range(self.iterations):
 				if os.path.exists(self.dest_dir): shutil.rmtree(self.dest_dir)
@@ -341,6 +365,7 @@ class test(object):
 		parser.add_argument('--debug', action='store_true')
 		parser.add_argument('binary', nargs='?', help='binary to test')
 		parser.add_argument('test_dir', nargs='?', help='user specified directory used for testing')
+		parser.add_argument('dest_dir', nargs='?', help='optional destination directory')
 		parser.add_argument('--noclean', help='do not clean up files and directories after test', action='store_true')
 		parser.add_argument('--sparse', help='generate sparse files instead of zero files. (much faster)', action='store_true')
 		parser.add_argument('--stock', 	help='test stock version of binary for control purposes.', action='store_true')
@@ -365,6 +390,10 @@ class test(object):
 			self.gen_files = False
 		else:
 			self.gen_files = True
+
+		if args.dest_dir:
+			self.dest_dir = args.dest_dir
+		else: self.dest_dir = self.cwd + '/dest'
 		if args.iterations: self.iterations = args.iterations
 		if args.proc: self.num_proc = args.proc
 		if args.validate:
@@ -405,20 +434,18 @@ class test(object):
 				print 'must provide a valid binary to test'
 				sys.exit(2)
 			if not os.path.exists(self.bin_path):
-				print '%s:\tno such file' %self.bin_path
-				sys.exit(2)
+				self.bin_path = self.find_path(self.bin_path)
 
 		if self.tmp_dir == '': self.tmp_dir = self.cwd + '/tmp'
-		
-		self.dest_dir = self.cwd + '/dest'
 
 		if not os.path.exists(self.tmp_dir):			
 			os.mkdir(self.tmp_dir)
 			self.gen_files = True
 		else:
-			if self.verbose: print 'removing old files...'
-			shutil.rmtree(self.tmp_dir)
-			os.mkdir(self.tmp_dir)
+			if self.gen_files:
+				if self.verbose: print 'removing old files...'
+				shutil.rmtree(self.tmp_dir)
+				os.mkdir(self.tmp_dir)
 
 		if self.titan:
 			self.job = open(self.jobname, 'w')
@@ -427,11 +454,13 @@ class test(object):
 			self.job.write('#PBS -A stf008\n')
 			self.job.write('#PBS -N dtest\n')
 			self.job.write('#PBS -j oe\n')
-			self.job.write('#PBS -l walltime=1:00:00,nodes=%s,%s\n' %(str(self.num_proc/self.procpernode) if self.num_proc%self.procpernode == 0 else str(self.num_proc/self.procpernode+1), ('partition=dtn' if self.dtn else '')))
+			self.job.write('#PBS -l walltime=1:00:00,nodes=%s\n'%(str(self.num_proc/self.procpernode) if self.num_proc%self.procpernode == 0 else str(self.num_proc/self.procpernode+1)))
+			
 			self.job.write('#End PBS directives\n')
 			self.job.write('cd %s\n' %self.cwd)
-			self.job.write('export PATH=$PATH:/lustre/widow2/scratch/tag/bayer/dtar/install/include\n')
-			self.job.write('export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/lustre/widow2/scratch/tag/lib\n')
+			self.job.write('export PATH=%s\n'%os.environ['PATH'])
+			self.job.write('export LD_LIBRARY_PATH=%s\n'%os.environ['LD_LIBRARY_PATH'])
+			self.job.write('echo $LD_LIBRARY_PATH\n')
 
 		if self.gen_files:
 			self.gen_tree()
@@ -442,9 +471,9 @@ class test(object):
 		if self.validate:
 			self.__validate__()
 
-		if not self.noclean:
+		if not self.noclean and self.gen_files:
 			self.clean()
 
 if __name__ == "__main__":
 	t = test()
-	t.main() 
+	t.main()
