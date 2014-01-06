@@ -274,7 +274,6 @@ class test(object):
 			spcall = "subprocess.Popen("+str(spargs)+ \
 					",stderr=subprocess.STDOUT, stdout=subprocess.PIPE)"
 			
-			print "copying files to %s" % self.dest_dir
 
 			for i in range(self.iterations):
 				if os.path.exists(self.dest_dir): shutil.rmtree(self.dest_dir)
@@ -286,7 +285,10 @@ class test(object):
 				dTime = time.time()-start
 
 				bw.append(dTime)			
-
+			os.chdir(self.dest_dir)
+			destination = os.getcwd()
+			os.chdir(self.cwd)
+			print "copied files to %s" %  destination
 			for i in bw:
 				sum += i
 
@@ -360,6 +362,7 @@ class test(object):
 		parser.add_argument('-c', '--count', help='number of files to test with', type=int)
 		parser.add_argument('-i', '--iterations', help='number of test iterations to run', type=int)
 		parser.add_argument('-v', '--verbose', help='more verbose output', action='store_true')
+		parser.add_argument('-d', '--keep-dest', help='prevents removal of destination files', action='store_true')
 		parser.add_argument('--genfiles', help='generate files without running a test', action='store_true')
 		parser.add_argument('--validate', help='run an integrity test on binary output', action='store_true')
 		parser.add_argument('--debug', action='store_true')
