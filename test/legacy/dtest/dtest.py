@@ -1,0 +1,481 @@
+#!/usr/bin/python
+###DTEST benchmarking and validation utility for parallel system utilities###
+###Tag Groff 2013###
+
+import os
+import sys
+try:
+ 	import argparse
+except ImportError as err:
+	print '\ncould not load argparse'
+	print 'try updating your version of python to 2.7 or later'
+	print 'or try loading the apropriate python module,'
+	print 'and running the script via $> python dtest\n'
+	sys.exit(-1)
+import subprocess
+import random
+import shutil
+import base64
+import time
+import glob
+import thread
+import threading
+import filecmp
+import moab
+import re
+from os import path
+from threading import Thread
+
+
+class test(object):
+	
+	DEBUG = False
+	file_size = '1G'
+	block_size = '256M'
+	total_size = '100M'
+	data_string = ''
+	tar_name = 'test.tar'
+	jobname = 'dtest.job'
+	jobid = 0
+	file_count = 10
+	dir_chance = 0.2
+	flat = True
+	run_test = True
+	num_proc = 3
+	procpernode = 1
+	stock = False
+	thread_count = 0
+	thread_complete = 0
+	gen_files = True
+	iterations = 3
+	symlinks = False
+	validate = False
+	noclean = False
+	sparse = False
+	bin_path = ''
+	bin_name = ''
+	cwd = ''
+	tmp_dir = ''
+	dest_dir = ''
+	dir_size = 0
+	verbose = False
+
+	binaries = ['dtar', 'dcp']
+
+	dtar_path = '/ccs/home/tag/work/dtar' ### CHANGE THIS TO YOUR DTAR INSTALL DIRECTORY ###
+
+	def __init__(self):
+		if self.verbose: print 'DTEST\n___________________________________________\n'
+
+		#set up environmental variables for dtest
+		#os.environ['PATH'] = '/lustre/atlas1/stf008/scratch/tag/bayer/install/include:'+os.environ['PATH']
+		#os.environ['LD_LIBRARY_PATH'] = '/lustre/atlas1/stf008/scratch/tag/bayer/install/lib:'+os.environ['LD_LIBRARY_PATH']
+		self.cwd = str(os.getcwd())
+		self.data_string = '0'*self.convert_units(self.block_size)
+		if self.verbose: print self.tmp_dir
+
+	def find_path(self, command):
+		paths = os.environ['PATH'].split(':')
+		found = ''
+		for path in paths:
+			try:
+				os.chdir(path)
+			except OSError: continue
+			if glob.glob(command):
+				found = path+'/'+command	
+		os.chdir(self.cwd)
+		if glob.glob(command):
+			found = os.getcwd()+'/'+command
+		return found
+			
+	
+	def convert_units(self, size):
+		units = {'k':1024,
+			 'm':1024**2,
+			 'g':1024**3,
+			 't':1024**4,
+			 'p':1024**5}
+
+		suffix = size[-1].lower()
+		prefix = size[0:-1]
+
+		return int(prefix)*units.get(suffix, 1)
+
+	def _total_size(self, source):
+	        total_size = os.path.getsize(source)
+		for root, dir, files in os.walk(source):
+			for fn in files:	
+			    path = os.path.join(root, fn)
+			    total_size += os.stat(path).st_size
+			return total_size
+	def gen_file(self, path):
+		target = open(path, 'w')
+		if self.sparse:
+			target.seek(int(self.convert_units(self.file_size)/self.file_count)-1)
+			target.write('0')
+
+		else:
+			if self.convert_units(self.file_size)/self.file_count/len(self.data_string) is 0:
+				self.data_string = '0'*(self.convert_units(self.file_size)/self.file_count)
+	
+			for i in range(self.convert_units(self.file_size)/self.file_count/len(self.data_string)):
+				target.write(self.data_string)
+
+
+	def populate(self, chance):
+		if not self.flat:
+			chance -= 0.1
+			for i in range(int(self.file_count)):
+				if random.random() <= chance:
+					os.mkdir('dir'+str(i))
+					os.chdir('dir'+str(i))
+					self.populate(chance)
+				else:
+					t = Thread(target=self.gen_file, args=('file.'+str(i),))
+					t.start()
+	
+		else:
+			for i in range(int(self.file_count)):
+				t = Thread(target=self.gen_file, args=('file.'+	str(i),))
+				t.start()
+			
+		while threading.activeCount() > 1:
+			continue
+		os.chdir('..')
+
+	def gen_tree(self):
+		os.chdir(self.tmp_dir)
+		if self.verbose: print 'writing files...'
+		self.populate(self.dir_chance+0.1)
+		if self.verbose: print 'files written to '+self.tmp_dir
+	def post_process(self, id):
+		speed = 0
+		sum = 0
+		mag = 0
+		
+		lines = [line.strip() for line in open('dtest.o%d'%id, 'r')]
+		
+		for line in lines:
+			if 'Aggregate transfer rate is' in line:
+				m = re.search('`(.+?)\'', line)
+				if m:
+				 	sum += int(m.group(1))
+
+		speed = sum/self.iterations
+
+		if speed/1024**6 is 0:
+			mag = 5
+		if speed/1024**5 is 0:
+			mag = 4
+		if speed/1024**4 is 0:
+			mag = 3
+		if speed/1024**3 is 0:
+			mag = 2
+		if speed/1024**2 is 0:
+			mag = 1
+		if speed/1024**1 is 0:
+			mag = 0
+		suffix = {0:'B/s',
+			  1:'KB/s',
+			  2:'MB/s',
+			  3:'GB/s',
+			  4:'TB/s',
+			  5:'PB/s'}
+		return '%.2f%s' %(float(speed)/1024**mag, suffix[mag])
+	def do_archive(self):
+		avg_speed = 0
+		bw = []
+		mag = 0
+		if self.verbose:
+			if not self.validate:
+				print '\nrunning %s with %d process %d times' %(self.bin_name, self.num_proc, self.iterations)
+			else:
+				print 'running validation test'
+
+		if 'dtar' in self.bin_path:
+			sum = 0
+			mag = 0
+			if not self.stock: spargs = ['mpirun', '-np', str(self.num_proc), self.bin_path, '-cf', self.tar_name, self.tmp_dir]
+			else: spargs = ['tar', '-cvf', self.tar_name, self.tmp_dir]
+				
+			spcall = "subprocess.Popen("+str(spargs)+ \
+					",stderr=subprocess.STDOUT, stdout=subprocess.PIPE)"
+			for i in range(self.iterations):
+
+				if self.verbose and not self.validate: print 'running test %d' %i+1
+				start = time.time()
+				p = subprocess.Popen(spargs, \
+					stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+				if self.DEBUG: print p.communicate()[0]
+				p.wait()
+				dTime = time.time()-start
+				
+				bw.append(dTime)			
+
+			for i in bw:
+				sum += i
+
+			avg_speed = int(self.dir_size/(sum/self.iterations))
+			
+			if avg_speed/1024**6 is 0:
+				mag = 5
+			if avg_speed/1024**5 is 0:
+				mag = 4
+			if avg_speed/1024**4 is 0:
+				mag = 3
+			if avg_speed/1024**3 is 0:
+				mag = 2
+			if avg_speed/1024**2 is 0:
+				mag = 1
+			if avg_speed/1024**1 is 0:
+				mag = 0
+
+			suffix = {0:'B/s',
+				  1:'KB/s',
+				  2:'MB/s',
+				  3:'GB/s',
+				  4:'TB/s',
+				  5:'PB/s'}
+			 
+		elif 'dcp' in self.bin_path:
+			sum = 0
+			mag = 0
+			if not self.stock and not self.titan: spargs = ['mpirun', '-np', str(self.num_proc), self.bin_path, '-r', self.tmp_dir, self.dest_dir]
+			elif self.stock: spargs = ['cp', '-r', self.tmp_dir, self.dest_dir]
+			else: 
+				for i in range(self.iterations):
+					self.job.write('rm -rf %s'%self.dest_dir)
+					self.job.write('\n')
+					self.job.write('aprun -n %d -N %d %s/%s -r %s %s\n' %(self.num_proc, self.procpernode, self.cwd, self.bin_path, self.tmp_dir, self.dest_dir))
+					
+				if self.verbose: print 'batch job written to -> %s' % self.jobname
+				self.job.close()
+				self.jobid = moab.submit("%s/%s" %(self.cwd, self.jobname))
+				if self.verbose: print 'queued job #%d\nwaiting in the queue' %self.jobid
+				self.jobject = moab.getjob(self.jobid)
+				tick = 0
+				anim = {0:'-',
+					1:'\\',
+					2:'|',
+					3:'/'}
+				 
+				while self.jobject.state() != 'complete':
+					if self.jobject.state() == 'running':
+						if tick == 3: tick = 0
+						else: tick += 1
+						if self.verbose: 
+							sys.stdout.write('\rrunning %s ' % anim[tick])
+							sys.stdout.flush()
+					time.sleep(0.1)
+				if self.verbose: print '\rjob complete\t'
+				print self.post_process(self.jobid)
+				return 
+
+
+			spcall = "subprocess.Popen("+str(spargs)+ \
+					",stderr=subprocess.STDOUT, stdout=subprocess.PIPE)"
+
+			for i in range(self.iterations):
+				if os.path.exists(self.dest_dir): shutil.rmtree(self.dest_dir)
+				if self.verbose and not self.validate: print 'running test %d' %i
+				start = time.time()
+				p = subprocess.Popen(spargs, stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+				if self.DEBUG: print p.communicate()[0]
+				p.wait()
+				dTime = time.time()-start
+
+				bw.append(dTime)			
+
+			for i in bw:
+				sum += i
+			mag = 0
+			avg_speed = int(self.dir_size/(sum/self.iterations))
+			
+			if avg_speed/1024**6 is 0:
+				mag = 5
+			if avg_speed/1024**5 is 0:
+				mag = 4
+			if avg_speed/1024**4 is 0:
+				mag = 3
+			if avg_speed/1024**3 is 0:
+				mag = 2
+			if avg_speed/1024**2 is 0:
+				mag = 1
+			if avg_speed/1024**1 is 0:
+				mag = 0
+
+			suffix = {0:'B/s',
+				  1:'KB/s',
+				  2:'MB/s',
+				  3:'GB/s',
+				  4:'TB/s',
+				  5:'PB/s'}
+		if not self.validate: print '%.2f%s' %(float(avg_speed)/1024**mag, suffix[mag])
+	
+	def __validate__(self):
+		filelist = []
+		valid = True
+		if 'dtar' == self.bin_name:
+			if not os.path.exists(self.dest_dir):
+				os.mkdir(self.dest_dir)
+			else:
+				shutil.rmtree(self.dest_dir)
+				os.mkdir(self.dest_dir)
+		
+			os.chdir(self.dest_dir)
+			
+			p = subprocess.Popen(['tar', '--strip-components=1', '-xf', '../%s'%self.tar_name], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+			p.wait()
+			
+
+		for root, dirs, files in os.walk(self.tmp_dir):
+			for fn in files:
+				filelist.append(('%s/%s'%(root, fn)).replace(self.tmp_dir+'/',''))
+
+		for i in filelist:
+			try:
+				f1 = '%s/%s'%(self.tmp_dir, i)
+				f2 = '%s/%s'%(self.dest_dir, i)
+			except IOError as err:
+				print '%s in %s' %(err, self.cwd)
+				valid = False
+				return
+			
+			valid = filecmp.cmp(f1, f2)
+
+		if valid:
+			print 'valid'
+		else:
+			print 'invalid'
+
+		os.chdir(self.cwd)
+
+	def parseArgs(self):
+		parser = argparse.ArgumentParser()
+		parser.add_argument('-s', '--size', help='total tree size to test')
+		parser.add_argument('-np', '--proc', help='number of MPI processes to use while testing', type=int)
+		parser.add_argument('-N', '--ppn', help='number of MPI processes per node', type=int)
+		parser.add_argument('-bs', '--block', help='block size for writing files')
+		parser.add_argument('-c', '--count', help='number of files to test with', type=int)
+		parser.add_argument('-i', '--iterations', help='number of test iterations to run', type=int)
+		parser.add_argument('-v', '--verbose', help='more verbose output', action='store_true')
+		parser.add_argument('--genfiles', help='generate files without running a test', action='store_true')
+		parser.add_argument('--validate', help='run an integrity test on binary output', action='store_true')
+		parser.add_argument('--debug', action='store_true')
+		parser.add_argument('binary', nargs='?', help='binary to test')
+		parser.add_argument('test_dir', nargs='?', help='user specified directory used for testing')
+		parser.add_argument('dest_dir', nargs='?', help='optional destination directory')
+		parser.add_argument('--noclean', help='do not clean up files and directories after test', action='store_true')
+		parser.add_argument('--sparse', help='generate sparse files instead of zero files. (much faster)', action='store_true')
+		parser.add_argument('--stock', 	help='test stock version of binary for control purposes.', action='store_true')
+		parser.add_argument('--titan', help='specify to run batch job distributed execution.', action='store_true')
+		parser.add_argument('--dtn', help='specify to run batch job distributed execution on titan data transfer nodes.', action='store_true')
+		args = parser.parse_args()
+		self.gen_files = args.genfiles
+		self.verbose = args.verbose
+		self.DEBUG = args.debug
+		self.bin_path = args.binary
+		self.bin_name = args.binary.split('/')[-1]
+		self.noclean = args.noclean
+		self.sparse = args.sparse
+		self.stock = args.stock
+		self.procpernode = args.ppn
+		self.titan = args.titan
+		self.dtn = args.dtn
+
+		
+		if args.test_dir:
+			self.tmp_dir = args.test_dir
+			self.gen_files = False
+		else:
+			self.gen_files = True
+
+		if args.dest_dir:
+			self.dest_dir = args.dest_dir
+		else: self.dest_dir = self.cwd + '/dest'
+		if args.iterations: self.iterations = args.iterations
+		if args.proc: self.num_proc = args.proc
+		if args.validate:
+			self.validate = True
+			self.print_data = False
+			self.iterations = 1
+			self.flat = False
+		if args.size:
+			self.file_size = args.size
+			self.gen_files = True
+		if args.block:
+			self.block_size = args.block
+			self.gen_files = True
+		if args.count:
+			self.file_count = args.count
+			self.gen_files = True
+		if args.genfiles:
+			self.run_test = False
+			self.noclean = True
+			self.tmp_dir = args.binary
+
+	def clean(self):
+		if self.verbose: print 'cleaning up...'
+		if os.path.exists(self.dest_dir):
+			shutil.rmtree(self.dest_dir)
+		if os.path.exists(self.tmp_dir):
+			shutil.rmtree(self.tmp_dir)
+		if os.path.exists(self.tar_name):
+			os.remove(self.tar_name)
+		if os.path.exists(self.jobname):
+			os.remove(self.jobname)
+
+	def main(self):	
+		self.parseArgs()
+
+		if self.run_test:
+			if self.bin_name not in self.binaries:
+				print 'must provide a valid binary to test'
+				sys.exit(2)
+			if not os.path.exists(self.bin_path):
+				self.bin_path = self.find_path(self.bin_path)
+				if not os.path.exists(self.bin_path):
+					print '%s not found'%self.bin_name
+					sys.exit(2)
+
+		if self.tmp_dir == '': self.tmp_dir = self.cwd + '/tmp'
+
+		if not os.path.exists(self.tmp_dir):			
+			os.mkdir(self.tmp_dir)
+			self.gen_files = True
+		else:
+			if self.gen_files:
+				if self.verbose: print 'removing old files...'
+				shutil.rmtree(self.tmp_dir)
+				os.mkdir(self.tmp_dir)
+
+		if self.titan:
+			self.job = open(self.jobname, 'w')
+			self.job.write('#!/bin/bash\n')
+			felf.job.write('#	Begin PBS Directives\n'm
+			self.job.write('#PBS -A stf008\n')
+			self.job.write('#PBS -N dtest\n')
+			self.job.write('#PBS -j oe\n')
+			self.job.write('#PBS -l walltime=1:00:00,nodes=%s\n'%(str(self.num_proc/self.procpernode) if self.num_proc%self.procpernode == 0 else str(self.num_proc/self.procpernode+1)))
+			
+			self.job.write('#End PBS directives\n')
+			self.job.write('cd %s\n' %self.cwd)
+			self.job.write('export PATH=%s\n'%os.environ['PATH'])
+			self.job.write('export LD_LIBRARY_PATH=%s\n'%os.environ['LD_LIBRARY_PATH'])
+			self.job.write('echo $LD_LIBRARY_PATH\n')
+
+		if self.gen_files:
+			self.gen_tree()
+		self.dir_size = self._total_size(self.tmp_dir)
+
+		if self.run_test:
+			self.do_archive()
+		if self.validate:
+			self.__validate__()
+
+		if not self.noclean and self.gen_files:
+			self.clean()
+
+if __name__ == "__main__":
+	t = test()
+	t.main()
