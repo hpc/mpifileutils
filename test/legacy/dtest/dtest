@@ -239,8 +239,18 @@ class test(object):
 		elif 'dcp' in self.bin_path:
 			sum = 0
 			mag = 0
-			if not self.stock and not self.titan: spargs = ['mpirun', '-np', str(self.num_proc), self.bin_path, '-r', self.tmp_dir, self.dest_dir]
-			elif self.stock: spargs = ['cp', '-r', self.tmp_dir, self.dest_dir]
+			if not self.stock and not self.titan: 
+				spargs = ['mpirun', '-np', str(self.num_proc), self.bin_path, '-rp', self.tmp_dir, self.dest_dir]
+				if self.verbose: print 'Exection Command: %s -rp %s %s'%(self.bin_path, self.tmp_dir, self.dest_dir)
+				if self.hostfile:
+					spargs.insert(3, '--hostfile')
+					spargs.insert(4, self.hostfile)
+			elif self.stock: 
+				spargs = ['cp', '-r', self.tmp_dir, self.dest_dir]
+				if self.verbose: print 'Execution Command: cp -rp %s %s'%(self.tmp_dir, self.dest_dir)
+				if self.hostfile: 
+					spargs.insert(3, '--hostfile')
+					spargs.insert(4, self.hostfile)
 			else: 
 				for i in range(self.iterations):
 					self.job.write('rm -rf %s'%self.dest_dir)
@@ -362,7 +372,7 @@ class test(object):
 		parser.add_argument('-c', '--count', help='number of files to test with', type=int)
 		parser.add_argument('-i', '--iterations', help='number of test iterations to run', type=int)
 		parser.add_argument('-v', '--verbose', help='more verbose output', action='store_true')
-		parser.add_argument('-d', '--keep-dest', help='prevents removal of destination files', action='store_true')
+		parser.add_argument('-d', '--keepdest', help='prevents removal of destination files', action='store_true')
 		parser.add_argument('--genfiles', help='generate files without running a test', action='store_true')
 		parser.add_argument('--validate', help='run an integrity test on binary output', action='store_true')
 		parser.add_argument('--debug', action='store_true')
@@ -370,6 +380,7 @@ class test(object):
 		parser.add_argument('test_dir', nargs='?', help='user specified directory used for testing')
 		parser.add_argument('dest_dir', nargs='?', help='optional destination directory')
 		parser.add_argument('--noclean', help='do not clean up files and directories after test', action='store_true')
+		parser.add_argument('--hostfile', help='Provide a host file')
 		parser.add_argument('--sparse', help='generate sparse files instead of zero files. (much faster)', action='store_true')
 		parser.add_argument('--stock', 	help='test stock version of binary for control purposes.', action='store_true')
 		parser.add_argument('--titan', help='specify to run batch job distributed execution.', action='store_true')
@@ -386,8 +397,15 @@ class test(object):
 		self.procpernode = args.ppn
 		self.titan = args.titan
 		self.dtn = args.dtn
+		self.keepdest = args.keepdest
+		self.hostfile = args.hostfile
 
-		
+		if args.hostfile:
+			if not os.path.exists(self.hostfile):
+				print 'Invalid hostfile'
+				sys.exit(3)
+
+
 		if args.test_dir:
 			self.tmp_dir = args.test_dir
 			self.gen_files = False
@@ -420,7 +438,7 @@ class test(object):
 
 	def clean(self):
 		if self.verbose: print 'cleaning up...'
-		if os.path.exists(self.dest_dir):
+		if os.path.exists(self.dest_dir) and not self.keepdest:
 			shutil.rmtree(self.dest_dir)
 		if os.path.exists(self.tmp_dir):
 			shutil.rmtree(self.tmp_dir)
