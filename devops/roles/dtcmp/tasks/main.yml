@@ -1,6 +1,11 @@
 ---
 # This playbook contains build and install for dtcmp
 
+- name: Install pkg-config package
+  action: apt pkg={{ item }} state=installed
+  with_items:
+   - pkg-config
+
 - name: Clone dtcmp repo
   sudo: false
   remote_user: vagrant

@@ -11,6 +11,7 @@
   roles:
     - git
     - github
+    - libcircle
     - lwgrp
     - dtcmp
     - fileutils
