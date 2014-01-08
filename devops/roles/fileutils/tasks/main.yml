@@ -1,6 +1,11 @@
 ---
 # This playbook contains setup for fileutils
 
+- name: Install pkg-config package
+  action: apt pkg={{ item }} state=installed
+  with_items:
+      - libarchive-dev
+
 - name: Clone fileutils repo
   sudo: false
   remote_user: vagrant
@@ -8,4 +13,4 @@
 
 - name: Build and install fileutils
   remote_user: vagrant
-  shell: chdir=/home/vagrant/fileutils ./configure && make all install
+  shell: chdir=/home/vagrant/fileutils ./configure --with-libdtcmp=/usr && make all install
