@@ -295,14 +295,18 @@ class test(object):
 				dTime = time.time()-start
 
 				bw.append(dTime)			
-			os.chdir(self.dest_dir)
+			try: os.chdir(self.dest_dir)
+			except OSError:
+				print 'destination not found. Most likely cause is dcp failed to run properly. Try executing with --debug to see dcp output.'
+				sys.exit(3)
+
 			destination = os.getcwd()
 			os.chdir(self.cwd)
 			print "copied files to %s" %  destination
 			for i in bw:
 				sum += i
-
-			avg_speed = int(self.dir_size/(sum/self.iterations))
+			avg_time = sum/self.iterations
+			avg_speed = int(self.dir_size/avg_time)
 			
 			if avg_speed/1024**6 is 0:
 				mag = 5
@@ -324,6 +328,7 @@ class test(object):
 				  4:'TB/s',
 				  5:'PB/s'}
 		if not self.validate: print '%.2f%s' %(float(avg_speed)/1024**mag, suffix[mag])
+		if not self.validate: print '%.4fs' %avg_time
 	
 	def __validate__(self):
 		filelist = []
@@ -380,7 +385,7 @@ class test(object):
 		parser.add_argument('test_dir', nargs='?', help='user specified directory used for testing')
 		parser.add_argument('dest_dir', nargs='?', help='optional destination directory')
 		parser.add_argument('--noclean', help='do not clean up files and directories after test', action='store_true')
-		parser.add_argument('--hostfile', help='Provide a host file')
+		parser.add_argument('-H', '--hostfile', help='Provide a host file')
 		parser.add_argument('--sparse', help='generate sparse files instead of zero files. (much faster)', action='store_true')
 		parser.add_argument('--stock', 	help='test stock version of binary for control purposes.', action='store_true')
 		parser.add_argument('--titan', help='specify to run batch job distributed execution.', action='store_true')
