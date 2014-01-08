@@ -17,7 +17,6 @@ mkdir -p build
 cd build
 
 which pkg-config
-exit 0
 
 export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
 
@@ -25,8 +24,13 @@ export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
 # necessary so configure test of dtcmp links with MPI
 export CC=mpicc
 
+# hack to get things to build after common library
+export CFLAGS="-I${topdir}/src/common"
+export LDFLAGS="-Wl,-rpath,${topdir}/install/lib -L${topdir}/install/lib -lcircle"
+
 ../configure \
   --prefix=$installdir \
+  --disable-silent-rules \
   --with-libdtcmp=$installdir
 
 make VERBOSE=1
