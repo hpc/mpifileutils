@@ -1,0 +1,11 @@
+---
+# This playbook contains setup for fileutils
+
+- name: Clone fileutils repo
+  sudo: false
+  remote_user: vagrant
+  action: git repo=git@github.com:hpc/fileutils.git dest=/home/vagrant/fileutils
+
+- name: Build and install fileutils
+  remote_user: vagrant
+  shell: chdir=/home/vagrant/fileutils ./configure && make all install

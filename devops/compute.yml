@@ -1,0 +1,16 @@
+---
+# This playbook deploys tools required by a fileutils test node.
+
+- name: configure and deploy openmpi
+  hosts: all
+  roles:
+    - openmpi
+
+- name: configure and deploy fileutils
+  hosts: all
+  roles:
+    - git
+    - github
+    - lwgrp
+    - dtcmp
+    - fileutils

@@ -31,3 +31,7 @@ Makefile
 /config.log
 /config.status
 /stamp-h1
+
+# Vagrant/Ansible artifacts
+/devops/vagrant_ansible_inventory_*
+/devops/.vagrant

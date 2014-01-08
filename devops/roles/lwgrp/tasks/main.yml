@@ -1,0 +1,11 @@
+---
+# This playbook contains build and install for lwgrp
+
+- name: Clone lwgrp repo
+  sudo: false
+  remote_user: vagrant
+  git: repo=git@github.com:hpc/lwgrp.git dest=/home/vagrant/lwgrp
+
+- name: Build and install lwgrp
+  remote_user: vagrant
+  shell: chdir=/home/vagrant/lwgrp ./configure && make all install

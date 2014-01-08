@@ -1,0 +1,8 @@
+---
+# This playbook will install openmpi
+
+- name: Install OpenMPI package
+  action: apt pkg={{ item }} state=installed
+  with_items:
+   - libopenmpi1.6-dev
+   - openmpi1.6-bin

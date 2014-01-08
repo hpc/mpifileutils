@@ -1,0 +1,13 @@
+---
+# This playbook will copy your ssh keys into the vagrant vm
+
+- copy: src=~/.ssh/id_rsa dest=/home/vagrant/.ssh/id_rsa
+- copy: src=~/.ssh/id_rsa.pub dest=/home/vagrant/.ssh/id_rsa.pub
+
+- name: Setup public key ownership
+  action: file path=/home/vagrant/.ssh/id_rsa.pub owner=vagrant group=vagrant
+- name: Setup private key ownership
+  action: file path=/home/vagrant/.ssh/id_rsa owner=vagrant group=vagrant
+
+- name: Configure the github host key
+  shell: ssh-keyscan github.com > /etc/ssh/ssh_known_hosts
