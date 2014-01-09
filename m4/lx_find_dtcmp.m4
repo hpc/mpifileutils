@@ -1,6 +1,7 @@
 AC_DEFUN([X_AC_DTCMP], [
   AC_MSG_CHECKING([for libDTCMP])
-  AC_ARG_WITH([libdtcmp], [AC_HELP_STRING([--with-dtcmp=PATH], [path to installed libDTCMP [default=/usr/local]])], [
+  AC_ARG_WITH([libdtcmp], [AC_HELP_STRING([--with-dtcmp=PATH], 
+    [path to installed libDTCMP [default=/usr/local]])], [
     LIBDTCMP_INCLUDE="${withval}/include"
     LIBDTCMP_LIB="${withval}/lib"
     AC_MSG_RESULT("${withval}")
@@ -16,5 +17,6 @@ AC_DEFUN([X_AC_DTCMP], [
   CXXFLAGS="$CXXFLAGS -I${LIBDTCMP_INCLUDE}"
   LDFLAGS="$LDFLAGS -L${LIBDTCMP_LIB}"
 
-  AC_CHECK_LIB([dtcmp], [DTCMP_Init], [], [AC_MSG_ERROR([couldn't find a suitable libdtcmp, use --with-dtcmp=PATH])])
+  AC_SEARCH_LIBS([DTCMP_Init], [dtcmp], [], [
+    AC_MSG_ERROR([couldn't find a suitable libdtcmp, use --with-dtcmp=PATH])], [-lmpi])
 ])
