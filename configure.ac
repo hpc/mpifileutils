@@ -44,23 +44,23 @@ AC_FUNC_LSTAT_FOLLOWS_SLASHED_SYMLINK
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([endgrent endpwent getcwd lchown memset mkdir realpath rmdir strchr strdup strerror strstr utime])
 
-# Check for libcircle
-PKG_CHECK_MODULES([libcircle], libcircle)
-
-# Check for libarchive
-PKG_CHECK_MODULES([libarchive], libarchive)
-
-# Check for libdtcmp.
-X_AC_DTCMP
-
 # Check for nose test program.
 X_AC_NOSETESTS
+
+# Check for libarchive (FIXME: should eventually remove this)
+PKG_CHECK_MODULES([libarchive], libarchive)
 
 # Check for MPI
 LX_FIND_MPI
 test "x$have_C_mpi" = xyes || \
     AC_MSG_ERROR([You should check to see if MPI is setup properly.])
 AM_CONDITIONAL(HAVE_MPI, [test "x$have_C_mpi" = xyes])
+
+# Check for libcircle
+PKG_CHECK_MODULES([libcircle], libcircle)
+
+# Check for libdtcmp.
+X_AC_DTCMP
 
 AC_CONFIG_FILES([Makefile                \
                  src/Makefile            \
