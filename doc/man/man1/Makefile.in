@@ -54,7 +54,8 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/lx_experimental.m4 \
 	$(top_srcdir)/m4/lx_find_dtcmp.m4 \
 	$(top_srcdir)/m4/lx_find_mpi.m4 \
-	$(top_srcdir)/m4/lx_find_nose.m4 $(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/lx_find_nose.m4 \
+	$(top_srcdir)/m4/lx_find_pandoc.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 mkinstalldirs = $(install_sh) -d
@@ -156,6 +157,7 @@ PACKAGE_STRING = @PACKAGE_STRING@
 PACKAGE_TARNAME = @PACKAGE_TARNAME@
 PACKAGE_URL = @PACKAGE_URL@
 PACKAGE_VERSION = @PACKAGE_VERSION@
+PANDOC = @PANDOC@
 PATH_SEPARATOR = @PATH_SEPARATOR@
 PKG_CONFIG = @PKG_CONFIG@
 PKG_CONFIG_LIBDIR = @PKG_CONFIG_LIBDIR@
