@@ -67,7 +67,7 @@ export PATH=${toolsdir}/bin:$PATH
 # build dependencies
 pushd libcircle.git
   export CFLAGS=${OPT}
-  ./configure
+  ./configure \
     --prefix=$installdir && \
   make VERBOSE=1 && \
   make VERBOSE=1 install
@@ -81,7 +81,7 @@ pushd lwgrp.git
 #  make distclean
 #  ./autogen.sh
   export CFLAGS=${OPT}
-  ./configure
+  ./configure \
     --prefix=${installdir} && \
   make && \
   make install
@@ -95,7 +95,7 @@ pushd dtcmp.git
 #  make distclean
 #  ./autogen.sh
   export CFLAGS=${OPT}
-  ./configure
+  ./configure \
     --prefix=${installdir} \
     --with-lwgrp=${installdir} && \
   make && \
@@ -112,7 +112,7 @@ pushd libarchive-3.1.2
 #  make distclean
 #  ./autogen.sh
   export CFLAGS=${OPT}
-  ./configure
+  ./configure \
     --prefix=${installdir} && \
   make && \
   make install
