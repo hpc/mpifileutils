@@ -6,7 +6,7 @@ consistent virtual development environment with a few simple commands.
 First, install the following software packages. Most of these packages may be
 easily installed using your local package manager (brew, yum/epel, apt, etc).
 
-* [Ansible](http://docs.ansible.com/intro_getting_started.html)
+* [Ansible](http://docs.ansible.com/intro_installation.html)
 * [Vagrant](http://www.vagrantup.com/)
 * [VirtualBox](https://www.virtualbox.org/)
 
