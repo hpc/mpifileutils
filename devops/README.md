@@ -14,7 +14,8 @@ easily installed using your local package manager (brew, yum/epel, apt, etc).
 ## Quick Start
 After dependencies are installed, perform the following actions in a shell to
 enter a virtual machine with fileutils installed.
-
- > cd fileutils/devops
- > vagrant up
- > vagrant ssh
+```
+ cd fileutils/devops
+ vagrant up
+ vagrant ssh
+```
