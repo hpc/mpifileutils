@@ -45,6 +45,9 @@ AC_FUNC_MALLOC
 AC_CHECK_FUNCS([endgrent endpwent getcwd lchown memset mkdir realpath rmdir strchr strdup strerror strstr utime])
 
 # Check for nose test program.
+X_AC_PANDOC
+
+# Check for nose test program.
 X_AC_NOSETESTS
 
 # Check for libarchive (FIXME: should eventually remove this)
