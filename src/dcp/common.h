@@ -166,6 +166,8 @@ typedef struct list_elem {
 } DCOPY_stat_elem_t;
 
 extern int DCOPY_global_rank;
+extern size_t DCOPY_chunksize;
+extern size_t DCOPY_blocksize;
 
 extern DCOPY_stat_elem_t* DCOPY_list_head;
 extern DCOPY_stat_elem_t* DCOPY_list_tail;
