@@ -25,6 +25,10 @@ DCOPY_file_cache_t DCOPY_dst_cache;
 /** What rank the current process is. */
 int DCOPY_global_rank;
 
+/** Chunksize */
+size_t DCOPY_chunksize;
+size_t DCOPY_blocksize;
+
 /* variables to track linked list */
 DCOPY_stat_elem_t* DCOPY_list_head = NULL;
 DCOPY_stat_elem_t* DCOPY_list_tail = NULL;
