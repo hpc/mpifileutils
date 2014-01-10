@@ -119,7 +119,7 @@ static void DCOPY_set_metadata()
             }
             elem = elem->next;
         }
-        
+
         /* wait for all procs to finish before we start
          * with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
@@ -226,6 +226,8 @@ void DCOPY_print_usage(char** argv)
     printf("  -f, --force         - delete destination file if error on open\n");
     printf("  -p, --preserve      - preserve permissions, ownership, timestamps, extended attributes\n");
     printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
+    printf("  -k, --chunksize     - specify chunksize in MB unit (default 1MB)\n");
+    printf("  -b, --blocksize     - specify blocksize in MB unit (default 1MB)\n");
     printf("  -v, --version       - print version info\n");
     printf("  -h, --help          - print usage\n");
     printf("\n");
@@ -249,6 +251,9 @@ int main(int argc, \
      * also want to set different libcircle flags based on command line
      * options -- for now just pass in the default flags */
     DCOPY_global_rank = CIRCLE_init(argc, argv, CIRCLE_DEFAULT_FLAGS);
+    DCOPY_chunksize = 1024 * 1024;
+    DCOPY_blocksize = 1024 * 1024;
+
     CIRCLE_cb_create(&DCOPY_add_objects);
     CIRCLE_cb_process(&DCOPY_process_objects);
 
@@ -283,17 +288,13 @@ int main(int argc, \
     /* By default, don't use O_DIRECT. */
     DCOPY_user_opts.synchronous = false;
 
-    /* Set default chunk size */
-    DCOPY_user_opts.chunk_size = DCOPY_CHUNK_SIZE;
-
-    /* Set default block size */
-    DCOPY_user_opts.block_size = FD_BLOCK_SIZE;
-
     static struct option long_options[] = {
         {"compare"              , no_argument      , 0, 'c'},
+        {"blocksize"            , required_argument, 0, 'b'},
         {"debug"                , required_argument, 0, 'd'},
         {"force"                , no_argument      , 0, 'f'},
         {"help"                 , no_argument      , 0, 'h'},
+        {"chunksize"            , required_argument, 0, 'k'},
         {"preserve"             , no_argument      , 0, 'p'},
         {"unreliable-filesystem", no_argument      , 0, 'u'},
         {"synchronous"          , no_argument      , 0, 's'},
@@ -302,7 +303,7 @@ int main(int argc, \
     };
 
     /* Parse options */
-    while((c = getopt_long(argc, argv, "cd:fhpusv", \
+    while((c = getopt_long(argc, argv, "cb:d:fhpusvk:", \
                            long_options, &option_index)) != -1) {
         switch(c) {
 
@@ -311,7 +312,7 @@ int main(int argc, \
 
                 if(DCOPY_global_rank == 0) {
                     BAYER_LOG(BAYER_LOG_INFO, "Compare source and destination " \
-			"after copy to detect corruption.");
+            "after copy to detect corruption.");
                 }
 
                 break;
@@ -427,6 +428,13 @@ int main(int argc, \
                 DCOPY_exit(EXIT_SUCCESS);
                 break;
 
+            case 'k':
+                DCOPY_chunksize = atoi(optarg) * 1024 * 1024;
+                break;
+            case 'b':
+                DCOPY_blocksize = atoi(optarg) * 1024 * 1024;
+                break;
+
             case '?':
             default:
 
@@ -451,6 +459,16 @@ int main(int argc, \
                 DCOPY_exit(EXIT_FAILURE);
                 break;
         }
+    }
+    /* Set chunk size */
+    DCOPY_user_opts.chunk_size = DCOPY_chunksize;
+
+    /* Set block size */
+    DCOPY_user_opts.block_size = DCOPY_blocksize;
+
+    if (DCOPY_global_rank == 0) {
+        BAYER_LOG(BAYER_LOG_INFO, "Chunk size is set to %d", DCOPY_chunksize);
+        BAYER_LOG(BAYER_LOG_INFO, "Block size is set to %d", DCOPY_blocksize);
     }
 
     /** Parse the source and destination paths. */
