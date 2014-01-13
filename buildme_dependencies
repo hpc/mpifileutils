@@ -28,6 +28,10 @@ OPT="-g -O0"
 
 installdir=`pwd`/install
 
+# add latest autotools to our path
+toolspath=`pwd`/autotools/install/bin
+export PATH="${toolspath}:$PATH"
+
 mkdir -p deps
 cd deps
 
@@ -66,37 +70,51 @@ export PATH=${toolsdir}/bin:$PATH
 
 # build dependencies
 pushd libcircle.git
+  git pull origin master
+  git pull --tags origin master
+  git checkout v0.1.0-rc.1 
   export CFLAGS=${OPT}
   ./configure \
-    --prefix=$installdir && \
+    --prefix=$installdir \
+    --disable-silent-rules && \
   make VERBOSE=1 && \
   make VERBOSE=1 install
   if [ $? -ne 0 ]; then
     echo "failed to configure, build, or install libcircle"
     exit 1
   fi
+  git checkout master
 popd
 
 pushd lwgrp.git
+  git pull origin master
+  git pull --tags origin master
+  git checkout v1.0.1
 #  make distclean
 #  ./autogen.sh
   export CFLAGS=${OPT}
   ./configure \
-    --prefix=${installdir} && \
+    --prefix=${installdir} \
+    --disable-silent-rules && \
   make && \
   make install
   if [ $? -ne 0 ]; then
     echo "failed to configure, build, or install liblwgrp"
     exit 1
   fi
+  git checkout master
 popd
 
 pushd dtcmp.git
+  git pull origin master
+  git pull --tags origin master
+  git checkout v1.0.1
 #  make distclean
 #  ./autogen.sh
   export CFLAGS=${OPT}
   ./configure \
     --prefix=${installdir} \
+    --disable-silent-rules \
     --with-lwgrp=${installdir} && \
   make && \
   make install
@@ -104,6 +122,7 @@ pushd dtcmp.git
     echo "failed to configure, build, or install libdtcmp"
     exit 1
   fi
+  git checkout master
 popd
 
 rm -rf libarchive-3.1.2
