@@ -4,7 +4,10 @@
 - name: Install pkg-config package
   action: apt pkg={{ item }} state=installed
   with_items:
+   - build-essential
    - pkg-config
+   - libtool
+   - autoconf
 
 - name: Clone dtcmp repo
   sudo: false
@@ -13,4 +16,4 @@
 
 - name: Build and install dtcmp
   remote_user: vagrant
-  shell: chdir=/home/vagrant/dtcmp ./configure --with-lwgrp=/usr/local && make all install
+  shell: chdir=/home/vagrant/dtcmp ./autogen.sh && ./configure --with-lwgrp=/usr/local && make all install

@@ -4,7 +4,10 @@
 - name: Install pkg-config package
   action: apt pkg={{ item }} state=installed
   with_items:
+   - build-essential
    - pkg-config
+   - libtool
+   - autoconf
 
 - name: Clone libcircle repo
   sudo: false

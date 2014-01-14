@@ -9,6 +9,7 @@
 - name: configure and deploy fileutils
   hosts: all
   roles:
+    - locale
     - git
     - github
     - libcircle

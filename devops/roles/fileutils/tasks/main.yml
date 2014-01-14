@@ -4,7 +4,11 @@
 - name: Install pkg-config package
   action: apt pkg={{ item }} state=installed
   with_items:
-      - libarchive-dev
+   - build-essential
+   - pkg-config
+   - libtool
+   - autoconf
+   - libarchive-dev
 
 - name: Clone fileutils repo
   sudo: false
