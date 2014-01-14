@@ -11,7 +11,7 @@
   roles:
     - locale
     - git
-    - github
+    - ssh
     - libcircle
     - lwgrp
     - dtcmp

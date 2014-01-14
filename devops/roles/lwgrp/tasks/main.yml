@@ -17,3 +17,4 @@
 - name: Build and install lwgrp
   remote_user: vagrant
   shell: chdir=/home/vagrant/lwgrp ./autogen.sh && ./configure && make all install
+  shell: chdir=/home/vagrant chown -R vagrant:vagrant lwgrp

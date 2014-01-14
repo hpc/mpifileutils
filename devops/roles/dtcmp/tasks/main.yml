@@ -17,3 +17,4 @@
 - name: Build and install dtcmp
   remote_user: vagrant
   shell: chdir=/home/vagrant/dtcmp ./autogen.sh && ./configure --with-lwgrp=/usr/local && make all install
+  shell: chdir=/home/vagrant chown -R vagrant:vagrant dtcmp

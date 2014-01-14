@@ -16,4 +16,5 @@
 
 - name: Build and install libcircle
   remote_user: vagrant
-  shell: chdir=/home/vagrant/libcircle ./configure && make all install
+  shell: chdir=/home/vagrant/libcircle ./autogen.sh && ./configure && make all install
+  shell: chdir=/home/vagrant chown -R vagrant:vagrant libcircle

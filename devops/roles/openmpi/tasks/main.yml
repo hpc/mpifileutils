@@ -4,5 +4,5 @@
 - name: Install OpenMPI package
   action: apt pkg={{ item }} state=installed
   with_items:
-   - libopenmpi1.6-dev
-   - openmpi1.6-bin
+   - libopenmpi1.5-dev
+   - openmpi1.5-bin
