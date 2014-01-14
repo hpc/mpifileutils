@@ -31,6 +31,7 @@ DTAR_options_t DTAR_user_opts;
 DTAR_writer_t DTAR_writer;
 bayer_flist DTAR_flist;
 uint64_t* DTAR_fsizes = NULL;
+uint64_t* DTAR_offsets = NULL;
 uint64_t DTAR_total = 0;
 uint64_t DTAR_count = 0;
 
@@ -52,26 +53,48 @@ static void process_flist() {
 
         }
 
+        DTAR_offsets[idx] = DTAR_total;
         DTAR_total += DTAR_fsizes[idx];
     }
 }
 
+
+
+
 static void create_archive(char *filename) {
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &size);
+
     /* open archive file for writing */
     //DTAR_writer_init();
 
-    /* walk path to get stats info on all files */
-    int i;
-    DTAR_flist = bayer_flist_new();
-    for (i = 0; i < num_src_params; i++) {
-        bayer_flist_walk_path(src_params[i].path, 1, DTAR_flist);
+    if (rank == 0) {
+        /* walk path to get stats info on all files */
+        int i;
+        DTAR_flist = bayer_flist_new();
+        for (i = 0; i < num_src_params; i++) {
+            bayer_flist_walk_path(src_params[i].path, 1, DTAR_flist);
+        }
+
+        DTAR_count = bayer_flist_size(DTAR_flist);
+
+        /* allocate memory for DTAR_fsizes */
+
+        DTAR_fsizes = (uint64_t*) BAYER_MALLOC( DTAR_count * sizeof(uint64_t));
+        DTAR_offsets = (uint64_t*) BAYER_MALLOC(DTAR_count * sizeof(uint64_t));
+
+        /* calculate file size, offset for each */
+        process_flist();
+
+        /* bcast the result */
+
     }
-    DTAR_count = bayer_flist_size(DTAR_flist);
 
-    /* allocate memory for DTAR_fsizes */
-    DTAR_fsizes = (uint64_t*) BAYER_MALLOC( DTAR_count * sizeof(uint64_t));
 
-    process_flist();
+
+
+
 
     //fsync(DTAR_writer.fd_tar);
 
@@ -79,13 +102,13 @@ static void create_archive(char *filename) {
 
 int main(int argc, char **argv) {
 
-    int flags = ARCHIVE_EXTRACT_TIME;
-
     MPI_Init(&argc, &argv);
     bayer_init();
 
-    DTAR_global_rank = CIRCLE_init(argc, argv, CIRCLE_DEFAULT_FLAGS);
-    CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_INFO;
+    DTAR_global_rank = CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
+    CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
+    CIRCLE_enable_logging(loglevel);
+
     bayer_debug_level = BAYER_LOG_INFO;
 
     GError *error = NULL;
@@ -110,16 +133,18 @@ int main(int argc, char **argv) {
     }
 
 
+    DTAR_user_opts.flags = ARCHIVE_EXTRACT_TIME;
+
     if (opts_preserve) {
-        flags |= ARCHIVE_EXTRACT_OWNER;
-        flags |= ARCHIVE_EXTRACT_PERM;
-        flags |= ARCHIVE_EXTRACT_ACL;
-        flags |= ARCHIVE_EXTRACT_FFLAGS;
-        flags |= ARCHIVE_EXTRACT_XATTR;
+        DTAR_user_opts.flags |= ARCHIVE_EXTRACT_OWNER;
+        DTAR_user_opts.flags |= ARCHIVE_EXTRACT_PERM;
+        DTAR_user_opts.flags |= ARCHIVE_EXTRACT_ACL;
+        DTAR_user_opts.flags |= ARCHIVE_EXTRACT_FFLAGS;
+        DTAR_user_opts.flags |= ARCHIVE_EXTRACT_XATTR;
+        DTAR_user_opts.preserve = TRUE;
     }
 
     DTAR_parse_path_args(argc, argv, opts_tarfile);
-    CIRCLE_enable_logging(CIRCLE_debug);
 
     if (opts_create)
         create_archive( opts_tarfile );
