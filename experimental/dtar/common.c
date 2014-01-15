@@ -27,7 +27,7 @@ void DTAR_exit(int code) {
 }
 
 
-struct archive * new_archive() {
+struct archive * DTAR_new_archive() {
     struct archive *a = archive_write_new();
     int r = archive_write_set_format_pax(a);
     if ( r != ARCHIVE_OK) {
@@ -38,19 +38,28 @@ struct archive * new_archive() {
     return a;
 }
 
-int DTAR_write_header(struct archive *a, uint64_t idx, uint64_t offset) {
+void DTAR_write_header(struct archive *a, uint64_t idx, uint64_t offset) {
     struct archive_entry *entry = archive_entry_new();
+
+    bayer_filetype ftype = bayer_flist_file_get_type(DTAR_flist, idx);
+    const char * fname = bayer_flist_file_get_name(DTAR_flist, idx);
+    archive_entry_set_pathname(entry, fname);
+
+    /* TODO: do this only when preserve is set */
+    int fd = bayer_open(fname, O_RDONLY);
+    struct archive * tmp_a = archive_read_disk_new();
+    archive_read_disk_set_standard_lookup(tmp_a);
+    archive_read_disk_entry_from_file(tmp_a, entry, fd, NULL);
+    archive_read_free(tmp_a);
+
+    archive_write_header(a, entry);
 
 }
 
 
-char * DTAR_encode_operation(
-        DTAR_operation_code_t code,
-        const char* operand,
-        uint64_t fsize,
-        uint64_t chunk,
-        uint64_t offset
-        ) {
+char * DTAR_encode_operation( DTAR_operation_code_t code, const char* operand,
+        uint64_t fsize, uint64_t chunk, uint64_t offset)
+{
 
     size_t opsize = (size_t) CIRCLE_MAX_STRING_LEN;
     char* op = (char*) BAYER_MALLOC(opsize);

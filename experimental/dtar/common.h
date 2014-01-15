@@ -73,6 +73,7 @@ extern DTAR_options_t DTAR_user_opts;
 extern DTAR_writer_t DTAR_writer;
 extern uint64_t DTAR_total;
 extern uint64_t DTAR_count;
+extern uint64_t DTAR_goffset;
 extern bayer_flist DTAR_flist;
 extern uint64_t* DTAR_fsizes;
 extern uint64_t* DTAR_offsets;
@@ -82,15 +83,20 @@ extern int num_src_params;
 
 extern void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
 
+
 /* function declaration */
 
 void DTAR_abort(int code);
 void DTAR_exit(int code);
 void DTAR_parse_path_args(int, char **, const char *);
 void DTAR_writer_init();
+
+struct archive* DTAR_new_archive();
+void DTAR_write_header(struct archive * a, uint64_t idx, uint64_t offset);
+
 DTAR_operation_t* DTAR_decode_operation(char *op);
-char * DTAR_encode_operation(DTAR_operation_code_t code, uint64_t chunk,
-        const char* operand, uint64_t offset, uint64_t fsize);
+char * DTAR_encode_operation( DTAR_operation_code_t code,
+        const char* operand, uint64_t fsize, uint64_t chunk, uint64_t offset);
 
 
 #endif /* COMMON_H_ */

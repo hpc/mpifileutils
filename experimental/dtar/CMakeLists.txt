@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 2.8)
 project(fileutils_dtar)
 
+set(CMAKE_C_FLAGS_DEBUG         "-std=c99 -Wall -O0 -g")
+
+
 pkg_check_modules(GLIB2 REQUIRED glib-2.0)
 add_definitions(${GLIB2_CFLAGS})
 link_libraries(${GLIB2_LDFLAGS})
