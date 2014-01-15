@@ -13,6 +13,8 @@
 #define _GNU_SOURCE
 #endif
 
+#define _LARGEFILE64_SOURCE
+
 
 #include <errno.h>
 #include <stdio.h>
@@ -32,10 +34,10 @@
 
 
 #define DTAR_HDR_LENGTH 1536
-
+#define FD_BLOCK_SIZE (1024*1024)
 
 typedef enum {
-    DO_HEADER, DO_DATA
+    COPY_DATA
 } DTAR_operation_code_t;
 
 
@@ -60,7 +62,7 @@ typedef struct {
 
 typedef struct {
     uint64_t file_size;
-    uint64_t chunk;
+    uint64_t chunk_index;
     uint64_t offset;
     DTAR_operation_code_t code;
     char* operand;
@@ -81,8 +83,8 @@ extern bayer_param_path* src_params;
 extern bayer_param_path dest_param;
 extern int num_src_params;
 
-extern void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
-
+extern int DTAR_rank;
+extern int DTAR_size;
 
 /* function declaration */
 
@@ -98,5 +100,7 @@ DTAR_operation_t* DTAR_decode_operation(char *op);
 char * DTAR_encode_operation( DTAR_operation_code_t code,
         const char* operand, uint64_t fsize, uint64_t chunk, uint64_t offset);
 
+void DTAR_enqueue_copy(CIRCLE_handle* handle);
+void DTAR_perform_copy(CIRCLE_handle* handle);
 
 #endif /* COMMON_H_ */
