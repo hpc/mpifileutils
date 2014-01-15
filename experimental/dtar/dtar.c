@@ -34,6 +34,7 @@ uint64_t* DTAR_fsizes = NULL;
 uint64_t* DTAR_offsets = NULL;
 uint64_t DTAR_total = 0;
 uint64_t DTAR_count = 0;
+uint64_t DTAR_goffset = 0;
 
 static void process_flist() {
     uint64_t idx;
@@ -66,37 +67,52 @@ static void create_archive(char *filename) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_rank(MPI_COMM_WORLD, &size);
 
-    /* open archive file for writing */
-    //DTAR_writer_init();
+    DTAR_writer_init();
 
-    if (rank == 0) {
-        /* walk path to get stats info on all files */
-        int i;
-        DTAR_flist = bayer_flist_new();
-        for (i = 0; i < num_src_params; i++) {
-            bayer_flist_walk_path(src_params[i].path, 1, DTAR_flist);
-        }
-
-        DTAR_count = bayer_flist_size(DTAR_flist);
-
-        /* allocate memory for DTAR_fsizes */
-
-        DTAR_fsizes = (uint64_t*) BAYER_MALLOC( DTAR_count * sizeof(uint64_t));
-        DTAR_offsets = (uint64_t*) BAYER_MALLOC(DTAR_count * sizeof(uint64_t));
-
-        /* calculate file size, offset for each */
-        process_flist();
-
-        /* bcast the result */
-
+    /* walk path to get stats info on all files */
+    DTAR_flist = bayer_flist_new();
+    for (int i = 0; i < num_src_params; i++) {
+        bayer_flist_walk_path(src_params[i].path, 1, DTAR_flist);
     }
 
+    DTAR_count = bayer_flist_size(DTAR_flist);
+
+    /* allocate memory for DTAR_fsizes */
+
+    DTAR_fsizes = (uint64_t*) BAYER_MALLOC( DTAR_count * sizeof(uint64_t));
+    DTAR_offsets = (uint64_t*) BAYER_MALLOC(DTAR_count * sizeof(uint64_t));
+
+    /* calculate file size, offset for each */
+    process_flist();
 
 
+    MPI_Scan(&DTAR_total, &DTAR_goffset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    DTAR_goffset -= DTAR_total;
+
+    struct archive* a = DTAR_new_archive();
+    archive_write_open_fd(a, DTAR_writer.fd_tar);
+    uint64_t offset = DTAR_goffset;
+
+    /* write header first*/
+    for (uint64_t idx = 0; idx < DTAR_count; idx++ ) {
+        bayer_filetype type = bayer_flist_file_get_type(DTAR_flist, idx);
+        if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_DIR || type == BAYER_TYPE_LINK) {
+            DTAR_write_header(a, idx, offset);
+            offset += DTAR_offsets[idx];
+        }
+    }
+
+    DTAR_global_rank = CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
+    CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
+    CIRCLE_enable_logging(loglevel);
 
 
-
-    //fsync(DTAR_writer.fd_tar);
+    /* clean up */
+    fsync(DTAR_writer.fd_tar);
+    bayer_free(&DTAR_fsizes);
+    bayer_free(&DTAR_offsets);
+    bayer_flist_free(&DTAR_flist);
+    bayer_close(DTAR_writer.name, DTAR_writer.fd_tar);
 
 }
 
@@ -105,9 +121,6 @@ int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
     bayer_init();
 
-    DTAR_global_rank = CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
-    CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
-    CIRCLE_enable_logging(loglevel);
 
     bayer_debug_level = BAYER_LOG_INFO;
 
