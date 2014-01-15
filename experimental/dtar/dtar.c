@@ -35,6 +35,7 @@ uint64_t* DTAR_offsets = NULL;
 uint64_t DTAR_total = 0;
 uint64_t DTAR_count = 0;
 uint64_t DTAR_goffset = 0;
+int DTAR_rank, DTAR_size;
 
 static void process_flist() {
     uint64_t idx;
@@ -60,12 +61,13 @@ static void process_flist() {
 }
 
 
-
+static void update_offsets() {
+    for (uint64_t idx = 0; idx < DTAR_count; idx++) {
+        DTAR_offsets[idx] += DTAR_goffset;
+    }
+}
 
 static void create_archive(char *filename) {
-    int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_rank(MPI_COMM_WORLD, &size);
 
     DTAR_writer_init();
 
@@ -78,37 +80,47 @@ static void create_archive(char *filename) {
     DTAR_count = bayer_flist_size(DTAR_flist);
 
     /* allocate memory for DTAR_fsizes */
-
     DTAR_fsizes = (uint64_t*) BAYER_MALLOC( DTAR_count * sizeof(uint64_t));
     DTAR_offsets = (uint64_t*) BAYER_MALLOC(DTAR_count * sizeof(uint64_t));
 
-    /* calculate file size, offset for each */
+    /* calculate size, offset for each file as well as global offset*/
     process_flist();
-
-
     MPI_Scan(&DTAR_total, &DTAR_goffset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
     DTAR_goffset -= DTAR_total;
+    update_offsets();
 
-    struct archive* a = DTAR_new_archive();
-    archive_write_open_fd(a, DTAR_writer.fd_tar);
-    uint64_t offset = DTAR_goffset;
 
     /* write header first*/
+    struct archive* ar = DTAR_new_archive();
+    archive_write_open_fd(ar, DTAR_writer.fd_tar);
+
     for (uint64_t idx = 0; idx < DTAR_count; idx++ ) {
         bayer_filetype type = bayer_flist_file_get_type(DTAR_flist, idx);
         if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_DIR || type == BAYER_TYPE_LINK) {
-            DTAR_write_header(a, idx, offset);
-            offset += DTAR_offsets[idx];
+            DTAR_write_header(ar, idx, DTAR_offsets[idx]);
         }
     }
 
+#if 0
     DTAR_global_rank = CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
     CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
     CIRCLE_enable_logging(loglevel);
 
+    /* register callbacks */
+    CIRCLE_cb_create(&DTAR_enqueue_copy);
+    CIRCLE_cb_process(&DTAR_perform_copy);
+
+    /* run the libcircle job */
+    CIRCLE_begin();
+    CIRCLE_finalize();
+#endif
+
+    uint64_t archive_size = 0;
+    MPI_Allreduce(&DTAR_total, &archive_size, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* clean up */
-    fsync(DTAR_writer.fd_tar);
+
+    archive_write_free(ar);
     bayer_free(&DTAR_fsizes);
     bayer_free(&DTAR_offsets);
     bayer_flist_free(&DTAR_flist);
@@ -120,6 +132,9 @@ int main(int argc, char **argv) {
 
     MPI_Init(&argc, &argv);
     bayer_init();
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &DTAR_rank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &DTAR_size);
 
 
     bayer_debug_level = BAYER_LOG_INFO;
@@ -156,6 +171,8 @@ int main(int argc, char **argv) {
         DTAR_user_opts.flags |= ARCHIVE_EXTRACT_XATTR;
         DTAR_user_opts.preserve = TRUE;
     }
+
+    DTAR_user_opts.chunk_size = 20000;
 
     DTAR_parse_path_args(argc, argv, opts_tarfile);
 
