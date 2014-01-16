@@ -58,7 +58,17 @@ typedef struct {
     int flags;
 } DTAR_writer_t;
 
-
+typedef struct {
+    uint64_t total_dirs;
+    uint64_t total_files;
+    uint64_t total_links;
+    uint64_t total_size;
+    uint64_t total_bytes_copied;
+    double  wtime_started;
+    double  wtime_ended;
+    time_t  time_started;
+    time_t  time_ended;
+} DTAR_statistics_t;
 
 typedef struct {
     uint64_t file_size;
@@ -73,6 +83,7 @@ typedef struct {
 extern int DTAR_global_rank;
 extern DTAR_options_t DTAR_user_opts;
 extern DTAR_writer_t DTAR_writer;
+extern DTAR_statistics_t DTAR_statistics;
 extern uint64_t DTAR_total;
 extern uint64_t DTAR_count;
 extern uint64_t DTAR_goffset;
@@ -92,6 +103,7 @@ void DTAR_abort(int code);
 void DTAR_exit(int code);
 void DTAR_parse_path_args(int, char **, const char *);
 void DTAR_writer_init();
+void DTAR_epilogue();
 
 struct archive* DTAR_new_archive();
 void DTAR_write_header(struct archive * a, uint64_t idx, uint64_t offset);

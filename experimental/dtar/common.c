@@ -209,5 +209,21 @@ DTAR_operation_t* DTAR_decode_operation(char *op) {
     ret->operand = operand;
 
     return ret;
+}
 
+void DTAR_epilogue() {
+    double rel_time = DTAR_statistics.wtime_ended - \
+                      DTAR_statistics.wtime_started;
+    if (DTAR_rank == 0) {
+        char starttime_str[256];
+        struct tm* localstart = localtime(&(DTAR_statistics.time_started));
+        strftime(starttime_str, 256, "%b-%d-%Y, %H:%M:%S", localstart);
+
+        char endtime_str[256];
+        struct tm* localend = localtime(&(DTAR_statistics.time_ended));
+        strftime(endtime_str, 256, "%b-%d-%Y, %H:%M:%S", localend);
+
+        BAYER_LOG(BAYER_LOG_INFO, "Started:    %s", starttime_str);
+        BAYER_LOG(BAYER_LOG_INFO, "Completed:  %s", endtime_str);
+    }
 }

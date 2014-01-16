@@ -31,6 +31,7 @@ static GOptionEntry entries[] = {
 int DTAR_global_rank;
 DTAR_options_t DTAR_user_opts;
 DTAR_writer_t DTAR_writer;
+DTAR_statistics_t DTAR_statistics;
 bayer_flist DTAR_flist;
 uint64_t* DTAR_fsizes = NULL;
 uint64_t* DTAR_offsets = NULL;
@@ -118,6 +119,8 @@ static void create_archive(char *filename) {
     uint64_t archive_size = 0;
     MPI_Allreduce(&DTAR_total, &archive_size, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
+    DTAR_statistics.total_size = archive_size;
+
     /* clean up */
 
     archive_write_free(ar);
@@ -174,20 +177,33 @@ int main(int argc, char **argv) {
 
     DTAR_user_opts.chunk_size = opts_chunksize * 1024 * 1024;
 
+    /* init statistics */
+    DTAR_statistics.total_dirs  = 0;
+    DTAR_statistics.total_files = 0;
+    DTAR_statistics.total_links = 0;
+    DTAR_statistics.total_size  = 0;
+    DTAR_statistics.total_bytes_copied = 0;
+
     if (DTAR_rank == 0) {
         BAYER_LOG(BAYER_LOG_INFO, "Chunk size = %" PRIu64, DTAR_user_opts.chunk_size);
     }
 
     DTAR_parse_path_args(argc, argv, opts_tarfile);
 
+    time(&(DTAR_statistics.time_started));
+    DTAR_statistics.wtime_started = MPI_Wtime();
+
     if (opts_create)
         create_archive( opts_tarfile );
 
 
+    DTAR_statistics.wtime_ended = MPI_Wtime();
+    time(&(DTAR_statistics.time_ended));
+
     /* free context */
     g_option_context_free(context);
 
-
+    DTAR_epilogue();
     DTAR_exit(EXIT_SUCCESS);
     return 0;
 }
