@@ -44,17 +44,18 @@ void DTAR_write_header(struct archive *ar, uint64_t idx, uint64_t offset)
 
     const char * fname = bayer_flist_file_get_name(DTAR_flist, idx);
 
+    /* fill up entry, FIXME: the uglyness of removing leading slash */
     struct archive_entry *entry = archive_entry_new();
-    archive_entry_copy_pathname(entry, fname);
+    archive_entry_copy_pathname(entry, &fname[1]);
     struct archive * source = archive_read_disk_new();
     archive_read_disk_set_standard_lookup(source);
     int fd = open(fname, O_RDONLY);
-
     if (archive_read_disk_entry_from_file(source, entry, fd, NULL) != ARCHIVE_OK) {
         BAYER_LOG(BAYER_LOG_ERR, "archive_read_disk_entry_from_file(): %s", archive_error_string(ar));
     }
     archive_read_free(source);
 
+    /* write entry info to archive */
     struct archive* dest = archive_write_new();
     archive_write_set_format_pax(dest);
 
@@ -89,12 +90,6 @@ void DTAR_enqueue_copy(CIRCLE_handle *handle) {
                 handle->enqueue(newop);
                 bayer_free(&newop);
 
-#if 1
-                BAYER_LOG(BAYER_LOG_INFO,
-                        "rank = %d, enqueue %s -> chunk index = %" PRIu64 ", dataoffset = %" PRIu64,
-                    DTAR_rank, name, chunk_idx, dataoffset);
-#endif
-
             }
 
             /* create copy work for possibly last item */
@@ -103,14 +98,7 @@ void DTAR_enqueue_copy(CIRCLE_handle *handle) {
                         COPY_DATA, name, size, num_chunks, dataoffset);
                 handle->enqueue(newop);
                 bayer_free(&newop);
-#if 1
-                BAYER_LOG(BAYER_LOG_INFO,
-                        "rank = %d, enqueue %s -> LAST CHUNK = %" PRIu64 ", dataoffset = %" PRIu64,
-                    DTAR_rank, name, num_chunks, dataoffset);
-#endif
-
             }
-
         }
     }
 }
@@ -136,13 +124,6 @@ void DTAR_perform_copy(CIRCLE_handle* handle) {
     lseek64(in_fd, in_offset, SEEK_SET);
     lseek64(out_fd, out_offset, SEEK_SET);
 
-#if 1
-    BAYER_LOG(BAYER_LOG_INFO, "rank = %d decode %s: chunk index = %" PRIu64
-            ", in offset = %" PRIu64 ", out offset=%" PRIu64,
-            DTAR_rank, op->operand, op->chunk_index, in_offset, out_offset );
-
-#endif
-
     while (total_bytes_written < DTAR_user_opts.chunk_size) {
         num_of_bytes_read = read(in_fd, &iobuf[0], sizeof(iobuf));
         if (!num_of_bytes_read) break;
@@ -160,7 +141,6 @@ void DTAR_perform_copy(CIRCLE_handle* handle) {
         if (padding > 0) {
             char * buff = (char*) calloc(padding, sizeof(char));
             write(out_fd, buff, padding);
-            BAYER_LOG(BAYER_LOG_INFO, "%s, padding = %d", op->operand, padding);
         }
     }
 

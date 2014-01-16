@@ -13,12 +13,14 @@ static gboolean opts_verbose = FALSE;
 static gboolean opts_extract = FALSE;
 static gboolean opts_preserve = FALSE;
 static gchar*   opts_tarfile = NULL;
+static gint     opts_chunksize = 1;
 
 static GOptionEntry entries[] = {
         {"create", 'c', 0, G_OPTION_ARG_NONE, &opts_create, "Create archive", NULL  },
         {"extract", 'x', 0, G_OPTION_ARG_NONE, &opts_extract, "Extract archive", NULL },
         {"verbose", 'v', 0, G_OPTION_ARG_NONE, &opts_verbose, "Verbose output", NULL },
         {"preserve", 'p', 0, G_OPTION_ARG_NONE, &opts_preserve, "Preserve attributes", NULL},
+        {"chunksize",'s', 0, G_OPTION_ARG_INT, &opts_chunksize, "Chunk size", NULL},
         {"file", 'f', 0, G_OPTION_ARG_FILENAME, &opts_tarfile, "Target output file", NULL },
         { NULL }
 };
@@ -101,7 +103,6 @@ static void create_archive(char *filename) {
         }
     }
 
-#if 0
     DTAR_global_rank = CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
     CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
     CIRCLE_enable_logging(loglevel);
@@ -113,7 +114,6 @@ static void create_archive(char *filename) {
     /* run the libcircle job */
     CIRCLE_begin();
     CIRCLE_finalize();
-#endif
 
     uint64_t archive_size = 0;
     MPI_Allreduce(&DTAR_total, &archive_size, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
@@ -172,7 +172,11 @@ int main(int argc, char **argv) {
         DTAR_user_opts.preserve = TRUE;
     }
 
-    DTAR_user_opts.chunk_size = 20000;
+    DTAR_user_opts.chunk_size = opts_chunksize * 1024 * 1024;
+
+    if (DTAR_rank == 0) {
+        BAYER_LOG(BAYER_LOG_INFO, "Chunk size = %" PRIu64, DTAR_user_opts.chunk_size);
+    }
 
     DTAR_parse_path_args(argc, argv, opts_tarfile);
 
