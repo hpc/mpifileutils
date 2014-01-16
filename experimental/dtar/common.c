@@ -29,11 +29,13 @@ void DTAR_exit(int code) {
 
 struct archive * DTAR_new_archive() {
     struct archive *a = archive_write_new();
-    int r = archive_write_set_format_pax(a);
+    archive_write_set_format_pax(a);
+    int r = archive_write_open_fd(a, DTAR_writer.fd_tar);
     if ( r != ARCHIVE_OK) {
-        BAYER_LOG(BAYER_LOG_ERR, "Error: %s", archive_error_string(a));
+        BAYER_LOG(BAYER_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(a));
         return NULL;
     }
+
     return a;
 }
 
