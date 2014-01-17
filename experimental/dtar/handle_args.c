@@ -39,8 +39,7 @@ static void DTAR_check_paths() {
     /* check destination */
     if (dest_param.path_stat_valid) {
         if (DTAR_rank == 0)
-            BAYER_LOG(BAYER_LOG_ERR, "Destination target exists, we will not overwrite");
-        DTAR_exit(EXIT_FAILURE);
+            BAYER_LOG(BAYER_LOG_WARN, "Destination target exists, we will overwrite");
     } else {
         bayer_path* parent = bayer_path_from_str(dest_param.path);
         bayer_path_dirname(parent);
