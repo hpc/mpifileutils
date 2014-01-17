@@ -10,6 +10,7 @@
 
 static gboolean opts_create = FALSE;
 static gboolean opts_verbose = FALSE;
+static gboolean opts_debug = FALSE;
 static gboolean opts_extract = FALSE;
 static gboolean opts_preserve = FALSE;
 static gchar*   opts_tarfile = NULL;
@@ -19,6 +20,7 @@ static GOptionEntry entries[] = {
         {"create", 'c', 0, G_OPTION_ARG_NONE, &opts_create, "Create archive", NULL  },
         {"extract", 'x', 0, G_OPTION_ARG_NONE, &opts_extract, "Extract archive", NULL },
         {"verbose", 'v', 0, G_OPTION_ARG_NONE, &opts_verbose, "Verbose output", NULL },
+        {"debug", 'd', 0, G_OPTION_ARG_NONE, &opts_debug, "Debug output", NULL},
         {"preserve", 'p', 0, G_OPTION_ARG_NONE, &opts_preserve, "Preserve attributes", NULL},
         {"chunksize",'s', 0, G_OPTION_ARG_INT, &opts_chunksize, "Chunk size", NULL},
         {"file", 'f', 0, G_OPTION_ARG_FILENAME, &opts_tarfile, "Target output file", NULL },
@@ -140,8 +142,6 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &DTAR_size);
 
 
-    bayer_debug_level = BAYER_LOG_INFO;
-
     GError *error = NULL;
     GOptionContext *context = NULL;
     context = g_option_context_new(" [sources ... ] [destination file]");
@@ -152,6 +152,13 @@ int main(int argc, char **argv) {
         DTAR_exit(EXIT_FAILURE);
 
     }
+
+    if (opts_debug)
+        bayer_debug_level = BAYER_LOG_DBG;
+    else if (opts_verbose)
+        bayer_debug_level = BAYER_LOG_INFO;
+    else
+        bayer_debug_level = BAYER_LOG_ERR;
 
     if (!opts_create  &&  !opts_extract && DTAR_global_rank == 0) {
         BAYER_LOG(BAYER_LOG_ERR, "One of extract(x) or create(c) need to be specified");
