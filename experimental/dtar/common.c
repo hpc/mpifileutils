@@ -234,7 +234,21 @@ void DTAR_epilogue() {
         struct tm* localend = localtime(&(DTAR_statistics.time_ended));
         strftime(endtime_str, 256, "%b-%d-%Y, %H:%M:%S", localend);
 
+        /* add two 512 blocks at the end */
+        DTAR_statistics.total_size += 512*2;
+
+
+        /* convert bandwidth to unit */
+        double agg_rate_tmp;
+        double agg_rate = (double) DTAR_statistics.total_size / rel_time;
+        const char* agg_rate_units;
+        bayer_format_bytes(agg_rate, &agg_rate_tmp, &agg_rate_units);
+
         BAYER_LOG(BAYER_LOG_INFO, "Started:    %s", starttime_str);
         BAYER_LOG(BAYER_LOG_INFO, "Completed:  %s", endtime_str);
+        BAYER_LOG(BAYER_LOG_INFO, "Total archive size: %" PRIu64, DTAR_statistics.total_size);
+        BAYER_LOG(BAYER_LOG_INFO, "Rate: %.3lf %s " \
+                "(%.3" PRIu64 " bytes in %.3lf seconds)", \
+                agg_rate_tmp, agg_rate_units, DTAR_statistics.total_size, rel_time);
     }
 }
