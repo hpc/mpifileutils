@@ -171,15 +171,18 @@ int main(int argc, char **argv) {
     }
 
 
+    /* done by default */
     DTAR_user_opts.flags = ARCHIVE_EXTRACT_TIME;
+    DTAR_user_opts.flags |= ARCHIVE_EXTRACT_OWNER;
+    DTAR_user_opts.flags |= ARCHIVE_EXTRACT_PERM;
+    DTAR_user_opts.flags |= ARCHIVE_EXTRACT_ACL;
+    DTAR_user_opts.flags |= ARCHIVE_EXTRACT_FFLAGS;
 
     if (opts_preserve) {
-        DTAR_user_opts.flags |= ARCHIVE_EXTRACT_OWNER;
-        DTAR_user_opts.flags |= ARCHIVE_EXTRACT_PERM;
-        DTAR_user_opts.flags |= ARCHIVE_EXTRACT_ACL;
-        DTAR_user_opts.flags |= ARCHIVE_EXTRACT_FFLAGS;
         DTAR_user_opts.flags |= ARCHIVE_EXTRACT_XATTR;
         DTAR_user_opts.preserve = TRUE;
+        if (DTAR_global_rank == 0)
+            BAYER_LOG(BAYER_LOG_INFO, "Creating archive with extended attributes");
     }
 
     DTAR_user_opts.chunk_size = opts_chunksize * 1024 * 1024;
