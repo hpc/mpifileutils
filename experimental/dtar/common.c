@@ -47,14 +47,25 @@ void DTAR_write_header(struct archive *ar, uint64_t idx, uint64_t offset)
     /* fill up entry, FIXME: the uglyness of removing leading slash */
     struct archive_entry *entry = archive_entry_new();
     archive_entry_copy_pathname(entry, &fname[1]);
-    struct archive * source = archive_read_disk_new();
-    archive_read_disk_set_standard_lookup(source);
-    int fd = open(fname, O_RDONLY);
-    if (archive_read_disk_entry_from_file(source, entry, fd, NULL) != ARCHIVE_OK) {
-        BAYER_LOG(BAYER_LOG_ERR, "archive_read_disk_entry_from_file(): %s", archive_error_string(ar));
-    }
-    archive_read_free(source);
 
+    if (DTAR_user_opts.preserve) {
+        struct archive * source = archive_read_disk_new();
+        archive_read_disk_set_standard_lookup(source);
+        int fd = open(fname, O_RDONLY);
+        if (archive_read_disk_entry_from_file(source, entry, fd, NULL) != ARCHIVE_OK) {
+            BAYER_LOG(BAYER_LOG_ERR, "archive_read_disk_entry_from_file(): %s", archive_error_string(ar));
+        }
+        archive_read_free(source);
+    } else {
+        /* read stat info from bayer_flist */
+        struct stat stbuf;
+        bayer_lstat(fname, &stbuf);
+        archive_entry_copy_stat(entry, &stbuf);
+        const char* uname = bayer_flist_file_get_username(DTAR_flist, idx);
+        archive_entry_set_uname(entry, uname);
+        const char* gname = bayer_flist_file_get_groupname(DTAR_flist, idx);
+        archive_entry_set_gname(entry, gname);
+    }
     /* write entry info to archive */
     struct archive* dest = archive_write_new();
     archive_write_set_format_pax(dest);
