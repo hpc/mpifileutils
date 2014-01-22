@@ -133,6 +133,99 @@ static void create_archive(char *filename) {
 
 }
 
+static void errmsg(const char* m) {
+    fprintf(stderr, "%s\n", m);
+}
+
+static void msg(const char *m) {
+    fprintf(stdout, "%s", m);
+}
+
+static int
+copy_data(struct archive *ar, struct archive *aw) {
+    int r;
+    const void *buff;
+    size_t size;
+    off_t offset;
+    for (;;) {
+        r = archive_read_data_block(ar, &buff, &size, &offset);
+        if (r == ARCHIVE_EOF) {
+            return (ARCHIVE_OK);
+        }
+
+        if (r != ARCHIVE_OK)
+            return (r);
+
+        r = archive_write_data_block(aw, buff, size, offset);
+
+        if (r != ARCHIVE_OK) {
+            errmsg(archive_error_string(ar));
+            return (r);
+        }
+    }
+    return 0;
+}
+
+static void
+extract_archive(const char *filename, bool verbose, int flags) {
+
+    struct archive *a;
+    struct archive *ext;
+    struct archive_entry *entry;
+    int r;
+    /* initiate archive object for reading */
+    a = archive_read_new();
+    /* initiate archive object for writing */
+    ext = archive_write_disk_new();
+    archive_write_disk_set_options(ext, flags);
+
+    /* we want all the format supports */
+    archive_read_support_filter_bzip2(a);
+    archive_read_support_filter_gzip(a);
+    archive_read_support_filter_compress(a);
+    archive_read_support_format_tar(a);
+
+    archive_write_disk_set_standard_lookup(ext);
+
+    if (filename != NULL && strcmp(filename, "-") == 0)
+        filename = NULL;
+
+    /* blocksize set to 1024K */
+    if (( r = archive_read_open_filename(a, filename, 10240))) {
+        errmsg(archive_error_string(a));
+        exit(r);
+    }
+
+    for (;;) {
+        r = archive_read_next_header(a, &entry);
+        if (r == ARCHIVE_EOF)
+            break;
+        if (r != ARCHIVE_OK) {
+            errmsg(archive_error_string(a));
+            exit(r);
+        }
+
+        if (verbose)
+            msg("x ");
+
+        if (verbose)
+            msg(archive_entry_pathname(entry));
+
+        r = archive_write_header(ext, entry);
+        if (r != ARCHIVE_OK)
+            errmsg(archive_error_string(a));
+        else
+            copy_data(a, ext);
+
+        if (verbose)
+            msg("\n");
+    }
+
+    archive_read_close(a);
+    archive_read_free(a);
+    exit(0);
+}
+
 int main(int argc, char **argv) {
 
     MPI_Init(&argc, &argv);
@@ -198,14 +291,21 @@ int main(int argc, char **argv) {
         BAYER_LOG(BAYER_LOG_INFO, "Chunk size = %" PRIu64, DTAR_user_opts.chunk_size);
     }
 
-    DTAR_parse_path_args(argc, argv, opts_tarfile);
-
     time(&(DTAR_statistics.time_started));
     DTAR_statistics.wtime_started = MPI_Wtime();
 
-    if (opts_create)
+    if (opts_create) {
+        DTAR_parse_path_args(argc, argv, opts_tarfile);
         create_archive( opts_tarfile );
+    } else if (opts_extract) {
+        extract_archive(opts_tarfile, opts_verbose, DTAR_user_opts.flags);
+    } else {
+        if (DTAR_rank == 0) {
+            BAYER_LOG(BAYER_LOG_ERR, "Neither creation or extraction is specified");
+            DTAR_exit(EXIT_FAILURE);
+        }
 
+    }
 
     DTAR_statistics.wtime_ended = MPI_Wtime();
     time(&(DTAR_statistics.time_ended));
