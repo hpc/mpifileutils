@@ -18,5 +18,5 @@ AC_DEFUN([X_AC_DTCMP], [
   LDFLAGS="$LDFLAGS -L${LIBDTCMP_LIB}"
 
   AC_SEARCH_LIBS([DTCMP_Init], [dtcmp], [], [
-    AC_MSG_ERROR([couldn't find a suitable libdtcmp, use --with-dtcmp=PATH])], [-lmpi])
+    AC_MSG_ERROR([couldn't find a suitable libdtcmp, use --with-dtcmp=PATH])], [])
 ])
