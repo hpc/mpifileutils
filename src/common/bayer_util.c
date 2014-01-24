@@ -1,10 +1,13 @@
 #include "bayer.h"
 #include "mpi.h"
+#include "dtcmp.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <errno.h>
+#include <limits.h>
 
 int bayer_initialized = 0;
 
@@ -63,7 +66,7 @@ void* bayer_malloc(size_t size, const char* file, int line)
     void* ptr = malloc(size);
     if (ptr == NULL) {
       /* allocate failed, abort */
-      BAYER_ABORT(1, "Failed to allocate %llu bytes",
+      bayer_abort(file, line, 1, "Failed to allocate %llu bytes",
         (unsigned long long) size
       );
     }
@@ -87,7 +90,7 @@ void* bayer_memalign(size_t size, size_t alignment, const char* file, int line)
     int rc = posix_memalign(&ptr, alignment, size);
     if (rc != 0) {
       /* allocate failed, abort */
-      BAYER_ABORT(1, "Failed to allocate %llu bytes posix_memalign rc=%d",
+      bayer_abort(file, line, 1, "Failed to allocate %llu bytes posix_memalign rc=%d",
         (unsigned long long) size, rc
       );
     }
@@ -107,7 +110,7 @@ char* bayer_strdup(const char* str, const char* file, int line)
     char* ptr = strdup(str);
     if (ptr == NULL) {
       /* allocate failed, abort */
-      BAYER_ABORT(1, "Failed to allocate string");
+      bayer_abort(file, line, 1, "Failed to allocate string");
     }
 
     return ptr;
@@ -164,7 +167,7 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
 
         /* Broadcast the string. */
         if(rank == root) {
-            strncpy(*recv, send, len);
+            strncpy(*recv, send, (size_t)len);
         }
 
         if(MPI_SUCCESS != MPI_Bcast(*recv, len, MPI_CHAR, root, comm)) {
@@ -223,6 +226,123 @@ void bayer_format_bw(double bw, double* val, const char** units)
     return;
 }
 
+static unsigned long long kilo  =                1024ULL;
+static unsigned long long mega  =             1048576ULL;
+static unsigned long long giga  =          1073741824ULL;
+static unsigned long long tera  =       1099511627776ULL;
+static unsigned long long peta  =    1125899906842624ULL;
+static unsigned long long exa   = 1152921504606846976ULL;
+
+/* abtoull ==> ASCII bytes to unsigned long long
+ * Converts string like "10mb" to unsigned long long integer value
+ * of 10*1024*1024.  Input string should have leading number followed
+ * by optional units.  The leading number can be a floating point
+ * value (read by strtod).  The trailing units consist of one or two
+ * letters which should be attached to the number with no space
+ * in between.  The units may be upper or lower case, and the second
+ * letter if it exists, must be 'b' or 'B' (short for bytes).
+ *
+ * Valid units: k,K,m,M,g,G,t,T,p,P,e,E
+ *
+ * Examples: 2kb, 1.5m, 200GB, 1.4T.
+ *
+ * Returns BAYER_SUCCESS if conversion is successful,
+ * and BAYER_FAILURE otherwise.
+ *
+ * Returns converted value in val parameter.  This
+ * parameter is only updated if successful. */
+int bayer_abtoull(const char* str, unsigned long long* val)
+{
+    /* check that we have a string */
+    if (str == NULL) {
+        return BAYER_FAILURE;
+    }
+
+    /* check that we have a value to write to */
+    if (val == NULL) {
+        return BAYER_FAILURE;
+    }
+
+    /* pull the floating point portion of our byte string off */
+    errno = 0;
+    char* next = NULL;
+    double num = strtod(str, &next);
+    if (errno != 0) {
+        /* conversion failed */
+        return BAYER_FAILURE;
+    }
+    if (str == next) {
+        /* no conversion performed */
+        return BAYER_FAILURE;
+    }
+
+    /* now extract any units, e.g. KB MB GB, etc */
+    unsigned long long units = 1;
+    if (*next != '\0') {
+        switch(*next) {
+        case 'k':
+        case 'K':
+            units = kilo;
+            break;
+        case 'm':
+        case 'M':
+            units = mega;
+            break;
+        case 'g':
+        case 'G':
+            units = giga;
+            break;
+        case 't':
+        case 'T':
+            units = tera;
+            break;
+        case 'p':
+        case 'P':
+            units = peta;
+            break;
+        case 'e':
+        case 'E':
+            units = exa;
+            break;
+        default:
+            /* unknown units symbol */
+            return BAYER_FAILURE;
+        }
+
+        next++;
+
+        /* handle optional b or B character, e.g. in 10KB vs 10K */
+        if (*next == 'b' || *next == 'B') {
+            next++;
+        }
+
+        /* check that we've hit the end of the string */
+        if (*next != 0) {
+            return BAYER_FAILURE;
+        }
+    }
+
+    /* check that we got a positive value */
+    if (num < 0) {
+        return BAYER_FAILURE;
+    }
+
+    /* TODO: double check this overflow calculation */
+    /* multiply by our units and check for overflow */
+    double units_d = (double) units;
+    double val_d = num * units_d;
+    double max_d = (double) ULLONG_MAX;
+    if (val_d > max_d) {
+        /* overflow */
+        return BAYER_FAILURE;
+    }
+
+    /* set return value */
+    *val = (unsigned long long) val_d;
+
+    return BAYER_SUCCESS;
+}
+
 void bayer_pack_uint32(char** pptr, uint32_t value)
 {
   /* TODO: convert to network order */
@@ -234,7 +354,7 @@ void bayer_pack_uint32(char** pptr, uint32_t value)
 void bayer_unpack_uint32(const char** pptr, uint32_t* value)
 {
   /* TODO: convert to host order */
-  uint32_t* ptr = *(uint32_t**)pptr;
+  const uint32_t* ptr = *(const uint32_t**)pptr;
   *value = *ptr;
   *pptr += 4;
 }
@@ -250,7 +370,7 @@ void bayer_pack_uint64(char** pptr, uint64_t value)
 void bayer_unpack_uint64(const char** pptr, uint64_t* value)
 {
   /* TODO: convert to host order */
-  uint64_t* ptr = *(uint64_t**)pptr;
+  const uint64_t* ptr = *(const uint64_t**)pptr;
   *value = *ptr;
   *pptr += 8;
 }

@@ -125,6 +125,26 @@ void bayer_format_bytes(uint64_t bytes, double* val, const char** units);
 /* given a bandwidth in bytes/sec, return value converted to returned units */
 void bayer_format_bw(double bw, double* val, const char** units);
 
+/* abtoull ==> ASCII bytes to unsigned long long
+ * Converts string like "10mb" to unsigned long long integer value
+ * of 10*1024*1024.  Input string should have leading number followed
+ * by optional units.  The leading number can be a floating point
+ * value (read by strtod).  The trailing units consist of one or two
+ * letters which should be attached to the number with no space
+ * in between.  The units may be upper or lower case, and the second
+ * letter if it exists, must be 'b' or 'B' (short for bytes).
+ *
+ * Valid units: k,K,m,M,g,G,t,T,p,P,e,E
+ *
+ * Examples: 2kb, 1.5m, 200GB, 1.4T.
+ *
+ * Returns BAYER_SUCCESS if conversion is successful,
+ * and BAYER_FAILURE otherwise.
+ *
+ * Returns converted value in val parameter.  This
+ * parameter is only updated if successful. */
+int bayer_abtoull(const char* str, unsigned long long* val);
+
 /* given address of pointer to buffer, pack value into buffer in
  * network order and advance pointer */
 void bayer_pack_uint32(char** pptr, uint32_t value);
