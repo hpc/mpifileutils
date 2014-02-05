@@ -10,6 +10,7 @@
 
 /* for bool type, true/false macros */
 #include <stdbool.h>
+#include <assert.h>
 
 #include "bayer.h"
 
@@ -18,7 +19,7 @@ static bayer_param_path param1;
 static bayer_param_path param2;
 
 /* Print a usage message */
-static void print_usage()
+static void print_usage(void)
 {
     printf("\n");
     printf("Usage: dcmp [options] source target\n");
@@ -29,10 +30,72 @@ static void print_usage()
     fflush(stdout);
 }
 
-#define NOT_MATCHED     "N"
-#define MATCHED         "M"
+enum {
+    /* initial state */
+    DCMP_STATE_INIT     = 'a',
+    /* both have this file */
+    DCMP_STATE_COMMON,
+    /* both are the same type */
+    DCMP_STATE_TYPE,
+    /* both are regular file and have same size */
+    DCMP_STATE_SIZE,
+    /* both have the same data */
+    DCMP_STATE_CONTENT,
+    /* both are the same file */
+    DCMP_STATE_SAME,
+};
 
-static strmap* map_creat(bayer_flist list, const char* prefix)
+static void
+dcmp_strmap_item_init(strmap* map, const char *key, uint64_t index)
+{
+    /* Should be long enough for 64 bit number and a flag */
+    char val[22];
+    int len = snprintf(val, sizeof(val), "%llu",
+                       (unsigned long long) index);
+
+    assert((size_t)len < (sizeof(val) - 2));
+    size_t position = strlen(val);
+    val[position] = DCMP_STATE_INIT;
+    val[position + 1] = '\0';
+
+    /* add item to map */
+    strmap_set(map, key, val);
+}
+
+static void
+dcmp_strmap_item_update(strmap* map, const char *key, char state)
+{
+    const char* val = strmap_get(map, key);
+    char new_val[22];
+    size_t position;
+
+    assert(strlen(val) < sizeof(new_val) - 2);
+
+    strcpy(new_val, val);
+    position = strlen(new_val) - 1;
+    new_val[position] = state;
+    new_val[position + 1] = '\0';
+    strmap_set(map, key, new_val);
+}
+
+static int
+dcmp_strmap_item_decode(strmap* map, const char *key, uint64_t *index, char *state)
+{
+    const char* val = strmap_get(map, key);
+    char buf[22];
+
+    if (val == NULL) {
+        return -1;
+    }
+
+    *state = val[strlen(val) - 1];
+    strcpy(buf, val);
+    buf[strlen(buf) - 1] = '\0';
+    *index = strtoull(buf, NULL, 0);
+    return 0;
+}
+
+static strmap* dcmp_strmap_creat(bayer_flist list, const char* prefix)
 {
     strmap* map = strmap_new();
 
@@ -46,11 +109,8 @@ static strmap* map_creat(bayer_flist list, const char* prefix)
         const char* name = bayer_flist_file_get_name(list, index);
 
         /* ignore prefix portion of path */
-	name += prefix_len;
-
-        /* add item to map */
-        strmap_set(map, name, NOT_MATCHED);
-
+        name += prefix_len;
+        dcmp_strmap_item_init(map, name, index);
         /* go to next item in list */
         index++;
     }
@@ -58,31 +118,54 @@ static strmap* map_creat(bayer_flist list, const char* prefix)
     return map;
 }
 
-/* match entries from src into dst */
-static uint64_t map_match(strmap* dst, strmap* src)
+/* compare entries from src into dst */
+static void dcmp_strmap_compare(bayer_flist dst_list,
+                                strmap* dst_map,
+                                bayer_flist src_list,
+                                strmap* src_map,
+                                uint64_t *common_file,
+                                uint64_t *common_type)
 {
-    uint64_t matched = 0;
     strmap_node* node;
-    strmap_foreach(src, node) {
-        const char* key = strmap_node_key(node);
-        const char* val = strmap_node_value(node);
 
-        /* Skip matched files */
-        if (strcmp(val, MATCHED) == 0) {
+    *common_file = 0;
+    *common_type = 0;
+    strmap_foreach(src_map, node) {
+        char src_state;
+        uint64_t src_index;
+        char dst_state;
+        uint64_t dst_index;
+        const char* key = strmap_node_key(node);
+        int rc;
+
+        rc = dcmp_strmap_item_decode(src_map, key, &src_index, &src_state);
+        assert(rc == 0);
+        assert(src_state == DCMP_STATE_INIT);
+
+        rc = dcmp_strmap_item_decode(dst_map, key, &dst_index, &dst_state);
+        if (rc) {
+            /* skip uncommon files */
             continue;
         }
+        assert(dst_state == DCMP_STATE_INIT);
 
-        const char* dst_val = strmap_get(dst, key);
-        if (dst_val != NULL) {
-            strmap_set(src, key, MATCHED);
-            strmap_set(dst, key, MATCHED);
-            matched++;
+        (*common_file)++;
+
+        mode_t src_mode = (mode_t) bayer_flist_file_get_mode(src_list, src_index);
+        mode_t dst_mode = (mode_t) bayer_flist_file_get_mode(dst_list, dst_index);
+
+        if ((src_mode & S_IFMT) != (dst_mode & S_IFMT)) {
+            /* file type is different */
+            dcmp_strmap_item_update(src_map, key, DCMP_STATE_COMMON);
+            dcmp_strmap_item_update(dst_map, key, DCMP_STATE_COMMON);
+            continue;
         }
+        (*common_type)++;
     }
-    return matched;
 }
 
-int map_name(bayer_flist flist, uint64_t index, int ranks, void *args)
+static int
+dcmp_map_fn(bayer_flist flist, uint64_t index, int ranks, void *args)
 {
     /* the args pointer is a pointer to the directory prefix to
      * be ignored in full path name */
@@ -102,8 +185,6 @@ int map_name(bayer_flist flist, uint64_t index, int ranks, void *args)
 
 int main(int argc, char **argv)
 {
-    int c;
-
     /* initialize MPI and bayer libraries */
     MPI_Init(&argc, &argv);
     bayer_init();
@@ -159,7 +240,7 @@ int main(int argc, char **argv)
     /* print usage and exit if necessary */
     if (usage) {
         if (rank == 0) {
-            print_usage(argv);
+            print_usage();
         }
         bayer_finalize();
         MPI_Finalize();
@@ -180,38 +261,46 @@ int main(int argc, char **argv)
 
     /* walk source and destination paths */
     const char* path1 = param1.path;
-    bayer_flist_walk_path(path1, 0, flist1);
+    bayer_flist_walk_path(path1, 1, flist1);
 
     const char* path2 = param2.path;
-    bayer_flist_walk_path(path2, 0, flist2);
+    bayer_flist_walk_path(path2, 1, flist2);
 
     /* map files to ranks based on portion following prefix directory */
-    bayer_flist flist3 = bayer_flist_remap(flist1, map_name, (void*)path1);
-    bayer_flist flist4 = bayer_flist_remap(flist2, map_name, (void*)path2);
+    bayer_flist flist3 = bayer_flist_remap(flist1, dcmp_map_fn, (void*)path1);
+    bayer_flist flist4 = bayer_flist_remap(flist2, dcmp_map_fn, (void*)path2);
 
-    strmap* map1 = map_creat(flist3, path1);
-    strmap* map2 = map_creat(flist4, path2);
+    strmap* map1 = dcmp_strmap_creat(flist3, path1);
+    strmap* map2 = dcmp_strmap_creat(flist4, path2);
 
-    uint64_t matched = map_match(map1, map2);
+    uint64_t common = 0;
+    uint64_t same_type = 0;
+    dcmp_strmap_compare(flist3, map1, flist4, map2, &common, &same_type);
 
-    uint64_t global_matched;
-    MPI_Allreduce(&matched, &global_matched, 1, MPI_UINT64_T, MPI_SUM,
+    uint64_t global_common;
+    MPI_Allreduce(&common, &global_common, 1, MPI_UINT64_T, MPI_SUM,
                   MPI_COMM_WORLD);
 
-    uint64_t global_unmatched1;
-    uint64_t unmatched1 = strmap_size(map1) - matched;
-    MPI_Allreduce(&unmatched1, &global_unmatched1, 1, MPI_UINT64_T, MPI_SUM,
+    uint64_t global_uncommon1;
+    uint64_t uncommon1 = strmap_size(map1) - common;
+    MPI_Allreduce(&uncommon1, &global_uncommon1, 1, MPI_UINT64_T, MPI_SUM,
                   MPI_COMM_WORLD);
 
-    uint64_t global_unmatched2;
-    uint64_t unmatched2 = strmap_size(map2) - matched;
-    MPI_Allreduce(&unmatched2, &global_unmatched2, 1, MPI_UINT64_T, MPI_SUM,
+    uint64_t global_uncommon2;
+    uint64_t uncommon2 = strmap_size(map2) - common;
+    MPI_Allreduce(&uncommon2, &global_uncommon2, 1, MPI_UINT64_T, MPI_SUM,
+                  MPI_COMM_WORLD);
+
+    uint64_t global_same_type;
+    MPI_Allreduce(&same_type, &global_same_type, 1, MPI_UINT64_T, MPI_SUM,
                   MPI_COMM_WORLD);
 
     if (rank == 0) {
-        printf("Common files: %llu\n", global_matched);
-        printf("Only in %s: %llu\n", path1, global_unmatched1);
-        printf("Only in %s: %llu\n", path2, global_unmatched2);
+        printf("Common files: %llu\n", global_common);
+        printf("Common files with same type : %llu\n", global_same_type);
+        printf("Common files with different type : %llu\n", global_common - global_same_type);
+        printf("Only in %s: %llu\n", path1, global_uncommon1);
+        printf("Only in %s: %llu\n", path2, global_uncommon2);
         fflush(stdout);
     }
 
