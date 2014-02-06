@@ -3,25 +3,24 @@ project(fileutils)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/CMakeScripts)
 
 
-#include(CMakeForceCompiler)
-#CMAKE_FORCE_C_COMPILER(mpicc ${CMAKE_C_COMPILER_ID})
-#CMAKE_FORCE_CXX_COMPILER(mpicxx ${CMAKE_CXX_COMPILER_ID})
-
 if (DEFINED ENV{FILEUTILS_EXT})
     message("-- Using $ENV{FILEUTILS_EXT}")
     set(ENV{PKG_CONFIG_PATH} "$ENV{FILEUTILS_EXT}/lib/pkgconfig" )
 endif()
 
-find_package(PkgConfig)
-find_package(MPI REQUIRED)
-
 set(CMAKE_C_FLAGS_DEBUG         "-Wall -O0 -g")
 set(CMAKE_C_FLAGS_RELEASE       "-Wall -Werror -O3")
 
 
-# pkg_check_modules(ARCHIVE REQUIRED libarchive)
+find_package(PkgConfig)
+find_package(MPI REQUIRED)
+include_directories(${MPI_INCLUDE_PATH})
+
 pkg_check_modules(CIRCLE REQUIRED libcircle)
 pkg_check_modules(DTCMP REQUIRED libdtcmp)
+
+add_definitions(${CIRCLE_CFLAGS})
+add_definitions(${DTCMP_CFLAGS})
 
 include_directories(src/common)
 
