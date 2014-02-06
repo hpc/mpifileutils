@@ -1,2 +1,4 @@
-export LIBFFI_CFLAGS=-I/ccs/home/fwang2/fu_ext/lib/libffi-3.0.13/include
-export LIBFFI_LIBS="-L/ccs/home/fwang2/fu_ext/lib64 -lffi"
+export FILEUTILS_EXT=$HOME/fu_ext
+export LIBFFI_CFLAGS=-I${FILEUTILS_EXT}/fu_ext/lib/libffi-3.0.13/include
+export LIBFFI_LIBS="-L${FILEUTILS_EXT}/lib64 -lffi"
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${FILEUTILS_EXT}/lib:${FILEUTILS_EXT}/lib64

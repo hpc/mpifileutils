@@ -23,7 +23,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <attr/xattr.h>
 #include <mpi.h>
 #include <glib.h>
 #include <libcircle.h>
