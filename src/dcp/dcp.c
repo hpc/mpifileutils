@@ -128,6 +128,55 @@ static void DCOPY_set_metadata()
     return;
 }
 
+static void DCOPY_reduce_init(void)
+{
+    int64_t agg_dirs   = DCOPY_sum_int64(DCOPY_statistics.total_dirs);
+    int64_t agg_files  = DCOPY_sum_int64(DCOPY_statistics.total_files);
+    int64_t agg_links  = DCOPY_sum_int64(DCOPY_statistics.total_links);
+    int64_t agg_size   = DCOPY_sum_int64(DCOPY_statistics.total_size);
+    int64_t agg_copied = DCOPY_sum_int64(DCOPY_statistics.total_bytes_copied);
+
+    int64_t values[6];
+    values[0] = agg_dirs + agg_files + agg_links;
+    values[1] = agg_dirs;
+    values[2] = agg_files;
+    values[3] = agg_links;
+    values[4] = agg_size;
+    values[5] = agg_copied;
+
+    CIRCLE_reduce(&values, sizeof(values));
+}
+
+static void DCOPY_reduce_op(const void* buf1, size_t size1, const void* buf2, size_t size2)
+{
+    int64_t values[6];
+
+    const int64_t* a = (const int64_t*) buf1;
+    const int64_t* b = (const int64_t*) buf2;
+
+    int i;
+    for (i = 0; i < 6; i++) {
+        values[i] = a[i] + b[i];
+    }
+
+    CIRCLE_reduce(&values, sizeof(values));
+}
+
+static void DCOPY_reduce_fini(const void* buf, size_t size)
+{
+    const int64_t* a = (const int64_t*) buf1;
+
+    /* convert size to units */
+    uint64_t agg_size = (uint64_t) a[4];
+    double agg_size_tmp;
+    const char* agg_size_units;
+    bayer_format_bytes(agg_size, &agg_size_tmp, &agg_size_units);
+
+    BAYER_LOG(BAYER_LOG_INFO,
+        "Items %" PRId64 ", Dirs %" PRId64 ", Files %" PRId64 ", Links %" PRId64 ", Bytes %.3lf %s",
+        a[0], a[1], a[2], a[3], agg_size_tmp, agg_size_units);
+}
+
 static int64_t DCOPY_sum_int64(int64_t val)
 {
     long long val_ull = (long long) val;
@@ -251,6 +300,9 @@ int main(int argc, \
     DCOPY_global_rank = CIRCLE_init(argc, argv, CIRCLE_DEFAULT_FLAGS);
     CIRCLE_cb_create(&DCOPY_add_objects);
     CIRCLE_cb_process(&DCOPY_process_objects);
+    CIRCLE_cb_reduce_init(&DCOPY_reduce_init);
+    CIRCLE_cb_reduce_op(&DCOPY_reduce_op);
+    CIRCLE_cb_reduce_fini(&DCOPY_reduce_fini);
 
     /* Initialize statistics */
     DCOPY_statistics.total_dirs  = 0;
