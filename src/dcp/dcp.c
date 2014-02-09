@@ -130,11 +130,11 @@ static void DCOPY_set_metadata()
 
 static void DCOPY_reduce_init(void)
 {
-    int64_t agg_dirs   = DCOPY_sum_int64(DCOPY_statistics.total_dirs);
-    int64_t agg_files  = DCOPY_sum_int64(DCOPY_statistics.total_files);
-    int64_t agg_links  = DCOPY_sum_int64(DCOPY_statistics.total_links);
-    int64_t agg_size   = DCOPY_sum_int64(DCOPY_statistics.total_size);
-    int64_t agg_copied = DCOPY_sum_int64(DCOPY_statistics.total_bytes_copied);
+    int64_t agg_dirs   = DCOPY_statistics.total_dirs;
+    int64_t agg_files  = DCOPY_statistics.total_files;
+    int64_t agg_links  = DCOPY_statistics.total_links;
+    int64_t agg_size   = DCOPY_statistics.total_size;
+    int64_t agg_copied = DCOPY_statistics.total_bytes_copied;
 
     int64_t values[6];
     values[0] = agg_dirs + agg_files + agg_links;
@@ -164,17 +164,19 @@ static void DCOPY_reduce_op(const void* buf1, size_t size1, const void* buf2, si
 
 static void DCOPY_reduce_fini(const void* buf, size_t size)
 {
-    const int64_t* a = (const int64_t*) buf1;
+    const int64_t* a = (const int64_t*) buf;
 
     /* convert size to units */
-    uint64_t agg_size = (uint64_t) a[4];
-    double agg_size_tmp;
-    const char* agg_size_units;
-    bayer_format_bytes(agg_size, &agg_size_tmp, &agg_size_units);
+    uint64_t agg_copied = (uint64_t) a[5];
+    double agg_copied_tmp;
+    const char* agg_copied_units;
+    bayer_format_bytes(agg_copied, &agg_copied_tmp, &agg_copied_units);
 
     BAYER_LOG(BAYER_LOG_INFO,
-        "Items %" PRId64 ", Dirs %" PRId64 ", Files %" PRId64 ", Links %" PRId64 ", Bytes %.3lf %s",
-        a[0], a[1], a[2], a[3], agg_size_tmp, agg_size_units);
+        "Items created %" PRId64 ", Data copied %.3lf %s ...",
+        a[0], agg_copied_tmp, agg_copied_units);
+//        "Items %" PRId64 ", Dirs %" PRId64 ", Files %" PRId64 ", Links %" PRId64 ", Bytes %.3lf %s",
+//        a[0], a[1], a[2], a[3], agg_size_tmp, agg_size_units);
 }
 
 static int64_t DCOPY_sum_int64(int64_t val)
