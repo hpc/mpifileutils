@@ -74,6 +74,7 @@ void DCOPY_enqueue_work_objects(CIRCLE_handle* handle)
 
         /* enqueue each source param */
         int i;
+
         for(i = 0; i < num_src_params; i++) {
             char* src_path = src_params[i].path;
             BAYER_LOG(BAYER_LOG_DBG, "Enqueueing source path `%s'", src_path);
@@ -132,8 +133,10 @@ static void DCOPY_check_paths()
         /* count number of readable source paths */
         int i;
         int num_readable = 0;
+
         for(i = 0; i < num_src_params; i++) {
             char* path = src_params[i].path;
+
             if(bayer_access(path, R_OK) == 0) {
                 num_readable++;
             }
@@ -142,7 +145,7 @@ static void DCOPY_check_paths()
                  * but print an error to notify user */
                 char* orig = src_params[i].orig;
                 BAYER_LOG(BAYER_LOG_ERR, "Could not read `%s' errno=%d %s",
-                    orig, errno, strerror(errno));
+                          orig, errno, strerror(errno));
             }
         }
 
@@ -183,7 +186,7 @@ static void DCOPY_check_paths()
             }
             else if(S_ISLNK(dest_param.path_stat.st_mode)) {
                 /* dest is a symlink, but to what? */
-                if (dest_param.target_stat_valid) {
+                if(dest_param.target_stat_valid) {
                     /* target of the symlink exists, determine what it is */
                     if(S_ISDIR(dest_param.target_stat.st_mode)) {
                         /* dest is link to a directory */
@@ -196,7 +199,7 @@ static void DCOPY_check_paths()
                     else {
                         /* unsupported type */
                         BAYER_LOG(BAYER_LOG_ERR, "Unsupported filetype `%s' --> `%s'",
-                            dest_param.orig, dest_param.target);
+                                  dest_param.orig, dest_param.target);
                         valid = 0;
                         goto bcast;
                     }
@@ -205,7 +208,7 @@ static void DCOPY_check_paths()
                     /* dest is a link, but its target does not exist,
                      * consider this an error */
                     BAYER_LOG(BAYER_LOG_ERR, "Destination is broken symlink `%s'",
-                        dest_param.orig);
+                              dest_param.orig);
                     valid = 0;
                     goto bcast;
                 }
@@ -213,7 +216,7 @@ static void DCOPY_check_paths()
             else {
                 /* unsupported type */
                 BAYER_LOG(BAYER_LOG_ERR, "Unsupported filetype `%s'",
-                    dest_param.orig);
+                          dest_param.orig);
                 valid = 0;
                 goto bcast;
             }
@@ -221,7 +224,7 @@ static void DCOPY_check_paths()
             /* check that dest is writable */
             if(bayer_access(dest_param.path, W_OK) < 0) {
                 BAYER_LOG(BAYER_LOG_ERR, "Destination is not writable `%s'",
-                    dest_param.path);
+                          dest_param.path);
                 valid = 0;
                 goto bcast;
             }
@@ -239,11 +242,12 @@ static void DCOPY_check_paths()
             /* check that parent is writable */
             if(bayer_access(parent_str, W_OK) < 0) {
                 BAYER_LOG(BAYER_LOG_ERR, "Destination parent directory is not writable `%s'",
-                    parent_str);
+                          parent_str);
                 valid = 0;
                 bayer_free(&parent_str);
                 goto bcast;
             }
+
             bayer_free(&parent_str);
         }
 
@@ -260,10 +264,9 @@ static void DCOPY_check_paths()
         /* if caller requires dest to be a directory, and if dest does not
          * exist or it does it exist but it's not a directory, then abort */
         if(dest_required_to_be_dir &&
-           (!dest_exists || (!dest_is_dir && !dest_is_link_to_dir)))
-        {
+                (!dest_exists || (!dest_is_dir && !dest_is_link_to_dir))) {
             BAYER_LOG(BAYER_LOG_ERR, "Destination is not a directory `%s'",
-                dest_param.orig);
+                      dest_param.orig);
             valid = 0;
             goto bcast;
         }
@@ -285,6 +288,7 @@ bcast:
         if(DCOPY_global_rank == 0) {
             BAYER_LOG(BAYER_LOG_ERR, "Exiting run");
         }
+
         MPI_Barrier(MPI_COMM_WORLD);
         DCOPY_exit(EXIT_FAILURE);
     }
@@ -326,6 +330,7 @@ void DCOPY_parse_path_args(char** argv, \
 
     /* record standardized paths and stat info for each source */
     int opt_index;
+
     for(opt_index = optind_local; opt_index < last_arg_index; opt_index++) {
         char* path = argv[opt_index];
         int idx = opt_index - optind_local;
@@ -351,9 +356,11 @@ void DCOPY_free_path_args()
 
     /* free memory associated with source paths */
     int i;
+
     for(i = 0; i < num_src_params; i++) {
         bayer_param_path_free(&src_params[i]);
     }
+
     num_src_params = 0;
     bayer_free(&src_params);
 }

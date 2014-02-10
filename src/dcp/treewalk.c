@@ -36,11 +36,13 @@ static int compute_depth(const char* path)
 {
     const char* c;
     int depth = 0;
-    for (c = path; *c != '\0'; c++) {
-        if (*c == '/') {
+
+    for(c = path; *c != '\0'; c++) {
+        if(*c == '/') {
             depth++;
         }
     }
+
     return depth;
 }
 
@@ -48,8 +50,8 @@ static int compute_depth(const char* path)
  * This function copies a link.
  */
 static void DCOPY_stat_process_link(DCOPY_operation_t* op,
-                             const struct stat64* statbuf,
-                             CIRCLE_handle* handle)
+                                    const struct stat64* statbuf,
+                                    CIRCLE_handle* handle)
 {
     /* increment our link count by one */
     DCOPY_statistics.total_links++;
@@ -64,8 +66,8 @@ static void DCOPY_stat_process_link(DCOPY_operation_t* op,
 
     if(rc < 0) {
         BAYER_LOG(BAYER_LOG_ERR, "Failed to read link `%s' readlink() errno=%d %s",
-            src_path, errno, strerror(errno)
-           );
+                  src_path, errno, strerror(errno)
+                 );
         return;
     }
 
@@ -77,13 +79,13 @@ static void DCOPY_stat_process_link(DCOPY_operation_t* op,
 
     if(symrc < 0) {
         BAYER_LOG(BAYER_LOG_ERR, "Failed to create link `%s' symlink() errno=%d %s",
-            dest_path, errno, strerror(errno)
-           );
+                  dest_path, errno, strerror(errno)
+                 );
         return;
     }
 
     /* set permissions on link */
-    if (DCOPY_user_opts.preserve) {
+    if(DCOPY_user_opts.preserve) {
         DCOPY_copy_xattrs(op, statbuf, dest_path);
         DCOPY_copy_ownership(statbuf, dest_path);
         DCOPY_copy_permissions(statbuf, dest_path);
@@ -97,8 +99,8 @@ static void DCOPY_stat_process_link(DCOPY_operation_t* op,
  * onto the libcircle queue for future processing by the copy stage.
  */
 static void DCOPY_stat_process_file(DCOPY_operation_t* op,
-                             const struct stat64* statbuf,
-                             CIRCLE_handle* handle)
+                                    const struct stat64* statbuf,
+                                    CIRCLE_handle* handle)
 {
     /* increment our file count by one */
     DCOPY_statistics.total_files++;
@@ -111,9 +113,9 @@ static void DCOPY_stat_process_file(DCOPY_operation_t* op,
     int64_t num_chunks = file_size / (int64_t)DCOPY_user_opts.chunk_size;
 
     BAYER_LOG(BAYER_LOG_DBG, "File `%s' size is `%" PRId64 \
-        "' with chunks `%" PRId64 "' (total `%" PRId64 "')", \
-        op->operand, file_size, num_chunks, \
-        num_chunks * DCOPY_user_opts.chunk_size);
+              "' with chunks `%" PRId64 "' (total `%" PRId64 "')", \
+              op->operand, file_size, num_chunks, \
+              num_chunks * DCOPY_user_opts.chunk_size);
 
     const char* dest_path = op->dest_full_path;
 
@@ -133,19 +135,20 @@ static void DCOPY_stat_process_file(DCOPY_operation_t* op,
         }
 
         BAYER_LOG(BAYER_LOG_DBG, "File `%s' mknod() errno=%d %s",
-            dest_path, errno, strerror(errno)
-           );
+                  dest_path, errno, strerror(errno)
+                 );
     }
 
     /* copy extended attributes, important to do this first before
      * writing data because some attributes tell file system how to
      * stripe data, e.g., Lustre */
-    if (DCOPY_user_opts.preserve) {
+    if(DCOPY_user_opts.preserve) {
         DCOPY_copy_xattrs(op, statbuf, dest_path);
     }
 
     /* Encode and enqueue each chunk of the file for processing later. */
     int64_t chunk_index = 0;
+
     while(chunk_index < num_chunks) {
         char* newop = DCOPY_encode_operation(COPY, chunk_index, op->operand, \
                                              op->source_base_offset, \
@@ -171,8 +174,8 @@ static void DCOPY_stat_process_file(DCOPY_operation_t* op,
  * operations on the libcircle queue and returns.
  */
 static void DCOPY_stat_process_dir(DCOPY_operation_t* op,
-                            const struct stat64* statbuf,
-                            CIRCLE_handle* handle)
+                                   const struct stat64* statbuf,
+                                   CIRCLE_handle* handle)
 {
     /* increment our directory count by one */
     DCOPY_statistics.total_dirs++;
@@ -183,14 +186,15 @@ static void DCOPY_stat_process_dir(DCOPY_operation_t* op,
     /* first, create the destination directory */
     BAYER_LOG(BAYER_LOG_DBG, "Creating directory `%s'", dest_path);
     int rc = bayer_mkdir(dest_path, DCOPY_DEF_PERMS_DIR);
+
     if(rc != 0) {
         BAYER_LOG(BAYER_LOG_ERR, "Failed to create directory `%s' (errno=%d %s)", \
-            dest_path, errno, strerror(errno));
+                  dest_path, errno, strerror(errno));
         return;
     }
 
     /* copy extended attributes on directory */
-    if (DCOPY_user_opts.preserve) {
+    if(DCOPY_user_opts.preserve) {
         DCOPY_copy_xattrs(op, statbuf, dest_path);
     }
 
@@ -200,13 +204,14 @@ static void DCOPY_stat_process_dir(DCOPY_operation_t* op,
     if(curr_dir == NULL) {
         /* failed to open directory */
         BAYER_LOG(BAYER_LOG_ERR, "Unable to open dir `%s' errno=%d %s", \
-            op->operand, errno, strerror(errno));
+                  op->operand, errno, strerror(errno));
 
         DCOPY_retry_failed_operation(TREEWALK, handle, op);
         return;
     }
     else {
         struct dirent* curr_ent;
+
         while((curr_ent = bayer_readdir(curr_dir)) != NULL) {
             char* curr_dir_name = curr_ent->d_name;
 
@@ -221,7 +226,7 @@ static void DCOPY_stat_process_dir(DCOPY_operation_t* op,
 
                 /* Distributed recursion here. */
                 char* newop = DCOPY_encode_operation(TREEWALK, 0, newop_path, \
-                                               op->source_base_offset, op->dest_base_appendix, op->file_size);
+                                                     op->source_base_offset, op->dest_base_appendix, op->file_size);
                 handle->enqueue(newop);
 
                 free(newop);
@@ -258,20 +263,24 @@ void DCOPY_do_treewalk(DCOPY_operation_t* op,
 
     /* first check that we handle this file type */
     if(! S_ISDIR(mode) &&
-       ! S_ISREG(mode) &&
-       ! S_ISLNK(mode))
-    {
-        if (S_ISCHR(mode)) {
-          BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISCHR at `%s'", path);
-        } else if (S_ISBLK(mode)) {
-          BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISBLK at `%s'", path);
-        } else if (S_ISFIFO(mode)) {
-          BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISFIFO at `%s'", path);
-        } else if (S_ISSOCK(mode)) {
-          BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISSOCK at `%s'", path);
-        } else {
-          BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type mode=%x at `%s'", mode, path);
+            ! S_ISREG(mode) &&
+            ! S_ISLNK(mode)) {
+        if(S_ISCHR(mode)) {
+            BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISCHR at `%s'", path);
         }
+        else if(S_ISBLK(mode)) {
+            BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISBLK at `%s'", path);
+        }
+        else if(S_ISFIFO(mode)) {
+            BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISFIFO at `%s'", path);
+        }
+        else if(S_ISSOCK(mode)) {
+            BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISSOCK at `%s'", path);
+        }
+        else {
+            BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type mode=%x at `%s'", mode, path);
+        }
+
         return;
     }
 
@@ -300,12 +309,14 @@ void DCOPY_do_treewalk(DCOPY_operation_t* op,
     elem->next = NULL;
 
     /* append element to tail of linked list */
-    if (DCOPY_list_head == NULL) {
+    if(DCOPY_list_head == NULL) {
         DCOPY_list_head = elem;
     }
-    if (DCOPY_list_tail != NULL) {
+
+    if(DCOPY_list_tail != NULL) {
         DCOPY_list_tail->next = elem;
     }
+
     DCOPY_list_tail = elem;
 
     /* handle item depending on its type */

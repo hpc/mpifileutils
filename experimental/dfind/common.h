@@ -1,10 +1,9 @@
 #ifndef _COMMON_H
 #define _COMMON_H
 
-struct
-{
-	int maxdepth;
-	char * root;
+struct {
+    int maxdepth;
+    char* root;
 } options;
 
 #undef DEBUG

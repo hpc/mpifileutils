@@ -28,7 +28,7 @@ extern DCOPY_file_cache_t DCOPY_file_cache;
  * truncated and (if specified via getopt) permissions are preserved.
  */
 static void DCOPY_enqueue_cleanup_stage(DCOPY_operation_t* op,
-                                 CIRCLE_handle* handle)
+                                        CIRCLE_handle* handle)
 {
     char* newop;
 
@@ -45,22 +45,22 @@ static void DCOPY_enqueue_cleanup_stage(DCOPY_operation_t* op,
  * counter.
  */
 static int DCOPY_perform_copy(DCOPY_operation_t* op,
-                       int in_fd,
-                       int out_fd,
-                       off_t offset)
+                              int in_fd,
+                              int out_fd,
+                              off_t offset)
 {
     /* seek to offset in source file */
-    if(bayer_lseek(op->operand, in_fd, offset, SEEK_SET) == (off_t)-1) {
+    if(bayer_lseek(op->operand, in_fd, offset, SEEK_SET) == (off_t) - 1) {
         BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
-            op->operand, errno, strerror(errno));
+                  op->operand, errno, strerror(errno));
         /* Handle operation requeue in parent function. */
         return -1;
     }
 
     /* seek to offset in destination file */
-    if(bayer_lseek(op->dest_full_path, out_fd, offset, SEEK_SET) == (off_t)-1) {
+    if(bayer_lseek(op->dest_full_path, out_fd, offset, SEEK_SET) == (off_t) - 1) {
         BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
-            op->dest_full_path, errno, strerror(errno));
+                  op->dest_full_path, errno, strerror(errno));
         /* Handle operation requeue in parent function. */
         return -1;
     }
@@ -72,9 +72,11 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
     /* write data */
     ssize_t total_bytes = 0;
     size_t chunk_size = DCOPY_user_opts.chunk_size;
+
     while(total_bytes <= chunk_size) {
         /* determine number of bytes that we can read = max(buf size, remaining chunk) */
         size_t left_to_read = chunk_size - total_bytes;
+
         if(left_to_read > buf_size) {
             left_to_read = buf_size;
         }
@@ -89,11 +91,13 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
 
         /* compute number of bytes to write */
         size_t bytes_to_write = num_of_bytes_read;
+
         if(DCOPY_user_opts.synchronous) {
             /* O_DIRECT requires particular write sizes,
              * ok to write beyond end of file so long as
              * we truncate in cleanup step */
             size_t remainder = buf_size - num_of_bytes_read;
+
             if(remainder > 0) {
                 /* zero out the end of the buffer for security,
                  * don't want to leave data from another file at end of
@@ -108,12 +112,12 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
 
         /* write data to destination file */
         ssize_t num_of_bytes_written = bayer_write(op->dest_full_path, out_fd, buf,
-                                     bytes_to_write);
+                                       bytes_to_write);
 
         /* check that we wrote the same number of bytes that we read */
         if(num_of_bytes_written != bytes_to_write) {
             BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
-                op->operand, op->dest_full_path, errno, strerror(errno));
+                      op->operand, op->dest_full_path, errno, strerror(errno));
             /* Handle operation requeue in parent function. */
             return -1;
         }
@@ -124,19 +128,21 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
     }
 
 #if 0
+
     /* force data to file system */
     if(total_bytes > 0) {
         bayer_fsync(op->dest_full_path, out_fd);
     }
+
 #endif
 
     /* Increment the global counter. */
     DCOPY_statistics.total_bytes_copied += total_bytes;
 
     BAYER_LOG(BAYER_LOG_DBG, "Wrote `%zu' bytes at segment `%" PRId64 \
-        "', offset `%" PRId64 "' (`%" PRId64 "' total)",
-        total_bytes, op->chunk, DCOPY_user_opts.chunk_size * op->chunk,
-        DCOPY_statistics.total_bytes_copied);
+              "', offset `%" PRId64 "' (`%" PRId64 "' total)",
+              total_bytes, op->chunk, DCOPY_user_opts.chunk_size * op->chunk,
+              DCOPY_statistics.total_bytes_copied);
 
     return 1;
 }
@@ -147,9 +153,10 @@ void DCOPY_do_copy(DCOPY_operation_t* op,
 {
     /* open the input file */
     int in_fd = DCOPY_open_file(op->operand, 1, &DCOPY_src_cache);
+
     if(in_fd < 0) {
         BAYER_LOG(BAYER_LOG_ERR, "Failed to open input file `%s' errno=%d %s",
-            op->operand, errno, strerror(errno));
+                  op->operand, errno, strerror(errno));
 
         DCOPY_retry_failed_operation(COPY, handle, op);
         return;
@@ -160,10 +167,11 @@ void DCOPY_do_copy(DCOPY_operation_t* op,
     off_t offset = chunk_size * op->chunk;
 
     /* hint that we'll read from file sequentially */
-//    posix_fadvise(in_fd, offset, chunk_size, POSIX_FADV_SEQUENTIAL);
+    //    posix_fadvise(in_fd, offset, chunk_size, POSIX_FADV_SEQUENTIAL);
 
     /* open the output file */
     int out_fd = DCOPY_open_file(op->dest_full_path, 0, &DCOPY_dst_cache);
+
     if(out_fd < 0) {
         /* If the force option is specified, try to unlink the destination and
          * reopen before doing the optional requeue. */
@@ -175,7 +183,7 @@ void DCOPY_do_copy(DCOPY_operation_t* op,
         /* requeue operation */
         if(out_fd < 0) {
             BAYER_LOG(BAYER_LOG_ERR, "Failed to open output file `%s' errno=%d %s",
-                op->dest_full_path, errno, strerror(errno));
+                      op->dest_full_path, errno, strerror(errno));
 
             DCOPY_retry_failed_operation(COPY, handle, op);
             return;

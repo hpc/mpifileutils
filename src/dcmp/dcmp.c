@@ -46,7 +46,7 @@ enum {
 };
 
 static void
-dcmp_strmap_item_init(strmap* map, const char *key, uint64_t index)
+dcmp_strmap_item_init(strmap* map, const char* key, uint64_t index)
 {
     /* Should be long enough for 64 bit number and a flag */
     char val[22];
@@ -63,7 +63,7 @@ dcmp_strmap_item_init(strmap* map, const char *key, uint64_t index)
 }
 
 static void
-dcmp_strmap_item_update(strmap* map, const char *key, char state)
+dcmp_strmap_item_update(strmap* map, const char* key, char state)
 {
     const char* val = strmap_get(map, key);
     char new_val[22];
@@ -79,12 +79,12 @@ dcmp_strmap_item_update(strmap* map, const char *key, char state)
 }
 
 static int
-dcmp_strmap_item_decode(strmap* map, const char *key, uint64_t *index, char *state)
+dcmp_strmap_item_decode(strmap* map, const char* key, uint64_t* index, char* state)
 {
     const char* val = strmap_get(map, key);
     char buf[22];
 
-    if (val == NULL) {
+    if(val == NULL) {
         return -1;
     }
 
@@ -104,7 +104,8 @@ static strmap* dcmp_strmap_creat(bayer_flist list, const char* prefix)
 
     uint64_t index = 0;
     uint64_t count = bayer_flist_size(list);
-    while (index < count) {
+
+    while(index < count) {
         /* get full path of file name */
         const char* name = bayer_flist_file_get_name(list, index);
 
@@ -123,8 +124,8 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
                                 strmap* dst_map,
                                 bayer_flist src_list,
                                 strmap* src_map,
-                                uint64_t *common_file,
-                                uint64_t *common_type)
+                                uint64_t* common_file,
+                                uint64_t* common_type)
 {
     strmap_node* node;
 
@@ -143,10 +144,12 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
         assert(src_state == DCMP_STATE_INIT);
 
         rc = dcmp_strmap_item_decode(dst_map, key, &dst_index, &dst_state);
-        if (rc) {
+
+        if(rc) {
             /* skip uncommon files */
             continue;
         }
+
         assert(dst_state == DCMP_STATE_INIT);
 
         (*common_file)++;
@@ -154,22 +157,23 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
         mode_t src_mode = (mode_t) bayer_flist_file_get_mode(src_list, src_index);
         mode_t dst_mode = (mode_t) bayer_flist_file_get_mode(dst_list, dst_index);
 
-        if ((src_mode & S_IFMT) != (dst_mode & S_IFMT)) {
+        if((src_mode & S_IFMT) != (dst_mode & S_IFMT)) {
             /* file type is different */
             dcmp_strmap_item_update(src_map, key, DCMP_STATE_COMMON);
             dcmp_strmap_item_update(dst_map, key, DCMP_STATE_COMMON);
             continue;
         }
+
         (*common_type)++;
     }
 }
 
 static int
-dcmp_map_fn(bayer_flist flist, uint64_t index, int ranks, void *args)
+dcmp_map_fn(bayer_flist flist, uint64_t index, int ranks, void* args)
 {
     /* the args pointer is a pointer to the directory prefix to
      * be ignored in full path name */
-    char* prefix = (char *)args;
+    char* prefix = (char*)args;
     size_t prefix_len = strlen(prefix);
 
     /* get name of item */
@@ -179,11 +183,11 @@ dcmp_map_fn(bayer_flist flist, uint64_t index, int ranks, void *args)
     const char* ptr = name + prefix_len;
     size_t ptr_len = strlen(ptr);
     uint32_t hash = jenkins_one_at_a_time_hash(ptr, ptr_len);
-    int rank = (int) (hash % (uint32_t)ranks);
+    int rank = (int)(hash % (uint32_t)ranks);
     return rank;
 }
 
-int main(int argc, char **argv)
+int main(int argc, char** argv)
 {
     /* initialize MPI and bayer libraries */
     MPI_Init(&argc, &argv);
@@ -209,39 +213,43 @@ int main(int argc, char **argv)
 
     /* read in command line options */
     int usage = 0;
-    while (1) {
-        int c = getopt_long(
-            argc, argv, "h",
-            long_options, &option_index
-        );
 
-        if (c == -1) {
+    while(1) {
+        int c = getopt_long(
+                    argc, argv, "h",
+                    long_options, &option_index
+                );
+
+        if(c == -1) {
             break;
         }
 
-        switch (c) {
-        case 'h':
-        case '?':
-            usage = 1;
-            break;
-        default:
-            usage = 1;
-            break;
+        switch(c) {
+            case 'h':
+            case '?':
+                usage = 1;
+                break;
+
+            default:
+                usage = 1;
+                break;
         }
     }
 
     /* we should have two arguments left, source and dest paths */
     int numargs = argc - optind;
+
     if(numargs != 2) {
         BAYER_LOG(BAYER_LOG_ERR, "You must specify a source and destination path.");
         usage = 1;
     }
 
     /* print usage and exit if necessary */
-    if (usage) {
-        if (rank == 0) {
+    if(usage) {
+        if(rank == 0) {
             print_usage();
         }
+
         bayer_finalize();
         MPI_Finalize();
         return 1;
@@ -295,7 +303,7 @@ int main(int argc, char **argv)
     MPI_Allreduce(&same_type, &global_same_type, 1, MPI_UINT64_T, MPI_SUM,
                   MPI_COMM_WORLD);
 
-    if (rank == 0) {
+    if(rank == 0) {
         printf("Common files: %llu\n", global_common);
         printf("Common files with same type : %llu\n", global_same_type);
         printf("Common files with different type : %llu\n", global_common - global_same_type);

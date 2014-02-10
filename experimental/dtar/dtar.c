@@ -28,30 +28,34 @@ int xattr_flag = 0;
 
 void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
 
-static void create(char *filename, char compress, int opt_index, int argc,
-        char **argv);
-static void extract(const char *filename, int do_extract, int flags);
-static int copy_data(struct archive *, struct archive *);
+static void create(char* filename, char compress, int opt_index, int argc,
+                   char** argv);
+static void extract(const char* filename, int do_extract, int flags);
+static int copy_data(struct archive*, struct archive*);
 
-static void errmsg(const char* m) {
+static void errmsg(const char* m)
+{
     fprintf(stderr, "%s\n", m);
 }
 
-static void msg(const char *m) {
+static void msg(const char* m)
+{
     fprintf(stdout, m);
 }
 
-void usage(void) {
-    const char *m = "\nUsage: dtar [-"
-            "c"
-            "x"
-            "] [-f file] [file]\n\n";
+void usage(void)
+{
+    const char* m = "\nUsage: dtar [-"
+                    "c"
+                    "x"
+                    "] [-f file] [file]\n\n";
     fprintf(stderr, m);
     exit(1);
 }
 
-int main(int argc, char **argv) {
-    char *filename = NULL;
+int main(int argc, char** argv)
+{
+    char* filename = NULL;
     char compress, mode, opt;
     int flags;
     int opt_index = 0;
@@ -64,74 +68,88 @@ int main(int argc, char **argv) {
     compress = '\0';
     flags = ARCHIVE_EXTRACT_TIME;
 
-    if (argc == 1) {
+    if(argc == 1) {
         usage();
     }
 
     /* Among other sins, getopt(3) pulls in printf(3). */
-    while (*++argv != NULL && **argv == '-') {
-        char *p = *argv + 1;
+    while(*++argv != NULL &&** argv == '-') {
+        char* p = *argv + 1;
         opt_index++;
 
-        while ((opt = *p++) != '\0') {
-            switch (opt) {
-            case 'c':
-                mode = opt;
-                break;
-            case 'e':
-                xattr_flag = 1;
-                flags |= ARCHIVE_EXTRACT_XATTR;
-                break;
-            case 'f':
-                if (*p != '\0')
-                    filename = p;
-                else
-                    filename = *++argv;
-                p += strlen(p);
-                break;
-            case 'j':
-                compress = opt;
-                break;
-            case 'p':
-                flags |= ARCHIVE_EXTRACT_OWNER;
-                flags |= ARCHIVE_EXTRACT_PERM;
-                flags |= ARCHIVE_EXTRACT_ACL;
-                flags |= ARCHIVE_EXTRACT_FFLAGS;
-                break;
-            case 't':
-                mode = opt;
-                break;
-            case 'v':
-                verbose++;
-                break;
-            case 'x':
-                mode = opt;
-                break;
-            case 'y':
-                compress = opt;
-                break;
-            case 'Z':
-                compress = opt;
-                break;
-            case 'z':
-                compress = opt;
-                break;
-            default:
-                usage();
+        while((opt = *p++) != '\0') {
+            switch(opt) {
+                case 'c':
+                    mode = opt;
+                    break;
+
+                case 'e':
+                    xattr_flag = 1;
+                    flags |= ARCHIVE_EXTRACT_XATTR;
+                    break;
+
+                case 'f':
+                    if(*p != '\0')
+                    { filename = p; }
+                    else
+                    { filename = *++argv; }
+
+                    p += strlen(p);
+                    break;
+
+                case 'j':
+                    compress = opt;
+                    break;
+
+                case 'p':
+                    flags |= ARCHIVE_EXTRACT_OWNER;
+                    flags |= ARCHIVE_EXTRACT_PERM;
+                    flags |= ARCHIVE_EXTRACT_ACL;
+                    flags |= ARCHIVE_EXTRACT_FFLAGS;
+                    break;
+
+                case 't':
+                    mode = opt;
+                    break;
+
+                case 'v':
+                    verbose++;
+                    break;
+
+                case 'x':
+                    mode = opt;
+                    break;
+
+                case 'y':
+                    compress = opt;
+                    break;
+
+                case 'Z':
+                    compress = opt;
+                    break;
+
+                case 'z':
+                    compress = opt;
+                    break;
+
+                default:
+                    usage();
             }
         }
     }
 
-    switch (mode) {
-    case 'c':
-        create(filename, compress, opt_index, argc, argv);
-        break;
-    case 't':
-        extract(filename, 0, flags);
-        break;
-    case 'x':
-        extract(filename, 1, flags);
-        break;
+    switch(mode) {
+        case 'c':
+            create(filename, compress, opt_index, argc, argv);
+            break;
+
+        case 't':
+            extract(filename, 0, flags);
+            break;
+
+        case 'x':
+            extract(filename, 1, flags);
+            break;
     }
 
     bayer_finalize();
@@ -144,30 +162,34 @@ int HDR_LENGTH = 1536;
 inline static struct archive* new_archive()
 {
     /* create a new archive data structure */
-    struct archive *a = archive_write_new();
+    struct archive* a = archive_write_new();
 
     /* set compression format */
     char compress = DTAR_user_opts.compress;
-    switch (compress) {
-    case 'j':
-    case 'y':
-        archive_write_add_filter_bzip2(a);
-        break;
-    case 'Z':
-        archive_write_add_filter_compress(a);
-        break;
-    case 'z':
-        archive_write_add_filter_gzip(a);
-        break;
-    default:
-        archive_write_add_filter_none(a);
-        break;
+
+    switch(compress) {
+        case 'j':
+        case 'y':
+            archive_write_add_filter_bzip2(a);
+            break;
+
+        case 'Z':
+            archive_write_add_filter_compress(a);
+            break;
+
+        case 'z':
+            archive_write_add_filter_gzip(a);
+            break;
+
+        default:
+            archive_write_add_filter_none(a);
+            break;
     }
 
     /* select archive output type */
     int r = archive_write_set_format_pax(a);
 
-    if ( r != ARCHIVE_OK ) {
+    if(r != ARCHIVE_OK) {
         BAYER_LOG(BAYER_LOG_ERR, archive_error_string(a));
         return NULL;
     }
@@ -180,14 +202,14 @@ inline static struct archive* new_archive()
 static int write_header(struct archive* a, bayer_flist flist, uint64_t index, uint64_t offset)
 {
     /* create a new archive entry structure */
-    struct archive_entry *entry = archive_entry_new();
+    struct archive_entry* entry = archive_entry_new();
 
     /* get file type */
     bayer_filetype type = bayer_flist_file_get_type(flist, index);
 
     /* get file name */
     const char* name = bayer_flist_file_get_name(flist, index);
-printf("Writing entry at %llu for %s\n", (unsigned long long)offset, name);
+    printf("Writing entry at %llu for %s\n", (unsigned long long)offset, name);
 
     /* TODO: get name relative to source directory */
     //bayer_path* path = bayer_path_from_str(name);
@@ -204,23 +226,25 @@ printf("Writing entry at %llu for %s\n", (unsigned long long)offset, name);
 #endif
 
     /* set file type */
-    if (type == BAYER_TYPE_FILE) {
+    if(type == BAYER_TYPE_FILE) {
         archive_entry_set_filetype(entry, AE_IFREG);
-    } else if (type == BAYER_TYPE_DIR) {
+    }
+    else if(type == BAYER_TYPE_DIR) {
         archive_entry_set_filetype(entry, AE_IFDIR);
-    } else if (type == BAYER_TYPE_LINK) {
+    }
+    else if(type == BAYER_TYPE_LINK) {
         archive_entry_set_filetype(entry, AE_IFLNK);
     }
 
     /* if object is a link, copy the link target */
-    if (type == BAYER_TYPE_LINK) {
+    if(type == BAYER_TYPE_LINK) {
         char target[PATH_MAX];
         bayer_readlink(name, target, sizeof(target));
         archive_entry_set_symlink(entry, target);
     }
-        
+
     /* if file, set file size */
-    if (type == BAYER_TYPE_FILE) {
+    if(type == BAYER_TYPE_FILE) {
         uint64_t bsize = bayer_flist_file_get_size(flist, index);
         archive_entry_set_size(entry, (int64_t)bsize);
     }
@@ -298,12 +322,13 @@ static void copy_enqueue(CIRCLE_handle* handle)
     /* add copy work items for each file in our local list */
     uint64_t index;
     uint64_t count = bayer_flist_size(g_flist);
-    for (index = 0; index < count; index++) {
+
+    for(index = 0; index < count; index++) {
         /* get type of item */
         bayer_filetype type = bayer_flist_file_get_type(g_flist, index);
 
         /* add copy items if it's a file */
-        if (type == BAYER_TYPE_FILE) {
+        if(type == BAYER_TYPE_FILE) {
             uint64_t dataoffset = offset + HDR_LENGTH;
             uint64_t chunk_index;
 
@@ -315,19 +340,19 @@ static void copy_enqueue(CIRCLE_handle* handle)
             uint64_t num_chunks = size / DTAR_CHUNK_SIZE;
 
             /* create copy work items for all whole chunks */
-            for (chunk_index = 0; chunk_index < num_chunks; chunk_index++) {
+            for(chunk_index = 0; chunk_index < num_chunks; chunk_index++) {
                 char* newop = DTAR_encode_operation(
-                    COPY, chunk_index, name, dataoffset, size
-                );
+                                  COPY, chunk_index, name, dataoffset, size
+                              );
                 handle->enqueue(newop);
                 bayer_free(&newop);
             }
 
             /* create copy work item for last (possibly partial chunk) */
-            if ((num_chunks * DTAR_CHUNK_SIZE) < size || num_chunks == 0) {
+            if((num_chunks * DTAR_CHUNK_SIZE) < size || num_chunks == 0) {
                 char* newop = DTAR_encode_operation(
-                    COPY, chunk_index, name, dataoffset, size
-                );
+                                  COPY, chunk_index, name, dataoffset, size
+                              );
                 handle->enqueue(newop);
                 bayer_free(&newop);
             }
@@ -345,7 +370,7 @@ static void copy_process(CIRCLE_handle* handle)
 {
     char opstr[CIRCLE_MAX_STRING_LEN];
     handle->dequeue(opstr);
-  
+
     DTAR_operation_t* op = DTAR_decode_operation(opstr);
     DTAR_do_copy(op);
     bayer_free(&op);
@@ -354,11 +379,11 @@ static void copy_process(CIRCLE_handle* handle)
 }
 
 static void create(
-    char *filename,
+    char* filename,
     char compress,
     int opt_index,
     int argc,
-    char **argv)
+    char** argv)
 {
     /* TODO: pass in file list as input param */
 
@@ -392,7 +417,8 @@ static void create(
     /* compute bytes needed for local files */
     uint64_t total = 0;
     uint64_t index = 0;
-    for (index = 0; index < count; index++) {
+
+    for(index = 0; index < count; index++) {
         /* assume we don't write anything for this item */
         g_sizes[index] = 0;
 
@@ -400,10 +426,11 @@ static void create(
         bayer_filetype type = bayer_flist_file_get_type(flist, index);
 
         /* based on the type, compute its archive size */
-        if (type == BAYER_TYPE_DIR) {
+        if(type == BAYER_TYPE_DIR) {
             /* for a directory, we just write a header */
             g_sizes[index] = HDR_LENGTH;
-        } else if (type == BAYER_TYPE_FILE) {
+        }
+        else if(type == BAYER_TYPE_FILE) {
             /* for a file, we write a header plus the file contents */
 
             /* get file size */
@@ -411,13 +438,15 @@ static void create(
 
             /* round size up to smallest number of 512-byte chunks */
             uint64_t chunks = data / 512;
-            if (chunks * 512 < data) {
+
+            if(chunks * 512 < data) {
                 data = (chunks + 1) * 512;
             }
 
             /* also include header size */
             g_sizes[index] = HDR_LENGTH + data;
-        } else if (type == BAYER_TYPE_LINK) {
+        }
+        else if(type == BAYER_TYPE_LINK) {
             /* for a link, we just write a header */
             g_sizes[index] += HDR_LENGTH;
         }
@@ -440,15 +469,15 @@ static void create(
 
     /* writer headers for each item */
     uint64_t offset = archive_offset;
-    for (index = 0; index < count; index++) {
+
+    for(index = 0; index < count; index++) {
         /* get item type */
         bayer_filetype type = bayer_flist_file_get_type(flist, index);
 
         /* writer header for supported types */
-        if (type == BAYER_TYPE_FILE ||
-            type == BAYER_TYPE_DIR ||
-            type == BAYER_TYPE_LINK)
-        {
+        if(type == BAYER_TYPE_FILE ||
+                type == BAYER_TYPE_DIR ||
+                type == BAYER_TYPE_LINK) {
             write_header(a, flist, index, offset);
         }
 
@@ -480,7 +509,7 @@ static void create(
 
     /* is this necessary? */
     /* write archive trailer */
-    if (rank == 0) {
+    if(rank == 0) {
         /* write two consecutive 512-blocks of 0's at end */
         size_t bufsize = 2 * 512;
         char* buf = (char*) BAYER_MALLOC(bufsize);
@@ -494,8 +523,8 @@ static void create(
     }
 
     /* free archive */
-//    archive_write_free(a);
-// for now, this is a really ugly hack
+    //    archive_write_free(a);
+    // for now, this is a really ugly hack
     fsync(DTAR_writer.fd_tar);
 
     /* free sizes array */
@@ -509,11 +538,12 @@ static void create(
 }
 
 static void
-extract(const char *filename, int do_extract, int flags) {
+extract(const char* filename, int do_extract, int flags)
+{
 
-    struct archive *a;
-    struct archive *ext;
-    struct archive_entry *entry;
+    struct archive* a;
+    struct archive* ext;
+    struct archive_entry* entry;
     int r;
     /* initiate archive object for reading */
     a = archive_read_new();
@@ -529,40 +559,43 @@ extract(const char *filename, int do_extract, int flags) {
 
     archive_write_disk_set_standard_lookup(ext);
 
-    if (filename != NULL && strcmp(filename, "-") == 0)
-        filename = NULL;
+    if(filename != NULL && strcmp(filename, "-") == 0)
+    { filename = NULL; }
 
     /* blocksize set to 1024K */
-    if (( r = archive_read_open_filename(a, filename, 10240))) {
+    if((r = archive_read_open_filename(a, filename, 10240))) {
         errmsg(archive_error_string(a));
         exit(r);
     }
 
-    for (;;) {
+    for(;;) {
         r = archive_read_next_header(a, &entry);
-        if (r == ARCHIVE_EOF)
-            break;
-        if (r != ARCHIVE_OK) {
+
+        if(r == ARCHIVE_EOF)
+        { break; }
+
+        if(r != ARCHIVE_OK) {
             errmsg(archive_error_string(a));
             exit(r);
         }
 
-        if (verbose && do_extract)
-            msg("x ");
+        if(verbose && do_extract)
+        { msg("x "); }
 
-        if (verbose || !do_extract)
-            msg(archive_entry_pathname(entry));
+        if(verbose || !do_extract)
+        { msg(archive_entry_pathname(entry)); }
 
-        if (do_extract) {
+        if(do_extract) {
             r = archive_write_header(ext, entry);
-            if (r != ARCHIVE_OK)
-                errmsg(archive_error_string(a));
+
+            if(r != ARCHIVE_OK)
+            { errmsg(archive_error_string(a)); }
             else
-                copy_data(a, ext);
+            { copy_data(a, ext); }
         }
 
-        if (verbose || !do_extract)
-            msg("\n");
+        if(verbose || !do_extract)
+        { msg("\n"); }
     }
 
     archive_read_close(a);
@@ -571,26 +604,30 @@ extract(const char *filename, int do_extract, int flags) {
 }
 
 static int
-copy_data(struct archive *ar, struct archive *aw) {
+copy_data(struct archive* ar, struct archive* aw)
+{
     int r;
-    const void *buff;
+    const void* buff;
     size_t size;
     off_t offset;
-    for (;;) {
+
+    for(;;) {
         r = archive_read_data_block(ar, &buff, &size, &offset);
-        if (r == ARCHIVE_EOF) {
+
+        if(r == ARCHIVE_EOF) {
             return (ARCHIVE_OK);
         }
 
-        if (r != ARCHIVE_OK)
-            return (r);
+        if(r != ARCHIVE_OK)
+        { return (r); }
 
         r = archive_write_data_block(aw, buff, size, offset);
 
-        if (r != ARCHIVE_OK) {
+        if(r != ARCHIVE_OK) {
             errmsg(archive_error_string(ar));
             return (r);
         }
     }
+
     return 0;
 }

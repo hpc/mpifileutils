@@ -24,7 +24,7 @@ int DTAR_open_input_fd(DTAR_operation_t* op, off64_t offset, off64_t len)
 
     int in_fd = open64(path, O_RDONLY | O_NOATIME);
 
-    if (in_fd < 0) {
+    if(in_fd < 0) {
         BAYER_LOG(BAYER_LOG_ERR, "In DTAR_open_input_fd in_fd is invalid\n");
         return in_fd;
     }
@@ -44,34 +44,34 @@ int DTAR_perform_copy(
 
     char io_buf[FD_BLOCK_SIZE];
 
-    if (lseek64(in_fd, offset, SEEK_SET) < 0) {
+    if(lseek64(in_fd, offset, SEEK_SET) < 0) {
         BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in source path `%s'. errno=%d %s", op->operand,
-                errno, strerror(errno));
+                  errno, strerror(errno));
         /* Handle operation requeue in parent function. */
         return -1;
     }
 
-    if (lseek64(out_fd, offset + op->offset, SEEK_SET) < 0) {
+    if(lseek64(out_fd, offset + op->offset, SEEK_SET) < 0) {
         BAYER_LOG(BAYER_LOG_ERR,
-                "Couldn't seek in destination path (source is `%s'). errno=%d %s",
-                op->operand, errno, strerror(errno));
+                  "Couldn't seek in destination path (source is `%s'). errno=%d %s",
+                  op->operand, errno, strerror(errno));
         return -1;
     }
 
-    while (total_bytes_written <= DTAR_CHUNK_SIZE) {
+    while(total_bytes_written <= DTAR_CHUNK_SIZE) {
 
         num_of_bytes_read = read(in_fd, &io_buf[0], sizeof(io_buf));
 
-        if (!num_of_bytes_read) {
+        if(!num_of_bytes_read) {
             break;
         }
 
         num_of_bytes_written = write(out_fd, &io_buf[0],
-                (size_t) num_of_bytes_read);
+                                     (size_t) num_of_bytes_read);
 
-        if (num_of_bytes_written != num_of_bytes_read) {
+        if(num_of_bytes_written != num_of_bytes_read) {
             BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s'. errno=%d %s",
-                    op->operand, errno, strerror(errno));
+                      op->operand, errno, strerror(errno));
             return -1;
         }
 
@@ -81,12 +81,14 @@ int DTAR_perform_copy(
     /* pad out final 512 byte block with zeros */
     int64_t bytes_written = (op->chunk + 1) * DTAR_CHUNK_SIZE;
     int64_t file_size = op->file_size;
-    if (bytes_written >= file_size) {
+
+    if(bytes_written >= file_size) {
         /* we're on the last chunk, determine number of pad bytes
          * needed if any */
         int64_t blocks = file_size / 512;
-        size_t padding = (size_t) (file_size - blocks * 512);
-        if (padding > 0) {
+        size_t padding = (size_t)(file_size - blocks * 512);
+
+        if(padding > 0) {
             /* write zeros to finish off last 512 byte block */
             char* buf = (char*) BAYER_MALLOC(padding);
             memset(buf, 0, padding);
@@ -104,25 +106,26 @@ void DTAR_do_copy(DTAR_operation_t* op)
 
     int in_fd = DTAR_open_input_fd(op, offset, DTAR_CHUNK_SIZE);
 
-    if (in_fd < 0) {
+    if(in_fd < 0) {
         BAYER_LOG(BAYER_LOG_ERR, "In DTAR_do_copy in_fd is invalid\n");
         return;
     }
 
     int out_fd = DTAR_writer.fd_tar;
 
-    if (out_fd < 0) {
+    if(out_fd < 0) {
         BAYER_LOG(BAYER_LOG_ERR, "In DTAR_do_copy in_fd in invalid\n");
         return;
     }
 
-printf("Writing data at %llu, chunk %d of %s\n", (unsigned long long)op->offset + offset, op->chunk, op->operand);
-    if (DTAR_perform_copy(op, in_fd, out_fd, offset) < 0) {
+    printf("Writing data at %llu, chunk %d of %s\n", (unsigned long long)op->offset + offset, op->chunk, op->operand);
+
+    if(DTAR_perform_copy(op, in_fd, out_fd, offset) < 0) {
         BAYER_LOG(BAYER_LOG_ERR, "In DTAR_do_copy perform copy failed\n");
         return;
     }
 
-    if (close(in_fd) < 0) {
+    if(close(in_fd) < 0) {
         BAYER_LOG(BAYER_LOG_ERR, "In DTAR_do_copy close failed\n");
     }
 

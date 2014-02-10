@@ -34,18 +34,18 @@ struct bayer_path_elem_struct;
 
 /* define the structure for a path element */
 typedef struct bayer_path_elem_struct {
-  char* component; /* pointer to strdup'd component string */
-  size_t chars;    /* number of chars in component */
-  struct bayer_path_elem_struct* next; /* pointer to next element */
-  struct bayer_path_elem_struct* prev; /* pointer to previous element */
+    char* component; /* pointer to strdup'd component string */
+    size_t chars;    /* number of chars in component */
+    struct bayer_path_elem_struct* next; /* pointer to next element */
+    struct bayer_path_elem_struct* prev; /* pointer to previous element */
 } bayer_path_elem;
 
 /* define the structure for a path object */
 typedef struct {
-  int components;      /* number of components in path */
-  size_t chars;        /* number of chars in path */
-  bayer_path_elem* head; /* pointer to first element */
-  bayer_path_elem* tail; /* pointer to last element */
+    int components;      /* number of components in path */
+    size_t chars;        /* number of chars in path */
+    bayer_path_elem* head; /* pointer to first element */
+    bayer_path_elem* tail; /* pointer to last element */
 } bayer_path;
 
 /*
