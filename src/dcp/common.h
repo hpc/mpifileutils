@@ -159,10 +159,10 @@ extern DCOPY_file_cache_t DCOPY_dst_cache;
 
 /* struct for elements in linked list */
 typedef struct list_elem {
-  char* file;             /* file name */
-  struct stat64* sb;      /* stat info */
-  int depth;
-  struct list_elem* next; /* pointer to next item */
+    char* file;             /* file name */
+    struct stat64* sb;      /* stat info */
+    int depth;
+    struct list_elem* next; /* pointer to next item */
 } DCOPY_stat_elem_t;
 
 extern int DCOPY_global_rank;

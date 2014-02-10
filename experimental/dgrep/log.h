@@ -3,8 +3,7 @@
 
 #include <stdio.h>
 
-typedef enum
-{
+typedef enum {
     DGREP_LOG_FATAL = 1,
     DGREP_LOG_ERR   = 2,
     DGREP_LOG_WARN  = 3,
@@ -22,7 +21,7 @@ typedef enum
     } while (0)
 
 extern int DGREP_global_rank;
-extern FILE *DGREP_debug_stream;
+extern FILE* DGREP_debug_stream;
 extern DGREP_loglevel DGREP_debug_level;
 
 #endif /* LOG_H */

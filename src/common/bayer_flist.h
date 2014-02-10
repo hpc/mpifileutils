@@ -20,11 +20,11 @@ extern "C" {
 
 /* TODO: these types may be encoded in files */
 typedef enum bayer_filetypes_e {
-  BAYER_TYPE_NULL    = 0,
-  BAYER_TYPE_UNKNOWN = 1,
-  BAYER_TYPE_FILE    = 2,
-  BAYER_TYPE_DIR     = 3,
-  BAYER_TYPE_LINK    = 4,
+    BAYER_TYPE_NULL    = 0,
+    BAYER_TYPE_UNKNOWN = 1,
+    BAYER_TYPE_FILE    = 2,
+    BAYER_TYPE_DIR     = 3,
+    BAYER_TYPE_LINK    = 4,
 } bayer_filetype;
 
 /* define handle type to a file list */
@@ -39,26 +39,26 @@ bayer_flist bayer_flist_new(void);
 /* create list as subset of another list
  * (returns emtpy list with same user and group maps) */
 bayer_flist bayer_flist_subset(
-  bayer_flist srclist
+    bayer_flist srclist
 );
 
 /* create file list by walking directory */
 void bayer_flist_walk_path(
-  const char* path,
-  int use_stat,
-  bayer_flist flist
+    const char* path,
+    int use_stat,
+    bayer_flist flist
 );
 
 /* read file list from file */
 void bayer_flist_read_cache(
-  const char* name,
-  bayer_flist flist
+    const char* name,
+    bayer_flist flist
 );
 
 /* write file list to file */
 void bayer_flist_write_cache(
-  const char* name,
-  bayer_flist flist
+    const char* name,
+    bayer_flist flist
 );
 
 /* free resouces in file list */
@@ -68,10 +68,10 @@ void bayer_flist_free(bayer_flist* flist);
  * on their depth, returns number of levels, minimum depth, and
  * array of lists as output */
 void bayer_flist_array_by_depth(
-  bayer_flist srclist,   /* IN  - input list */
-  int* outlevels,        /* OUT - number of depth levels */
-  int* outmin,           /* OUT - minimum depth number */
-  bayer_flist** outlists /* OUT - array of lists split by depth */
+    bayer_flist srclist,   /* IN  - input list */
+    int* outlevels,        /* OUT - number of depth levels */
+    int* outmin,           /* OUT - minimum depth number */
+    bayer_flist** outlists /* OUT - array of lists split by depth */
 );
 
 /* frees array of lists created in call to
@@ -147,20 +147,20 @@ const char* bayer_flist_file_get_username(bayer_flist flist, uint64_t index);
 const char* bayer_flist_file_get_groupname(bayer_flist flist, uint64_t index);
 
 /* Encode the file into a buffer, if the buffer is NULL, return the needed size */
-typedef size_t (*bayer_flist_name_encode_fn) (char *buf, bayer_flist flist, uint64_t index, void* args);
+typedef size_t (*bayer_flist_name_encode_fn)(char* buf, bayer_flist flist, uint64_t index, void* args);
 
 /* map function pointer: given a list and index as input, along with
  * number of ranks and pointer to user-provided arguments, compute
  * rank number specified item should be assigned to */
-typedef int (*bayer_flist_map_fn) (bayer_flist flist, uint64_t index, int ranks, void* args);
+typedef int (*bayer_flist_map_fn)(bayer_flist flist, uint64_t index, int ranks, void* args);
 
 //typedef size_t (*bayer_flist_map) (bayer_flist flist, char **buf, bayer_flist_name_encode encode);
 size_t bayer_flist_distribute_map(
     bayer_flist list,
-    char **buffer,
+    char** buffer,
     bayer_flist_name_encode_fn encode,
     bayer_flist_map_fn map,
-    void *args
+    void* args
 );
 
 /* given an input list and a map function pointer, call map function

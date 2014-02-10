@@ -69,20 +69,20 @@ int bayer_finalize(void);
 /* print abort message and call MPI_Abort to kill run */
 #define BAYER_ABORT(X, ...) bayer_abort(__FILE__, __LINE__, X, __VA_ARGS__)
 void bayer_abort(
-  const char* file,
-  int line,
-  int rc,
-  const char *fmt,
-  ...
+    const char* file,
+    int line,
+    int rc,
+    const char* fmt,
+    ...
 );
 
 /* if size > 0 allocates size bytes and returns pointer,
  * calls bayer_abort if malloc fails, returns NULL if size == 0 */
 #define BAYER_MALLOC(X) bayer_malloc(X, __FILE__, __LINE__)
 void* bayer_malloc(
-  size_t size,
-  const char* file,
-  int line
+    size_t size,
+    const char* file,
+    int line
 );
 
 /* if size > 0, allocates size bytes aligned with specified alignment
@@ -90,28 +90,28 @@ void* bayer_malloc(
  * returns NULL if size == 0 */
 #define BAYER_MEMALIGN(X, Y) bayer_memalign(X, Y, __FILE__, __LINE__)
 void* bayer_memalign(
-  size_t size,
-  size_t alignment,
-  const char* file,
-  int line
+    size_t size,
+    size_t alignment,
+    const char* file,
+    int line
 );
 
 /* if str != NULL, call strdup and return pointer, calls bayer_abort
  * if strdup fails */
 #define BAYER_STRDUP(X) bayer_strdup(X, __FILE__, __LINE__)
 char* bayer_strdup(
-  const char* str,
-  const char* file,
-  int line
+    const char* str,
+    const char* file,
+    int line
 );
 
 /* broadcast string from root rank and allocate copy in recv on all
  * ranks including the root, caller must free recv str with bayer_recv */
 void bayer_bcast_strdup(
-  const char* send,
-  char** recv,
-  int root,
-  MPI_Comm comm
+    const char* send,
+    char** recv,
+    int root,
+    MPI_Comm comm
 );
 
 /* caller passes in void** not void*, use void* to avoid excessive

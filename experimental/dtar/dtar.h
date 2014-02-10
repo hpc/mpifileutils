@@ -88,11 +88,11 @@ typedef struct {
 } DTAR_options_t;
 
 typedef struct {
-//    struct archive *a;
-//    struct archive *disk;
-//    struct archive_entry *entry;
-//    ssize_t len;
-//    int     fd_src;
+    //    struct archive *a;
+    //    struct archive *disk;
+    //    struct archive_entry *entry;
+    //    ssize_t len;
+    //    int     fd_src;
     const char* name;
     int fd_tar;
     int flags;
@@ -118,16 +118,16 @@ extern DTAR_writer_t DTAR_writer;
 extern void (*DTAR_jump_table[3])(DTAR_operation_t* op, CIRCLE_handle* handle);
 
 void DTAR_writer_init(void);
-void DTAR_add_objects(CIRCLE_handle * handle);
-void DTAR_process_objects(CIRCLE_handle * handle);
+void DTAR_add_objects(CIRCLE_handle* handle);
+void DTAR_process_objects(CIRCLE_handle* handle);
 void DTAR_enqueue_work_objects(CIRCLE_handle* handle);
 
 char* DTAR_encode_operation(DTAR_operation_code_t code, int64_t chunk,
-        const char* operand, uint64_t offset, int64_t file_size);
+                            const char* operand, uint64_t offset, int64_t file_size);
 
 DTAR_operation_t* DTAR_decode_operation(char* op);
 
-void DTAR_parse_path_args(char * filename, char compress, char ** argv);
+void DTAR_parse_path_args(char* filename, char compress, char** argv);
 
 void DTAR_abort(int code);
 void DTAR_exit(int code);
@@ -135,20 +135,20 @@ void DTAR_exit(int code);
 void DTAR_do_copy(DTAR_operation_t* op);
 
 int DTAR_perform_copy(DTAR_operation_t* op, int in_fd, int out_fd,
-        off64_t offset);
+                      off64_t offset);
 
 int DTAR_open_input_fd(DTAR_operation_t* op, off64_t offset, off64_t len);
 
 void DTAR_do_treewalk(DTAR_operation_t* op, CIRCLE_handle* handle);
 
 void DTAR_stat_process_link(DTAR_operation_t* op, const struct stat64* statbuf,
-        CIRCLE_handle* handle);
+                            CIRCLE_handle* handle);
 
 void DTAR_stat_process_file(DTAR_operation_t* op, const struct stat64* statbuf,
-        CIRCLE_handle* handle);
+                            CIRCLE_handle* handle);
 
 void DTAR_stat_process_dir(DTAR_operation_t* op, const struct stat64* statbuf,
-        CIRCLE_handle* handle);
+                           CIRCLE_handle* handle);
 
 
 #endif

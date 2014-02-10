@@ -13,7 +13,7 @@
 #include <ctype.h>
 
 
-char * userNameFromId(uid_t);
-char * groupNameFromId(gid_t);
+char* userNameFromId(uid_t);
+char* groupNameFromId(gid_t);
 
 #endif /* HELPER_H_ */

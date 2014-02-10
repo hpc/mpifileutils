@@ -7,72 +7,72 @@
 #include "handle.h"
 #include "queue.h"
 
-void queue_dir (char * dirname, int depth)
+void queue_dir(char* dirname, int depth)
 {
-	char * buf = (char *)malloc(CIRCLE_MAX_STRING_LEN * sizeof(char));
-	int len;
+    char* buf = (char*)malloc(CIRCLE_MAX_STRING_LEN * sizeof(char));
+    int len;
 
-	len = snprintf(buf, CIRCLE_MAX_STRING_LEN, "D:%d:%s", depth, dirname);
-	if (len >= CIRCLE_MAX_STRING_LEN)
-	{
-		fprintf(stderr, "%s: directory name too long\n", dirname);
-		return;
-	}
+    len = snprintf(buf, CIRCLE_MAX_STRING_LEN, "D:%d:%s", depth, dirname);
 
-	dbprintf("queue %s\n", buf);
+    if(len >= CIRCLE_MAX_STRING_LEN) {
+        fprintf(stderr, "%s: directory name too long\n", dirname);
+        return;
+    }
 
-	CIRCLE_get_handle()->enqueue(buf);
-	return;
+    dbprintf("queue %s\n", buf);
+
+    CIRCLE_get_handle()->enqueue(buf);
+    return;
 }
 
-void queue_file (char * fname)
+void queue_file(char* fname)
 {
-	char * buf = (char *)malloc(CIRCLE_MAX_STRING_LEN * sizeof(char));
-	int len;
+    char* buf = (char*)malloc(CIRCLE_MAX_STRING_LEN * sizeof(char));
+    int len;
 
-	len = snprintf(buf, CIRCLE_MAX_STRING_LEN, "F:%s", fname);
-	if (len >= CIRCLE_MAX_STRING_LEN)
-	{
-		fprintf(stderr, "%s: file name too long\n", fname);
-		return;
-	}
-	
-	dbprintf("queue %s\n", buf);
+    len = snprintf(buf, CIRCLE_MAX_STRING_LEN, "F:%s", fname);
 
-	CIRCLE_get_handle()->enqueue(buf);
-	return;
+    if(len >= CIRCLE_MAX_STRING_LEN) {
+        fprintf(stderr, "%s: file name too long\n", fname);
+        return;
+    }
+
+    dbprintf("queue %s\n", buf);
+
+    CIRCLE_get_handle()->enqueue(buf);
+    return;
 }
 
-void dequeue (CIRCLE_handle * handle)
+void dequeue(CIRCLE_handle* handle)
 {
-	char buf[CIRCLE_MAX_STRING_LEN];
-	char * p;
-	int depth;
+    char buf[CIRCLE_MAX_STRING_LEN];
+    char* p;
+    int depth;
 
-	handle->dequeue(buf);
-	switch(buf[0])
-	{
-		case 'D':
-			depth = atoi(&buf[2]);
-			p = strchr(&buf[2], ':');
-			handle_dir(p+1, depth);
-		break;
+    handle->dequeue(buf);
 
-		case 'F':
-			handle_file(&buf[2]);
-		break;
+    switch(buf[0]) {
+        case 'D':
+            depth = atoi(&buf[2]);
+            p = strchr(&buf[2], ':');
+            handle_dir(p + 1, depth);
+            break;
 
-		default:
-			fprintf(stderr, "bad buffer %s\n", buf);
-			return;
-		break;
-	}
+        case 'F':
+            handle_file(&buf[2]);
+            break;
 
-	return;
+        default:
+            fprintf(stderr, "bad buffer %s\n", buf);
+            return;
+            break;
+    }
+
+    return;
 }
 
-void queue_head (CIRCLE_handle * handle)
+void queue_head(CIRCLE_handle* handle)
 {
-	dbprintf("start: %s\n", options.root);
-	queue_dir(options.root, 0);
+    dbprintf("start: %s\n", options.root);
+    queue_dir(options.root, 0);
 }

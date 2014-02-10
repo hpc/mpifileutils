@@ -8,64 +8,64 @@
 #include "pred.h"
 #include "queue.h"
 
-void handle_dir (char * path, int depth)
+void handle_dir(char* path, int depth)
 {
-	DIR * target;
-	struct dirent * entry;
+    DIR* target;
+    struct dirent* entry;
 
-	char child[PATH_MAX];
+    char child[PATH_MAX];
 
-	execute(path, pred_head);
+    execute(path, pred_head);
 
-	if (depth >= options.maxdepth)
-		return;
+    if(depth >= options.maxdepth)
+    { return; }
 
-	target = opendir(path);
-	if (!target)
-	{
-		fprintf(stderr, "error accessing %s\n", path);
-		return;
-	}
+    target = opendir(path);
 
-	while ((entry = readdir(target)))
-	{
-		dbprintf("read: %s\n", entry->d_name);
-		if (!strcmp(entry->d_name, ".."))
-			continue;
-		if (!strcmp(entry->d_name, "."))
-			continue;
-		if ((snprintf(child, PATH_MAX, "%s/%s", path, entry->d_name)) >= PATH_MAX)
-		{
-			fprintf(stderr, "filename %s too long\n", entry->d_name);
-			continue;
-		}
+    if(!target) {
+        fprintf(stderr, "error accessing %s\n", path);
+        return;
+    }
 
-		switch (entry->d_type)
-		{
-			case DT_DIR:
-				queue_dir(child, ++depth);
-			break;
+    while((entry = readdir(target))) {
+        dbprintf("read: %s\n", entry->d_name);
 
-			case DT_REG:
-				queue_file(child);
-			break;
+        if(!strcmp(entry->d_name, ".."))
+        { continue; }
 
-			case DT_LNK:
-				queue_file(child);
-			break;
+        if(!strcmp(entry->d_name, "."))
+        { continue; }
 
-			default:
-				dbprintf("not handled: %s\n", child);
-			break;
-		}
-	}
+        if((snprintf(child, PATH_MAX, "%s/%s", path, entry->d_name)) >= PATH_MAX) {
+            fprintf(stderr, "filename %s too long\n", entry->d_name);
+            continue;
+        }
 
-	closedir(target);
-	return;
+        switch(entry->d_type) {
+            case DT_DIR:
+                queue_dir(child, ++depth);
+                break;
+
+            case DT_REG:
+                queue_file(child);
+                break;
+
+            case DT_LNK:
+                queue_file(child);
+                break;
+
+            default:
+                dbprintf("not handled: %s\n", child);
+                break;
+        }
+    }
+
+    closedir(target);
+    return;
 }
 
-void handle_file (char * fname)
+void handle_file(char* fname)
 {
-	dbprintf("ran on %s\n", fname);
-	execute(fname, pred_head);
+    dbprintf("ran on %s\n", fname);
+    execute(fname, pred_head);
 }

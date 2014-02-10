@@ -78,7 +78,7 @@ static void DCOPY_set_metadata()
 {
     const DCOPY_stat_elem_t* elem;
 
-    if (DCOPY_global_rank == 0) {
+    if(DCOPY_global_rank == 0) {
         if(DCOPY_user_opts.preserve) {
             BAYER_LOG(BAYER_LOG_INFO, "Setting ownership, permissions, and timestamps.");
         }
@@ -91,21 +91,25 @@ static void DCOPY_set_metadata()
     int max_depth;
     int depth = -1;
     elem = DCOPY_list_head;
-    while (elem != NULL) {
-        if (elem->depth > depth) {
+
+    while(elem != NULL) {
+        if(elem->depth > depth) {
             depth = elem->depth;
         }
+
         elem = elem->next;
     }
+
     MPI_Allreduce(&depth, &max_depth, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
 
     /* now set timestamps on files starting from deepest level */
-    for (depth = max_depth; depth > 0; depth--) {
+    for(depth = max_depth; depth > 0; depth--) {
         /* cycle through our list of files and set timestamps
          * for each one at this level */
         elem = DCOPY_list_head;
-        while (elem != NULL) {
-            if (elem->depth == depth) {
+
+        while(elem != NULL) {
+            if(elem->depth == depth) {
                 if(DCOPY_user_opts.preserve) {
                     DCOPY_copy_ownership(elem->sb, elem->file);
                     DCOPY_copy_permissions(elem->sb, elem->file);
@@ -117,9 +121,10 @@ static void DCOPY_set_metadata()
                     DCOPY_copy_permissions(elem->sb, elem->file);
                 }
             }
+
             elem = elem->next;
         }
-        
+
         /* wait for all procs to finish before we start
          * with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
@@ -179,11 +184,11 @@ static void DCOPY_epilogue(void)
         BAYER_LOG(BAYER_LOG_INFO, "  Files: %" PRId64, agg_files);
         BAYER_LOG(BAYER_LOG_INFO, "  Links: %" PRId64, agg_links);
         BAYER_LOG(BAYER_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
-            agg_size_tmp, agg_size_units, agg_size);
+                  agg_size_tmp, agg_size_units, agg_size);
 
         BAYER_LOG(BAYER_LOG_INFO, "Rate: %.3lf %s " \
-            "(%.3" PRId64 " bytes in %.3lf seconds)", \
-            agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
+                  "(%.3" PRId64 " bytes in %.3lf seconds)", \
+                  agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
     }
 
     /* free memory allocated to parse user params */
@@ -311,7 +316,7 @@ int main(int argc, \
 
                 if(DCOPY_global_rank == 0) {
                     BAYER_LOG(BAYER_LOG_INFO, "Compare source and destination " \
-			"after copy to detect corruption.");
+                              "after copy to detect corruption.");
                 }
 
                 break;
@@ -366,7 +371,7 @@ int main(int argc, \
                 else {
                     if(DCOPY_global_rank == 0) {
                         BAYER_LOG(BAYER_LOG_INFO, "Debug level `%s' not recognized. " \
-                            "Defaulting to `info'.", optarg);
+                                  "Defaulting to `info'.", optarg);
                     }
                 }
 
@@ -404,7 +409,7 @@ int main(int argc, \
 
                 if(DCOPY_global_rank == 0) {
                     BAYER_LOG(BAYER_LOG_INFO, "Unreliable filesystem specified. " \
-                        "Retry mode enabled.");
+                              "Retry mode enabled.");
                 }
 
                 break;
@@ -467,11 +472,11 @@ int main(int argc, \
     DCOPY_jump_table[COMPARE]  = DCOPY_do_compare;
 
     /* allocate buffer to read/write files, aligned on 1MB boundaraies */
-    size_t alignment = 1024*1024;
+    size_t alignment = 1024 * 1024;
     DCOPY_user_opts.block_buf1 = (char*) BAYER_MEMALIGN(
-        DCOPY_user_opts.block_size, alignment);
+                                     DCOPY_user_opts.block_size, alignment);
     DCOPY_user_opts.block_buf2 = (char*) BAYER_MEMALIGN(
-        DCOPY_user_opts.block_size, alignment);
+                                     DCOPY_user_opts.block_size, alignment);
 
     /* Set the log level for the processing library. */
     CIRCLE_enable_logging(CIRCLE_debug);
@@ -498,14 +503,16 @@ int main(int argc, \
     DCOPY_set_metadata();
 
     /* force updates to disk */
-    if (DCOPY_global_rank == 0) {
+    if(DCOPY_global_rank == 0) {
         BAYER_LOG(BAYER_LOG_INFO, "Syncing updates to disk.");
     }
+
     sync();
 
     /* free list of stat objects */
     DCOPY_stat_elem_t* current = DCOPY_list_head;
-    while (current != NULL) {
+
+    while(current != NULL) {
         DCOPY_stat_elem_t* next = current->next;
         free(current->file);
         free(current->sb);

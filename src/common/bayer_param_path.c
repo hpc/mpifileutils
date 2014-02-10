@@ -107,7 +107,7 @@ static void bayer_stat_bcast(struct stat* s)
     void* buf = BAYER_MALLOC(bufsize);
 
     /* pack stat structure on root */
-    if (rank == 0) {
+    if(rank == 0) {
         bayer_stat_pack(buf, s);
     }
 
@@ -115,7 +115,7 @@ static void bayer_stat_bcast(struct stat* s)
     MPI_Bcast(buf, (int)bufsize, MPI_BYTE, 0, MPI_COMM_WORLD);
 
     /* unpack stat structure into stat data structure */
-    if (rank != 0) {
+    if(rank != 0) {
         bayer_stat_unpack(buf, s);
     }
 
@@ -127,7 +127,7 @@ static void bayer_stat_bcast(struct stat* s)
 
 static void bayer_str_bcast(char** pstr)
 {
-    if (pstr == NULL) {
+    if(pstr == NULL) {
         BAYER_ABORT(1, "Invalid string");
     }
 
@@ -139,17 +139,20 @@ static void bayer_str_bcast(char** pstr)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     /* if we aren't the root, assume we won't get anything */
-    if (rank != 0) {
+    if(rank != 0) {
         *pstr = NULL;
     }
 
     /* compute size of buffer needed to hold string */
     uint64_t size;
-    if (rank == 0) {
+
+    if(rank == 0) {
         size_t len = 0;
-        if (str != NULL) {
+
+        if(str != NULL) {
             len = strlen(str) + 1;
         }
+
         size = (uint64_t) len;
     }
 
@@ -158,10 +161,12 @@ static void bayer_str_bcast(char** pstr)
 
     /* receive string */
     size_t bufsize = (size_t) size;
-    if (bufsize > 0) {
+
+    if(bufsize > 0) {
         /* allocate buffer to hold string */
         char* buf = str;
-        if (rank != 0) {
+
+        if(rank != 0) {
             buf = (char*) BAYER_MALLOC(bufsize);
         }
 
@@ -170,7 +175,7 @@ static void bayer_str_bcast(char** pstr)
         MPI_Bcast(buf, chars, MPI_CHAR, 0, MPI_COMM_WORLD);
 
         /* set caller's pointer to newly allocated string */
-        if (rank != 0) {
+        if(rank != 0) {
             *pstr = buf;
         }
     }
@@ -217,7 +222,7 @@ void bayer_param_path_set(const char* path, bayer_param_path* param)
     bayer_param_path_init(param);
 
     /* have rank 0 do the real work */
-    if (rank == 0) {
+    if(rank == 0) {
         if(path != NULL) {
             /* make a copy of original path */
             param->orig = BAYER_STRDUP(path);
@@ -238,6 +243,7 @@ void bayer_param_path_set(const char* path, bayer_param_path* param)
 
             /* resolve any symlinks */
             char target[PATH_MAX];
+
             if(realpath(path, target) != NULL) {
                 /* make a copy of resolved name */
                 param->target = BAYER_STRDUP(target);
@@ -268,5 +274,6 @@ void bayer_param_path_free(bayer_param_path* param)
         /* initialize all fields */
         bayer_param_path_init(param);
     }
+
     return;
 }
