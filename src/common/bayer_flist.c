@@ -1182,9 +1182,9 @@ const char* bayer_flist_file_get_groupname(bayer_flist bflist, uint64_t index)
 
 uint64_t reduce_items;
 
-static void reduce_init()
+static void reduce_init(void)
 {
-  CIRCLE_Reduce(&items, sizeof(uint64_t));
+  CIRCLE_reduce(&reduce_items, sizeof(uint64_t));
 }
 
 static void reduce_exec(const void* buf1, size_t size1, const void* buf2, size_t size2)
@@ -1192,19 +1192,25 @@ static void reduce_exec(const void* buf1, size_t size1, const void* buf2, size_t
   const uint64_t* a = (const uint64_t*) buf1;
   const uint64_t* b = (const uint64_t*) buf2;
   uint64_t val = a[0] + b[0];
-  CIRCLE_Reduce(&val, sizeof(uint64_t));
+  CIRCLE_reduce(&val, sizeof(uint64_t));
 }
 
 static void reduce_fini(const void* buf, size_t size)
 {
-  /* create timestamp */
+  /* get current time */
+  time_t walk_start_t = time(NULL);
+  if (walk_start_t == (time_t)-1) {
+    /* TODO: ERROR! */
+  }
+
+  /* format timestamp string */
   char walk_s[30];
   size_t rc = strftime(walk_s, sizeof(walk_s)-1, "%FT%T", localtime(&walk_start_t));
   if (rc == 0) {
     walk_s[0] = '\0';
   }
 
-  /* get result */
+  /* get result of reduction */
   const uint64_t* a = (const uint64_t*) buf;
   unsigned long long val = (unsigned long long) a[0];
 
