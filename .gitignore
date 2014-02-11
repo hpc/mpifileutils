@@ -19,7 +19,6 @@
 *.app
 
 .pc
-dcp
 deps
 .deps
 install
