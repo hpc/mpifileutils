@@ -1176,6 +1176,43 @@ const char* bayer_flist_file_get_groupname(bayer_flist bflist, uint64_t index)
   return ret;
 }
 
+/****************************************
+ * Global counter and callbacks for LIBCIRCLE reductions
+ ***************************************/
+
+uint64_t reduce_items;
+
+static void reduce_init()
+{
+  CIRCLE_Reduce(&items, sizeof(uint64_t));
+}
+
+static void reduce_exec(const void* buf1, size_t size1, const void* buf2, size_t size2)
+{
+  const uint64_t* a = (const uint64_t*) buf1;
+  const uint64_t* b = (const uint64_t*) buf2;
+  uint64_t val = a[0] + b[0];
+  CIRCLE_Reduce(&val, sizeof(uint64_t));
+}
+
+static void reduce_fini(const void* buf, size_t size)
+{
+  /* create timestamp */
+  char walk_s[30];
+  size_t rc = strftime(walk_s, sizeof(walk_s)-1, "%FT%T", localtime(&walk_start_t));
+  if (rc == 0) {
+    walk_s[0] = '\0';
+  }
+
+  /* get result */
+  const uint64_t* a = (const uint64_t*) buf;
+  unsigned long long val = (unsigned long long) a[0];
+
+  /* print status to stdout */
+  printf("%s: Items walked %llu ...\n", walk_s, val);
+  fflush(stdout);
+}
+
 #ifdef LUSTRE_STAT
 /****************************************
  * Walk directory tree using stat at top level and readdir
@@ -1276,6 +1313,9 @@ static void walk_lustrestat_process_dir(char* dir, CIRCLE_handle* handle)
             /* error */
           }
 
+          /* increment our item count */
+          reduce_items++;
+
           /* recurse into directories */
           if (have_mode && S_ISDIR(mode)) {
             handle->enqueue(newpath);
@@ -1308,6 +1348,9 @@ static void walk_lustrestat_create(CIRCLE_handle* handle)
     /* TODO: print error */
     return;
   }
+
+  /* increment our item count */
+  reduce_items++;
 
   /* record item info */
   list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
@@ -1386,6 +1429,9 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
               }
             }
 
+            /* increment our item count */
+            reduce_items++;
+
             /* recurse into directories */
             if (have_mode && S_ISDIR(mode)) {
               handle->enqueue(newpath);
@@ -1418,6 +1464,9 @@ static void walk_readdir_create(CIRCLE_handle* handle)
     /* TODO: print error */
     return;
   }
+
+  /* increment our item count */
+  reduce_items++;
 
   /* record item info */
   list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
@@ -1509,6 +1558,9 @@ static void walk_stat_process(CIRCLE_handle* handle)
     /* print error */
     return;
   }
+
+  /* increment our item count */
+  reduce_items++;
 
   /* TODO: filter items by stat info */
 
@@ -1890,6 +1942,12 @@ void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist
     CIRCLE_cb_create(&walk_readdir_create);
     CIRCLE_cb_process(&walk_readdir_process);
   }
+
+  /* prepare callbacks and initialize variables for reductions */
+  reduce_items = 0;
+  CIRCLE_cb_reduce_init(&reduce_init);
+  CIRCLE_cb_reduce_op(&reduce_exec);
+  CIRCLE_cb_reduce_fini(&reduce_fini);
 
   /* run the libcircle job */
   CIRCLE_begin();
