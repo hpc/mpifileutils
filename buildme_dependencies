@@ -72,7 +72,9 @@ export PATH=${toolsdir}/bin:$PATH
 pushd libcircle.git
   git pull origin master
   git pull --tags origin master
-  git checkout v0.1.0-rc.1 
+# comment me to get most recent version of libcircle
+# uncomment me to get specific tagged version libcircle
+#  git checkout v0.1.0-rc.1
   export CFLAGS=${OPT}
   ./configure \
     --prefix=$installdir \
