@@ -118,13 +118,101 @@ static strmap* dcmp_strmap_creat(bayer_flist list, const char* prefix)
     return map;
 }
 
+/* Return -1 when error, return 0 when equal, return 1 when diff */
+int _dcmp_compare_2_files(const char* src_name, const char* dst_name,
+                          int src_fd, int dst_fd,
+                          off_t offset, size_t size, size_t buff_size)
+{
+    int rc = 0;
+    /* seek to offset in source file */
+    if (bayer_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
+        return -1;
+    }
+
+    /* seek to offset in destination file */
+    if(bayer_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
+        return -1;
+    }
+
+    void* src_buf = BAYER_MALLOC(buff_size + 1);
+    void* dest_buf = BAYER_MALLOC(buff_size + 1);
+    size_t total_bytes = 0;
+    size_t left_to_read;
+
+    while(size == 0 || total_bytes <= size) {
+        if (size == 0) {
+            left_to_read = buff_size;
+        } else {
+            left_to_read = size - total_bytes;
+            if (left_to_read > buff_size) {
+                left_to_read = buff_size;
+            }
+    }
+
+        /* read data from source and destination */
+        ssize_t src_read = bayer_read(src_name, src_fd, src_buf,
+             left_to_read);
+        ssize_t dst_read = bayer_read(dst_name, dst_fd, dest_buf,
+             left_to_read);
+        /* check that we got the same number of bytes from each */
+        if (src_read != dst_read) {
+            rc = 1;
+            break;
+        }
+
+        /* check for EOF */
+        if (!src_read) {
+            break;
+        }
+
+        /* check that buffers are the same */
+        if (memcmp(src_buf, dest_buf, src_read) != 0) {
+            rc = 1;
+            break;
+        }
+
+        /* add bytes to our total */
+        total_bytes += src_read;
+    }
+    bayer_free(&src_buf);
+    bayer_free(&dest_buf);
+    return rc;
+}
+
+/* Return -1 when error, return 0 when equal, return 1 when diff */
+int dcmp_compare_2_files(const char* src_name, const char* dst_name, size_t buff_size)
+{
+    int src_fd = bayer_open(src_name, O_RDONLY);
+    if (src_fd < 0) {
+        return -1;
+    }
+
+    int dst_fd = bayer_open(dst_name, O_RDONLY);
+    if (dst_fd < 0) {
+        bayer_close(src_name, src_fd);
+        return -1;
+    }
+
+    /* hint that we'll read from file sequentially */
+    posix_fadvise(src_fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(dst_fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+
+    int rc = _dcmp_compare_2_files(src_name, dst_name, src_fd, dst_fd,
+        0, 0, buff_size);
+
+    bayer_close(src_name, src_fd);
+    bayer_close(dst_name, dst_fd);
+    return rc;
+}
+
 /* compare entries from src into dst */
 static void dcmp_strmap_compare(bayer_flist dst_list,
                                 strmap* dst_map,
                                 bayer_flist src_list,
                                 strmap* src_map,
                                 uint64_t *common_file,
-                                uint64_t *common_type)
+                                uint64_t *common_type,
+                                uint64_t *common_content)
 {
     strmap_node* node;
 
@@ -161,6 +249,36 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
             continue;
         }
         (*common_type)++;
+
+        if (!S_ISREG(dst_mode)) {
+            /* not regular file, take them as common content */
+            dcmp_strmap_item_update(src_map, key, DCMP_STATE_TYPE);
+            dcmp_strmap_item_update(dst_map, key, DCMP_STATE_TYPE);
+            (*common_content)++;
+            continue;
+        }
+
+        uint64_t src_size = bayer_flist_file_get_size(src_list, src_index);
+        uint64_t dst_size = bayer_flist_file_get_size(dst_list, dst_index);
+        if (src_size != dst_size) {
+            /* file type is different */
+            dcmp_strmap_item_update(src_map, key, DCMP_STATE_TYPE);
+            dcmp_strmap_item_update(dst_map, key, DCMP_STATE_TYPE);
+            continue;
+        }
+
+        const char* src_name = bayer_flist_file_get_name(src_list, src_index);
+        const char* dst_name = bayer_flist_file_get_name(dst_list, dst_index);
+        rc = dcmp_compare_2_files(src_name, dst_name, 1048576);
+        if (rc == 1) {
+            dcmp_strmap_item_update(src_map, key, DCMP_STATE_SIZE);
+            dcmp_strmap_item_update(dst_map, key, DCMP_STATE_SIZE);
+            continue;
+        } else if (rc < 0) {
+            BAYER_ABORT(-1, "Failed to compare file %s and %s errno=%d (%s)",
+                src_name, dst_name, errno, strerror(errno));
+        }
+        (*common_content)++;
     }
 }
 
@@ -275,7 +393,8 @@ int main(int argc, char **argv)
 
     uint64_t common = 0;
     uint64_t same_type = 0;
-    dcmp_strmap_compare(flist3, map1, flist4, map2, &common, &same_type);
+    uint64_t same_content = 0;
+    dcmp_strmap_compare(flist3, map1, flist4, map2, &common, &same_type, &same_content);
 
     uint64_t global_common;
     MPI_Allreduce(&common, &global_common, 1, MPI_UINT64_T, MPI_SUM,
@@ -295,10 +414,19 @@ int main(int argc, char **argv)
     MPI_Allreduce(&same_type, &global_same_type, 1, MPI_UINT64_T, MPI_SUM,
                   MPI_COMM_WORLD);
 
+    uint64_t global_same_content;
+    MPI_Allreduce(&same_content, &global_same_content, 1, MPI_UINT64_T, MPI_SUM,
+                  MPI_COMM_WORLD);
+
     if (rank == 0) {
         printf("Common files: %llu\n", global_common);
-        printf("Common files with same type : %llu\n", global_same_type);
-        printf("Common files with different type : %llu\n", global_common - global_same_type);
+        printf("Common files with same type: %llu\n", global_same_type);
+        printf("Common files with different type: %llu\n",
+               global_common - global_same_type);
+        printf("Common files with same type & content: %llu\n",
+               global_same_content);
+        printf("Common files with same type but different content: %llu\n",
+               global_same_type - global_same_content);
         printf("Only in %s: %llu\n", path1, global_uncommon1);
         printf("Only in %s: %llu\n", path2, global_uncommon2);
         fflush(stdout);
