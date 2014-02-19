@@ -180,7 +180,12 @@ int _dcmp_compare_2_files(const char* src_name, const char* dst_name,
         ssize_t dst_read = bayer_read(dst_name, dst_fd, dest_buf,
              left_to_read);
 
-        /* TODO: check for read errors */
+        /* check for read errors */
+        if (src_read < 0 || dst_read < 0) {
+            /* hit a read error */
+            rc = -1;
+            break;
+        }
 
         /* check that we got the same number of bytes from each */
         if (src_read != dst_read) {
@@ -334,6 +339,7 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
                 src_name, dst_name, errno, strerror(errno));
         }
 
+        /* files have the same content */
         (*common_content)++;
     }
 }
