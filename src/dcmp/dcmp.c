@@ -417,7 +417,9 @@ int main(int argc, char **argv)
         /* we should have two arguments left, source and dest paths */
         int numargs = argc - optind;
         if (numargs != 2) {
-            BAYER_LOG(BAYER_LOG_ERR, "You must specify a source and destination path.");
+            if (rank == 0) {
+                BAYER_LOG(BAYER_LOG_ERR, "You must specify a source and destination path.");
+            }
             usage = 1;
         }
     }
@@ -429,6 +431,9 @@ int main(int argc, char **argv)
         }
         bayer_finalize();
         MPI_Finalize();
+        if (help) {
+            return 0;
+        }
         return 1;
     }
 

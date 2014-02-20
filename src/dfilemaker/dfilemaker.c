@@ -47,8 +47,12 @@ int main(int argc, char* argv[])
     /* read file size */
     const char* size_str = argv[2];
     if (bayer_abtoull(size_str, &size_ull) != BAYER_SUCCESS) {
-      printf("Could not interpret argument as file size: %s\n", size_str);
-      fflush(stdout);
+      /* just have rank 0 print the error */
+      if (rank == 0) {
+        printf("Could not interpret argument as file size: %s\n", size_str);
+        fflush(stdout);
+      }
+
       usage = 1;
     }
   }
@@ -125,7 +129,7 @@ int main(int argc, char* argv[])
           /* write data to file */
           ssize_t n = bayer_write(file, fd, ptr, left);
           if (n == -1) {
-            printf("Failed to write to file: rank %d file=%s errno=%d (%s)\n", rank, file, errno, strerror(errno));
+            printf("Failed to write to file: rank=%d file=%s errno=%d (%s)\n", rank, file, errno, strerror(errno));
             rc = 1;
             break;
           }
@@ -139,7 +143,7 @@ int main(int argc, char* argv[])
       bayer_close(file, fd);
     } else {
       /* failed to open the file */
-      printf("Failed to open file: rank %d file=%s errno=%d (%s)\n", rank, file, errno, strerror(errno));
+      printf("Failed to open file: rank=%d file=%s errno=%d (%s)\n", rank, file, errno, strerror(errno));
       rc = 1;
     }
   }
