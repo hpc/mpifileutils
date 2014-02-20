@@ -40,6 +40,11 @@ typedef enum _dcmp_field {
     DCMPF_EXIST = 0,    /* both have this file */
     DCMPF_TYPE,         /* both are the same type */
     DCMPF_SIZE,         /* both are regular file and have same size */
+    DCMPF_UID,          /* both have the same UID */
+    DCMPF_GID,          /* both have the same GID */
+    DCMPF_ATIME,        /* both have the same atime */
+    DCMPF_MTIME,        /* both have the same mtime */
+    DCMPF_CTIME,        /* both have the same ctime */
     DCMPF_CONTENT,      /* both have the same data */
     DCMPF_SAME,         /* both are the same file */
     DCMPF_MAX,
@@ -81,8 +86,7 @@ dcmp_strmap_item_update(strmap* map, const char *key,
     /* lookup item from map */
     const char* val = strmap_get(map, key);
 
-    assert(field >= 0);
-    assert(field < DCMPF_MAX);
+    assert(field >= 0 && field < DCMPF_MAX);
     /* copy existing index over */
     strcpy(new_val, val);
 
@@ -95,11 +99,12 @@ dcmp_strmap_item_update(strmap* map, const char *key,
     strmap_set(map, key, new_val);
 }
 
+
 static int
-dcmp_strmap_item_decode(strmap* map, const char *key, uint64_t *index)
+dcmp_strmap_item_index(strmap* map, const char *key, uint64_t *index)
 {
-    /* Should be long enough for 64 bit number and a flag */
-    char buf[22];
+    /* Should be long enough for 64 bit number and DCMPF_MAX */
+    char new_val[21 + DCMPF_MAX];
 
     /* lookup item from map */
     const char* val = strmap_get(map, key);
@@ -108,9 +113,28 @@ dcmp_strmap_item_decode(strmap* map, const char *key, uint64_t *index)
     }
 
     /* extract index */
-    strcpy(buf, val);
-    buf[strlen(buf) - DCMPF_MAX] = '\0';
-    *index = strtoull(buf, NULL, 0);
+    strcpy(new_val, val);
+    new_val[strlen(new_val) - DCMPF_MAX] = '\0';
+    *index = strtoull(new_val, NULL, 0);
+
+    return 0;
+}
+
+static int
+dcmp_strmap_item_state(strmap* map, const char *key, dcmp_field field,
+    dcmp_state *state)
+{
+    /* lookup item from map */
+    const char* val = strmap_get(map, key);
+    if (val == NULL) {
+        return -1;
+    }
+
+    /* extract state */
+    assert(strlen(val) > DCMPF_MAX);
+    assert(field >= 0 && field < DCMPF_MAX);
+    size_t position = strlen(val) - DCMPF_MAX;
+    *state = val[position + field];
 
     return 0;
 }
@@ -147,9 +171,8 @@ static strmap* dcmp_strmap_creat(bayer_flist list, const char* prefix)
 }
 
 /* Return -1 when error, return 0 when equal, return 1 when diff */
-int _dcmp_compare_2_files(const char* src_name, const char* dst_name,
-                          int src_fd, int dst_fd,
-                          off_t offset, size_t size, size_t buff_size)
+int _dcmp_compare_data(const char* src_name, const char* dst_name,
+    int src_fd, int dst_fd, off_t offset, size_t size, size_t buff_size)
 {
     /* assume we'll find that files contents are the same */
     int rc = 0;
@@ -227,8 +250,8 @@ int _dcmp_compare_2_files(const char* src_name, const char* dst_name,
 }
 
 /* Return -1 when error, return 0 when equal, return 1 when diff */
-int dcmp_compare_2_files(const char* src_name, const char* dst_name,
-                         size_t buff_size)
+int dcmp_compare_data(const char* src_name, const char* dst_name,
+    size_t buff_size)
 {
     /* open source file */
     int src_fd = bayer_open(src_name, O_RDONLY);
@@ -248,7 +271,7 @@ int dcmp_compare_2_files(const char* src_name, const char* dst_name,
     posix_fadvise(dst_fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 
     /* compare file contents */
-    int rc = _dcmp_compare_2_files(src_name, dst_name, src_fd, dst_fd,
+    int rc = _dcmp_compare_data(src_name, dst_name, src_fd, dst_fd,
         0, 0, buff_size);
 
     /* close files */
@@ -256,6 +279,42 @@ int dcmp_compare_2_files(const char* src_name, const char* dst_name,
     bayer_close(src_name, src_fd);
 
     return rc;
+}
+
+#define dcmp_compare_field(field_name, field)                                \
+do {                                                                         \
+    uint64_t src = bayer_flist_file_get_ ## field_name(src_list, src_index); \
+    uint64_t dst = bayer_flist_file_get_ ## field_name(dst_list, dst_index); \
+    if (src != dst) {                                                        \
+        /* file type is different */                                         \
+        dcmp_strmap_item_update(src_map, key, field, DCMPS_DIFFER);          \
+        dcmp_strmap_item_update(dst_map, key, field, DCMPS_DIFFER);          \
+        diff++;                                                              \
+    } else {                                                                 \
+        dcmp_strmap_item_update(src_map, key, field, DCMPS_COMMON);          \
+        dcmp_strmap_item_update(dst_map, key, field, DCMPS_COMMON);          \
+    }                                                                        \
+} while(0)
+
+/* Return -1 when error, return 0 when equal, return 1 when diff */
+int dcmp_compare_metadata(bayer_flist dst_list,
+     strmap* dst_map,
+     uint64_t dst_index,
+     bayer_flist src_list,
+     strmap* src_map,
+     uint64_t src_index,
+     const char* key)
+{
+    int diff = 0;
+
+    dcmp_compare_field(size, DCMPF_SIZE);
+    dcmp_compare_field(gid, DCMPF_GID);
+    dcmp_compare_field(uid, DCMPF_UID);
+    dcmp_compare_field(atime, DCMPF_ATIME);
+    dcmp_compare_field(mtime, DCMPF_MTIME);
+    dcmp_compare_field(ctime, DCMPF_CTIME);
+
+    return diff;
 }
 
 /* compare entries from src into dst */
@@ -280,12 +339,12 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
 
         /* get index and state of source file */
         uint64_t src_index;
-        int rc = dcmp_strmap_item_decode(src_map, key, &src_index);
+        int rc = dcmp_strmap_item_index(src_map, key, &src_index);
         assert(rc == 0);
 
         /* get index and state of destination file */
         uint64_t dst_index;
-        rc = dcmp_strmap_item_decode(dst_map, key, &dst_index);
+        rc = dcmp_strmap_item_index(dst_map, key, &dst_index);
         if (rc) {
             /* skip uncommon files */
             continue;
@@ -302,9 +361,9 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
         mode_t dst_mode = (mode_t) bayer_flist_file_get_mode(dst_list,
             dst_index);
 
-        /* check whether files are of the same time */
+        /* check whether files are of the same type */
         if ((src_mode & S_IFMT) != (dst_mode & S_IFMT)) {
-            /* file type is different */
+            /* file type is different,no need to go any futher */
             dcmp_strmap_item_update(src_map, key, DCMPF_TYPE, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, key, DCMPF_TYPE, DCMPS_DIFFER);
             continue;
@@ -326,23 +385,22 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
             continue;
         }
 
-        /* check that file sizes are the same */
-        uint64_t src_size = bayer_flist_file_get_size(src_list, src_index);
-        uint64_t dst_size = bayer_flist_file_get_size(dst_list, dst_index);
-        if (src_size != dst_size) {
-            /* file type is different */
-            dcmp_strmap_item_update(src_map, key, DCMPF_SIZE, DCMPS_DIFFER);
-            dcmp_strmap_item_update(dst_map, key, DCMPF_SIZE, DCMPS_DIFFER);
-            continue;
-        }
+	rc = dcmp_compare_metadata(dst_list, dst_map, dst_index,
+	    src_list, src_map, src_index, key);
+	assert(rc >= 0);
 
-        dcmp_strmap_item_update(src_map, key, DCMPF_SIZE, DCMPS_COMMON);
-        dcmp_strmap_item_update(dst_map, key, DCMPF_SIZE, DCMPS_COMMON);
+	dcmp_state state;
+	rc = dcmp_strmap_item_state(src_map, key, DCMPF_SIZE, &state);
+	assert(rc == 0);
+	if (state == DCMPS_DIFFER) {
+		/* file size is different, their contents should be different */
+		continue;
+	}
 
         /* the sizes are the same, now compare file contents */
         const char* src_name = bayer_flist_file_get_name(src_list, src_index);
         const char* dst_name = bayer_flist_file_get_name(dst_list, dst_index);
-        rc = dcmp_compare_2_files(src_name, dst_name, 1048576);
+        rc = dcmp_compare_data(src_name, dst_name, 1048576);
         if (rc == 1) {
             /* found a difference in file contents */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
@@ -433,9 +491,7 @@ int main(int argc, char **argv)
         /* we should have two arguments left, source and dest paths */
         int numargs = argc - optind;
         if (numargs != 2) {
-            if (rank == 0) {
-                BAYER_LOG(BAYER_LOG_ERR, "You must specify a source and destination path.");
-            }
+            BAYER_LOG(BAYER_LOG_ERR, "You must specify a source and destination path.");
             usage = 1;
         }
     }
@@ -447,9 +503,6 @@ int main(int argc, char **argv)
         }
         bayer_finalize();
         MPI_Finalize();
-        if (help) {
-            return 0;
-        }
         return 1;
     }
 
