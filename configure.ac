@@ -61,6 +61,7 @@ AM_CONDITIONAL(HAVE_MPI, [test "x$have_C_mpi" = xyes])
 
 # Check for libcircle
 PKG_CHECK_MODULES([libcircle], libcircle)
+#PKG_CHECK_MODULES([DTCMP], libdtcmp)
 
 # Check for libdtcmp.
 X_AC_DTCMP
@@ -70,6 +71,7 @@ AC_CONFIG_FILES([Makefile                \
                  src/common/Makefile     \
                  src/dcmp/Makefile       \
                  src/dcp/Makefile        \
+                 src/dcp2/Makefile        \
                  src/dfilemaker/Makefile \
                  src/drm/Makefile        \
                  src/dwalk/Makefile      \
