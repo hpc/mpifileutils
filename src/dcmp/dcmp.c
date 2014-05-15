@@ -65,45 +65,77 @@ typedef enum _dcmp_field {
     DCMPF_MTIME,        /* both have the same mtime */
     DCMPF_CTIME,        /* both have the same ctime */
     DCMPF_CONTENT,      /* both have the same data */
-//    DCMPF_SAME,         /* both are the same file */
     DCMPF_MAX,
 } dcmp_field;
 
-static const char* dcmp_field_to_string(dcmp_field field)
+static const char* dcmp_field_to_string(dcmp_field field, int simple)
 {
     assert(field >= 0);
     assert(field < DCMPF_MAX);
     switch (field) {
     case DCMPF_EXIST:
-        return "EXIST";
+        if (simple) {
+            return "EXIST";
+        } else {
+            return "existence";
+        }
         break;
     case DCMPF_TYPE:
-        return "TYPE";
+        if (simple) {
+            return "TYPE";
+        } else {
+            return "type";
+        }
         break;
     case DCMPF_SIZE:
-        return "SIZE";
+        if (simple) {
+            return "SIZE";
+        } else {
+            return "size";
+        }
         break;
     case DCMPF_UID:
-        return "UID";
+        if (simple) {
+            return "UID";
+        } else {
+            return "user ID";
+        }
         break;
     case DCMPF_GID:
-        return "GID";
+        if (simple) {
+            return "GID";
+        } else {
+            return "group ID";
+        }
         break;
     case DCMPF_ATIME:
-        return "ATIME";
+        if (simple) {
+            return "ATIME";
+        } else {
+            return "access time";
+        }
         break;
     case DCMPF_MTIME:
-        return "MTIME";
+        if (simple) {
+            return "MTIME";
+        } else {
+            return "modification time";
+        }
         break;
     case DCMPF_CTIME:
-        return "CTIME";
+        if (simple) {
+            return "CTIME";
+        } else {
+            return "change time";
+        }
         break;
     case DCMPF_CONTENT:
-        return "CONTENT";
+        if (simple) {
+            return "CONTENT";
+        } else {
+            return "content";
+        }
         break;
-//    case DCMPF_SAME:
-//        return "SAME";
-//        break;
     default:
         return NULL;
         break;
@@ -115,30 +147,50 @@ static int dcmp_field_from_string(const char* string, dcmp_field *field)
 {
     dcmp_field i;
     for (i = 0; i < DCMPF_MAX; i ++) {
-        if (strcmp(dcmp_field_to_string(i), string) == 0) {
+        if (strcmp(dcmp_field_to_string(i, 1), string) == 0) {
             *field = i;
             return 0;
         }
     }
     return -ENOENT;
 }
-static const char* dcmp_state_to_string(dcmp_state state)
+static const char* dcmp_state_to_string(dcmp_state state, int simple)
 {
     switch (state) {
     case DCMPS_INIT:
-        return "INIT";
+        if (simple) {
+            return "INIT";
+        } else {
+            return "initial";
+        }
         break;
     case DCMPS_COMMON:
-        return "COMMON";
+        if (simple) {
+            return "COMMON";
+        } else {
+            return "the same";
+        }
         break;
     case DCMPS_DIFFER:
-        return "DIFFER";
+        if (simple) {
+            return "DIFFER";
+        } else {
+            return "different";
+        }
         break;
     case DCMPS_ONLY_SRC:
-        return "ONLY_SRC";
+        if (simple) {
+            return "ONLY_SRC";
+        } else {
+            return "exist only in source directory";
+        }
         break;
     case DCMPS_ONLY_DEST:
-        return "ONLY_DEST";
+        if (simple) {
+            return "ONLY_DEST";
+        } else {
+            return "exist only in destination directory";
+        }
         break;
     default:
         return NULL;
@@ -151,7 +203,7 @@ static int dcmp_state_from_string(const char* string, dcmp_state *state)
 {
     dcmp_state i;
     for (i = DCMPS_INIT; i < DCMPS_MAX; i ++) {
-        if (strcmp(dcmp_state_to_string(i), string) == 0) {
+        if (strcmp(dcmp_state_to_string(i, 1), string) == 0) {
             *state = i;
             return 0;
         }
@@ -407,13 +459,13 @@ do {                                                                         \
 } while(0)
 
 /* Return -1 when error, return 0 when equal, return > 0 when diff */
-int dcmp_compare_metadata(bayer_flist dst_list,
-     strmap* dst_map,
-     uint64_t dst_index,
-     bayer_flist src_list,
-     strmap* src_map,
-     uint64_t src_index,
-     const char* key)
+int dcmp_compare_metadata(bayer_flist src_list,
+                          strmap* src_map,
+                          uint64_t src_index,
+                          bayer_flist dst_list,
+                          strmap* dst_map,
+                          uint64_t dst_index,
+                          const char* key)
 {
     int diff = 0;
 
@@ -428,19 +480,11 @@ int dcmp_compare_metadata(bayer_flist dst_list,
 }
 
 /* compare entries from src into dst */
-static void dcmp_strmap_compare(bayer_flist dst_list,
-                                strmap* dst_map,
-                                bayer_flist src_list,
+static void dcmp_strmap_compare(bayer_flist src_list,
                                 strmap* src_map,
-                                uint64_t *common_file,
-                                uint64_t *common_type,
-                                uint64_t *common_content)
+                                bayer_flist dst_list,
+                                strmap* dst_map)
 {
-    /* initialize output values */
-    *common_file    = 0;
-    *common_type    = 0;
-    *common_content = 0;
-
     /* iterate over each item in source map */
     strmap_node* node;
     strmap_foreach(src_map, node) {
@@ -463,8 +507,6 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
 
         dcmp_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_COMMON);
         dcmp_strmap_item_update(dst_map, key, DCMPF_EXIST, DCMPS_COMMON);
-        /* found a file names common to both source and destination */
-        (*common_file)++;
 
         /* get modes of files */
         mode_t src_mode = (mode_t) bayer_flist_file_get_mode(src_list,
@@ -472,8 +514,9 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
         mode_t dst_mode = (mode_t) bayer_flist_file_get_mode(dst_list,
             dst_index);
 
-        rc = dcmp_compare_metadata(dst_list, dst_map, dst_index,
-            src_list, src_map, src_index, key);
+        rc = dcmp_compare_metadata(src_list, src_map, src_index,
+             dst_list, dst_map, dst_index,
+             key);
         assert(rc >= 0);
 
         /* check whether files are of the same type */
@@ -489,8 +532,6 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
 
         dcmp_strmap_item_update(src_map, key, DCMPF_TYPE, DCMPS_COMMON);
         dcmp_strmap_item_update(dst_map, key, DCMPF_TYPE, DCMPS_COMMON);
-        /* file has the same type in both source and destination */
-        (*common_type)++;
 
         /* for now, we can only compare contente of regular files */
         /* TODO: add support for symlinks */
@@ -498,7 +539,6 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
             /* not regular file, take them as common content */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
-            (*common_content)++;
             continue;
         }
 
@@ -528,14 +568,12 @@ static void dcmp_strmap_compare(bayer_flist dst_list,
 
         dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
         dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
-        /* files have the same content */
-        (*common_content)++;
     }
 }
 
 /* loop on the src map to check the results */
-static void dcmp_strmap_check_src(strmap* dst_map,
-    strmap* src_map)
+static void dcmp_strmap_check_src(strmap* src_map,
+                                  strmap* dst_map)
 {
     /* iterate over each item in source map */
     strmap_node* node;
@@ -620,8 +658,8 @@ static void dcmp_strmap_check_src(strmap* dst_map,
 }
 
 /* loop on the dest map to check the results */
-static void dcmp_strmap_check_dst(strmap* dst_map,
-    strmap* src_map)
+static void dcmp_strmap_check_dst(strmap* src_map,
+    strmap* dst_map)
 {
     /* iterate over each item in dest map */
     strmap_node* node;
@@ -713,11 +751,11 @@ static void dcmp_strmap_check_dst(strmap* dst_map,
 }
 
 /* check the result maps are valid */
-static void dcmp_strmap_check(strmap* dst_map,
-    strmap* src_map)
+static void dcmp_strmap_check(strmap* src_map,
+                              strmap* dst_map)
 {
-    dcmp_strmap_check_src(dst_map, src_map);
-    dcmp_strmap_check_dst(dst_map, src_map);
+    dcmp_strmap_check_src(src_map, dst_map);
+    dcmp_strmap_check_dst(src_map, dst_map);
 }
 
 static int
@@ -771,6 +809,16 @@ struct dcmp_options options = {
     .verbose  = 0,
 };
 
+const char *dcmp_default_output[] = {
+    "EXIST=COMMON",
+    "EXIST=DIFFER",
+    "EXIST=COMMON@TYPE=COMMON",
+    "EXIST=COMMON@TYPE=DIFFER",
+    "EXIST=COMMON@CONTENT=COMMON",
+    "EXIST=COMMON@CONTENT=DIFFER",
+    NULL,
+};
+
 static struct dcmp_expression* dcmp_expression_alloc()
 {
     struct dcmp_expression *expression;
@@ -788,10 +836,46 @@ static void dcmp_expression_free(struct dcmp_expression *expression)
     bayer_free(&expression);
 }
 
-static void dcmp_expression_dump(struct dcmp_expression *expression)
+static void dcmp_expression_print(struct dcmp_expression *expression,
+                                  int simple)
 {
-    printf("(%s = %s)", dcmp_field_to_string(expression->field),
-        dcmp_state_to_string(expression->state));
+    if (simple) {
+        printf("(%s = %s)", dcmp_field_to_string(expression->field, 1),
+            dcmp_state_to_string(expression->state, 1));
+    } else {
+        /* Special output for DCMPF_EXIST */
+        if (expression->field == DCMPF_EXIST) {
+            assert(expression->state == DCMPS_ONLY_SRC ||
+                   expression->state == DCMPS_ONLY_DEST ||
+                   expression->state == DCMPS_DIFFER ||
+                   expression->state == DCMPS_COMMON);
+            switch (expression->state) {
+            case DCMPS_ONLY_SRC:
+                printf("exist only in source directory");
+                break;
+            case DCMPS_ONLY_DEST:
+                printf("exist only in destination directory");
+                break;
+            case DCMPS_COMMON:
+                printf("exist in both directories");
+                break;
+            case DCMPS_DIFFER:
+                printf("exist only in one directory");
+                break;
+            default:
+                assert(0);
+            }
+        } else {
+            assert(expression->state == DCMPS_DIFFER ||
+                   expression->state == DCMPS_COMMON);
+            printf("have %s %s", dcmp_state_to_string(expression->state, 0),
+                   dcmp_field_to_string(expression->field, 0));
+            if (expression->state == DCMPS_DIFFER) {
+                /* Make sure plurality is valid */
+                printf("s");
+            }
+        }
+    }
 }
 
 static int dcmp_expression_match(struct dcmp_expression *expression,
@@ -889,20 +973,29 @@ static void dcmp_conjunction_free(struct dcmp_conjunction *conjunction)
     bayer_free(&conjunction);
 }
 
-static void dcmp_conjunction_dump(struct dcmp_conjunction *conjunction)
+static void dcmp_conjunction_print(struct dcmp_conjunction *conjunction,
+                                   int simple)
 {
     struct dcmp_expression* expression;
 
-    printf("(");
+    if (simple) {
+        printf("(");
+    }
     list_for_each_entry(expression,
                         &conjunction->expressions,
                         linkage) {
-        dcmp_expression_dump(expression);
+        dcmp_expression_print(expression, simple);
         if (expression->linkage.next != &conjunction->expressions) {
-            printf("&&");
+            if (simple) {
+                printf("&&");
+            } else {
+                printf(" and ");
+            }
         }
     }
-    printf(")");
+    if (simple) {
+        printf(")");
+    }
 }
 
 /* if matched return 1, else return 0 */
@@ -960,16 +1053,25 @@ static void dcmp_disjunction_free(struct dcmp_disjunction* disjunction)
     bayer_free(&disjunction);
 }
 
-static void dcmp_disjunction_dump(struct dcmp_disjunction* disjunction)
+static void dcmp_disjunction_print(struct dcmp_disjunction* disjunction,
+                                   int simple, int indent)
 {
     struct dcmp_conjunction *conjunction;
 
     list_for_each_entry(conjunction,
                         &disjunction->conjunctions,
                         linkage) {
-        dcmp_conjunction_dump(conjunction);
+        dcmp_conjunction_print(conjunction, simple);
         if (conjunction->linkage.next != &disjunction->conjunctions) {
-            printf("||");
+            if (simple) {
+                printf("||");
+            } else {
+                printf(", or\n");
+                int i;
+                for (i = 0; i < indent; i++) {
+                    printf(" ");
+                }
+            }
         }
     }
 }
@@ -1016,7 +1118,9 @@ static void dcmp_output_free(struct dcmp_output* output)
     assert(list_empty(&output->linkage));
     dcmp_disjunction_free(output->disjunction);
     output->disjunction = NULL;
-    bayer_free(&output->file_name);
+    if (output->file_name != NULL) {
+        bayer_free(&output->file_name);
+    }
     bayer_free(&output);
 }
 
@@ -1041,26 +1145,15 @@ static void dcmp_option_add_output(struct dcmp_output *output)
     list_add_tail(&output->linkage, &options.outputs);
 }
 
-static void dcmp_option_dump_outputs()
-{
-    struct dcmp_output* output;
-
-    list_for_each_entry(output,
-                        &options.outputs,
-                        linkage) {
-        printf("Print files matched rule ");
-        dcmp_disjunction_dump(output->disjunction);
-        printf(" to file %s\n", output->file_name);
-    }
-}
-
-static int dcmp_output_flist_match(
-    struct dcmp_output *output,
-    strmap* map,
-    bayer_flist flist,
-    bayer_flist new_flist)
+static int dcmp_output_flist_match(struct dcmp_output *output,
+                                   strmap* map,
+                                   bayer_flist flist,
+                                   bayer_flist new_flist,
+                                   uint64_t *number)
 {
     strmap_node* node;
+
+    *number = 0;
     /* iterate over each item in map */
     strmap_foreach(map, node) {
         /* get file name */
@@ -1072,42 +1165,73 @@ static int dcmp_output_flist_match(
         assert(ret == 0);
 
         if (dcmp_disjunction_match(output->disjunction, map, key)) {
+            (*number)++;
             bayer_flist_file_copy(flist, index, new_flist);
         }
     }
     return 0;
 }
 
-static int dcmp_output_write(
-    struct dcmp_output *output,
-    bayer_flist dst_flist,
-    strmap* dst_map,
-    bayer_flist src_flist,
-    strmap* src_map)
+#define DCMP_OUTPUT_PREFIX "Files which "
+
+static int dcmp_output_write(struct dcmp_output *output,
+                             bayer_flist src_flist,
+                             strmap* src_map,
+                             bayer_flist dst_flist,
+                             strmap* dst_map)
 {
     int ret = 0;
     bayer_flist new_flist = bayer_flist_subset(src_flist);
 
+    uint64_t src_matched = 0;
     /* find matched file in source map */
-    ret = dcmp_output_flist_match(output, src_map, src_flist, new_flist);
+    ret = dcmp_output_flist_match(output, src_map, src_flist,
+                                  new_flist, &src_matched);
     assert(ret == 0);
 
+    uint64_t dst_matched = 0;
     /* find matched file in dest map */
-    ret = dcmp_output_flist_match(output, dst_map, dst_flist, new_flist);
+    ret = dcmp_output_flist_match(output, dst_map, dst_flist,
+                                  new_flist, &dst_matched);
     assert(ret == 0);
 
     bayer_flist_summarize(new_flist);
-    bayer_flist_write_cache(output->file_name, new_flist);
+    if (output->file_name != NULL) {
+        bayer_flist_write_cache(output->file_name, new_flist);
+    }
+
+    uint64_t src_matched_total;
+    MPI_Allreduce(&src_matched, &src_matched_total, 1,
+                  MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    uint64_t dst_matched_total;
+    MPI_Allreduce(&dst_matched, &dst_matched_total, 1,
+                  MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    if (rank == 0) {
+        printf(DCMP_OUTPUT_PREFIX);
+        dcmp_disjunction_print(output->disjunction, 0,
+                               strlen(DCMP_OUTPUT_PREFIX));
+        printf(", number: %llu/%llu",
+               src_matched_total,
+               dst_matched_total);
+        if (output->file_name != NULL) {
+            printf(", dumped to \"%s\"",
+                   output->file_name);
+        }
+        printf("\n");
+    }
     bayer_flist_free(&new_flist);
 
     return 0;
 }
 
-static int dcmp_outputs_write(
-    bayer_flist dst_list,
-    strmap* dst_map,
-    bayer_flist src_list,
-    strmap* src_map)
+static int dcmp_outputs_write(bayer_flist src_list,
+                              strmap* src_map,
+                              bayer_flist dst_list,
+                              strmap* dst_map)
 {
     struct dcmp_output* output;
     int ret = 0;
@@ -1115,7 +1239,7 @@ static int dcmp_outputs_write(
     list_for_each_entry(output,
                         &options.outputs,
                         linkage) {
-        ret = dcmp_output_write(output, dst_list, dst_map, src_list, src_map);
+        ret = dcmp_output_write(output, src_list, src_map, dst_list, dst_map);
         if (ret) {
             fprintf(stderr,
                 "failed to output to file \"%s\"\n",
@@ -1270,7 +1394,7 @@ static int dcmp_option_output_parse(const char *option)
 
     file_name = tmp;
     disjunction = strsep(&file_name, DCMP_PATH_DELIMITER);
-    if (!*disjunction || file_name == NULL || !*file_name) {
+    if (!*disjunction) {
         fprintf(stderr,
             "output string illegal, disjunction \"%s\", file name \"%s\"\n",
             disjunction, file_name);
@@ -1283,7 +1407,9 @@ static int dcmp_option_output_parse(const char *option)
         goto out;
     }
 
-    output->file_name = BAYER_STRDUP(file_name);
+    if (file_name != NULL && *file_name) {
+        output->file_name = BAYER_STRDUP(file_name);
+    }
     dcmp_option_add_output(output);
 out:
     if (ret) {
@@ -1319,6 +1445,16 @@ int main(int argc, char **argv)
         {0, 0, 0, 0}
     };
     int ret = 0;
+    int i, j;
+
+    /* Generate default output */
+    for (i = 0; ; i++) {
+        if (dcmp_default_output[i] == NULL) {
+            break;
+        }
+        dcmp_option_output_parse(dcmp_default_output[i]);
+        assert(ret == 0);
+    }
 
     /* read in command line options */
     int usage = 0;
@@ -1376,10 +1512,6 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (options.verbose) {
-        dcmp_option_dump_outputs();
-    }
-
     /* parse the source path */
     const char* usrpath1 = argv[optind];
     bayer_param_path_set(usrpath1, &param1);
@@ -1408,58 +1540,12 @@ int main(int argc, char **argv)
     strmap* map2 = dcmp_strmap_creat(flist4, path2);
 
     /* compare files in map1 with those in map2 */
-    uint64_t common, same_type, same_content;
-    dcmp_strmap_compare(flist3, map1, flist4, map2, &common, &same_type,
-        &same_content);
+    dcmp_strmap_compare(flist3, map1, flist4, map2);
 
     /* check the results are valid */
     dcmp_strmap_check(map1, map2);
 
-    /* count total number of common file names */
-    uint64_t global_common;
-    MPI_Allreduce(&common, &global_common, 1, MPI_UINT64_T, MPI_SUM,
-                  MPI_COMM_WORLD);
-
-    /* count total number of file names unique to map1 */
-    uint64_t global_uncommon1;
-    uint64_t uncommon1 = strmap_size(map1) - common;
-    MPI_Allreduce(&uncommon1, &global_uncommon1, 1, MPI_UINT64_T, MPI_SUM,
-                  MPI_COMM_WORLD);
-
-    /* count total number of file names unique to map2 */
-    uint64_t global_uncommon2;
-    uint64_t uncommon2 = strmap_size(map2) - common;
-    MPI_Allreduce(&uncommon2, &global_uncommon2, 1, MPI_UINT64_T, MPI_SUM,
-                  MPI_COMM_WORLD);
-
-    /* count total number of file names common to map1 and map2 with
-     * same file types */
-    uint64_t global_same_type;
-    MPI_Allreduce(&same_type, &global_same_type, 1, MPI_UINT64_T, MPI_SUM,
-                  MPI_COMM_WORLD);
-
-    /* count total number of file names common to map1 and map2 with
-     * same file types and same file contents */
-    uint64_t global_same_content;
-    MPI_Allreduce(&same_content, &global_same_content, 1, MPI_UINT64_T,
-        MPI_SUM, MPI_COMM_WORLD);
-
-    /* print summary info */
-    if (rank == 0) {
-        printf("Common files: %llu\n", global_common);
-        printf("Common files with same type: %llu\n", global_same_type);
-        printf("Common files with different type: %llu\n",
-               global_common - global_same_type);
-        printf("Common files with same type & content: %llu\n",
-               global_same_content);
-        printf("Common files with same type but different content: %llu\n",
-               global_same_type - global_same_content);
-        printf("Only in %s: %llu\n", path1, global_uncommon1);
-        printf("Only in %s: %llu\n", path2, global_uncommon2);
-        fflush(stdout);
-    }
-
-    /* write data to cache files */
+    /* write data to cache files and print summary */
     dcmp_outputs_write(flist3, map1, flist4, map2);
 
     /* free maps of file names to comparison state info */
