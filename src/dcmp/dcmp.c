@@ -27,7 +27,7 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help  - print usage\n");
-    printf("  -l, --lite  - skip comparison beyond output requirement\n");
+    printf("  -b, --base  - do base comparison\n");
     printf("  -o, --output field0=state0@field1=state1,field2=state2:file "
     	   "- write list to file\n");
     printf("\n");
@@ -567,6 +567,11 @@ static void dcmp_strmap_compare(bayer_flist src_list,
             /* file type is different, no need to go any futher */
             dcmp_strmap_item_update(src_map, key, DCMPF_TYPE, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, key, DCMPF_TYPE, DCMPS_DIFFER);
+
+            if (!dcmp_option_need_compare(DCMPF_CONTENT)) {
+                continue;
+            }
+
             /* take them as differ content */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
@@ -576,17 +581,17 @@ static void dcmp_strmap_compare(bayer_flist src_list,
         dcmp_strmap_item_update(src_map, key, DCMPF_TYPE, DCMPS_COMMON);
         dcmp_strmap_item_update(dst_map, key, DCMPF_TYPE, DCMPS_COMMON);
 
+        if (!dcmp_option_need_compare(DCMPF_CONTENT)) {
+            /* Skip if no need to compare content. */
+            continue;
+        }
+
         /* for now, we can only compare contente of regular files */
         /* TODO: add support for symlinks */
         if (! S_ISREG(dst_mode)) {
             /* not regular file, take them as common content */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
-            continue;
-        }
-
-        if (!dcmp_option_need_compare(DCMPF_CONTENT)) {
-            /* Skip if no need to compare content. */
             continue;
         }
 
@@ -623,6 +628,7 @@ static void dcmp_strmap_compare(bayer_flist src_list,
 static void dcmp_strmap_check_src(strmap* src_map,
                                   strmap* dst_map)
 {
+    assert(dcmp_option_need_compare(DCMPF_EXIST));
     /* iterate over each item in source map */
     strmap_node* node;
     strmap_foreach(src_map, node) {
@@ -692,14 +698,16 @@ static void dcmp_strmap_check_src(strmap* src_map,
             } else {
                 /* all stats of source and dest are the same */
                 assert(src_state == dst_state);
-                /* all states are either common or differ */
-                if (!(src_state == DCMPS_COMMON ||
-                    src_state == DCMPS_DIFFER)) {
-                    printf("key %s, field %d, src_state %c\n", key, field,
-                        src_state);
+                /* all states are either common, differ or skiped */
+                if (dcmp_option_need_compare(field)) {
+                    assert(src_state == DCMPS_COMMON ||
+                        src_state == DCMPS_DIFFER);
+                } else {
+                    // XXXX
+                    if (src_state != DCMPS_INIT)
+                        printf("XXX %s wrong state %s\n", dcmp_field_to_string(field, 1), dcmp_state_to_string(src_state, 1));
+                    assert(src_state == DCMPS_INIT);
                 }
-                assert(src_state == DCMPS_COMMON ||
-                    src_state == DCMPS_DIFFER);
             }
         }
     }
@@ -709,6 +717,7 @@ static void dcmp_strmap_check_src(strmap* src_map,
 static void dcmp_strmap_check_dst(strmap* src_map,
     strmap* dst_map)
 {
+    assert(dcmp_option_need_compare(DCMPF_EXIST));
     /* iterate over each item in dest map */
     strmap_node* node;
     strmap_foreach(dst_map, node) {
@@ -779,9 +788,10 @@ static void dcmp_strmap_check_dst(strmap* src_map,
                 assert(dst_state == DCMPS_INIT);
             } else {
                 assert(src_state == dst_state);
-                /* all states are either common or differ */
+                /* all states are either common, differ or skiped */
                 assert(src_state == DCMPS_COMMON ||
-                    src_state == DCMPS_DIFFER);
+                    src_state == DCMPS_DIFFER ||
+                    src_state == DCMPS_INIT);
             }
 
             if (only_dest || dst_exist_state == DCMPS_ONLY_SRC) {
@@ -790,9 +800,13 @@ static void dcmp_strmap_check_dst(strmap* src_map,
             } else {
                 /* all stats of source and dest are the same */
                 assert(src_state == dst_state);
-                /* all states are either common or differ */
-                assert(src_state == DCMPS_COMMON ||
+                /* all states are either common, differ or skiped */
+                if (dcmp_option_need_compare(field)) {
+                    assert(src_state == DCMPS_COMMON ||
                     src_state == DCMPS_DIFFER);
+                } else {
+                    assert(src_state == DCMPS_INIT);
+                }
             }
         }
     }
@@ -850,16 +864,16 @@ struct dcmp_output {
 struct dcmp_options {
     struct list_head outputs;      /* list of outputs */
     int verbose;
-    int lite;                      /* whether to skip unnecessary comparison */
+    int base;                      /* whether to do base check */
     int debug;                     /* check result after get result */
     int need_compare[DCMPF_MAX];   /* fields that need to be compared  */
 };
 
 struct dcmp_options options = {
-    .outputs  = LIST_HEAD_INIT(options.outputs),
-    .verbose  = 0,
-    .lite     = 0,
-    .debug    = 0,
+    .outputs      = LIST_HEAD_INIT(options.outputs),
+    .verbose      = 0,
+    .base         = 0,
+    .debug        = 0,
     .need_compare = {0,}
 };
 
@@ -1217,10 +1231,6 @@ static void dcmp_option_add_comparison(dcmp_field field)
 
 int dcmp_option_need_compare(dcmp_field field)
 {
-    if (options.lite == 0) {
-        return 1;
-    }
-
     return options.need_compare[field];
 }
 
@@ -1521,8 +1531,9 @@ int main(int argc, char **argv)
 
     int option_index = 0;
     static struct option long_options[] = {
+        {"base",     0, 0, 'b'},
+        {"debug",    0, 0, 'd'},
         {"help",     0, 0, 'h'},
-        {"lite",     0, 0, 'l'},
         {"output",   1, 0, 'o'},
         {"verbose",  0, 0, 'v'},
         {0, 0, 0, 0}
@@ -1535,7 +1546,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "hlo:v",
+            argc, argv, "bdho:v",
             long_options, &option_index
         );
 
@@ -1544,19 +1555,20 @@ int main(int argc, char **argv)
         }
 
         switch (c) {
+        case 'b':
+            options.base ++;
+            break;
         case 'd':
             options.debug ++;
-        case 'l':
-            options.lite ++;
-            break;
-        case 'v':
-            options.verbose ++;
             break;
         case 'o':
             ret = dcmp_option_output_parse(optarg, 0);
             if (ret) {
                 usage = 1;
             }
+            break;
+        case 'v':
+            options.verbose ++;
             break;
         case 'h':
         case '?':
@@ -1570,7 +1582,7 @@ int main(int argc, char **argv)
     }
 
     /* Generate default output */
-    if ((!options.lite) || list_empty(&options.outputs)) {
+    if (options.base || list_empty(&options.outputs)) {
         /*
          * If -o option is not given,
          * we want to add default output,
@@ -1638,7 +1650,7 @@ int main(int argc, char **argv)
     dcmp_strmap_compare(flist3, map1, flist4, map2);
 
     /* check the results are valid */
-    if (options.debug && (!options.lite)) {
+    if (options.debug) {
         dcmp_strmap_check(map1, map2);
     }
 
