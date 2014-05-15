@@ -70,7 +70,7 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
     void* buf = DCOPY_user_opts.block_buf1;
 
     /* write data */
-    ssize_t total_bytes = 0;
+    size_t total_bytes = 0;
     size_t chunk_size = DCOPY_user_opts.chunk_size;
     while(total_bytes <= chunk_size) {
         /* determine number of bytes that we can read = max(buf size, remaining chunk) */
@@ -88,12 +88,12 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
         }
 
         /* compute number of bytes to write */
-        size_t bytes_to_write = num_of_bytes_read;
+        size_t bytes_to_write = (size_t) num_of_bytes_read;
         if(DCOPY_user_opts.synchronous) {
             /* O_DIRECT requires particular write sizes,
              * ok to write beyond end of file so long as
              * we truncate in cleanup step */
-            size_t remainder = buf_size - num_of_bytes_read;
+            size_t remainder = buf_size - (size_t) num_of_bytes_read;
             if(remainder > 0) {
                 /* zero out the end of the buffer for security,
                  * don't want to leave data from another file at end of
@@ -111,16 +111,24 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
                                      bytes_to_write);
 
         /* check that we wrote the same number of bytes that we read */
-        if(num_of_bytes_written != bytes_to_write) {
+        if(num_of_bytes_written < 0) {
             BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
                 op->operand, op->dest_full_path, errno, strerror(errno));
             /* Handle operation requeue in parent function. */
             return -1;
         }
 
+        /* check that we wrote the same number of bytes that we read */
+        if((size_t)num_of_bytes_written != bytes_to_write) {
+            BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s'",
+                op->operand, op->dest_full_path);
+            /* Handle operation requeue in parent function. */
+            return -1;
+        }
+
         /* add bytes to our total (use bytes read,
          * which may be less than number written) */
-        total_bytes += num_of_bytes_read;
+        total_bytes += (size_t) num_of_bytes_read;
     }
 
 #if 0
@@ -131,11 +139,11 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
 #endif
 
     /* Increment the global counter. */
-    DCOPY_statistics.total_bytes_copied += total_bytes;
+    DCOPY_statistics.total_bytes_copied += (int64_t) total_bytes;
 
     BAYER_LOG(BAYER_LOG_DBG, "Wrote `%zu' bytes at segment `%" PRId64 \
         "', offset `%" PRId64 "' (`%" PRId64 "' total)",
-        total_bytes, op->chunk, DCOPY_user_opts.chunk_size * op->chunk,
+        total_bytes, op->chunk, (int64_t)DCOPY_user_opts.chunk_size * op->chunk,
         DCOPY_statistics.total_bytes_copied);
 
     return 1;
@@ -156,7 +164,7 @@ void DCOPY_do_copy(DCOPY_operation_t* op,
     }
 
     /* compute starting byte offset */
-    off_t chunk_size = DCOPY_user_opts.chunk_size;
+    off_t chunk_size = (off_t) DCOPY_user_opts.chunk_size;
     off_t offset = chunk_size * op->chunk;
 
     /* hint that we'll read from file sequentially */

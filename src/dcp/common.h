@@ -48,7 +48,7 @@
 
 #if DCOPY_USE_XATTRS
 #include <attr/xattr.h>
-#endif
+#endif /* DCOPY_USE_XATTRS */
 
 /* default mode to create new files or directories */
 #define DCOPY_DEF_PERMS_FILE (S_IRUSR | S_IWUSR)

@@ -122,7 +122,7 @@ void DCOPY_enqueue_work_objects(CIRCLE_handle* handle)
 }
 
 /* check that source and destination paths are valid */
-static void DCOPY_check_paths()
+static void DCOPY_check_paths(void)
 {
     /* assume path parameters are valid */
     int valid = 1;
@@ -308,7 +308,7 @@ void DCOPY_parse_path_args(char** argv, \
      * one or more sources and one destination */
     if(argv == NULL || num_args < 2) {
         if(DCOPY_global_rank == 0) {
-            DCOPY_print_usage(argv);
+            DCOPY_print_usage();
             BAYER_LOG(BAYER_LOG_ERR, "You must specify a source and destination path");
         }
 
@@ -344,7 +344,7 @@ void DCOPY_parse_path_args(char** argv, \
 }
 
 /* frees resources allocated in call to parse_path_args() */
-void DCOPY_free_path_args()
+void DCOPY_free_path_args(void)
 {
     /* free memory associated with destination path */
     bayer_param_path_free(&dest_param);

@@ -734,7 +734,7 @@ dcmp_map_fn(bayer_flist flist, uint64_t index, int ranks, void *args)
     /* identify a rank responsible for this item */
     const char* ptr = name + prefix_len;
     size_t ptr_len = strlen(ptr);
-    uint32_t hash = jenkins_one_at_a_time_hash(ptr, ptr_len);
+    uint32_t hash = bayer_hash_jenkins(ptr, ptr_len);
     int rank = (int) (hash % (uint32_t)ranks);
     return rank;
 }

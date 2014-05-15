@@ -75,7 +75,7 @@ int main(int argc, char* argv[])
 
   /* tell user what we're doing */
   if (rank == 0) {
-    printf("Generating data: files = %d, size = %llu\n", files, size);
+    printf("Generating data: files = %d, size = %llu\n", files, (unsigned long long) size);
     fflush(stdout);
   }
 
@@ -103,14 +103,14 @@ int main(int argc, char* argv[])
   int i;
   for (i = 0; i < myfiles; i++) {
     /* get index within file set */
-    int index = offset + i;
+    int idx = offset + i;
 
     /* fill buffer with some data (unique to each file) */
-    memset(buf, index+1, bufsize);
+    memset(buf, idx+1, bufsize);
 
     /* create a file name */
     char file[256];
-    sprintf(file, "file_%d.dat", index);
+    sprintf(file, "file_%d.dat", idx);
 
     /* create the file and open it for writing */
     int fd = bayer_open(file, O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
@@ -135,7 +135,7 @@ int main(int argc, char* argv[])
           }
 
           /* update amount written */
-          written += n;
+          written += (size_t) n;
       }
 
       /* sync output to disk and close the file */

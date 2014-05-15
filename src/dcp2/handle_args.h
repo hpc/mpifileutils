@@ -14,7 +14,7 @@ void DCOPY_walk_paths(bayer_flist flist);
  * caller must free using bayer_free when done */
 char* DCOPY_build_dest(const char* name);
 
-void DCOPY_free_path_args();
+void DCOPY_free_path_args(void);
 
 void DCOPY_enqueue_work_objects(CIRCLE_handle* handle);
 

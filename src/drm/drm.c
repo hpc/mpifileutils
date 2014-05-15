@@ -73,12 +73,12 @@ static void remove_type(char type, const char* name)
 static void remove_direct(bayer_flist list, uint64_t* rmcount)
 {
     /* each process directly removes its elements */
-    uint64_t index;
+    uint64_t idx;
     uint64_t size = bayer_flist_size(list);
-    for (index = 0; index < size; index++) {
+    for (idx = 0; idx < size; idx++) {
         /* get name and type of item */
-        const char* name = bayer_flist_file_get_name(list, index);
-        bayer_filetype type = bayer_flist_file_get_type(list, index);
+        const char* name = bayer_flist_file_get_name(list, idx);
+        bayer_filetype type = bayer_flist_file_get_type(list, idx);
 
         /* delete item */
         if (type == BAYER_TYPE_DIR) {
@@ -117,7 +117,7 @@ static int get_first_nonzero(const int* buf, int size)
  * improved load balancing */
 static void remove_spread(bayer_flist flist, uint64_t* rmcount)
 {
-    uint64_t index;
+    uint64_t idx;
 
     /* get our rank and number of ranks in job */
     int rank, ranks;
@@ -125,11 +125,12 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
   
     /* allocate memory for alltoall exchanges */
-    int* sendcounts = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* sendsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* senddisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* recvsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* recvdisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    size_t bufsize = (size_t)ranks * sizeof(int);
+    int* sendcounts = (int*) BAYER_MALLOC(bufsize);
+    int* sendsizes  = (int*) BAYER_MALLOC(bufsize);
+    int* senddisps  = (int*) BAYER_MALLOC(bufsize);
+    int* recvsizes  = (int*) BAYER_MALLOC(bufsize);
+    int* recvdisps  = (int*) BAYER_MALLOC(bufsize);
 
     /* get number of items */
     uint64_t my_count  = bayer_flist_size(flist);
@@ -141,8 +142,8 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
 
     /* compute number of bytes we'll send */
     size_t sendbytes = 0;
-    for (index = 0; index < my_count; index++) {
-        const char* name = bayer_flist_file_get_name(flist, index);
+    for (idx = 0; idx < my_count; idx++) {
+        const char* name = bayer_flist_file_get_name(flist, idx);
         size_t len = strlen(name) + 2;
         sendbytes += len;
     }
@@ -152,8 +153,8 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
     uint64_t extra = all_count - low * (uint64_t)ranks;
 
     /* compute number that we'll send to each rank and initialize sendsizes and offsets */
-    int i;
-    for (i = 0; i < ranks; i++) {
+    uint64_t i;
+    for (i = 0; i < (uint64_t)ranks; i++) {
         /* compute starting element id and count for given rank */
         uint64_t start, num;
         if (i < extra) {
@@ -202,10 +203,10 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
     /* copy data into buffer */
     int dest = -1;
     int disp = 0;
-    for (index = 0; index < my_count; index++) {
+    for (idx = 0; idx < my_count; idx++) {
         /* get name and type of item */
-        const char* name = bayer_flist_file_get_name(flist, index);
-        bayer_filetype type = bayer_flist_file_get_type(flist, index);
+        const char* name = bayer_flist_file_get_name(flist, idx);
+        bayer_filetype type = bayer_flist_file_get_type(flist, idx);
 
         /* get rank that we're packing data for */
         if (dest == -1) {
@@ -233,10 +234,11 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
         /* now copy in the path */
         strcpy(&path[1], name);
 
+        /* TODO: check that we don't overflow the int */
         /* add bytes to sendsizes and increase displacement */
         size_t count = strlen(name) + 2;
-        sendsizes[dest] += count;
-        disp += count;
+        sendsizes[dest] += (int) count;
+        disp += (int) count;
 
         /* decrement the count for this rank */
         sendcounts[dest]--;
@@ -247,7 +249,7 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
 
     /* compute displacements */
     senddisps[0] = 0;
-    for (i = 1; i < ranks; i++) {
+    for (i = 1; i < (uint64_t)ranks; i++) {
         senddisps[i] = senddisps[i-1] + sendsizes[i-1];
     }
 
@@ -257,8 +259,8 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
     /* compute size of recvbuf and displacements */
     size_t recvbytes = 0;
     recvdisps[0] = 0;
-    for (i = 0; i < ranks; i++) {
-        recvbytes += recvsizes[i];
+    for (i = 0; i < (uint64_t)ranks; i++) {
+        recvbytes += (size_t) recvsizes[i];
         if (i > 0) {
             recvdisps[i] = recvdisps[i-1] + recvsizes[i-1];
         }
@@ -302,16 +304,16 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
 
 /* we hash file names based on its parent directory to map all
  * files in the same directory to the same process */
-static int map_name(bayer_flist flist, uint64_t index, int ranks, void *args)
+static int map_name(bayer_flist flist, uint64_t idx, int ranks, void *args)
 {
     /* get name of item */
-    const char* name = bayer_flist_file_get_name(flist, index);
+    const char* name = bayer_flist_file_get_name(flist, idx);
 
     /* identify rank to send this file to */
     char* dir = BAYER_STRDUP(name);
     dirname(dir);
     size_t dir_len = strlen(dir);
-    uint32_t hash = jenkins_one_at_a_time_hash(dir, dir_len);
+    uint32_t hash = bayer_hash_jenkins(dir, dir_len);
     int rank = (int) (hash % (uint32_t)ranks);
     bayer_free(&dir);
     return rank;
@@ -342,7 +344,7 @@ static void remove_map(bayer_flist list, uint64_t* rmcount)
 static void remove_sort(bayer_flist list, uint64_t* rmcount)
 {
     /* bail out if total count is 0 */
-    int64_t all_count = bayer_flist_global_size(list);
+    uint64_t all_count = bayer_flist_global_size(list);
     if (all_count == 0) {
         return;
     }
@@ -364,20 +366,20 @@ static void remove_sort(bayer_flist list, uint64_t* rmcount)
 
     /* allocate send buffer */
     int sendcount = (int) my_count;
-    size_t sendbufsize = sendcount * (chars + 1);
+    size_t sendbufsize = (size_t) (sendcount * (chars + 1));
     char* sendbuf = (char*) BAYER_MALLOC(sendbufsize);
 
     /* copy data into buffer */
     char* ptr = sendbuf;
-    uint64_t index;
-    for (index = 0; index < my_count; index++) {
+    uint64_t idx;
+    for (idx = 0; idx < my_count; idx++) {
         /* encode the filename first */
-        const char* name = bayer_flist_file_get_name(list, index);
+        const char* name = bayer_flist_file_get_name(list, idx);
         strcpy(ptr, name);
         ptr += chars;
 
         /* last character encodes item type */
-        bayer_filetype type = bayer_flist_file_get_type(list, index);
+        bayer_filetype type = bayer_flist_file_get_type(list, idx);
         if (type == BAYER_TYPE_DIR) {
             ptr[0] = 'd';
         } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
@@ -415,7 +417,7 @@ static void remove_sort(bayer_flist list, uint64_t* rmcount)
     }
 
     /* record number of items we deleted */
-    *rmcount = delcount;
+    *rmcount = (uint64_t) delcount;
 
     /* free output data */
     DTCMP_Free(&handle);
@@ -446,12 +448,12 @@ static void remove_create(CIRCLE_handle* handle)
     char path[CIRCLE_MAX_STRING_LEN];
 
     /* enqueues all items at rm_depth to be deleted */
-    uint64_t index;
+    uint64_t idx;
     uint64_t size = bayer_flist_size(circle_list);
-    for (index = 0; index < size; index++) {
+    for (idx = 0; idx < size; idx++) {
         /* get name and type of item */
-        const char* name = bayer_flist_file_get_name(circle_list, index);
-        bayer_filetype type = bayer_flist_file_get_type(circle_list, index);
+        const char* name = bayer_flist_file_get_name(circle_list, idx);
+        bayer_filetype type = bayer_flist_file_get_type(circle_list, idx);
 
         /* encode type */
         if (type == BAYER_TYPE_DIR) {
@@ -562,16 +564,16 @@ static void remove_files(bayer_flist flist)
         int detail = bayer_flist_have_detail(list);
 
         /* iterate over items and set write bit on directories if needed */
-        uint64_t index;
+        uint64_t idx;
         uint64_t size = bayer_flist_size(list);
-        for (index = 0; index < size; index++) {
+        for (idx = 0; idx < size; idx++) {
             /* check whether we have a directory */
-            bayer_filetype type = bayer_flist_file_get_type(list, index);
+            bayer_filetype type = bayer_flist_file_get_type(list, idx);
             if (type == BAYER_TYPE_DIR) {
                 /* assume we have to set the bit */
                 int set_write_bit = 1;
                 if (detail) {
-                    mode_t mode = (mode_t) bayer_flist_file_get_mode(list, index);
+                    mode_t mode = (mode_t) bayer_flist_file_get_mode(list, idx);
                     if (mode & S_IWUSR) {
                         /* we have the mode of the file, and the bit is already set */
                         set_write_bit = 0;
@@ -580,7 +582,7 @@ static void remove_files(bayer_flist flist)
 
                 /* set the bit if needed */
                 if (set_write_bit) {
-                    const char* name = bayer_flist_file_get_name(list, index);
+                    const char* name = bayer_flist_file_get_name(list, idx);
                     int rc = chmod(name, S_IRWXU);
                     if (rc != 0) {
                         BAYER_LOG(BAYER_LOG_ERR, "Failed to chmod directory `%s' (errno=%d %s)",
@@ -625,10 +627,10 @@ static void remove_files(bayer_flist flist)
             if (end - start > 0.0) {
               rate = (double)sum / (end - start);
             }
-            double time = end - start;
+            double time_diff = end - start;
             if (rank == 0) {
                 printf("level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
-                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time
+                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
                 );
                 fflush(stdout);
             }
@@ -640,7 +642,7 @@ static void remove_files(bayer_flist flist)
     return;
 }
 
-static void print_usage()
+static void print_usage(void)
 {
     printf("\n");
     printf("Usage: drm [options] <path> ...\n");
@@ -726,7 +728,7 @@ int main(int argc, char **argv)
         numpaths = argc - optind;
 
         /* allocate space for each path */
-        paths = (bayer_param_path*) BAYER_MALLOC(numpaths * sizeof(bayer_param_path));
+        paths = (bayer_param_path*) BAYER_MALLOC((size_t)numpaths * sizeof(bayer_param_path));
 
         /* process each path */
         for (i = 0; i < numpaths; i++) {
@@ -795,13 +797,13 @@ int main(int argc, char **argv)
         /* report walk count, time, and rate */
         if (verbose && rank == 0) {
             uint64_t all_count = bayer_flist_global_size(flist);
-            double time = end_walk - start_walk;
+            double time_diff = end_walk - start_walk;
             double rate = 0.0;
-            if (time > 0.0) {
-                rate = ((double)all_count) / time;
+            if (time_diff > 0.0) {
+                rate = ((double)all_count) / time_diff;
             }
             printf("Walked %lu files in %f seconds (%f files/sec)\n",
-                all_count, time, rate
+                all_count, time_diff, rate
             );
         }
     } else {
@@ -813,13 +815,13 @@ int main(int argc, char **argv)
         /* report read count, time, and rate */
         if (verbose && rank == 0) {
             uint64_t all_count = bayer_flist_global_size(flist);
-            double time = end_read - start_read;
+            double time_diff = end_read - start_read;
             double rate = 0.0;
-            if (time > 0.0) {
-                rate = ((double)all_count) / time;
+            if (time_diff > 0.0) {
+                rate = ((double)all_count) / time_diff;
             }
             printf("Read %lu files in %f seconds (%f files/sec)\n",
-                all_count, time, rate
+                all_count, time_diff, rate
             );
         }
     }
@@ -832,13 +834,13 @@ int main(int argc, char **argv)
     /* report remove count, time, and rate */
     if (verbose && rank == 0) {
         uint64_t all_count = bayer_flist_global_size(flist);
-        double time = end_remove - start_remove;
+        double time_diff = end_remove - start_remove;
         double rate = 0.0;
-        if (time > 0.0) {
-            rate = ((double)all_count) / time;
+        if (time_diff > 0.0) {
+            rate = ((double)all_count) / time_diff;
         }
         printf("Removed %lu files in %f seconds (%f files/sec)\n",
-            all_count, time, rate
+            all_count, time_diff, rate
         );
     }
 

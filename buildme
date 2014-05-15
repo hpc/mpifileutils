@@ -23,7 +23,7 @@ export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
 export CC=mpicc
 
 # hack to get things to build after common library
-export CFLAGS="-I${topdir}/src/common"
+export CFLAGS="-I${topdir}/src/common -DDCOPY_USE_XATTRS"
 export LDFLAGS="-Wl,-rpath,${topdir}/install/lib -L${topdir}/install/lib -lcircle"
 
 ../configure \

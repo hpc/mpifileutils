@@ -161,6 +161,9 @@ void bayer_pack_uint64(char** pptr, uint64_t value);
  * host order and advance pointer */
 void bayer_unpack_uint64(const char** pptr, uint64_t* value);
 
+/* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
+uint32_t bayer_hash_jenkins(const char* key, size_t len);
+
 #endif /* BAYER_UTIL_H */
 
 /* enable C++ codes to include this header directly */

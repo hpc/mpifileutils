@@ -74,7 +74,7 @@ pushd libcircle.git
   git pull --tags origin master
 # comment me to get most recent version of libcircle
 # uncomment me to get specific tagged version libcircle
-#  git checkout v0.1.0-rc.1
+  git checkout 0.2.0-rc.1
   export CFLAGS=${OPT}
   ./configure \
     --prefix=$installdir \

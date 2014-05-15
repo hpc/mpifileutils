@@ -65,7 +65,7 @@ static bayer_param_path  dest_param;
  */
 
 /* check that source and destination paths are valid */
-static void DCOPY_check_paths()
+static void DCOPY_check_paths(void)
 {
     /* assume path parameters are valid */
     int valid = 1;
@@ -251,7 +251,7 @@ void DCOPY_parse_path_args(char** argv, \
      * one or more sources and one destination */
     if(argv == NULL || num_args < 2) {
         if(DCOPY_global_rank == 0) {
-            DCOPY_print_usage(argv);
+            DCOPY_print_usage();
             BAYER_LOG(BAYER_LOG_ERR, "You must specify a source and destination path");
         }
 
@@ -307,7 +307,7 @@ char* DCOPY_build_dest(const char* name)
 {
     /* identify which source directory this came from */
     int i;
-    int index = -1;
+    int idx = -1;
     for (i = 0; i < num_src_params; i++) {
         /* get path for step */
         const char* path = src_params[i].path;
@@ -317,13 +317,13 @@ char* DCOPY_build_dest(const char* name)
 
         /* see if name is a child of path */
         if (strncmp(path, name, len) == 0) {
-            index = i;
+            idx = i;
             break;
         }
     }
 
     /* hopefully this won't happen... */
-    if (index == -1) {
+    if (idx == -1) {
         return NULL;
     }
 
@@ -366,7 +366,7 @@ char* DCOPY_build_dest(const char* name)
 }
 
 /* frees resources allocated in call to parse_path_args() */
-void DCOPY_free_path_args()
+void DCOPY_free_path_args(void)
 {
     /* free memory associated with destination path */
     bayer_param_path_free(&dest_param);

@@ -5,6 +5,6 @@
 
 #include "common.h"
 
-void DCOPY_print_usage(char** argv);
+void DCOPY_print_usage(void);
 
 #endif /* __DCP_H_ */

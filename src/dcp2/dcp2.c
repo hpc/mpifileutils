@@ -236,13 +236,13 @@ static int create_directories(int levels, int minlevel, bayer_flist* lists)
             MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
             MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
             double rate = 0.0;
-            double time_diff = end - start;
-            if (time_diff > 0.0) {
-              rate = (double)sum / time_diff;
+            double secs = end - start;
+            if (secs > 0.0) {
+              rate = (double)sum / secs;
             }
             if (rank == 0) {
                 printf("  level=%d min=%lu max=%lu sum=%lu rate=%f/sec secs=%f\n",
-                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time
+                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
                 );
                 fflush(stdout);
             }
@@ -374,9 +374,6 @@ static int create_files(int levels, int minlevel, bayer_flist* lists)
         /* get list of items for this level */
         bayer_flist list = lists[level];
 
-        /* determine whether we have details at this level */
-        int detail = bayer_flist_have_detail(list);
-
         /* iterate over items and set write bit on directories if needed */
         uint64_t idx;
         uint64_t size = bayer_flist_size(list);
@@ -409,13 +406,13 @@ static int create_files(int levels, int minlevel, bayer_flist* lists)
             MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
             MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
             double rate = 0.0;
-            double time_diff = end - start;
-            if (time_diff > 0.0) {
-              rate = (double)sum / time_diff;
+            double secs = end - start;
+            if (secs > 0.0) {
+              rate = (double)sum / secs;
             }
             if (rank == 0) {
                 printf("  level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
-                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
+                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
                 );
                 fflush(stdout);
             }
@@ -425,7 +422,7 @@ static int create_files(int levels, int minlevel, bayer_flist* lists)
     return rc;
 }
 
-int map_chunk_to_rank(uint64_t offset, uint64_t cutoff, uint64_t chunks_per_rank)
+static int map_chunk_to_rank(uint64_t offset, uint64_t cutoff, uint64_t chunks_per_rank)
 {
     /* total number of chunks held by ranks below cutoff */
     uint64_t cutoff_coverage = cutoff * (chunks_per_rank + 1);
@@ -471,8 +468,11 @@ static int copy_file(
     /* get chunk size for copying files */
     size_t chunk_size = (size_t)DCOPY_user_opts.chunk_size;
 
+    uint64_t chunks = 0;
+    while (chunks < chunk_count) {
+
     /* get offset into file */
-    off_t offset = chunk_size * (off_t) chunk_offset;
+    off_t offset = (off_t) (chunk_size * (chunk_offset + chunks));
 
     /* seek to offset in source file */
     if(bayer_lseek(src, in_fd, offset, SEEK_SET) == (off_t)-1) {
@@ -493,7 +493,7 @@ static int copy_file(
     void* buf = DCOPY_user_opts.block_buf1;
 
     /* write data */
-    ssize_t total_bytes = 0;
+    size_t total_bytes = 0;
     while(total_bytes <= chunk_size) {
         /* determine number of bytes that we
          * can read = max(buf size, remaining chunk) */
@@ -511,12 +511,12 @@ static int copy_file(
         }
 
         /* compute number of bytes to write */
-        size_t bytes_to_write = num_of_bytes_read;
+        size_t bytes_to_write = (size_t) num_of_bytes_read;
         if(DCOPY_user_opts.synchronous) {
             /* O_DIRECT requires particular write sizes,
              * ok to write beyond end of file so long as
              * we truncate in cleanup step */
-            size_t remainder = buf_size - num_of_bytes_read;
+            size_t remainder = buf_size - (size_t) num_of_bytes_read;
             if(remainder > 0) {
                 /* zero out the end of the buffer for security,
                  * don't want to leave data from another file at end of
@@ -533,21 +533,32 @@ static int copy_file(
         ssize_t num_of_bytes_written = bayer_write(dest, out_fd, buf,
                                      bytes_to_write);
 
-        /* check that we wrote the same number of bytes that we read */
-        if(num_of_bytes_written != bytes_to_write) {
+        /* check for an error */
+        if(num_of_bytes_written < 0) {
             BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
                 src, dest, errno, strerror(errno));
             return -1;
         }
 
+        /* check that we wrote the same number of bytes that we read */
+        if((size_t)num_of_bytes_written != bytes_to_write) {
+            BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s'",
+                src, dest);
+            return -1;
+        }
+
         /* add bytes to our total (use bytes read,
          * which may be less than number written) */
-        total_bytes += num_of_bytes_read;
+        total_bytes += (size_t) num_of_bytes_read;
     }
 
     /* Increment the global counter. */
-    DCOPY_statistics.total_size += total_bytes;
-    DCOPY_statistics.total_bytes_copied += total_bytes;
+    DCOPY_statistics.total_size += (int64_t) total_bytes;
+    DCOPY_statistics.total_bytes_copied += (int64_t) total_bytes;
+
+    /* go to next chunk */
+    chunks++;
+    }
 
 #if 0
     /* force data to file system */
@@ -557,11 +568,14 @@ static int copy_file(
 #endif
 
     /* if we wrote the last chunk, truncate the file */
+    off_t last_written = (off_t) (chunk_size * (chunk_offset + chunk_count));
     off_t file_size_offt = (off_t) file_size;
-    if(truncate64(dest, file_size_offt) < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
-            dest, errno, strerror(errno));
-        return -1;
+    if (last_written >= file_size_offt || file_size == 0) {
+        if(truncate64(dest, file_size_offt) < 0) {
+            BAYER_LOG(BAYER_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
+                dest, errno, strerror(errno));
+            return -1;
+       }
     }
 
     /* we don't bother closing the file because our cache does it for us */
@@ -583,7 +597,7 @@ typedef struct copy_elem_struct {
   struct copy_elem_struct* next;
 } copy_elem;
 
-void copy_files(bayer_flist list)
+static void copy_files(bayer_flist list)
 {
     /* get our rank and number of ranks */
     int rank, ranks;
@@ -609,11 +623,11 @@ void copy_files(bayer_flist list)
         /* if we have a file, add up its chunks */
         if (type == BAYER_TYPE_FILE) {
             /* get size of file */
-            uint64_t size = bayer_flist_file_get_size(list, idx);
+            uint64_t file_size = bayer_flist_file_get_size(list, idx);
 
             /* compute number of chunks to copy for this file */
-            uint64_t chunks = size / chunk_size;
-            if (chunks * chunk_size < size || size == 0) {
+            uint64_t chunks = file_size / chunk_size;
+            if (chunks * chunk_size < file_size || file_size == 0) {
                 /* this accounts for the last chunk, which may be
                  * partial or it adds a chunk for 0-size files */
                 chunks++;
@@ -648,8 +662,8 @@ void copy_files(bayer_flist list)
      * we'll set a flag to 1 if we have data for that rank
      * and set it to 0 otherwise, then we'll exchange flags
      * with an alltoall */
-    int* sendlist = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* recvlist = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    int* sendlist = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
+    int* recvlist = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
 
     /* assume we won't send to any ranks,
      * so initialize all ranks to 0 */
@@ -680,11 +694,11 @@ void copy_files(bayer_flist list)
     }
 
     /* allocate a linked list for each process we'll send to */
-    copy_elem** heads = (copy_elem**) BAYER_MALLOC(send_ranks * sizeof(copy_elem*));
-    copy_elem** tails = (copy_elem**) BAYER_MALLOC(send_ranks * sizeof(copy_elem*));
-    uint64_t* counts  = (uint64_t*)   BAYER_MALLOC(send_ranks * sizeof(uint64_t));
-    uint64_t* bytes   = (uint64_t*)   BAYER_MALLOC(send_ranks * sizeof(uint64_t));
-    char** sendbufs   = (char**)      BAYER_MALLOC(send_ranks * sizeof(char*));
+    copy_elem** heads = (copy_elem**) BAYER_MALLOC((size_t)send_ranks * sizeof(copy_elem*));
+    copy_elem** tails = (copy_elem**) BAYER_MALLOC((size_t)send_ranks * sizeof(copy_elem*));
+    uint64_t* counts  = (uint64_t*)   BAYER_MALLOC((size_t)send_ranks * sizeof(uint64_t));
+    uint64_t* bytes   = (uint64_t*)   BAYER_MALLOC((size_t)send_ranks * sizeof(uint64_t));
+    char** sendbufs   = (char**)      BAYER_MALLOC((size_t)send_ranks * sizeof(char*));
 
     /* initialize values */
     for (i = 0; i < send_ranks; i++) {
@@ -706,11 +720,11 @@ void copy_files(bayer_flist list)
         /* if we have a file, add up its chunks */
         if (type == BAYER_TYPE_FILE) {
             /* get size of file */
-            uint64_t size = bayer_flist_file_get_size(list, idx);
+            uint64_t file_size = bayer_flist_file_get_size(list, idx);
 
             /* compute number of chunks to copy for this file */
-            uint64_t chunks = size / chunk_size;
-            if (chunks * chunk_size < size || size == 0) {
+            uint64_t chunks = file_size / chunk_size;
+            if (chunks * chunk_size < file_size || file_size == 0) {
                 chunks++;
             }
 
@@ -741,7 +755,7 @@ void copy_files(bayer_flist list)
                     elem->name         = bayer_flist_file_get_name(list, idx);
                     elem->chunk_offset = chunk_id;
                     elem->chunk_count  = 1;
-                    elem->file_size    = size;
+                    elem->file_size    = file_size;
                     elem->next         = NULL;
 
                     /* compute bytes needed to pack this item,
@@ -792,15 +806,15 @@ void copy_files(bayer_flist list)
  
     /* determine number of messages we'll have outstanding */
     int msgs = send_ranks + recv_ranks;
-    MPI_Request* request = (MPI_Request*) BAYER_MALLOC(msgs * sizeof(MPI_Request));
-    MPI_Status*  status  = (MPI_Status*)  BAYER_MALLOC(msgs * sizeof(MPI_Status));
+    MPI_Request* request = (MPI_Request*) BAYER_MALLOC((size_t)msgs * sizeof(MPI_Request));
+    MPI_Status*  status  = (MPI_Status*)  BAYER_MALLOC((size_t)msgs * sizeof(MPI_Status));
 
     /* create storage to hold byte counts that we'll send
      * and receive, it would be best to use uint64_t here
      * but for that, we'd need to create a datatypen,
      * with an int, we should be careful we don't overflow */
-    int* send_counts = (int*) BAYER_MALLOC(send_ranks * sizeof(int));
-    int* recv_counts = (int*) BAYER_MALLOC(recv_ranks * sizeof(int));
+    int* send_counts = (int*) BAYER_MALLOC((size_t)send_ranks * sizeof(int));
+    int* recv_counts = (int*) BAYER_MALLOC((size_t)recv_ranks * sizeof(int));
 
     /* initialize our send counts */
     for (i = 0; i < send_ranks; i++) {
@@ -879,18 +893,18 @@ void copy_files(bayer_flist list)
     MPI_Waitall(msgs, request, status);
 
     /* iterate over all received data */
-    recvptr = recvbuf;
+    const char* packptr = recvbuf;
     char* recvbuf_end = recvbuf + recvbuf_size;
-    while (recvptr < recvbuf_end) {
+    while (packptr < recvbuf_end) {
         /* unpack file name */
-        const char* name = recvptr;
-        recvptr += strlen(name) + 1;
+        const char* name = packptr;
+        packptr += strlen(name) + 1;
 
         /* unpack chunk offset, count, and file size */
         uint64_t chunk_offset, chunk_count, file_size;
-        bayer_unpack_uint64(&recvptr, &chunk_offset);
-        bayer_unpack_uint64(&recvptr, &chunk_count);
-        bayer_unpack_uint64(&recvptr, &file_size);
+        bayer_unpack_uint64(&packptr, &chunk_offset);
+        bayer_unpack_uint64(&packptr, &chunk_count);
+        bayer_unpack_uint64(&packptr, &file_size);
 
         /* get name of destination file */
         char* dest_path = DCOPY_build_dest(name);
@@ -976,7 +990,7 @@ static void DCOPY_set_metadata(int levels, int minlevel, bayer_flist* lists)
             }
 
             /* get destination name of item */
-            char* name = bayer_flist_file_get_name(list, idx);
+            const char* name = bayer_flist_file_get_name(list, idx);
             char* dest = DCOPY_build_dest(name);
 
             if(DCOPY_user_opts.preserve) {
@@ -1005,7 +1019,7 @@ static void DCOPY_set_metadata(int levels, int minlevel, bayer_flist* lists)
 /**
  * Print the current version.
  */
-static void DCOPY_print_version()
+static void DCOPY_print_version(void)
 {
     fprintf(stdout, "%s-%s\n", PACKAGE_NAME, PACKAGE_VERSION);
 }
@@ -1013,7 +1027,7 @@ static void DCOPY_print_version()
 /**
  * Print a usage message.
  */
-void DCOPY_print_usage(char** argv)
+void DCOPY_print_usage(void)
 {
     /* The compare option isn't really effective because it often
      * reads from the page cache and not the disk, which gives a
@@ -1177,7 +1191,7 @@ int main(int argc, \
 
             case 'h':
                 if(DCOPY_global_rank == 0) {
-                    DCOPY_print_usage(argv);
+                    DCOPY_print_usage();
                 }
 
                 DCOPY_exit(EXIT_SUCCESS);
@@ -1213,16 +1227,16 @@ int main(int argc, \
             default:
                 if(DCOPY_global_rank == 0) {
                     if(optopt == 'd') {
-                        DCOPY_print_usage(argv);
+                        DCOPY_print_usage();
                         fprintf(stderr, "Option -%c requires an argument.\n", \
                                 optopt);
                     }
                     else if(isprint(optopt)) {
-                        DCOPY_print_usage(argv);
+                        DCOPY_print_usage();
                         fprintf(stderr, "Unknown option `-%c'.\n", optopt);
                     }
                     else {
-                        DCOPY_print_usage(argv);
+                        DCOPY_print_usage();
                         fprintf(stderr,
                                 "Unknown option character `\\x%x'.\n",
                                 optopt);

@@ -374,3 +374,18 @@ void bayer_unpack_uint64(const char** pptr, uint64_t* value)
   *value = *ptr;
   *pptr += 8;
 }
+
+/* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
+uint32_t bayer_hash_jenkins(const char *key, size_t len)
+{
+    uint32_t hash, i;
+    for(hash = i = 0; i < len; ++i) {
+        hash += ((unsigned char) key[i]);
+        hash += (hash << 10);
+        hash ^= (hash >> 6);
+    }
+    hash += (hash << 3);
+    hash ^= (hash >> 11);
+    hash += (hash << 15);
+    return hash;
+}

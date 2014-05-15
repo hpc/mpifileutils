@@ -90,7 +90,7 @@ char* DCOPY_encode_operation(DCOPY_operation_code_t code, \
 
     /* snprintf returns number of bytes written excluding terminating NUL,
      * so if we're equal, we'd write one byte too many */
-    if(written >= remaining) {
+    if((size_t)written >= remaining) {
         BAYER_LOG(BAYER_LOG_ERR, \
             "Exceeded libcircle message size due to large file path. " \
             "This is a known bug in dcp that we intend to fix. Sorry!");
@@ -100,7 +100,7 @@ char* DCOPY_encode_operation(DCOPY_operation_code_t code, \
     /* update pointer and number of bytes remaining,
      * note that we don't include the terminating NUL in this case */
     ptr += written;
-    remaining -= written;
+    remaining -= (size_t) written;
 
     /* tack on destination base appendix if we have one */
     if(dest_base_appendix) {
@@ -109,7 +109,7 @@ char* DCOPY_encode_operation(DCOPY_operation_code_t code, \
 
         /* snprintf returns number of bytes written excluding terminating NUL,
          * so if we're equal, we'd write one byte too many */
-        if(written >= remaining) {
+        if((size_t)written >= remaining) {
             BAYER_LOG(BAYER_LOG_ERR, \
                 "Exceeded libcircle message size due to large file path. " \
                 "This is a known bug in dcp that we intend to fix. Sorry!");
@@ -119,7 +119,7 @@ char* DCOPY_encode_operation(DCOPY_operation_code_t code, \
         /* update pointer and number of bytes remaining,
          * note that we don't include the terminating NUL in this case */
         ptr += written;
-        remaining -= written;
+        remaining -= (size_t) written;
     }
 
     return op;
@@ -222,7 +222,7 @@ DCOPY_operation_t* DCOPY_decode_operation(char* op)
     }
 
     /* fail if we would have overwritten the buffer */
-    if(written >= sizeof(dest_path_recursive)) {
+    if((size_t)written >= sizeof(dest_path_recursive)) {
         BAYER_LOG(BAYER_LOG_ERR, "Destination path buffer too small");
         DCOPY_abort(EXIT_FAILURE);
     }
@@ -258,7 +258,7 @@ void DCOPY_opt_free(DCOPY_operation_t** optptr)
     return;
 }
 
-int DCOPY_open_file(const char* file, int read, DCOPY_file_cache_t* cache)
+int DCOPY_open_file(const char* file, int read_flag, DCOPY_file_cache_t* cache)
 {
     int newfd = -1;
 
@@ -267,7 +267,7 @@ int DCOPY_open_file(const char* file, int read, DCOPY_file_cache_t* cache)
     if (name != NULL) {
         /* we have a cached file descriptor */
         int fd = cache->fd;
-        if (strcmp(name, file) == 0 && cache->read == read) {
+        if (strcmp(name, file) == 0 && cache->read == read_flag) {
             /* the file we're trying to open matches name and read/write mode,
              * so just return the cached descriptor */
             return fd;
@@ -280,7 +280,7 @@ int DCOPY_open_file(const char* file, int read, DCOPY_file_cache_t* cache)
     }
 
     /* open the new file */
-    if (read) {
+    if (read_flag) {
         int flags = O_RDONLY;
         if (DCOPY_user_opts.synchronous) {
             flags |= O_DIRECT;
@@ -298,7 +298,7 @@ int DCOPY_open_file(const char* file, int read, DCOPY_file_cache_t* cache)
     if (newfd != -1) {
         cache->name = BAYER_STRDUP(file);
         cache->fd   = newfd;
-        cache->read = read;
+        cache->read = read_flag;
     }
 
     return newfd;
@@ -428,7 +428,7 @@ void DCOPY_copy_xattrs(
 
             /* set attribute on destination object */
             if(got_val) {
-                int setrc = lsetxattr(dest_path, name, val, val_size, 0);
+                int setrc = lsetxattr(dest_path, name, val, (size_t) val_size, 0);
 
                 if(setrc != 0) {
                     BAYER_LOG(BAYER_LOG_ERR, "Failed to set value for name=%s on %s llistxattr() errno=%d %s",
@@ -499,9 +499,9 @@ void DCOPY_copy_timestamps(
     const char* dest_path)
 {
     /* read atime, mtime, and ctime second values from stat */
-    uint64_t atime = (uint64_t) statbuf->st_atime;
-    uint64_t mtime = (uint64_t) statbuf->st_mtime;
-    uint64_t ctime = (uint64_t) statbuf->st_ctime;
+    uint64_t atime_sec = (uint64_t) statbuf->st_atime;
+    uint64_t mtime_sec = (uint64_t) statbuf->st_mtime;
+    uint64_t ctime_sec = (uint64_t) statbuf->st_ctime;
 
     /* now read nanoseconds if we can */
     uint64_t atime_nsec, mtime_nsec, ctime_nsec;
@@ -533,9 +533,9 @@ void DCOPY_copy_timestamps(
 
     /* fill in time structures */
     struct timespec times[2];
-    times[0].tv_sec  = (time_t) atime;
+    times[0].tv_sec  = (time_t) atime_sec;
     times[0].tv_nsec = (long)   atime_nsec;
-    times[1].tv_sec  = (time_t) mtime;
+    times[1].tv_sec  = (time_t) mtime_sec;
     times[1].tv_nsec = (long)   mtime_nsec;
 
     /* set times with nanosecond precision using utimensat,

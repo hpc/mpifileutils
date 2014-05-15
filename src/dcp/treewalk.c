@@ -113,7 +113,7 @@ static void DCOPY_stat_process_file(DCOPY_operation_t* op,
     BAYER_LOG(BAYER_LOG_DBG, "File `%s' size is `%" PRId64 \
         "' with chunks `%" PRId64 "' (total `%" PRId64 "')", \
         op->operand, file_size, num_chunks, \
-        num_chunks * DCOPY_user_opts.chunk_size);
+        num_chunks * (int64_t)DCOPY_user_opts.chunk_size);
 
     const char* dest_path = op->dest_full_path;
 
@@ -156,7 +156,7 @@ static void DCOPY_stat_process_file(DCOPY_operation_t* op,
     }
 
     /* Encode and enqueue the last partial chunk. */
-    if((num_chunks * DCOPY_user_opts.chunk_size) < file_size || num_chunks == 0) {
+    if((num_chunks * (int64_t)DCOPY_user_opts.chunk_size) < file_size || num_chunks == 0) {
         char* newop = DCOPY_encode_operation(COPY, chunk_index, op->operand, \
                                              op->source_base_offset, \
                                              op->dest_base_appendix, file_size);

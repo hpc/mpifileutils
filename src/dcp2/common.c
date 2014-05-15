@@ -25,7 +25,7 @@ DCOPY_file_cache_t DCOPY_dst_cache;
 /** What rank the current process is. */
 int DCOPY_global_rank;
 
-int DCOPY_open_file(const char* file, int read, DCOPY_file_cache_t* cache)
+int DCOPY_open_file(const char* file, int read_flag, DCOPY_file_cache_t* cache)
 {
     int newfd = -1;
 
@@ -34,7 +34,7 @@ int DCOPY_open_file(const char* file, int read, DCOPY_file_cache_t* cache)
     if (name != NULL) {
         /* we have a cached file descriptor */
         int fd = cache->fd;
-        if (strcmp(name, file) == 0 && cache->read == read) {
+        if (strcmp(name, file) == 0 && cache->read == read_flag) {
             /* the file we're trying to open matches name and read/write mode,
              * so just return the cached descriptor */
             return fd;
@@ -47,7 +47,7 @@ int DCOPY_open_file(const char* file, int read, DCOPY_file_cache_t* cache)
     }
 
     /* open the new file */
-    if (read) {
+    if (read_flag) {
         int flags = O_RDONLY;
         if (DCOPY_user_opts.synchronous) {
             flags |= O_DIRECT;
@@ -65,7 +65,7 @@ int DCOPY_open_file(const char* file, int read, DCOPY_file_cache_t* cache)
     if (newfd != -1) {
         cache->name = BAYER_STRDUP(file);
         cache->fd   = newfd;
-        cache->read = read;
+        cache->read = read_flag;
     }
 
     return newfd;
@@ -81,8 +81,8 @@ int DCOPY_close_file(DCOPY_file_cache_t* cache)
         int fd = cache->fd;
 
         /* if open for write, fsync */
-        int read = cache->read;
-        if (! read) {
+        int read_flag = cache->read;
+        if (! read_flag) {
             rc = bayer_fsync(name, fd);
         }
 
@@ -97,12 +97,12 @@ int DCOPY_close_file(DCOPY_file_cache_t* cache)
 /* copy all extended attributes from op->operand to dest_path */
 void DCOPY_copy_xattrs(
     bayer_flist flist,
-    uint64_t index,
+    uint64_t idx,
     const char* dest_path)
 {
 #if DCOPY_USE_XATTRS
     /* get source file name */
-    char* src_path = bayer_flist_file_get_name(flist, index);
+    const char* src_path = bayer_flist_file_get_name(flist, idx);
 
     /* start with a reasonable buffer, we'll allocate more as needed */
     size_t list_bufsize = 1204;
@@ -202,7 +202,7 @@ void DCOPY_copy_xattrs(
 
             /* set attribute on destination object */
             if(got_val) {
-                int setrc = lsetxattr(dest_path, name, val, val_size, 0);
+                int setrc = lsetxattr(dest_path, name, val, (size_t) val_size, 0);
 
                 if(setrc != 0) {
                     BAYER_LOG(BAYER_LOG_ERR, "Failed to set value for name=%s on %s llistxattr() errno=%d %s",
@@ -231,12 +231,12 @@ void DCOPY_copy_xattrs(
 
 void DCOPY_copy_ownership(
     bayer_flist flist,
-    uint64_t index,
+    uint64_t idx,
     const char* dest_path)
 {
     /* get user id and group id of file */
-    uid_t uid = (uid_t) bayer_flist_file_get_uid(flist, index);
-    gid_t gid = (gid_t) bayer_flist_file_get_gid(flist, index);
+    uid_t uid = (uid_t) bayer_flist_file_get_uid(flist, idx);
+    gid_t gid = (gid_t) bayer_flist_file_get_gid(flist, idx);
 
     /* note that we use lchown to change ownership of link itself, it path happens to be a link */
     if(bayer_lchown(dest_path, uid, gid) != 0) {
@@ -259,12 +259,12 @@ void DCOPY_copy_ownership(
 /* TODO: condionally set setuid and setgid bits? */
 void DCOPY_copy_permissions(
     bayer_flist flist,
-    uint64_t index,
+    uint64_t idx,
     const char* dest_path)
 {
     /* get mode and type */
-    bayer_filetype type = bayer_flist_file_get_type(flist, index);
-    mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, index);
+    bayer_filetype type = bayer_flist_file_get_type(flist, idx);
+    mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, idx);
 
     /* change mode */
     if(type != BAYER_TYPE_LINK) {
@@ -280,20 +280,16 @@ void DCOPY_copy_permissions(
 
 void DCOPY_copy_timestamps(
     bayer_flist flist,
-    uint64_t index,
+    uint64_t idx,
     const char* dest_path)
 {
     /* get atime seconds and nsecs */
-    uint64_t atime      = bayer_flist_file_get_atime(flist, index);
-    uint64_t atime_nsec = bayer_flist_file_get_atime_nsec(flist, index);
+    uint64_t atime      = bayer_flist_file_get_atime(flist, idx);
+    uint64_t atime_nsec = bayer_flist_file_get_atime_nsec(flist, idx);
 
     /* get mtime seconds and nsecs */
-    uint64_t mtime      = bayer_flist_file_get_mtime(flist, index);
-    uint64_t mtime_nsec = bayer_flist_file_get_mtime_nsec(flist, index);
-
-    /* get ctime seconds and nsecs */
-    uint64_t ctime      = bayer_flist_file_get_ctime(flist, index);
-    uint64_t ctime_nsec = bayer_flist_file_get_ctime_nsec(flist, index);
+    uint64_t mtime      = bayer_flist_file_get_mtime(flist, idx);
+    uint64_t mtime_nsec = bayer_flist_file_get_mtime_nsec(flist, idx);
 
     /* fill in time structures */
     struct timespec times[2];

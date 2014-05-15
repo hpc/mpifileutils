@@ -1,3 +1,8 @@
+#define _GNU_SOURCE
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/syscall.h>
+
 #include <limits.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -558,7 +563,7 @@ static void list_delete(flist_t* flist)
 
 /* given an index, return pointer to that file element,
  * NULL if index is not in range */
-static elem_t* list_get_elem(flist_t* flist, uint64_t index)
+static elem_t* list_get_elem(flist_t* flist, uint64_t idx)
 {
   uint64_t max = flist->list_count;
 
@@ -579,8 +584,8 @@ static elem_t* list_get_elem(flist_t* flist, uint64_t index)
   }
 
   /* return pointer to element if index is within range */
-  if (index >= 0 && index < max) {
-    elem_t* elem = flist->list_index[index];
+  if (idx < max) {
+    elem_t* elem = flist->list_index[idx];
     return elem;
   }
   return NULL;
@@ -686,7 +691,7 @@ static int list_convert_to_dt(flist_t* flist, buf_t* items)
 
   /* find smallest length that fits max and consists of integer
    * number of 8 byte segments */
-  int max = flist->max_file_name;
+  int max = (int) flist->max_file_name;
   int chars = max / 8;
   if (chars * 8 < max) {
     chars++;
@@ -708,7 +713,7 @@ static int list_convert_to_dt(flist_t* flist, buf_t* items)
 
   /* allocate buffer */
   uint64_t count = flist->list_count;
-  size_t bufsize = extent * count;
+  size_t bufsize = (size_t)extent * count;
   void* buf = BAYER_MALLOC(bufsize);
 
   /* copy stat data into stat datatypes */
@@ -734,7 +739,7 @@ static int list_convert_to_dt(flist_t* flist, buf_t* items)
 /* build a name-to-id map and an id-to-name map */
 static void create_map(const buf_t* items, strmap* id2name)
 {
-  int i;
+  uint64_t i;
   const char* ptr = (const char*)items->buf;
   for (i = 0; i < items->count; i++) {
     const char* name = ptr;
@@ -745,7 +750,13 @@ static void create_map(const buf_t* items, strmap* id2name)
 
     /* convert id number to string */
     char id_str[20];
-    size_t len = snprintf(id_str, sizeof(id_str), "%llu", (unsigned long long) id);
+    int len_int = snprintf(id_str, sizeof(id_str), "%llu", (unsigned long long) id);
+    if (len_int < 0) {
+      /* TODO: ERROR! */
+      printf("ERROR!!!\n");
+    }
+
+    size_t len = (size_t) len_int;
     if (len > (sizeof(id_str) - 1)) {
       /* TODO: ERROR! */
       printf("ERROR!!!\n");
@@ -762,7 +773,13 @@ static const char* get_name_from_id(strmap* id2name, uint64_t id)
 {
   /* convert id number to string representation */
   char id_str[20];
-  size_t len = snprintf(id_str, sizeof(id_str), "%llu", (unsigned long long) id);
+  int len_int = snprintf(id_str, sizeof(id_str), "%llu", (unsigned long long) id);
+  if (len_int < 0) {
+    /* TODO: ERROR! */
+    printf("ERROR!!!\n");
+  }
+
+  size_t len = (size_t) len_int;
   if (len > (sizeof(id_str) - 1)) {
     /* TODO: ERROR! */
     printf("ERROR!!!\n");
@@ -879,14 +896,14 @@ void bayer_flist_array_by_depth(
     }
 
     /* copy each item from source list to its corresponding level */
-    uint64_t index = 0;
+    uint64_t idx = 0;
     uint64_t size = bayer_flist_size(srclist);
-    while (index < size) {
-        int depth = bayer_flist_file_get_depth(srclist, index);
+    while (idx < size) {
+        int depth = bayer_flist_file_get_depth(srclist, idx);
         int depth_index = depth - min;
         bayer_flist dstlist = lists[depth_index];
-        bayer_flist_file_copy(srclist, index, dstlist);
-        index++;
+        bayer_flist_file_copy(srclist, idx, dstlist);
+        idx++;
     }
 
     /* summarize each list */
@@ -1011,166 +1028,166 @@ int bayer_flist_have_detail(bayer_flist bflist)
   return val;
 }
 
-const char* bayer_flist_file_get_name(bayer_flist bflist, uint64_t index)
+const char* bayer_flist_file_get_name(bayer_flist bflist, uint64_t idx)
 {
   const char* name = NULL;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL) {
     name = elem->file;
   }
   return name;
 }
 
-int bayer_flist_file_get_depth(bayer_flist bflist, uint64_t index)
+int bayer_flist_file_get_depth(bayer_flist bflist, uint64_t idx)
 {
   int depth = -1;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL) {
     depth = elem->depth;
   }
   return depth;
 }
 
-bayer_filetype bayer_flist_file_get_type(bayer_flist bflist, uint64_t index)
+bayer_filetype bayer_flist_file_get_type(bayer_flist bflist, uint64_t idx)
 {
   bayer_filetype type = BAYER_TYPE_NULL;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL) {
     type = elem->type;
   }
   return type;
 }
 
-uint64_t bayer_flist_file_get_mode(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_mode(bayer_flist bflist, uint64_t idx)
 {
   uint64_t mode = 0;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL && flist->detail > 0) {
     mode = elem->mode;
   }
   return mode;
 }
 
-uint64_t bayer_flist_file_get_uid(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_uid(bayer_flist bflist, uint64_t idx)
 {
   uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL && flist->detail) {
     ret = elem->uid;
   }
   return ret;
 }
 
-uint64_t bayer_flist_file_get_gid(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_gid(bayer_flist bflist, uint64_t idx)
 {
   uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL && flist->detail) {
     ret = elem->gid;
   }
   return ret;
 }
 
-uint64_t bayer_flist_file_get_atime(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_atime(bayer_flist bflist, uint64_t idx)
 {
   uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL && flist->detail) {
     ret = elem->atime;
   }
   return ret;
 }
 
-uint64_t bayer_flist_file_get_atime_nsec(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_atime_nsec(bayer_flist bflist, uint64_t idx)
 {
   uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL && flist->detail) {
     ret = elem->atime_nsec;
   }
   return ret;
 }
 
-uint64_t bayer_flist_file_get_mtime(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_mtime(bayer_flist bflist, uint64_t idx)
 {
   uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL && flist->detail) {
     ret = elem->mtime;
   }
   return ret;
 }
 
-uint64_t bayer_flist_file_get_mtime_nsec(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_mtime_nsec(bayer_flist bflist, uint64_t idx)
 {
   uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL && flist->detail) {
     ret = elem->mtime_nsec;
   }
   return ret;
 }
 
-uint64_t bayer_flist_file_get_ctime(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_ctime(bayer_flist bflist, uint64_t idx)
 {
   uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL && flist->detail) {
     ret = elem->ctime;
   }
   return ret;
 }
 
-uint64_t bayer_flist_file_get_ctime_nsec(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_ctime_nsec(bayer_flist bflist, uint64_t idx)
 {
   uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL && flist->detail) {
     ret = elem->ctime_nsec;
   }
   return ret;
 }
 
-uint64_t bayer_flist_file_get_size(bayer_flist bflist, uint64_t index)
+uint64_t bayer_flist_file_get_size(bayer_flist bflist, uint64_t idx)
 {
   uint64_t ret = (uint64_t) -1;
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL && flist->detail) {
     ret = elem->size;
   }
   return ret;
 }
 
-const char* bayer_flist_file_get_username(bayer_flist bflist, uint64_t index)
+const char* bayer_flist_file_get_username(bayer_flist bflist, uint64_t idx)
 {
   const char* ret = NULL;
   flist_t* flist = (flist_t*) bflist;
   if (flist->detail) {
-    uint64_t id = bayer_flist_file_get_uid(bflist, index);
+    uint64_t id = bayer_flist_file_get_uid(bflist, idx);
     ret = get_name_from_id(flist->user_id2name, id);
   }
   return ret;
 }
 
-const char* bayer_flist_file_get_groupname(bayer_flist bflist, uint64_t index)
+const char* bayer_flist_file_get_groupname(bayer_flist bflist, uint64_t idx)
 {
   const char* ret = NULL;
   flist_t* flist = (flist_t*) bflist;
   if (flist->detail) {
-    uint64_t id = bayer_flist_file_get_gid(bflist, index);
+    uint64_t id = bayer_flist_file_get_gid(bflist, idx);
     ret = get_name_from_id(flist->group_id2name, id);
   }
   return ret;
@@ -1221,7 +1238,7 @@ static void reduce_fini(const void* buf, size_t size)
 
 #ifdef LUSTRE_STAT
 /****************************************
- * Walk directory tree using stat at top level and readdir
+ * Walk directory tree using Lustre's MDS stat
  ***************************************/
 
 static int lustre_mds_stat(int fd, char *fname, struct stat *sb)
@@ -1380,6 +1397,155 @@ static void walk_lustrestat_process(CIRCLE_handle* handle)
 }
 
 #endif /* LUSTRE_STAT */
+
+/****************************************
+ * Walk directory tree using stat at top level and getdents system call
+ ***************************************/
+
+struct linux_dirent {
+  long           d_ino;
+  off_t          d_off;
+  unsigned short d_reclen;
+  char           d_name[];
+};
+
+//#define BUF_SIZE 10*1024*1024
+#define BUF_SIZE 128*1024
+
+static void walk_getdents_process_dir(char* dir, CIRCLE_handle* handle)
+{
+  char buf[BUF_SIZE];
+
+  /* TODO: may need to try these functions multiple times */
+  int fd = bayer_open(dir, O_RDONLY | O_DIRECTORY);
+  if (fd == -1) {
+    /* print error */
+    BAYER_LOG(BAYER_LOG_ERR, "Failed to open directory for reading: %s", dir);
+    return;
+  }
+
+  /* Read all directory entries */
+  while (1) {
+    /* execute system call to get block of directory entries */
+    int nread = syscall(SYS_getdents, fd, buf, (int) BUF_SIZE);
+    if (nread == -1) {
+      BAYER_LOG(BAYER_LOG_ERR, "syscall to getdents failed when reading %s (errno=%d %s)", dir, errno, strerror(errno));
+      break;
+    }
+
+    /* bail out if we're done */
+    if (nread == 0) {
+      break;
+    }
+
+    /* otherwise, we read some bytes, so process each record */
+    int bpos = 0;
+    while (bpos < nread) {
+      /* get pointer to current record */
+      struct linux_dirent* d = (struct linux_dirent*) (buf + bpos);
+
+      /* get name of directory item, skip d_ino== 0, ".", and ".." entries */
+      char* name = d->d_name;
+      if(d->d_ino != 0 && (strncmp(name, ".", 2)) && (strncmp(name, "..", 3))) {
+        /* check whether we can define path to item:
+         * <dir> + '/' + <name> + '/0' */
+        char newpath[CIRCLE_MAX_STRING_LEN];
+        size_t len = strlen(dir) + 1 + strlen(name) + 1;
+        if (len < sizeof(newpath)) {
+          /* build full path to item */
+          strcpy(newpath, dir);
+          strcat(newpath, "/");
+          strcat(newpath, name);
+
+          /* get type of item */
+          char d_type = *(buf + bpos + d->d_reclen - 1);
+
+#if 0
+                   printf("%-10s ", (d_type == DT_REG) ?  "regular" :
+                                    (d_type == DT_DIR) ?  "directory" :
+                                    (d_type == DT_FIFO) ? "FIFO" :
+                                    (d_type == DT_SOCK) ? "socket" :
+                                    (d_type == DT_LNK) ?  "symlink" :
+                                    (d_type == DT_BLK) ?  "block dev" :
+                                    (d_type == DT_CHR) ?  "char dev" : "???");
+
+                   printf("%4d %10lld  %s\n", d->d_reclen,
+                           (long long) d->d_off, (char *) d->d_name);
+#endif
+
+            /* TODO: this is hacky, would be better to create list elem directly */
+            /* determine type of item (just need to set bits in mode
+             * that get_bayer_filetype checks for) */
+            mode_t mode = 0;
+            if (d_type == DT_REG) {
+              mode |= S_IFREG;
+            } else if (d_type == DT_DIR) {
+              mode |= S_IFDIR;
+            } else if (d_type == DT_LNK) {
+              mode |= S_IFLNK;
+            }
+
+            /* insert a record for this item into our list */
+            list_insert_stat(CURRENT_LIST, newpath, mode, NULL);
+
+            /* increment our item count */
+            reduce_items++;
+
+            /* recurse on directory if we have one */
+            if (d_type == DT_DIR) {
+              handle->enqueue(newpath);
+            }
+        } else {
+          BAYER_LOG(BAYER_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu\n", len, sizeof(newpath));
+        }
+      }
+
+      /* advance to next record */
+      bpos += d->d_reclen;
+    }
+  }
+
+  bayer_close(dir, fd);
+
+  return;
+}
+
+/** Call back given to initialize the dataset. */
+static void walk_getdents_create(CIRCLE_handle* handle)
+{
+  char* path = CURRENT_DIR;
+
+  /* stat top level item */
+  struct stat st;
+  int status = bayer_lstat(path, &st);
+  if (status != 0) {
+    /* TODO: print error */
+    return;
+  }
+
+  /* increment our item count */
+  reduce_items++;
+
+  /* record item info */
+  list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+
+  /* recurse into directory */
+  if (S_ISDIR(st.st_mode)) {
+    walk_getdents_process_dir(path, handle);
+  }
+
+  return;
+}
+
+/** Callback given to process the dataset. */
+static void walk_getdents_process(CIRCLE_handle* handle)
+{
+  /* in this case, only items on queue are directories */
+  char path[CIRCLE_MAX_STRING_LEN];
+  handle->dequeue(path);
+  walk_getdents_process_dir(path, handle);
+  return;
+}
 
 /****************************************
  * Walk directory tree using stat at top level and readdir
@@ -1945,8 +2111,10 @@ void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist
 //    CIRCLE_cb_process(&walk_lustrestat_process);
   } else {
     /* walk directories using file types in readdir */
-    CIRCLE_cb_create(&walk_readdir_create);
-    CIRCLE_cb_process(&walk_readdir_process);
+//    CIRCLE_cb_create(&walk_readdir_create);
+//    CIRCLE_cb_process(&walk_readdir_process);
+    CIRCLE_cb_create(&walk_getdents_create);
+    CIRCLE_cb_process(&walk_getdents_process);
   }
 
   /* prepare callbacks and initialize variables for reductions */
@@ -2507,11 +2675,11 @@ void bayer_flist_write_cache(
   return;
 }
 
-void bayer_flist_file_copy(bayer_flist bsrc, uint64_t index, bayer_flist bdst)
+void bayer_flist_file_copy(bayer_flist bsrc, uint64_t idx, bayer_flist bdst)
 {
   /* convert handle to flist_t */
   flist_t* flist = (flist_t*) bsrc;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL) {
     flist_t* dstlist = (flist_t*) bdst;
     list_insert_copy(dstlist, elem);
@@ -2526,11 +2694,11 @@ size_t bayer_flist_file_pack_size(bayer_flist bflist)
   return size;
 }
 
-size_t bayer_flist_file_pack(void* buf, bayer_flist bflist, uint64_t index)
+size_t bayer_flist_file_pack(void* buf, bayer_flist bflist, uint64_t idx)
 {
   /* convert handle to flist_t */
   flist_t* flist = (flist_t*) bflist;
-  elem_t* elem = list_get_elem(flist, index);
+  elem_t* elem = list_get_elem(flist, idx);
   if (elem != NULL) {
     size_t size = list_elem_pack2(buf, flist->detail, flist->max_file_name, elem);
     return size;
@@ -2560,21 +2728,6 @@ int bayer_flist_summarize(bayer_flist bflist)
  * Randomly hash items to processes by filename, then remove
  ****************************/
 
-/* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
-uint32_t jenkins_one_at_a_time_hash(const char *key, size_t len)
-{
-    uint32_t hash, i;
-    for(hash = i = 0; i < len; ++i) {
-        hash += key[i];
-        hash += (hash << 10);
-        hash ^= (hash >> 6);
-    }
-    hash += (hash << 3);
-    hash ^= (hash >> 11);
-    hash += (hash << 15);
-    return hash;
-}
-
 /* for given depth, hash directory name and map to processes to
  * test whether having all files in same directory on one process
  * matters */
@@ -2582,19 +2735,19 @@ size_t bayer_flist_distribute_map(bayer_flist list, char **buffer,
                                   bayer_flist_name_encode_fn encode,
                                   bayer_flist_map_fn map, void *args)
 {
-    uint64_t index;
+    uint64_t idx;
 
     /* get our rank and number of ranks in job */
-    int rank, ranks;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    int ranks;
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* allocate arrays for alltoall */
-    int* sendsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* senddisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* sendoffset = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* recvsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* recvdisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    size_t bufsize = (size_t)ranks * sizeof(int);
+    int* sendsizes  = (int*) BAYER_MALLOC(bufsize);
+    int* senddisps  = (int*) BAYER_MALLOC(bufsize);
+    int* sendoffset = (int*) BAYER_MALLOC(bufsize);
+    int* recvsizes  = (int*) BAYER_MALLOC(bufsize);
+    int* recvdisps  = (int*) BAYER_MALLOC(bufsize);
 
     /* initialize sendsizes and offsets */
     int i;
@@ -2606,12 +2759,13 @@ size_t bayer_flist_distribute_map(bayer_flist list, char **buffer,
     /* compute number of bytes we'll send to each rank */
     size_t sendbytes = 0;
     uint64_t size = bayer_flist_size(list);
-    for (index = 0; index < size; index++) {
-    	int rank = map(list, index, ranks, args);
+    for (idx = 0; idx < size; idx++) {
+    	int dest = map(list, idx, ranks, args);
 
+        /* TODO: check that pack size doesn't overflow int */
         /* total number of bytes we'll send to each rank and the total overall */
-        size_t count = encode(NULL, list, index, args);
-        sendsizes[rank] += count;
+        size_t count = encode(NULL, list, idx, args);
+        sendsizes[dest] += (int) count;
         sendbytes += count;
     }
 
@@ -2625,15 +2779,16 @@ size_t bayer_flist_distribute_map(bayer_flist list, char **buffer,
     char* sendbuf = (char*) BAYER_MALLOC(sendbytes);
 
     /* copy data into buffer */
-    for (index = 0; index < size; index++) {
-        int rank = map(list, index, ranks, args);
+    for (idx = 0; idx < size; idx++) {
+        int dest = map(list, idx, ranks, args);
 
         /* identify region to be sent to rank */
-        char* path = sendbuf + senddisps[rank] + sendoffset[rank];
-        size_t count = encode(path, list, index, args);
+        char* path = sendbuf + senddisps[dest] + sendoffset[dest];
+        size_t count = encode(path, list, idx, args);
 
+        /* TODO: check that pack size doesn't overflow int */
         /* bump up the offset for this rank */
-        sendoffset[rank] += count;
+        sendoffset[dest] += (int) count;
     }
 
     /* alltoall to specify incoming counts */
@@ -2643,7 +2798,7 @@ size_t bayer_flist_distribute_map(bayer_flist list, char **buffer,
     size_t recvbytes = 0;
     recvdisps[0] = 0;
     for (i = 0; i < ranks; i++) {
-        recvbytes += recvsizes[i];
+        recvbytes += (size_t) recvsizes[i];
         if (i > 0) {
             recvdisps[i] = recvdisps[i-1] + recvsizes[i-1];
         }
@@ -2675,23 +2830,23 @@ size_t bayer_flist_distribute_map(bayer_flist list, char **buffer,
  * exchange items among ranks and return new output list */
 bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* args)
 {
-    uint64_t index;
+    uint64_t idx;
 
     /* create new list as subset (actually will be a remapping of
      * input list */
     bayer_flist newlist = bayer_flist_subset(list);
 
     /* get our rank and number of ranks in job */
-    int rank, ranks;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    int ranks;
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* allocate arrays for alltoall */
-    int* sendsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* senddisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* sendoffset = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* recvsizes  = (int*) BAYER_MALLOC(ranks * sizeof(int));
-    int* recvdisps  = (int*) BAYER_MALLOC(ranks * sizeof(int));
+    size_t bufsize = (size_t)ranks * sizeof(int);
+    int* sendsizes  = (int*) BAYER_MALLOC(bufsize);
+    int* senddisps  = (int*) BAYER_MALLOC(bufsize);
+    int* sendoffset = (int*) BAYER_MALLOC(bufsize);
+    int* recvsizes  = (int*) BAYER_MALLOC(bufsize);
+    int* recvdisps  = (int*) BAYER_MALLOC(bufsize);
 
     /* initialize sendsizes and offsets */
     int i;
@@ -2709,17 +2864,18 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* ar
     /* call map function for each item to identify its new rank,
      * and compute number of bytes we'll send to each rank */
     size_t sendbytes = 0;
-    for (index = 0; index < size; index++) {
+    for (idx = 0; idx < size; idx++) {
         /* determine which rank we'll map this file to */
-    	int rank = map(list, index, ranks, args);
+    	int dest = map(list, idx, ranks, args);
 
         /* cache mapping so we don't have to compute it again
          * below while packing items for send */
-        file2rank[index] = rank;
+        file2rank[idx] = dest;
 
+        /* TODO: check that pack size doesn't overflow int */
         /* total number of bytes we'll send to each rank and the total overall */
         size_t count = bayer_flist_file_pack_size(list);
-        sendsizes[rank] += count;
+        sendsizes[dest] += (int) count;
         sendbytes += count;
     }
 
@@ -2733,16 +2889,17 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* ar
     char* sendbuf = (char*) BAYER_MALLOC(sendbytes);
 
     /* copy data into send buffer */
-    for (index = 0; index < size; index++) {
+    for (idx = 0; idx < size; idx++) {
         /* determine which rank we mapped this file to */
-        int rank = file2rank[index];
+        int dest = file2rank[idx];
 
         /* get pointer into send buffer and pack item */
-        char* ptr = sendbuf + senddisps[rank] + sendoffset[rank];
-        size_t count = bayer_flist_file_pack(ptr, list, index);
+        char* ptr = sendbuf + senddisps[dest] + sendoffset[dest];
+        size_t count = bayer_flist_file_pack(ptr, list, idx);
 
+        /* TODO: check that pack size doesn't overflow int */
         /* bump up the offset for this rank */
-        sendoffset[rank] += count;
+        sendoffset[dest] += (int) count;
     }
 
     /* alltoall to get our incoming counts */
@@ -2752,7 +2909,7 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* ar
     size_t recvbytes = 0;
     recvdisps[0] = 0;
     for (i = 0; i < ranks; i++) {
-        recvbytes += recvsizes[i];
+        recvbytes += (size_t) recvsizes[i];
         if (i > 0) {
             recvdisps[i] = recvdisps[i-1] + recvsizes[i-1];
         }

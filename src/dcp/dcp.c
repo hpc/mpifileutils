@@ -74,7 +74,7 @@ static void DCOPY_process_objects(CIRCLE_handle* handle)
 
 /* iterate through linked list of files and set ownership, timestamps, and permissions
  * starting from deepest level and working backwards */
-static void DCOPY_set_metadata()
+static void DCOPY_set_metadata(void)
 {
     const DCOPY_stat_elem_t* elem;
 
@@ -250,7 +250,7 @@ static void DCOPY_epilogue(void)
 /**
  * Print the current version.
  */
-static void DCOPY_print_version()
+static void DCOPY_print_version(void)
 {
     fprintf(stdout, "%s-%s\n", PACKAGE_NAME, PACKAGE_VERSION);
 }
@@ -258,7 +258,7 @@ static void DCOPY_print_version()
 /**
  * Print a usage message.
  */
-void DCOPY_print_usage(char** argv)
+void DCOPY_print_usage(void)
 {
     /* The compare option isn't really effective because it often
      * reads from the page cache and not the disk, which gives a
@@ -438,7 +438,7 @@ int main(int argc, \
             case 'h':
 
                 if(DCOPY_global_rank == 0) {
-                    DCOPY_print_usage(argv);
+                    DCOPY_print_usage();
                 }
 
                 DCOPY_exit(EXIT_SUCCESS);
@@ -486,16 +486,16 @@ int main(int argc, \
 
                 if(DCOPY_global_rank == 0) {
                     if(optopt == 'd') {
-                        DCOPY_print_usage(argv);
+                        DCOPY_print_usage();
                         fprintf(stderr, "Option -%c requires an argument.\n", \
                                 optopt);
                     }
                     else if(isprint(optopt)) {
-                        DCOPY_print_usage(argv);
+                        DCOPY_print_usage();
                         fprintf(stderr, "Unknown option `-%c'.\n", optopt);
                     }
                     else {
-                        DCOPY_print_usage(argv);
+                        DCOPY_print_usage();
                         fprintf(stderr,
                                 "Unknown option character `\\x%x'.\n",
                                 optopt);

@@ -58,8 +58,8 @@ static int DCOPY_perform_compare(DCOPY_operation_t* op,
         }
 
         /* read data from source and destination */
-        size_t num_of_in_bytes = bayer_read(op->operand, in_fd, src_buf, left_to_read);
-        size_t num_of_out_bytes = bayer_read(op->dest_full_path, out_fd, dest_buf, left_to_read);
+        ssize_t num_of_in_bytes = bayer_read(op->operand, in_fd, src_buf, left_to_read);
+        ssize_t num_of_out_bytes = bayer_read(op->dest_full_path, out_fd, dest_buf, left_to_read);
 
         /* check that we got the same number of bytes from each */
         if(num_of_in_bytes != num_of_out_bytes) {
@@ -76,7 +76,7 @@ static int DCOPY_perform_compare(DCOPY_operation_t* op,
         }
 
         /* check that buffers are the same */
-        if(memcmp(src_buf, dest_buf, num_of_in_bytes) != 0) {
+        if(memcmp(src_buf, dest_buf, (size_t) num_of_in_bytes) != 0) {
             BAYER_LOG(BAYER_LOG_ERR, "Compare mismatch when copying from file `%s'",
                 op->operand);
 
@@ -84,7 +84,7 @@ static int DCOPY_perform_compare(DCOPY_operation_t* op,
         }
 
         /* add bytes to our total */
-        total_bytes += num_of_in_bytes;
+        total_bytes += (size_t) num_of_in_bytes;
     }
 
     return 1;
@@ -107,7 +107,7 @@ void DCOPY_do_compare(DCOPY_operation_t* op,
     }
 
     /* compute starting byte offset */
-    off_t chunk_size = DCOPY_user_opts.chunk_size;
+    off_t chunk_size = (off_t) DCOPY_user_opts.chunk_size;
     off_t offset = chunk_size * op->chunk;
 
     /* hint that we'll read from file sequentially */
