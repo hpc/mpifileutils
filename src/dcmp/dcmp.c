@@ -27,6 +27,7 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help  - print usage\n");
+    printf("  -l, --lite  - skip comparison beyond output requirement\n");
     printf("  -o, --output field0=state0@field1=state1,field2=state2:file "
     	   "- write list to file\n");
     printf("\n");
@@ -68,9 +69,30 @@ typedef enum _dcmp_field {
     DCMPF_MAX,
 } dcmp_field;
 
+#define DCMPF_EXIST_DEPEND   (1 << DCMPF_EXIST)
+#define DCMPF_TYPE_DEPEND    (DCMPF_EXIST_DEPEND | (1 << DCMPF_TYPE))
+#define DCMPF_SIZE_DEPEND    (DCMPF_TYPE_DEPEND | (1 << DCMPF_SIZE))
+#define DCMPF_UID_DEPEND     (DCMPF_EXIST_DEPEND | (1 << DCMPF_UID))
+#define DCMPF_GID_DEPEND     (DCMPF_EXIST_DEPEND | (1 << DCMPF_GID))
+#define DCMPF_ATIME_DEPEND   (DCMPF_EXIST_DEPEND | (1 << DCMPF_ATIME))
+#define DCMPF_MTIME_DEPEND   (DCMPF_EXIST_DEPEND | (1 << DCMPF_MTIME))
+#define DCMPF_CTIME_DEPEND   (DCMPF_EXIST_DEPEND | (1 << DCMPF_CTIME))
+#define DCMPF_CONTENT_DEPEND (DCMPF_SIZE_DEPEND | (1 << DCMPF_CONTENT))
+
+uint64_t dcmp_field_depend[] = {
+    [DCMPF_EXIST]   = DCMPF_EXIST_DEPEND,
+    [DCMPF_TYPE]    = DCMPF_TYPE_DEPEND,
+    [DCMPF_SIZE]    = DCMPF_SIZE_DEPEND,
+    [DCMPF_UID]     = DCMPF_UID_DEPEND,
+    [DCMPF_GID]     = DCMPF_GID_DEPEND,
+    [DCMPF_ATIME]   = DCMPF_ATIME_DEPEND,
+    [DCMPF_MTIME]   = DCMPF_MTIME_DEPEND,
+    [DCMPF_CTIME]   = DCMPF_CTIME_DEPEND,
+    [DCMPF_CONTENT] = DCMPF_CONTENT_DEPEND,
+};
+
 static const char* dcmp_field_to_string(dcmp_field field, int simple)
 {
-    assert(field >= 0);
     assert(field < DCMPF_MAX);
     switch (field) {
     case DCMPF_EXIST:
@@ -136,6 +158,7 @@ static const char* dcmp_field_to_string(dcmp_field field, int simple)
             return "content";
         }
         break;
+    case DCMPF_MAX:
     default:
         return NULL;
         break;
@@ -192,6 +215,7 @@ static const char* dcmp_state_to_string(dcmp_state state, int simple)
             return "exist only in destination directory";
         }
         break;
+    case DCMPS_MAX:
     default:
         return NULL;
         break;
@@ -247,7 +271,7 @@ dcmp_strmap_item_update(strmap* map, const char *key,
     /* lookup item from map */
     const char* val = strmap_get(map, key);
 
-    assert(field >= 0 && field < DCMPF_MAX);
+    assert(field < DCMPF_MAX);
     assert(strlen(val) + 1 <= sizeof(new_val));
     /* copy existing index over */
     strcpy(new_val, val);
@@ -259,7 +283,6 @@ dcmp_strmap_item_update(strmap* map, const char *key,
     /* reinsert item in map */
     strmap_set(map, key, new_val);
 }
-
 
 static int
 dcmp_strmap_item_index(strmap* map, const char *key, uint64_t *index)
@@ -469,12 +492,24 @@ int dcmp_compare_metadata(bayer_flist src_list,
 {
     int diff = 0;
 
-    dcmp_compare_field(size, DCMPF_SIZE);
-    dcmp_compare_field(gid, DCMPF_GID);
-    dcmp_compare_field(uid, DCMPF_UID);
-    dcmp_compare_field(atime, DCMPF_ATIME);
-    dcmp_compare_field(mtime, DCMPF_MTIME);
-    dcmp_compare_field(ctime, DCMPF_CTIME);
+    if (dcmp_option_need_compare(DCMPF_SIZE)) {
+        dcmp_compare_field(size, DCMPF_SIZE);
+    }
+    if (dcmp_option_need_compare(DCMPF_GID)) {
+        dcmp_compare_field(gid, DCMPF_GID);
+    }
+    if (dcmp_option_need_compare(DCMPF_UID)) {
+        dcmp_compare_field(uid, DCMPF_UID);
+    }
+    if (dcmp_option_need_compare(DCMPF_ATIME)) {
+        dcmp_compare_field(atime, DCMPF_ATIME);
+    }
+    if (dcmp_option_need_compare(DCMPF_MTIME)) {
+        dcmp_compare_field(mtime, DCMPF_MTIME);
+    }
+    if (dcmp_option_need_compare(DCMPF_CTIME)) {
+        dcmp_compare_field(ctime, DCMPF_CTIME);
+    }
 
     return diff;
 }
@@ -519,6 +554,14 @@ static void dcmp_strmap_compare(bayer_flist src_list,
              key);
         assert(rc >= 0);
 
+        if (!dcmp_option_need_compare(DCMPF_TYPE)) {
+            /*
+             * Skip if no need to compare type.
+             * All the following comparison depends on type.
+             */
+            continue;
+        }
+
         /* check whether files are of the same type */
         if ((src_mode & S_IFMT) != (dst_mode & S_IFMT)) {
             /* file type is different, no need to go any futher */
@@ -539,6 +582,11 @@ static void dcmp_strmap_compare(bayer_flist src_list,
             /* not regular file, take them as common content */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+            continue;
+        }
+
+        if (!dcmp_option_need_compare(DCMPF_CONTENT)) {
+            /* Skip if no need to compare content. */
             continue;
         }
 
@@ -802,20 +850,27 @@ struct dcmp_output {
 struct dcmp_options {
     struct list_head outputs;      /* list of outputs */
     int verbose;
+    int lite;                      /* whether to skip unnecessary comparison */
+    int debug;                     /* check result after get result */
+    int need_compare[DCMPF_MAX];   /* fields that need to be compared  */
 };
 
 struct dcmp_options options = {
-    .outputs = LIST_HEAD_INIT(options.outputs),
+    .outputs  = LIST_HEAD_INIT(options.outputs),
     .verbose  = 0,
+    .lite     = 0,
+    .debug    = 0,
+    .need_compare = {0,}
 };
 
-const char *dcmp_default_output[] = {
-    "EXIST=COMMON",
-    "EXIST=DIFFER",
-    "EXIST=COMMON@TYPE=COMMON",
-    "EXIST=COMMON@TYPE=DIFFER",
-    "EXIST=COMMON@CONTENT=COMMON",
+/* From tail to head */
+const char *dcmp_default_outputs[] = {
     "EXIST=COMMON@CONTENT=DIFFER",
+    "EXIST=COMMON@CONTENT=COMMON",
+    "EXIST=COMMON@TYPE=DIFFER",
+    "EXIST=COMMON@TYPE=COMMON",
+    "EXIST=DIFFER",
+    "EXIST=COMMON",
     NULL,
 };
 
@@ -1139,10 +1194,34 @@ static void dcmp_option_fini()
     assert(list_empty(&options.outputs));
 }
 
-static void dcmp_option_add_output(struct dcmp_output *output)
+static void dcmp_option_add_output(struct dcmp_output *output, int add_at_head)
 {
     assert(list_empty(&output->linkage));
-    list_add_tail(&output->linkage, &options.outputs);
+    if (add_at_head) {
+        list_add(&output->linkage, &options.outputs);
+    } else {
+        list_add_tail(&output->linkage, &options.outputs);
+    }
+}
+
+static void dcmp_option_add_comparison(dcmp_field field)
+{
+    uint64_t depend = dcmp_field_depend[field];
+    int i;
+    for (i = 0; i < DCMPF_MAX; i++) {
+        if ((depend & (1 << i)) != 0) {
+            options.need_compare[i] = 1;
+        }
+    }
+}
+
+int dcmp_option_need_compare(dcmp_field field)
+{
+    if (options.lite == 0) {
+        return 1;
+    }
+
+    return options.need_compare[field];
 }
 
 static int dcmp_output_flist_match(struct dcmp_output *output,
@@ -1304,6 +1383,9 @@ static int dcmp_expression_parse(struct dcmp_conjunction* conjunction,
     }
 
     dcmp_conjunction_add_expression(conjunction, expression);
+
+    /* Add comparison we need for this expression */
+    dcmp_option_add_comparison(expression->field);
 out:
     if (ret) {
         dcmp_expression_free(expression);
@@ -1382,7 +1464,7 @@ out:
     return ret;
 }
 
-static int dcmp_option_output_parse(const char *option)
+static int dcmp_option_output_parse(const char *option, int add_at_head)
 {
     char* tmp = BAYER_STRDUP(option);
     char* disjunction;
@@ -1410,7 +1492,7 @@ static int dcmp_option_output_parse(const char *option)
     if (file_name != NULL && *file_name) {
         output->file_name = BAYER_STRDUP(file_name);
     }
-    dcmp_option_add_output(output);
+    dcmp_option_add_output(output, add_at_head);
 out:
     if (ret) {
         dcmp_output_free(output);
@@ -1439,29 +1521,21 @@ int main(int argc, char **argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"verbose",  0, 0, 'v'},
         {"help",     0, 0, 'h'},
+        {"lite",     0, 0, 'l'},
         {"output",   1, 0, 'o'},
+        {"verbose",  0, 0, 'v'},
         {0, 0, 0, 0}
     };
     int ret = 0;
-    int i, j;
-
-    /* Generate default output */
-    for (i = 0; ; i++) {
-        if (dcmp_default_output[i] == NULL) {
-            break;
-        }
-        dcmp_option_output_parse(dcmp_default_output[i]);
-        assert(ret == 0);
-    }
+    int i;
 
     /* read in command line options */
     int usage = 0;
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "ho:v",
+            argc, argv, "hlo:v",
             long_options, &option_index
         );
 
@@ -1470,11 +1544,16 @@ int main(int argc, char **argv)
         }
 
         switch (c) {
+        case 'd':
+            options.debug ++;
+        case 'l':
+            options.lite ++;
+            break;
         case 'v':
             options.verbose ++;
             break;
         case 'o':
-            ret = dcmp_option_output_parse(optarg);
+            ret = dcmp_option_output_parse(optarg, 0);
             if (ret) {
                 usage = 1;
             }
@@ -1487,6 +1566,22 @@ int main(int argc, char **argv)
         default:
             usage = 1;
             break;
+        }
+    }
+
+    /* Generate default output */
+    if ((!options.lite) || list_empty(&options.outputs)) {
+        /*
+         * If -o option is not given,
+         * we want to add default output,
+         * in case there is no output at all.
+         */
+        for (i = 0; ; i++) {
+            if (dcmp_default_outputs[i] == NULL) {
+                break;
+            }
+            dcmp_option_output_parse(dcmp_default_outputs[i], 1);
+            assert(ret == 0);
         }
     }
 
@@ -1543,7 +1638,9 @@ int main(int argc, char **argv)
     dcmp_strmap_compare(flist3, map1, flist4, map2);
 
     /* check the results are valid */
-    dcmp_strmap_check(map1, map2);
+    if (options.debug && (!options.lite)) {
+        dcmp_strmap_check(map1, map2);
+    }
 
     /* write data to cache files and print summary */
     dcmp_outputs_write(flist3, map1, flist4, map2);
