@@ -296,8 +296,8 @@ ssize_t bayer_read(const char* file, int fd, void* buf, size_t size)
 {
     int tries = BAYER_IO_TRIES;
     ssize_t n = 0;
-    while (n < size) {
-        int rc = read(fd, (char*) buf + n, size - n);
+    while ((size_t)n < size) {
+        ssize_t rc = read(fd, (char*) buf + n, size - (size_t)n);
         if (rc > 0) {
             /* read some data */
             n += rc;
@@ -333,8 +333,8 @@ ssize_t bayer_write(const char* file, int fd, const void* buf, size_t size)
 {
     int tries = 10;
     ssize_t n = 0;
-    while (n < size) {
-        ssize_t rc = write(fd, (char*) buf + n, size - n);
+    while ((size_t)n < size) {
+        ssize_t rc = write(fd, (const char*) buf + n, size - (size_t)n);
         if (rc > 0) {
             /* wrote some data */
             n += rc;
