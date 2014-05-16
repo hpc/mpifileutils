@@ -8,7 +8,7 @@
 
 /* pack all fields as 64-bit values, except for times which we
  * pack as two 64-bit values */
-static size_t bayer_stat_pack_size()
+static size_t bayer_stat_pack_size(void)
 {
     size_t size = 16 * 8;
     return size;
@@ -35,7 +35,7 @@ static size_t bayer_stat_pack(void* buf, const struct stat* s)
     bayer_pack_uint64(&ptr, (uint64_t) s->st_ctime);
     bayer_pack_uint64(&ptr, (uint64_t) 0);
 
-    size_t bytes = (ptr - (char*)buf);
+    size_t bytes = (size_t) (ptr - (char*)buf);
     return bytes;
 }
 
@@ -92,7 +92,7 @@ static size_t bayer_stat_unpack(const void* buf, struct stat* s)
     bayer_unpack_uint64(&ptr, &val);
     /* ctime nsecs */
 
-    size_t bytes = (ptr - (const char*)buf);
+    size_t bytes = (size_t) (ptr - (const char*)buf);
     return bytes;
 }
 

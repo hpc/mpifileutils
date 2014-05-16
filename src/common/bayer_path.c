@@ -37,7 +37,7 @@ static inline int bayer_path_init(bayer_path* path)
 }
 
 /* allocate and initialize a new path element */
-static bayer_path_elem* bayer_path_elem_alloc()
+static bayer_path_elem* bayer_path_elem_alloc(void)
 {
   bayer_path_elem* elem = (bayer_path_elem*) malloc(sizeof(bayer_path_elem));
   if (elem != NULL) {
@@ -68,7 +68,7 @@ static int bayer_path_elem_free(bayer_path_elem** ptr_elem)
 }
 
 /* allocate a new path */
-static bayer_path* bayer_path_alloc()
+static bayer_path* bayer_path_alloc(void)
 {
   bayer_path* path = (bayer_path*) malloc(sizeof(bayer_path));
   if (path != NULL) {
@@ -104,7 +104,7 @@ static bayer_path_elem* bayer_path_elem_dup(const bayer_path_elem* elem)
 /* return element at specified offset in path
  *   0   - points to first element
  *   N-1 - points to last element */
-static bayer_path_elem* bayer_path_elem_index(const bayer_path* path, int index)
+static bayer_path_elem* bayer_path_elem_index(const bayer_path* path, int idx)
 {
   /* check that we got a path */
   if (path == NULL) {
@@ -112,9 +112,9 @@ static bayer_path_elem* bayer_path_elem_index(const bayer_path* path, int index)
   }
 
   /* check that index is in range */
-  if (index < 0 || index >= path->components) {
+  if (idx < 0 || idx >= path->components) {
     BAYER_ABORT(-1, "Offset %d is out of range [0,%d)",
-      index, path->components
+      idx, path->components
     );
   }
 
@@ -122,8 +122,8 @@ static bayer_path_elem* bayer_path_elem_index(const bayer_path* path, int index)
   bayer_path_elem* current = NULL;
   if (path->components > 0) {
     int i;
-    int from_head = index;
-    int from_tail = path->components - index - 1;
+    int from_head = idx;
+    int from_tail = path->components - idx - 1;
     if (from_head <= from_tail) {
       /* shorter to start at head and go forwards */
       current = path->head;
@@ -269,14 +269,14 @@ static char* bayer_path_alloc_strf(const char* format, va_list args1, va_list ar
   size_t chars = (size_t) vsnprintf(NULL, 0, format, args1);
 
   /* allocate space to hold string, add one for the terminating NUL */
-  size_t strlen = chars + 1;
-  char* str = (char*) malloc(strlen);
+  size_t len = chars + 1;
+  char* str = (char*) malloc(len);
   if (str == NULL) {
     BAYER_ABORT(-1, "Failed to allocate memory for path component string");
   }
 
   /* copy formatted string into new memory */
-  vsnprintf(str, strlen, format, args2);
+  vsnprintf(str, len, format, args2);
 
   /* return string */
   return str;
@@ -320,7 +320,7 @@ bayer_path* bayer_path_from_str(const char* str)
 
       /* compute number of bytes to copy this component
        * (including terminating NULL) */
-      size_t buflen = end - start + 1;
+      size_t buflen = (size_t) (end - start + 1);
       char* buf = (char*) malloc(buflen);
       if (buf == NULL) {
         BAYER_ABORT(-1, "Failed to allocate memory for component string");
@@ -481,8 +481,8 @@ size_t bayer_path_strlen(const bayer_path* path)
     if (components > 0) {
       size_t slashes = (size_t) (components - 1);
       size_t chars   = path->chars;
-      size_t strlen  = slashes + chars;
-      return strlen;
+      size_t len  = slashes + chars;
+      return len;
     }
   }
   return 0;
@@ -532,12 +532,12 @@ size_t bayer_path_strcpy(char* buf, size_t n, const bayer_path* path)
   }
 
   /* get length of path */
-  size_t strlen = bayer_path_strlen(path) + 1;
+  size_t len = bayer_path_strlen(path) + 1;
 
   /* if user buffer is too small, abort */
-  if (n < strlen) {
+  if (n < len) {
     BAYER_ABORT(-1, "User buffer of %d bytes is too small to hold string of %d bytes",
-      n, strlen, __LINE__
+      n, len, __LINE__
     );
   }
 
@@ -545,7 +545,7 @@ size_t bayer_path_strcpy(char* buf, size_t n, const bayer_path* path)
   bayer_path_strcpy_internal(buf, path);
 
   /* return number of bytes we copied to buffer */
-  return strlen;
+  return len;
 }
 
 /* allocate memory and return path in string form */
