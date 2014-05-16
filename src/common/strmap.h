@@ -65,16 +65,16 @@ iterate over key/value pairs
 */
 
 /* return first node in map */
-strmap_node* strmap_node_first(const strmap* map);
+const strmap_node* strmap_node_first(const strmap* map);
 
 /* return last node in map */
-strmap_node* strmap_node_last(const strmap* map);
+const strmap_node* strmap_node_last(const strmap* map);
 
 /* get the previous node in map */
-strmap_node* strmap_node_previous(const strmap_node* node);
+const strmap_node* strmap_node_previous(const strmap_node* node);
 
 /* the next node in map */
-strmap_node* strmap_node_next(const strmap_node* node);
+const strmap_node* strmap_node_next(const strmap_node* node);
 
 /* returns pointer to key string */
 const char* strmap_node_key(const strmap_node* node);

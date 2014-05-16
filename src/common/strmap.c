@@ -92,7 +92,7 @@ strmap* strmap_new()
 /* copies entries from src into dst */
 void strmap_merge(strmap* dst, const strmap* src)
 {
-  strmap_node* node;
+  const strmap_node* node;
   strmap_foreach(src, node)
   {
     const char* key = strmap_node_key(node);
@@ -123,6 +123,7 @@ set, get, unset functions
 =========================================
 */
 
+#if 0
 /* return the overall root of the tree containing the specified node */
 static strmap_node* strmap_node_root(const strmap_node* node)
 {
@@ -136,9 +137,11 @@ static strmap_node* strmap_node_root(const strmap_node* node)
   }
   return (strmap_node*) target;
 }
+#endif
 
-/* return the leftmost node in the subtree (disregards nodes available through parent) */
-static strmap_node* strmap_node_leftmost(const strmap_node* node)
+/* return the leftmost node in the subtree
+ * (disregards nodes available through parent) */
+static const strmap_node* strmap_node_leftmost(const strmap_node* node)
 {
   /* march down from the node to the leftmost child */
   if (node == NULL) {
@@ -148,11 +151,12 @@ static strmap_node* strmap_node_leftmost(const strmap_node* node)
   while (target->left != NULL) {
     target = target->left;
   }
-  return (strmap_node*) target;
+  return target;
 }
 
-/* return the largest node in the subtree (disregards nodes available through parent) */
-static strmap_node* strmap_node_rightmost(const strmap_node* node)
+/* return the largest node in the subtree
+ * (disregards nodes available through parent) */
+static const strmap_node* strmap_node_rightmost(const strmap_node* node)
 {
   /* march down from the node to the rightmost child */
   if (node == NULL) {
@@ -162,10 +166,11 @@ static strmap_node* strmap_node_rightmost(const strmap_node* node)
   while (target->right != NULL) {
     target = target->right;
   }
-  return (strmap_node*) target;
+  return target;
 }
 
-/* sets the height field of the current element based on the height fields of the children */
+/* sets the height field of the current element based on the
+ * height fields of the children */
 static int strmap_node_set_height(strmap_node* node)
 {
   /* set the height of the current node to be (1 + max(left, right)) */
@@ -196,7 +201,8 @@ static strmap_node* strmap_node_rotate_left(strmap_node* node)
   /* get the right child of the current node */
   strmap_node* target = node->right;
   if (target != NULL) {
-    /* if we have a right child, then we need to rotate, record our parent */
+    /* if we have a right child, then we need to rotate,
+     * record our parent */
     strmap_node* parent = node->parent;
 
     /* move the current node to be the left child */
@@ -266,19 +272,26 @@ static strmap_node* strmap_node_rotate_right(strmap_node* node)
   return NULL;
 }
 
-/* search for the node corresponding to the specified key, returns the node if found,
- * and returns the address of the parent node for this node */
-static strmap_node* strmap_node_search(const strmap_node* node, const void* key, strmap_node** parent, int* child)
+/* search for the node corresponding to the specified key,
+ * returns the node if found, and returns the address of
+ * the parent node for this node */
+static strmap_node* strmap_node_search(
+  const strmap_node* node,
+  const void* key,
+  strmap_node** parent,
+  int* child)
 {
   if (node != NULL) {
     int cmp = strcmp(key, node->key);
     if (cmp == 0) {
-      /* the current element matches, we should only end up here if the element that we're
-       * looking for happens to be the root of the tree, in which case it has no parent */
+      /* the current element matches, we should only end up here
+       * if the element that we're looking for happens to be the
+       * root of the tree, in which case it has no parent */
       *parent = NULL;
       return (strmap_node*) node;
     } else if (cmp < 0) {
-      /* key is smaller than key of current node, so look for element in left subtree */
+      /* key is smaller than key of current node, so look for
+       * element in left subtree */
       if (node->left == NULL) {
         /* if our left child is NULL, then we would be the parent */
         *parent = (strmap_node*) node;
@@ -292,10 +305,12 @@ static strmap_node* strmap_node_search(const strmap_node* node, const void* key,
         *child  = AVL_CHILD_LEFT;
         return (strmap_node*) node->left;
       }
-      /* otherwise, recursively search our left subtree for the parent of the element */
+      /* otherwise, recursively search our left subtree for the
+       * parent of the element */
       return strmap_node_search(node->left, key, parent, child);
     } else {
-      /* key is larger than key of current node, so look for element in right subtree */
+      /* key is larger than key of current node, so look for
+       * element in right subtree */
       if (node->right == NULL) {
         /* if our right child is NULL, then we would be the parent */
         *parent = (strmap_node*) node;
@@ -309,7 +324,8 @@ static strmap_node* strmap_node_search(const strmap_node* node, const void* key,
         *child  = AVL_CHILD_RIGHT;
         return (strmap_node*) node->right;
       }
-      /* otherwise, recursively search our right subtree for the parent of the element */
+      /* otherwise, recursively search our right subtree for the
+       * parent of the element */
       return strmap_node_search(node->right, key, parent, child);
     }
   }
@@ -341,8 +357,9 @@ static int strmap_node_balance_factor(const strmap_node* node)
   return factor;
 }
 
-/* rebalance the tree starting at the specified node and working upwards to the root,
- * returns the address of the root node after rebalancing */
+/* rebalance the tree starting at the specified node and working
+ * upwards to the root, returns the address of the root node
+ * after rebalancing */
 static strmap_node* strmap_node_rebalance(strmap_node* node)
 {
   if (node == NULL) {
@@ -351,7 +368,8 @@ static strmap_node* strmap_node_rebalance(strmap_node* node)
 
   strmap_node* top = NULL;
 
-  /* remember the parent since the rotations below may demote the current node */
+  /* remember the parent since the rotations below may demote
+   * the current node */
   strmap_node* parent = node->parent;
 
   /* determine the balance of the node */
@@ -361,7 +379,8 @@ static strmap_node* strmap_node_rebalance(strmap_node* node)
      * we need to rotate node to the left about the current node */
     strmap_node* target = node->right;
 
-    /* determine whether the extra weight is to the left or right side of our right child */
+    /* determine whether the extra weight is to the left or right
+     * side of our right child */
     int target_factor = strmap_node_balance_factor(target);
     if (target_factor > 0) {
       /* left side of our right child is too heavy,
@@ -376,7 +395,8 @@ static strmap_node* strmap_node_rebalance(strmap_node* node)
      * we need to rotate node to the right about the current node */
     strmap_node* target = node->left;
 
-    /* determine whether the extra weight is to the left or right side of our left child */
+    /* determine whether the extra weight is to the left or
+     * right side of our left child */
     int target_factor = strmap_node_balance_factor(target);
     if (target_factor < 0) {
       /* right side of our left child is too heavy,
@@ -387,7 +407,8 @@ static strmap_node* strmap_node_rebalance(strmap_node* node)
     /* now rotate right about the current node */
     top = strmap_node_rotate_right(node);
   } else {
-    /* no rotations needed, but we still need to set the height of our node */
+    /* no rotations needed, but we still need to set the
+     * height of our node */
     strmap_node_set_height(node);
     top = node;
   }
@@ -400,6 +421,7 @@ static strmap_node* strmap_node_rebalance(strmap_node* node)
   return top;
 }
 
+#if 0
 /* returns the current height of the tree */
 static int strmap_height(const strmap* tree)
 {
@@ -410,6 +432,7 @@ static int strmap_height(const strmap* tree)
   }
   return 0;
 }
+#endif
 
 /* This code extracts a node that is assumed to have at most one child,
  * it removes the node by updating the pointers in the parent and child
@@ -422,10 +445,12 @@ static strmap_node* strmap_node_extract_single(strmap_node* node)
     /* we enter this if we have one child or less */
     strmap_node* child = NULL;
     if (node->left != NULL) {
-      /* we only have a left child, just splice our parent and child together */
+      /* we only have a left child, just splice our parent
+       * and child together */
       child = node->left;
     } else if (node->right != NULL) {
-      /* we only have a right child, just splice our parent and child together */
+      /* we only have a right child, just splice our parent
+       * and child together */
       child = node->right;
     }
 
@@ -446,54 +471,58 @@ static strmap_node* strmap_node_extract_single(strmap_node* node)
       }
     }
 
-    /* return the address of the child node that replaces the extracted node */
+    /* return the address of the child node that replaces
+     * the extracted node */
     return child;
   }
 
   return NULL;
 }
 
-/* return the smallest node in the subtree (disregards nodes available through parent) */
-strmap_node* strmap_node_first(const strmap* tree)
+/* return the smallest node in the subtree
+ * (disregards nodes available through parent) */
+const strmap_node* strmap_node_first(const strmap* tree)
 {
   /* first march up the tree to the root, then find leftmost child */
   if (tree == NULL) {
     return NULL;
   }
-  strmap_node* target = strmap_node_leftmost(tree->root);
+  const strmap_node* target = strmap_node_leftmost(tree->root);
   return target;
 }
 
-/* return the largest node in the subtree (disregards nodes available through parent) */
-strmap_node* strmap_node_last(const strmap* tree)
+/* return the largest node in the subtree
+ * (disregards nodes available through parent) */
+const strmap_node* strmap_node_last(const strmap* tree)
 {
   /* first march up the tree to the root, then find leftmost child */
   if (tree == NULL) {
     return NULL;
   }
-  strmap_node* target = strmap_node_rightmost(tree->root);
+  const strmap_node* target = strmap_node_rightmost(tree->root);
   return target;
 }
 
 /* the previous element is the rightmost element of the left subtree */
-strmap_node* strmap_node_previous(const strmap_node* node)
+const strmap_node* strmap_node_previous(const strmap_node* node)
 {
   if (node == NULL) {
     return NULL;
   }
 
   /* return the rightmost node of our left subtree if we have one */
-  strmap_node* target = strmap_node_rightmost(node->left);
+  const strmap_node* target = strmap_node_rightmost(node->left);
   if (target != NULL) {
     return target;
   }
 
-  /* if we don't have a left subtree, return our parent if we have one, and if we are its right child */
+  /* if we don't have a left subtree, return our parent
+   * if we have one, and if we are its right child */
   const strmap_node* current = node;
   const strmap_node* parent  = current->parent;
   while (parent != NULL) {
     if (parent->right == current) {
-      return (strmap_node*) parent;
+      return parent;
     }
     current = parent;
     parent = current->parent;
@@ -504,24 +533,25 @@ strmap_node* strmap_node_previous(const strmap_node* node)
 }
 
 /* the next element is the leftmost element of the right subtree */
-strmap_node* strmap_node_next(const strmap_node* node)
+const strmap_node* strmap_node_next(const strmap_node* node)
 {
   if (node == NULL) {
     return NULL;
   }
 
   /* return the leftmost node of our right subtree if we have one */
-  strmap_node* target = strmap_node_leftmost(node->right);
+  const strmap_node* target = strmap_node_leftmost(node->right);
   if (target != NULL) {
     return target;
   }
 
-  /* if we don't have a right subtree, return our parent if we have one, and if we are its left child */
+  /* if we don't have a right subtree, return our parent if we
+   * have one, and if we are its left child */
   const strmap_node* current = node;
   const strmap_node* parent  = current->parent;
   while (parent != NULL) {
     if (parent->left == current) {
-      return (strmap_node*) parent;
+      return parent;
     }
     current = parent;
     parent = current->parent;
@@ -575,8 +605,8 @@ int strmap_set(strmap* tree, const char* key, const char* value)
       tree->size++;
 
       /* insert the new item as a child to the parent, if we found one,
-       * otherwise if the item has no parent, the tree must be empty which means
-       * it is the new root */
+       * otherwise if the item has no parent, the tree must be
+       * empty which means it is the new root */
       if (parent != NULL) {
         /* add item as child to parent */
         node->parent = parent;
@@ -629,10 +659,10 @@ int strmap_setf(strmap* map, const char* format, ...)
 
   /* allocate and print the string */
   if (size > 0) {
-    str = (char*) BAYER_MALLOC(size);
+    str = (char*) BAYER_MALLOC((size_t)size);
 
     va_start(args, format);
-    vsnprintf(str, size, format, args);
+    vsnprintf(str, (size_t)size, format, args);
     va_end(args);
 
     /* break into key/value strings at '=' sign */
@@ -654,7 +684,8 @@ int strmap_setf(strmap* map, const char* format, ...)
   return STRMAP_FAILURE;
 }
 
-/* search the tree and return the address of the node that matches the specified key */
+/* search the tree and return the address of the node that
+ * matches the specified key */
 const char* strmap_get(const strmap* tree, const char* key)
 {
   if (tree != NULL) {
@@ -688,10 +719,10 @@ const char* strmap_getf(strmap* map, const char* format, ...)
 
   /* allocate and print the string */
   if (size > 0) {
-    str = (char*) BAYER_MALLOC(size);
+    str = (char*) BAYER_MALLOC((size_t)size);
 
     va_start(args, format);
-    vsnprintf(str, size, format, args);
+    vsnprintf(str, (size_t)size, format, args);
     va_end(args);
 
     /* if we have a key and value, insert into map */
@@ -723,8 +754,9 @@ int strmap_unset(strmap* tree, const char* key)
 
       /* found it, identify the node to replace it */
       if (node->left != NULL && node->right != NULL) {
-        /* we have two children, extract the rightmost node in our left subtree */
-        strmap_node* replacement = strmap_node_rightmost(node->left);
+        /* we have two children, extract the rightmost node in
+         * our left subtree */
+        strmap_node* replacement = (strmap_node*) strmap_node_rightmost(node->left);
         strmap_node_extract_single(replacement);
 
         /* update the left child of this node to point to our left child,
@@ -741,7 +773,8 @@ int strmap_unset(strmap* tree, const char* key)
         node->right->parent = replacement;
 
         /* now tie the replacement node to our parent, (record the current
-         * parent of the replacement since we need it for rebalancing the tree) */
+         * parent of the replacement since we need it for rebalancing
+         * the tree) */
         strmap_node* replacement_parent = replacement->parent;
         replacement->parent = parent;
         if (parent != NULL) {
@@ -755,21 +788,25 @@ int strmap_unset(strmap* tree, const char* key)
         /* finally, rebalance the tree */
         if (replacement_parent != node) {
           /* if the replacement node is not our left child,
-           * then we need to rebalance starting at the parent of the replacement node */
+           * then we need to rebalance starting at the parent of
+           * the replacement node */
           tree->root = strmap_node_rebalance(replacement_parent);
         } else {
           /* if the replacement node is our left child,
-           * then we need to rebalance starting at the replacement node itself */
+           * then we need to rebalance starting at the
+           * replacement node itself */
           tree->root = strmap_node_rebalance(replacement);
         }
       } else {
         /* we have one child or less, just extract the node */
         strmap_node* newnode = strmap_node_extract_single(node);
         if (parent != NULL) {
-          /* if we have a parent, we need to rebalance the tree starting at the parent */
+          /* if we have a parent, we need to rebalance the tree
+           * starting at the parent */
           tree->root = strmap_node_rebalance(parent);
         } else {
-          /* the node we're extracting is the root, so set child node as the new root */
+          /* the node we're extracting is the root, so set child
+           * node as the new root */
           tree->root = newnode;
         }
       }
@@ -804,10 +841,10 @@ int strmap_unsetf(strmap* map, const char* format, ...)
 
   /* allocate and print the string */
   if (size > 0) {
-    str = (char*) BAYER_MALLOC(size);
+    str = (char*) BAYER_MALLOC((size_t)size);
 
     va_start(args, format);
-    vsnprintf(str, size, format, args);
+    vsnprintf(str, (size_t)size, format, args);
     va_end(args);
 
     /* if we have a key and value, insert into map */
@@ -842,7 +879,7 @@ size_t strmap_pack(void* buf, const strmap* tree)
 
   /* TODO: be sure we don't write past end of buffer */
   /* copy key/value pairs */
-  strmap_node* current = strmap_node_first(tree);
+  const strmap_node* current = strmap_node_first(tree);
   while (current != NULL) {
     size_t key_len = current->key_len;
     memcpy(ptr, current->key, key_len);
@@ -885,7 +922,7 @@ size_t strmap_unpack(const void* buf, strmap* tree)
 void strmap_print(const strmap* map)
 {
   int i = 0;
-  strmap_node* node;
+  const strmap_node* node;
   for (node = strmap_node_first(map);
        node != NULL;
        node = strmap_node_next(node))
