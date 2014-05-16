@@ -721,7 +721,7 @@ static int list_convert_to_dt(flist_t* flist, buf_t* items)
   const elem_t* current = flist->list_head;
   while (current != NULL) {
     /* pack item into buffer and advance pointer */
-    size_t bytes = list_elem_pack(ptr, flist->detail, chars, current);
+    size_t bytes = list_elem_pack(ptr, flist->detail, (uint64_t)chars, current);
     ptr += bytes;
     current = current->next;
   }
@@ -887,7 +887,7 @@ void bayer_flist_array_by_depth(
     int min = bayer_flist_min_depth(srclist);
     int max = bayer_flist_max_depth(srclist);
     int levels = max - min + 1;
-    bayer_flist* lists = (bayer_flist*) BAYER_MALLOC(levels * sizeof(bayer_flist));
+    bayer_flist* lists = (bayer_flist*) BAYER_MALLOC((size_t)levels * sizeof(bayer_flist));
 
     /* create a list for each level */
     int i;
@@ -1410,7 +1410,7 @@ struct linux_dirent {
 };
 
 //#define BUF_SIZE 10*1024*1024
-#define BUF_SIZE 128*1024
+#define BUF_SIZE 128*1024U
 
 static void walk_getdents_process_dir(char* dir, CIRCLE_handle* handle)
 {
@@ -1927,7 +1927,7 @@ retry:
   MPI_Type_get_extent(dt, &lb, &extent);
 
   /* allocate an array to hold all user names and ids */
-  size_t bufsize = count * extent;
+  size_t bufsize = (size_t)count * (size_t)extent;
   char* buf = (char*) BAYER_MALLOC(bufsize);
 
   /* copy items from list into array */
@@ -2019,7 +2019,7 @@ retry:
   MPI_Type_get_extent(dt, &lb, &extent);
 
   /* allocate an array to hold all user names and ids */
-  size_t bufsize = count * extent;
+  size_t bufsize = (size_t)count * (size_t)extent;
   char* buf = (char*) BAYER_MALLOC(bufsize);
 
   /* copy items from list into array */
@@ -2184,9 +2184,9 @@ static void read_cache_v2(
   files.chars = header[3];
 
   /* compute count for each process */
-  uint64_t count = all_count / ranks;
-  uint64_t remainder = all_count - count * ranks;
-  if (rank < remainder) {
+  uint64_t count = all_count / (uint64_t)ranks;
+  uint64_t remainder = all_count - count * (uint64_t)ranks;
+  if ((uint64_t)rank < remainder) {
     count++;
   }
   files.count = count;
@@ -2208,14 +2208,14 @@ static void read_cache_v2(
     MPI_Type_get_extent(files.dt, &lb_file, &extent_file);
 
     /* allocate memory to hold data */
-    size_t bufsize_file = files.count * extent_file;
+    size_t bufsize_file = files.count * (size_t)extent_file;
     files.buf = (void*) BAYER_MALLOC(bufsize_file);
 
     /* collective read of stat info */
     MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
-    MPI_Offset read_offset = disp + offset * extent_file;
+    MPI_Offset read_offset = disp + (MPI_Offset)offset * extent_file;
     MPI_File_read_at_all(fh, read_offset, files.buf, (int)files.count, files.dt, &status);
-    disp += all_count * extent_file;
+    disp += (MPI_Offset)all_count * extent_file;
 
     /* for each file, insert an entry into our list */
     uint64_t i = 0;
@@ -2296,9 +2296,9 @@ static void read_cache_v3(
   files.chars   = header[7];
 
   /* compute count for each process */
-  uint64_t count = all_count / ranks;
-  uint64_t remainder = all_count - count * ranks;
-  if (rank < remainder) {
+  uint64_t count = all_count / (uint64_t)ranks;
+  uint64_t remainder = all_count - count * (uint64_t)ranks;
+  if ((uint64_t)rank < remainder) {
     count++;
   }
   files.count = count;
@@ -2320,7 +2320,7 @@ static void read_cache_v3(
     MPI_Type_get_extent(users->dt, &lb_user, &extent_user);
 
     /* allocate memory to hold data */
-    size_t bufsize_user = users->count * extent_user;
+    size_t bufsize_user = users->count * (size_t)extent_user;
     users->buf = (void*) BAYER_MALLOC(bufsize_user);
     users->bufsize = bufsize_user;
 
@@ -2330,7 +2330,7 @@ static void read_cache_v3(
       MPI_File_read_at(fh, disp, users->buf, (int)users->count, users->dt, &status);
     }
     MPI_Bcast(users->buf, (int)users->count, users->dt, 0, MPI_COMM_WORLD);
-    disp += bufsize_user;
+    disp += (MPI_Offset) bufsize_user;
   }
 
   /* read groups, if any */
@@ -2343,7 +2343,7 @@ static void read_cache_v3(
     MPI_Type_get_extent(groups->dt, &lb_group, &extent_group);
 
     /* allocate memory to hold data */
-    size_t bufsize_group = groups->count * extent_group;
+    size_t bufsize_group = groups->count * (size_t)extent_group;
     groups->buf = (void*) BAYER_MALLOC(bufsize_group);
     groups->bufsize = bufsize_group;
 
@@ -2353,7 +2353,7 @@ static void read_cache_v3(
       MPI_File_read_at(fh, disp, groups->buf, (int)groups->count, groups->dt, &status);
     }
     MPI_Bcast(groups->buf, (int)groups->count, groups->dt, 0, MPI_COMM_WORLD);
-    disp += bufsize_group;
+    disp += (MPI_Offset) bufsize_group;
   }
 
   /* read files, if any */
@@ -2366,15 +2366,15 @@ static void read_cache_v3(
     MPI_Type_get_extent(files.dt, &lb_file, &extent_file);
 
     /* allocate memory to hold data */
-    size_t bufsize_file = files.count * extent_file;
+    size_t bufsize_file = files.count * (size_t)extent_file;
     files.buf = (void*) BAYER_MALLOC(bufsize_file);
     files.bufsize = bufsize_file;
 
     /* collective read of stat info */
     MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
-    MPI_Offset read_offset = disp + offset * extent_file;
+    MPI_Offset read_offset = disp + (MPI_Offset)offset * extent_file;
     MPI_File_read_at_all(fh, read_offset, files.buf, (int)files.count, files.dt, &status);
-    disp += all_count * extent_file;
+    disp += (MPI_Offset)all_count * extent_file;
 
     /* for each file, insert an entry into our list */
     uint64_t i = 0;
@@ -2535,10 +2535,10 @@ static void write_cache_readdir(
 
     /* collective write of file info */
     MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
-    MPI_Offset write_offset = disp + offset * extent_file;
+    MPI_Offset write_offset = disp + (MPI_Offset)offset * extent_file;
     int write_count = (int) count;
     MPI_File_write_at_all(fh, write_offset, files.buf, write_count, files.dt, &status);
-    disp += all_count * extent_file;
+    disp += (MPI_Offset)all_count * extent_file;
   }
 
   /* close file */
@@ -2619,9 +2619,10 @@ static void write_cache_stat(
     /* write out users */
     MPI_File_set_view(fh, disp, users->dt, users->dt, datarep, MPI_INFO_NULL);
     if (rank == 0) {
-      MPI_File_write_at(fh, disp, users->buf, users->count, users->dt, &status);
+      int write_count = (int) users->count;
+      MPI_File_write_at(fh, disp, users->buf, write_count, users->dt, &status);
     }
-    disp += users->count * extent_user;
+    disp += (MPI_Offset)users->count * extent_user;
   }
 
   if (groups->dt != MPI_DATATYPE_NULL) {
@@ -2632,9 +2633,10 @@ static void write_cache_stat(
     /* write out groups */
     MPI_File_set_view(fh, disp, groups->dt, groups->dt, datarep, MPI_INFO_NULL);
     if (rank == 0) {
-      MPI_File_write_at(fh, disp, groups->buf, groups->count, groups->dt, &status);
+      int write_count = (int) groups->count;
+      MPI_File_write_at(fh, disp, groups->buf, write_count, groups->dt, &status);
     }
-    disp += groups->count * extent_group;
+    disp += (MPI_Offset)groups->count * extent_group;
   }
 
   if (files.dt != MPI_DATATYPE_NULL) {
@@ -2644,10 +2646,10 @@ static void write_cache_stat(
 
     /* collective write of stat info */
     MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
-    MPI_Offset write_offset = disp + offset * extent_file;
+    MPI_Offset write_offset = disp + (MPI_Offset)offset * extent_file;
     int write_count = (int) count;
     MPI_File_write_at_all(fh, write_offset, files.buf, write_count, files.dt, &status);
-    disp += all_count * extent_file;
+    disp += (MPI_Offset)all_count * extent_file;
   }
 
   /* close file */
