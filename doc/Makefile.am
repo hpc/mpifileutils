@@ -1,1 +1,1 @@
-SUBDIRS = html man
+SUBDIRS = man

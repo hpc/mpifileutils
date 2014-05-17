@@ -1,13 +1,16 @@
 .TH DCP 1 "" 
 .SH NAME
 .PP
-dcp \- distributed file copy program
+dcp \- distributed copy
+
 .SH SYNOPSIS
-.PP
-dcp [cCdfhpRrUv][\-\-] source_file target_file dcp [cCdfhpRrUv][\-\-]
-source_file ...
-target_directory
+.TP
+.B dcp [OPTION] SOURCE DEST
+.B dcp [OPTION] SOURCE... DIRECTORY
+
 .SH DESCRIPTION
+.PP
+Parallel MPI application to recursively copy files and directories.
 .PP
 dcp is a file copy tool in the spirit of \f[I]cp(1)\f[] that evenly
 distributes work across a large cluster without any centralized state.
@@ -16,22 +19,8 @@ parallel file system.
 The method used in the file copy process is a self\-stabilization
 algorithm which enables per\-node autonomous processing and a token
 passing scheme to detect termination.
+
 .SH OPTIONS
-.TP
-.B \-c, \-\-conditional
-When copying a source directory to a destination directory, copy the
-source directory over the destination directory.
-The default behavior is to copy the source directory inside the
-destination directory.
-.RS
-.RE
-.TP
-.B \-C, \-\-skip\-compare
-Skip the compare operation to confirm file integrity.
-When using this option, a file integrity check, such as md5sum, should
-be performed after the file(s) have been copied.
-.RS
-.RE
 .TP
 .B \-d, \-\-debug=\f[I]level\f[]
 Specify the level of debug information to output.
@@ -39,78 +28,54 @@ Level may be one of: \f[I]fatal\f[], \f[I]err\f[], \f[I]warn\f[],
 \f[I]info\f[], or \f[I]dbg\f[].
 Increasingly verbose debug levels include the output of less verbose
 debug levels.
-.RS
-.RE
 .TP
 .B \-f, \-\-force
 Remove existing destination files if creation or truncation fails.
-If the destination filesystem is specified to be unreliable
-(\f[C]\-U\f[], \f[C]\-\-unreliable\-filesystem\f[]), this option may
-lower performance since each failure will cause the entire file to be
-invalidated and copied again.
-.RS
-.RE
-.TP
-.B \-h, \-\-help
-Print a brief message listing the \f[I]dcp(1)\f[] options and usage.
-.RS
-.RE
 .TP
 .B \-p, \-\-preserve
-Preserve the original files\[aq] owner, group, permissions (including
-the setuid and setgid bits), time of last modification and time of last
-access.
-In case duplication of owner or group fails, the setuid and setgid bits
-are cleared.
-.RS
-.RE
+Preserve permissions, ownership, timestamps, and extended attributes of original files.
 .TP
-.B \-R, \-\-recursive
-Copy directories recursively, and do the right thing when objects other
-than ordinary files or directories are encountered.
-.RS
-.RE
-.TP
-.B \-r, \-\-recursive\-unspecified
-Copy directories recursively, and ignore objects other than ordinary
-files or directories.
-.RS
-.RE
-.TP
-.B \-U, \-\-unreliable\-filesystem
-If the filesystem is very unreliable, this option may be used to always
-retry an operation when a failure occurs.
-If failures are permanent, this option will cause an infinite loop.
-Specifying this option when force is enabled (\f[C]\-f\f[],
-\f[C]\-\-force\f[]) may lower performance.
-.RS
-.RE
+.B \-s, \-\-synchronous
+Use synchronous read/write calls (i.e., files are opened with O_DIRECT).  This option ensures data is written to disk when command completes.  It may be useful to oversubscribe MPI processes with this option.
 .TP
 .B \-v, \-\-version
 Print version information and exit.
-.RS
-.RE
-.SS Known bugs
+.TP
+.B \-h, \-\-help
+Print a brief usage message.
+
+.SH RESTRICTIONS
 .PP
-When the force option is specified and truncation fails, the copy and
-truncation will be stuck in an infinite loop until the truncation
-operation returns with success.
+If a long-running copy is interrupted, one should delete the target directory with drm
+and rerun dcp.
+.PP
+To ensure the copy was successful, one should run dcmp after dcp completes, especially if the -s option was not used with dcp.
 .PP
 The maximum supported filename length for any file transfered is
 approximately 4068 characters.
 This may be less than the number of characters that your operating
 system supports.
+
+.SH EXAMPLES
+.TP
+(1) To copy dir1 as dir2:
+.TP
+.nf
+mpirun -np 128 dcp /source/dir1 /dest/dir2
+.fi
+.TP
+(2) To copy contents of dir1 into dir2:
+.PP
+.nf
+mkdir /dest/dir2
+mpirun -np 128 dcp /source/dir1/* /dest/dir2
+.fi
+
 .SH SEE ALSO
+.TP
+dcmp, drm, and dwalk.
+
 .PP
-\f[C]dcmp\f[] (1).
-\f[C]dcp\f[] (1).
-\f[C]dfilemaker\f[] (1).
-\f[C]dfind\f[] (1).
-\f[C]dgrep\f[] (1).
-\f[C]dparallel\f[] (1).
-\f[C]drm\f[] (1).
-\f[C]dtar\f[] (1).
-\f[C]dwalk\f[] (1).
+Source code and documentation for the FileUtils suite may be downloaded from:
 .PP
-The FileUtils source code and all documentation may be downloaded from
 <http://fileutils.io>
