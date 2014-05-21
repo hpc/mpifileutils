@@ -37,11 +37,11 @@ static strmap_node* strmap_node_new(const char* key, const char* value)
     node->right     = NULL;
 
     if (key != NULL) {
-      node->key = strdup(key);
+      node->key = BAYER_STRDUP(key);
       node->key_len = strlen(key) + 1;
     }
     if (value != NULL) {
-      node->value = strdup(value);
+      node->value = BAYER_STRDUP(value);
       node->value_len = strlen(value) + 1;
     }
     if (node->key == NULL || node->value == NULL) {
@@ -631,7 +631,7 @@ int strmap_set(strmap* tree, const char* key, const char* value)
 
       /* copy in the new value */
       if (value != NULL) {
-        node->value = strdup(value);
+        node->value = BAYER_STRDUP(value);
         node->value_len = strlen(value) + 1;
       }
       tree->len += node->value_len;
