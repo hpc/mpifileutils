@@ -38,28 +38,31 @@ static void remove_type(char type, const char* name)
         int rc = bayer_rmdir(name);
         if (rc != 0) {
             BAYER_LOG(BAYER_LOG_ERR, "Failed to rmdir `%s' (errno=%d %s)",
-                name, errno, strerror(errno)
-            );
+                      name, errno, strerror(errno)
+                     );
         }
-    } else if (type == 'f') {
+    }
+    else if (type == 'f') {
         int rc = bayer_unlink(name);
         if (rc != 0) {
             BAYER_LOG(BAYER_LOG_ERR, "Failed to unlink `%s' (errno=%d %s)",
-                name, errno, strerror(errno)
-            );
+                      name, errno, strerror(errno)
+                     );
         }
-    } else if (type == 'u') {
+    }
+    else if (type == 'u') {
         int rc = remove(name);
         if (rc != 0) {
             BAYER_LOG(BAYER_LOG_ERR, "Failed to remove `%s' (errno=%d %s)",
-                name, errno, strerror(errno)
-            );
+                      name, errno, strerror(errno)
+                     );
         }
-    } else {
+    }
+    else {
         /* print error */
         BAYER_LOG(BAYER_LOG_ERR, "Unknown type=%c name=%s",
-            type, name
-        );
+                  type, name
+                 );
     }
 
     return;
@@ -83,9 +86,11 @@ static void remove_direct(bayer_flist list, uint64_t* rmcount)
         /* delete item */
         if (type == BAYER_TYPE_DIR) {
             remove_type('d', name);
-        } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
+        }
+        else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
             remove_type('f', name);
-        } else {
+        }
+        else {
             remove_type('u', name);
         }
     }
@@ -123,7 +128,7 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-  
+
     /* allocate memory for alltoall exchanges */
     size_t bufsize = (size_t)ranks * sizeof(int);
     int* sendcounts = (int*) BAYER_MALLOC(bufsize);
@@ -160,7 +165,8 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
         if (i < extra) {
             num = low + 1;
             start = i * num;
-        } else {
+        }
+        else {
             num = low;
             start = (i - extra) * num + extra * (low + 1);
         }
@@ -177,7 +183,8 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
                      * is more than we have left */
                     sendcnt = my_count;
                 }
-            } else if (offset < start && start < offset + my_count) {
+            }
+            else if (offset < start && start < offset + my_count) {
                 /* this rank overlaps our range,
                  * and our first element comes strictly before its first element */
                 sendcnt = my_count - (start - offset);
@@ -210,13 +217,13 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
 
         /* get rank that we're packing data for */
         if (dest == -1) {
-          dest = get_first_nonzero(sendcounts, ranks);
-          if (dest == -1) {
-            /* error */
-          }
-          /* about to copy first item for this rank,
-           * record its displacement */
-          senddisps[dest] = disp;
+            dest = get_first_nonzero(sendcounts, ranks);
+            if (dest == -1) {
+                /* error */
+            }
+            /* about to copy first item for this rank,
+             * record its displacement */
+            senddisps[dest] = disp;
         }
 
         /* identify region to be sent to rank */
@@ -225,9 +232,11 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
         /* first character encodes item type */
         if (type == BAYER_TYPE_DIR) {
             path[0] = 'd';
-        } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
+        }
+        else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
             path[0] = 'f';
-        } else {
+        }
+        else {
             path[0] = 'u';
         }
 
@@ -243,14 +252,14 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
         /* decrement the count for this rank */
         sendcounts[dest]--;
         if (sendcounts[dest] == 0) {
-          dest = -1;
+            dest = -1;
         }
     }
 
     /* compute displacements */
     senddisps[0] = 0;
     for (i = 1; i < (uint64_t)ranks; i++) {
-        senddisps[i] = senddisps[i-1] + sendsizes[i-1];
+        senddisps[i] = senddisps[i - 1] + sendsizes[i - 1];
     }
 
     /* alltoall to specify incoming counts */
@@ -262,7 +271,7 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
     for (i = 0; i < (uint64_t)ranks; i++) {
         recvbytes += (size_t) recvsizes[i];
         if (i > 0) {
-            recvdisps[i] = recvdisps[i-1] + recvsizes[i-1];
+            recvdisps[i] = recvdisps[i - 1] + recvsizes[i - 1];
         }
     }
 
@@ -304,7 +313,7 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
 
 /* we hash file names based on its parent directory to map all
  * files in the same directory to the same process */
-static int map_name(bayer_flist flist, uint64_t idx, int ranks, void *args)
+static int map_name(bayer_flist flist, uint64_t idx, int ranks, void* args)
 {
     /* get name of item */
     const char* name = bayer_flist_file_get_name(flist, idx);
@@ -314,7 +323,7 @@ static int map_name(bayer_flist flist, uint64_t idx, int ranks, void *args)
     dirname(dir);
     size_t dir_len = strlen(dir);
     uint32_t hash = bayer_hash_jenkins(dir, dir_len);
-    int rank = (int) (hash % (uint32_t)ranks);
+    int rank = (int)(hash % (uint32_t)ranks);
     bayer_free(&dir);
     return rank;
 }
@@ -366,7 +375,7 @@ static void remove_sort(bayer_flist list, uint64_t* rmcount)
 
     /* allocate send buffer */
     int sendcount = (int) my_count;
-    size_t sendbufsize = (size_t) (sendcount * (chars + 1));
+    size_t sendbufsize = (size_t)(sendcount * (chars + 1));
     char* sendbuf = (char*) BAYER_MALLOC(sendbufsize);
 
     /* copy data into buffer */
@@ -382,9 +391,11 @@ static void remove_sort(bayer_flist list, uint64_t* rmcount)
         bayer_filetype type = bayer_flist_file_get_type(list, idx);
         if (type == BAYER_TYPE_DIR) {
             ptr[0] = 'd';
-        } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
+        }
+        else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
             ptr[0] = 'f';
-        } else {
+        }
+        else {
             ptr[0] = 'u';
         }
         ptr++;
@@ -458,9 +469,11 @@ static void remove_create(CIRCLE_handle* handle)
         /* encode type */
         if (type == BAYER_TYPE_DIR) {
             path[0] = 'd';
-        } else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
+        }
+        else if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
             path[0] = 'f';
-        } else {
+        }
+        else {
             path[0] = 'u';
         }
 
@@ -469,10 +482,11 @@ static void remove_create(CIRCLE_handle* handle)
         if (len <= CIRCLE_MAX_STRING_LEN) {
             strcpy(&path[1], name);
             handle->enqueue(path);
-        } else {
+        }
+        else {
             BAYER_LOG(BAYER_LOG_ERR, "Filename longer than %lu",
-                (unsigned long)CIRCLE_MAX_STRING_LEN
-            );
+                      (unsigned long)CIRCLE_MAX_STRING_LEN
+                     );
         }
     }
 
@@ -483,7 +497,7 @@ static void remove_process(CIRCLE_handle* handle)
 {
     char path[CIRCLE_MAX_STRING_LEN];
     handle->dequeue(path);
-  
+
     char item = path[0];
     char* name = &path[1];
     remove_type(item, name);
@@ -506,7 +520,7 @@ static void remove_libcircle(bayer_flist list, uint64_t* rmcount)
     /* set libcircle verbosity level */
     enum CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
     if (verbose) {
-//        loglevel = CIRCLE_LOG_INFO;
+        //        loglevel = CIRCLE_LOG_INFO;
     }
     CIRCLE_enable_logging(loglevel);
 
@@ -525,14 +539,14 @@ static void remove_libcircle(bayer_flist list, uint64_t* rmcount)
 }
 
 /* TODO: sort w/ spread and synchronization */
-  /* allreduce to get total count of items */
-  /* sort by name */
-  /* alltoall to determine which processes to send / recv from */
-  /* alltoallv to exchange data */
-  /* pt2pt with left and right neighbors to determine if they have the same dirname */
-  /* delete what we can witout waiting */
-  /* if my right neighbor has same dirname, send him msg when we're done */
-  /* if my left neighbor has same dirname, wait for msg */
+/* allreduce to get total count of items */
+/* sort by name */
+/* alltoall to determine which processes to send / recv from */
+/* alltoallv to exchange data */
+/* pt2pt with left and right neighbors to determine if they have the same dirname */
+/* delete what we can witout waiting */
+/* if my right neighbor has same dirname, send him msg when we're done */
+/* if my left neighbor has same dirname, wait for msg */
 
 /*****************************
  * Driver functions
@@ -586,8 +600,8 @@ static void remove_files(bayer_flist flist)
                     int rc = chmod(name, S_IRWXU);
                     if (rc != 0) {
                         BAYER_LOG(BAYER_LOG_ERR, "Failed to chmod directory `%s' (errno=%d %s)",
-                            name, errno, strerror(errno)
-                        );
+                                  name, errno, strerror(errno)
+                                 );
                     }
                 }
             }
@@ -611,7 +625,7 @@ static void remove_files(bayer_flist flist)
 //        remove_sort(list, &count);
 //        remove_libcircle(list, &count);
 //        TODO: remove sort w/ spread
-        
+
         /* wait for all procs to finish before we start
          * with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
@@ -625,13 +639,13 @@ static void remove_files(bayer_flist flist)
             MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
             double rate = 0.0;
             if (end - start > 0.0) {
-              rate = (double)sum / (end - start);
+                rate = (double)sum / (end - start);
             }
             double time_diff = end - start;
             if (rank == 0) {
                 printf("level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
-                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
-                );
+                       (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
+                      );
                 fflush(stdout);
             }
         }
@@ -657,7 +671,7 @@ static void print_usage(void)
     return;
 }
 
-int main(int argc, char **argv)
+int main(int argc, char** argv)
 {
     int i;
 
@@ -686,34 +700,34 @@ int main(int argc, char **argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "i:lhv",
-            long_options, &option_index
-        );
+                    argc, argv, "i:lhv",
+                    long_options, &option_index
+                );
 
         if (c == -1) {
             break;
         }
 
         switch (c) {
-        case 'i':
-            inputname = BAYER_STRDUP(optarg);
-            break;
-        case 'l':
-            walk_stat = 0;
-            break;
-        case 'h':
-            usage = 1;
-            break;
-        case 'v':
-            verbose = 1;
-            break;
-        case '?':
-            usage = 1;
-            break;
-        default:
-            if (rank == 0) {
-                printf("?? getopt returned character code 0%o ??\n", c);
-            }
+            case 'i':
+                inputname = BAYER_STRDUP(optarg);
+                break;
+            case 'l':
+                walk_stat = 0;
+                break;
+            case 'h':
+                usage = 1;
+                break;
+            case 'v':
+                verbose = 1;
+                break;
+            case '?':
+                usage = 1;
+                break;
+            default:
+                if (rank == 0) {
+                    printf("?? getopt returned character code 0%o ??\n", c);
+                }
         }
     }
 
@@ -741,7 +755,8 @@ int main(int argc, char **argv)
         if (inputname != NULL) {
             usage = 1;
         }
-    } else {
+    }
+    else {
         /* if we're not walking, we must be reading,
          * and for that we need a file */
         if (inputname == NULL) {
@@ -781,7 +796,7 @@ int main(int argc, char **argv)
                     /* TODO: ERROR! */
                 }
                 char walk_s[30];
-                size_t rc = strftime(walk_s, sizeof(walk_s)-1, "%FT%T", localtime(&walk_start_t));
+                size_t rc = strftime(walk_s, sizeof(walk_s) - 1, "%FT%T", localtime(&walk_start_t));
                 if (rc == 0) {
                     walk_s[0] = '\0';
                 }
@@ -803,10 +818,11 @@ int main(int argc, char **argv)
                 rate = ((double)all_count) / time_diff;
             }
             printf("Walked %lu files in %f seconds (%f files/sec)\n",
-                all_count, time_diff, rate
-            );
+                   all_count, time_diff, rate
+                  );
         }
-    } else {
+    }
+    else {
         /* read list from file */
         double start_read = MPI_Wtime();
         bayer_flist_read_cache(inputname, flist);
@@ -821,8 +837,8 @@ int main(int argc, char **argv)
                 rate = ((double)all_count) / time_diff;
             }
             printf("Read %lu files in %f seconds (%f files/sec)\n",
-                all_count, time_diff, rate
-            );
+                   all_count, time_diff, rate
+                  );
         }
     }
 
@@ -840,8 +856,8 @@ int main(int argc, char **argv)
             rate = ((double)all_count) / time_diff;
         }
         printf("Removed %lu files in %f seconds (%f files/sec)\n",
-            all_count, time_diff, rate
-        );
+               all_count, time_diff, rate
+              );
     }
 
     /* free the file list */
