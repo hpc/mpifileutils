@@ -20,11 +20,8 @@
  * with the MDS plus every OST a file is striped across. */
 //#define LUSTRE_STAT
 #ifdef LUSTRE_STAT
-//#include <stropts.h>
 #include <sys/ioctl.h>
-//#include <lustre/liblustreapi.h>
-//#include <lustre/lustre_user.h>
-#include "lustre_user.h"
+#include <lustre/lustre_user.h>
 #endif /* LUSTRE_STAT */
 
 #include <pwd.h> /* for getpwent */
@@ -1253,13 +1250,48 @@ static void reduce_fini(const void* buf, size_t size)
  * Walk directory tree using Lustre's MDS stat
  ***************************************/
 
+static void lustre_stripe_info(void* buf)
+{
+    struct lov_user_md* md = &((struct lov_user_mds_data*) buf)->lmd_lmm;
+
+    uint32_t pattern = (uint32_t) md->lmm_pattern;
+    if (pattern != LOV_PATTERN_RAID0) {
+        /* we don't know how to interpret this pattern */
+        return;
+    }
+
+    /* get stripe info for file */
+    uint32_t size   = (uint32_t) md->lmm_stripe_size;
+    uint16_t count  = (uint16_t) md->lmm_stripe_count;
+    uint16_t offset = (uint16_t) md->lmm_stripe_offset;
+
+    uint16_t i;
+    if (md->lmm_magic == LOV_USER_MAGIC_V1) {
+        struct lov_user_md_v1* md1 = (struct lov_user_md_v1*) md;
+        for (i = 0; i < count; i++) {
+            uint32_t idx = md1->lmm_objects[i].l_ost_idx;
+        }
+    }
+    else if (md->lmm_magic == LOV_USER_MAGIC_V3) {
+        struct lov_user_md_v3* md3 = (struct lov_user_md_v3*) md;
+        for (i = 0; i < count; i++) {
+            uint32_t idx = md3->lmm_objects[i].l_ost_idx;
+        }
+    }
+    else {
+        /* unknown magic number */
+    }
+
+    return;
+}
+
 static int lustre_mds_stat(int fd, char* fname, struct stat* sb)
 {
     /* allocate a buffer */
     size_t pathlen = strlen(fname) + 1;
     size_t bufsize = pathlen;
     //size_t datasize = sizeof(lstat_t) + lov_user_md_size(LOV_MAX_STRIPE_COUNT, LOV_USER_MAGIC_V3);
-    size_t datasize = sizeof(lstat_t) + 1024 * sizeof(struct lov_user_ost_data_v1);
+    size_t datasize = sizeof(struct lov_user_mds_data) + LOV_MAX_STRIPE_COUNT * sizeof(struct lov_user_ost_data_v1);
     if (datasize > bufsize) {
         bufsize = datasize;
     }
@@ -1276,7 +1308,7 @@ static int lustre_mds_stat(int fd, char* fname, struct stat* sb)
 
     /* Copy lstat_t to struct stat */
     if (ret != -1) {
-        lstat_t* ls = (lstat_t*) buf;
+        lstat_t* ls = (lstat_t*) &((struct lov_user_mds_data*) buf)->lmd_st;
         sb->st_dev     = ls->st_dev;
         sb->st_ino     = ls->st_ino;
         sb->st_mode    = ls->st_mode;
@@ -1290,6 +1322,8 @@ static int lustre_mds_stat(int fd, char* fname, struct stat* sb)
         sb->st_atime   = ls->st_atime;
         sb->st_mtime   = ls->st_mtime;
         sb->st_ctime   = ls->st_ctime;
+
+        lustre_stripe_info(buf);
     }
     else {
         printf("ioctl errno=%d %s\n", errno, strerror(errno));
@@ -2136,15 +2170,15 @@ void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist
         /* walk directories by calling stat on every item */
         CIRCLE_cb_create(&walk_stat_create);
         CIRCLE_cb_process(&walk_stat_process);
-        //    CIRCLE_cb_create(&walk_lustrestat_create);
-        //    CIRCLE_cb_process(&walk_lustrestat_process);
+//        CIRCLE_cb_create(&walk_lustrestat_create);
+//        CIRCLE_cb_process(&walk_lustrestat_process);
     }
     else {
         /* walk directories using file types in readdir */
-        //    CIRCLE_cb_create(&walk_readdir_create);
-        //    CIRCLE_cb_process(&walk_readdir_process);
-        CIRCLE_cb_create(&walk_getdents_create);
-        CIRCLE_cb_process(&walk_getdents_process);
+        CIRCLE_cb_create(&walk_readdir_create);
+        CIRCLE_cb_process(&walk_readdir_process);
+//        CIRCLE_cb_create(&walk_getdents_create);
+//        CIRCLE_cb_process(&walk_getdents_process);
     }
 
     /* prepare callbacks and initialize variables for reductions */
