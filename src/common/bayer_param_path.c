@@ -35,7 +35,7 @@ static size_t bayer_stat_pack(void* buf, const struct stat* s)
     bayer_pack_uint64(&ptr, (uint64_t) s->st_ctime);
     bayer_pack_uint64(&ptr, (uint64_t) 0);
 
-    size_t bytes = (size_t) (ptr - (char*)buf);
+    size_t bytes = (size_t)(ptr - (char*)buf);
     return bytes;
 }
 
@@ -92,7 +92,7 @@ static size_t bayer_stat_unpack(const void* buf, struct stat* s)
     bayer_unpack_uint64(&ptr, &val);
     /* ctime nsecs */
 
-    size_t bytes = (size_t) (ptr - (const char*)buf);
+    size_t bytes = (size_t)(ptr - (const char*)buf);
     return bytes;
 }
 
@@ -182,7 +182,7 @@ static void bayer_str_bcast(char** pstr)
 static void bayer_param_path_init(bayer_param_path* param)
 {
     /* initialize all fields */
-    if(param != NULL) {
+    if (param != NULL) {
         param->orig = NULL;
         param->path = NULL;
         param->path_stat_valid = 0;
@@ -218,7 +218,7 @@ void bayer_param_path_set(const char* path, bayer_param_path* param)
 
     /* have rank 0 do the real work */
     if (rank == 0) {
-        if(path != NULL) {
+        if (path != NULL) {
             /* make a copy of original path */
             param->orig = BAYER_STRDUP(path);
 
@@ -227,7 +227,7 @@ void bayer_param_path_set(const char* path, bayer_param_path* param)
             param->path = bayer_path_strdup_abs_reduce_str(path);
 
             /* get stat info for simplified path */
-            if(bayer_lstat(param->path, &param->path_stat) == 0) {
+            if (bayer_lstat(param->path, &param->path_stat) == 0) {
                 param->path_stat_valid = 1;
             }
 
@@ -238,12 +238,12 @@ void bayer_param_path_set(const char* path, bayer_param_path* param)
 
             /* resolve any symlinks */
             char target[PATH_MAX];
-            if(realpath(path, target) != NULL) {
+            if (realpath(path, target) != NULL) {
                 /* make a copy of resolved name */
                 param->target = BAYER_STRDUP(target);
 
                 /* get stat info for resolved path */
-                if(bayer_lstat(param->target, &param->target_stat) == 0) {
+                if (bayer_lstat(param->target, &param->target_stat) == 0) {
                     param->target_stat_valid = 1;
                 }
             }
@@ -259,7 +259,7 @@ void bayer_param_path_set(const char* path, bayer_param_path* param)
 /* free memory associated with param */
 void bayer_param_path_free(bayer_param_path* param)
 {
-    if(param != NULL) {
+    if (param != NULL) {
         /* free all mememory */
         bayer_free(&param->orig);
         bayer_free(&param->path);

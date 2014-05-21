@@ -22,60 +22,60 @@ bayer_loglevel bayer_debug_level = BAYER_LOG_ERR;
  * reference counting allows for multiple init/finalize pairs */
 int bayer_init()
 {
-  if (bayer_initialized == 0) {
-    /* set globals */
-    MPI_Comm_rank(MPI_COMM_WORLD, &bayer_rank);
-    bayer_debug_stream = stdout;
+    if (bayer_initialized == 0) {
+        /* set globals */
+        MPI_Comm_rank(MPI_COMM_WORLD, &bayer_rank);
+        bayer_debug_stream = stdout;
 
-    DTCMP_Init();
-    bayer_initialized++;
-  }
-  return BAYER_SUCCESS;
+        DTCMP_Init();
+        bayer_initialized++;
+    }
+    return BAYER_SUCCESS;
 }
 
 /* finalize bayer library */
 int bayer_finalize()
 {
-  if (bayer_initialized > 0) {
-    DTCMP_Finalize();
-    bayer_initialized--;
-  }
-  return BAYER_SUCCESS;
+    if (bayer_initialized > 0) {
+        DTCMP_Finalize();
+        bayer_initialized--;
+    }
+    return BAYER_SUCCESS;
 }
 
 /* print abort message and call MPI_Abort to kill run */
-void bayer_abort(const char* file, int line, int rc, const char *fmt, ...)
+void bayer_abort(const char* file, int line, int rc, const char* fmt, ...)
 {
-  va_list argp;
-  fprintf(stderr, "ABORT: rank X on HOST: ");
-  va_start(argp, fmt);
-  vfprintf(stderr, fmt, argp);
-  va_end(argp);
-  fprintf(stderr, " @ %s:%d\n", file, line);
+    va_list argp;
+    fprintf(stderr, "ABORT: rank X on HOST: ");
+    va_start(argp, fmt);
+    vfprintf(stderr, fmt, argp);
+    va_end(argp);
+    fprintf(stderr, " @ %s:%d\n", file, line);
 
-  MPI_Abort(MPI_COMM_WORLD, rc);
+    MPI_Abort(MPI_COMM_WORLD, rc);
 }
 
 /* if size > 0 allocates size bytes and returns pointer,
  * calls bayer_abort if malloc fails, returns NULL if size == 0 */
 void* bayer_malloc(size_t size, const char* file, int line)
 {
-  /* only bother if size > 0 */
-  if (size > 0) {
-    /* try to allocate memory and check whether we succeeded */
-    void* ptr = malloc(size);
-    if (ptr == NULL) {
-      /* allocate failed, abort */
-      bayer_abort(file, line, 1, "Failed to allocate %llu bytes",
-        (unsigned long long) size
-      );
+    /* only bother if size > 0 */
+    if (size > 0) {
+        /* try to allocate memory and check whether we succeeded */
+        void* ptr = malloc(size);
+        if (ptr == NULL) {
+            /* allocate failed, abort */
+            bayer_abort(file, line, 1, "Failed to allocate %llu bytes",
+                        (unsigned long long) size
+                       );
+        }
+
+        /* return the pointer */
+        return ptr;
     }
 
-    /* return the pointer */
-    return ptr;
-  }
-
-  return NULL;
+    return NULL;
 }
 
 /* if size > 0, allocates size bytes aligned with specified alignment
@@ -83,55 +83,55 @@ void* bayer_malloc(size_t size, const char* file, int line)
  * returns NULL if size == 0 */
 void* bayer_memalign(size_t size, size_t alignment, const char* file, int line)
 {
-  /* only bother if size > 0 */
-  if (size > 0) {
-    /* try to allocate memory and check whether we succeeded */
-    void* ptr;
-    int rc = posix_memalign(&ptr, alignment, size);
-    if (rc != 0) {
-      /* allocate failed, abort */
-      bayer_abort(file, line, 1, "Failed to allocate %llu bytes posix_memalign rc=%d",
-        (unsigned long long) size, rc
-      );
+    /* only bother if size > 0 */
+    if (size > 0) {
+        /* try to allocate memory and check whether we succeeded */
+        void* ptr;
+        int rc = posix_memalign(&ptr, alignment, size);
+        if (rc != 0) {
+            /* allocate failed, abort */
+            bayer_abort(file, line, 1, "Failed to allocate %llu bytes posix_memalign rc=%d",
+                        (unsigned long long) size, rc
+                       );
+        }
+
+        /* return the pointer */
+        return ptr;
     }
 
-    /* return the pointer */
-    return ptr;
-  }
-
-  return NULL;
+    return NULL;
 }
 
 /* if str != NULL, call strdup and return pointer, calls bayer_abort if strdup fails */
 char* bayer_strdup(const char* str, const char* file, int line)
 {
-  if (str != NULL) {
-    /* TODO: check that str length is below some max? */
-    char* ptr = strdup(str);
-    if (ptr == NULL) {
-      /* allocate failed, abort */
-      bayer_abort(file, line, 1, "Failed to allocate string");
-    }
+    if (str != NULL) {
+        /* TODO: check that str length is below some max? */
+        char* ptr = strdup(str);
+        if (ptr == NULL) {
+            /* allocate failed, abort */
+            bayer_abort(file, line, 1, "Failed to allocate string");
+        }
 
-    return ptr;
-  }
-  return NULL;
+        return ptr;
+    }
+    return NULL;
 }
 
 /* free memory if pointer is not NULL, set pointer to NULL */
 void bayer_free(void* p)
 {
-  /* verify that we got a valid pointer to a pointer */
-  if (p != NULL) {
-    /* free memory if there is any */
-    void* ptr = *(void**)p;
-    if (ptr != NULL ) {
-      free(ptr);
-    }
+    /* verify that we got a valid pointer to a pointer */
+    if (p != NULL) {
+        /* free memory if there is any */
+        void* ptr = *(void**)p;
+        if (ptr != NULL) {
+            free(ptr);
+        }
 
-    /* set caller's pointer to NULL */
-    *(void**)p = NULL;
-  }
+        /* set caller's pointer to NULL */
+        *(void**)p = NULL;
+    }
 }
 
 void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
@@ -141,36 +141,36 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
     MPI_Comm_rank(comm, &rank);
 
     /* check that caller gave us a pointer to a char pointer */
-    if(recv == NULL) {
+    if (recv == NULL) {
         BAYER_ABORT(1, "Invalid recv pointer");
     }
 
     /* First, broadcast length of string. */
     int len = 0;
 
-    if(rank == root) {
-        if(send != NULL) {
+    if (rank == root) {
+        if (send != NULL) {
             len = (int)(strlen(send) + 1);
 
             /* TODO: check that strlen fits within an int */
         }
     }
 
-    if(MPI_SUCCESS != MPI_Bcast(&len, 1, MPI_INT, root, comm)) {
+    if (MPI_SUCCESS != MPI_Bcast(&len, 1, MPI_INT, root, comm)) {
         BAYER_ABORT(1, "Failed to broadcast length of string");
     }
 
     /* If the string is non-zero bytes, allocate space and bcast it. */
-    if(len > 0) {
+    if (len > 0) {
         /* allocate space to receive string */
         *recv = (char*) BAYER_MALLOC((size_t)len);
 
         /* Broadcast the string. */
-        if(rank == root) {
+        if (rank == root) {
             strncpy(*recv, send, (size_t)len);
         }
 
-        if(MPI_SUCCESS != MPI_Bcast(*recv, len, MPI_CHAR, root, comm)) {
+        if (MPI_SUCCESS != MPI_Bcast(*recv, len, MPI_CHAR, root, comm)) {
             BAYER_ABORT(1, "Failed to bcast string");
         }
 
@@ -184,19 +184,19 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
 }
 
 static void bayer_format_1024(
-  double input,
-  const char** units_list,
-  int units_len,
-  double* val,
-  const char* units[])
+    double input,
+    const char** units_list,
+    int units_len,
+    double* val,
+    const char* units[])
 {
     /* divide input by 1024 until it falls to less than 1024,
      * increment units each time */
     int idx = 0;
-    while(input / 1024.0 > 1.0) {
+    while (input / 1024.0 > 1.0) {
         input /= 1024.0;
         idx++;
-        if(idx == (units_len - 1)) {
+        if (idx == (units_len - 1)) {
             /* we've gone as high as we can go */
             break;
         }
@@ -279,34 +279,34 @@ int bayer_abtoull(const char* str, unsigned long long* val)
     /* now extract any units, e.g. KB MB GB, etc */
     unsigned long long units = 1;
     if (*next != '\0') {
-        switch(*next) {
-        case 'k':
-        case 'K':
-            units = kilo;
-            break;
-        case 'm':
-        case 'M':
-            units = mega;
-            break;
-        case 'g':
-        case 'G':
-            units = giga;
-            break;
-        case 't':
-        case 'T':
-            units = tera;
-            break;
-        case 'p':
-        case 'P':
-            units = peta;
-            break;
-        case 'e':
-        case 'E':
-            units = exa;
-            break;
-        default:
-            /* unknown units symbol */
-            return BAYER_FAILURE;
+        switch (*next) {
+            case 'k':
+            case 'K':
+                units = kilo;
+                break;
+            case 'm':
+            case 'M':
+                units = mega;
+                break;
+            case 'g':
+            case 'G':
+                units = giga;
+                break;
+            case 't':
+            case 'T':
+                units = tera;
+                break;
+            case 'p':
+            case 'P':
+                units = peta;
+                break;
+            case 'e':
+            case 'E':
+                units = exa;
+                break;
+            default:
+                /* unknown units symbol */
+                return BAYER_FAILURE;
         }
 
         next++;
@@ -345,41 +345,41 @@ int bayer_abtoull(const char* str, unsigned long long* val)
 
 void bayer_pack_uint32(char** pptr, uint32_t value)
 {
-  /* TODO: convert to network order */
-  uint32_t* ptr = *(uint32_t**)pptr;
-  *ptr = value;
-  *pptr += 4;
+    /* TODO: convert to network order */
+    uint32_t* ptr = *(uint32_t**)pptr;
+    *ptr = value;
+    *pptr += 4;
 }
 
 void bayer_unpack_uint32(const char** pptr, uint32_t* value)
 {
-  /* TODO: convert to host order */
-  const uint32_t* ptr = *(const uint32_t**)pptr;
-  *value = *ptr;
-  *pptr += 4;
+    /* TODO: convert to host order */
+    const uint32_t* ptr = *(const uint32_t**)pptr;
+    *value = *ptr;
+    *pptr += 4;
 }
 
 void bayer_pack_uint64(char** pptr, uint64_t value)
 {
-  /* TODO: convert to network order */
-  uint64_t* ptr = *(uint64_t**)pptr;
-  *ptr = value;
-  *pptr += 8;
+    /* TODO: convert to network order */
+    uint64_t* ptr = *(uint64_t**)pptr;
+    *ptr = value;
+    *pptr += 8;
 }
 
 void bayer_unpack_uint64(const char** pptr, uint64_t* value)
 {
-  /* TODO: convert to host order */
-  const uint64_t* ptr = *(const uint64_t**)pptr;
-  *value = *ptr;
-  *pptr += 8;
+    /* TODO: convert to host order */
+    const uint64_t* ptr = *(const uint64_t**)pptr;
+    *value = *ptr;
+    *pptr += 8;
 }
 
 /* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
-uint32_t bayer_hash_jenkins(const char *key, size_t len)
+uint32_t bayer_hash_jenkins(const char* key, size_t len)
 {
     uint32_t hash, i;
-    for(hash = i = 0; i < len; ++i) {
+    for (hash = i = 0; i < len; ++i) {
         hash += ((unsigned char) key[i]);
         hash += (hash << 10);
         hash ^= (hash >> 6);

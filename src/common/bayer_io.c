@@ -218,9 +218,10 @@ int bayer_open(const char* file, int flags, ...)
     /* attempt to open file */
     int fd = -1;
     errno = 0;
-    if (mode_set) { 
+    if (mode_set) {
         fd = open(file, flags, mode);
-    } else {
+    }
+    else {
         fd = open(file, flags);
     }
 
@@ -234,9 +235,10 @@ int bayer_open(const char* file, int flags, ...)
 
             /* open again */
             errno = 0;
-            if (mode_set) { 
+            if (mode_set) {
                 fd = open(file, flags, mode);
-            } else {
+            }
+            else {
                 fd = open(file, flags);
             }
             tries--;
@@ -301,10 +303,12 @@ ssize_t bayer_read(const char* file, int fd, void* buf, size_t size)
         if (rc > 0) {
             /* read some data */
             n += rc;
-        } else if (rc == 0) {
+        }
+        else if (rc == 0) {
             /* EOF */
             return n;
-        } else { /* (rc < 0) */
+        }
+        else {   /* (rc < 0) */
             /* got an error, check whether it was serious */
             if (errno == EINTR || errno == EAGAIN) {
                 /* sleep a bit before consecutive tries */
@@ -317,8 +321,8 @@ ssize_t bayer_read(const char* file, int fd, void* buf, size_t size)
             if (tries <= 0) {
                 /* too many failed retries, give up */
                 BAYER_ABORT(-1, "Failed to read file %s errno=%d (%s)",
-                    file, errno, strerror(errno)
-                );
+                            file, errno, strerror(errno)
+                           );
             }
 
             /* sleep a bit before consecutive tries */
@@ -338,12 +342,14 @@ ssize_t bayer_write(const char* file, int fd, const void* buf, size_t size)
         if (rc > 0) {
             /* wrote some data */
             n += rc;
-        } else if (rc == 0) {
+        }
+        else if (rc == 0) {
             /* something bad happened, print an error and abort */
             BAYER_ABORT(-1, "Failed to write file %s errno=%d (%s)",
-                file, errno, strerror(errno)
-            );
-        } else { /* (rc < 0) */
+                        file, errno, strerror(errno)
+                       );
+        }
+        else {   /* (rc < 0) */
             /* got an error, check whether it was serious */
             if (errno == EINTR || errno == EAGAIN) {
                 /* sleep a bit before consecutive tries */
@@ -356,8 +362,8 @@ ssize_t bayer_write(const char* file, int fd, const void* buf, size_t size)
             if (tries <= 0) {
                 /* too many failed retries, give up */
                 BAYER_ABORT(-1, "Failed to write file %s errno=%d (%s)",
-                    file, errno, strerror(errno)
-                );
+                            file, errno, strerror(errno)
+                           );
             }
 
             /* sleep a bit before consecutive tries */
@@ -417,8 +423,8 @@ void bayer_getcwd(char* buf, size_t size)
     char* p = getcwd(buf, size);
     if (p == NULL) {
         BAYER_ABORT(-1, "Failed to get current working directory errno=%d (%s)",
-            errno, strerror(errno)
-        );
+                    errno, strerror(errno)
+                   );
     }
 }
 
