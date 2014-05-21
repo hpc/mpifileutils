@@ -2,8 +2,8 @@
 --indent-switches
 --indent-preprocessor
 --indent-col1-comments
---break-blocks
 --pad-oper
+--pad-header
 --unpad-paren
 --break-closing-brackets
 --add-brackets
