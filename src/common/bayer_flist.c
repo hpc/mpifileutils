@@ -2223,10 +2223,6 @@ static void read_cache_v2(
     /* indicate that we just have file names */
     flist->detail = 0;
 
-    /* create buf_t object to hold data from file */
-    buf_t files;
-    buft_init(&files);
-
     /* get our rank */
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -2242,10 +2238,10 @@ static void read_cache_v2(
     disp += 4 * 8; /* 4 consecutive uint64_t types in external32 */
 
     uint64_t all_count;
-    *outstart   = header[0];
-    *outend     = header[1];
-    all_count   = header[2];
-    files.chars = header[3];
+    *outstart      = header[0];
+    *outend        = header[1];
+    all_count      = header[2];
+    uint64_t chars = header[3];
 
     /* compute count for each process */
     uint64_t count = all_count / (uint64_t)ranks;
@@ -2253,7 +2249,6 @@ static void read_cache_v2(
     if ((uint64_t)rank < remainder) {
         count++;
     }
-    files.count = count;
 
     /* get our offset */
     uint64_t offset;
@@ -2263,36 +2258,82 @@ static void read_cache_v2(
     }
 
     /* create file datatype and read in file info if there are any */
-    if (all_count > 0 && files.chars > 0) {
+    if (all_count > 0 && chars > 0) {
         /* create types */
-        create_stattype(flist->detail, (int)files.chars,   &(files.dt));
+        MPI_Datatype dt;
+        create_stattype(flist->detail, (int)chars,   &dt);
 
         /* get extents */
         MPI_Aint lb_file, extent_file;
-        MPI_Type_get_extent(files.dt, &lb_file, &extent_file);
+        MPI_Type_get_extent(dt, &lb_file, &extent_file);
 
-        /* allocate memory to hold data */
-        size_t bufsize_file = files.count * (size_t)extent_file;
-        files.buf = (void*) BAYER_MALLOC(bufsize_file);
+        /* in order to avoid blowing out memory, we'll pack into a smaller
+         * buffer and iteratively make many collective reads */
 
-        /* collective read of stat info */
-        MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
-        MPI_Offset read_offset = disp + (MPI_Offset)offset * extent_file;
-        MPI_File_read_at_all(fh, read_offset, files.buf, (int)files.count, files.dt, &status);
-        disp += (MPI_Offset)all_count * extent_file;
-
-        /* for each file, insert an entry into our list */
-        uint64_t i = 0;
-        char* ptr = (char*) files.buf;
-        while (i < count) {
-            list_insert_ptr(flist, ptr, 0, files.chars);
-            ptr += extent_file;
-            i++;
+        /* allocate a buffer, ensure it's large enough to hold at least one
+         * complete record */
+        size_t bufsize = 1024*1024;
+        if (bufsize < (size_t) extent_file) {
+            bufsize = (size_t) extent_file;
         }
-    }
+        void* buf = BAYER_MALLOC(bufsize);
+    
+        /* compute number of items we can fit in each read iteration */
+        uint64_t bufcount = (uint64_t)bufsize / (uint64_t)extent_file;
+    
+        /* determine number of iterations we need to read all items */
+        uint64_t iters = count / bufcount;
+        if (iters * bufcount < count) {
+            iters++;
+        }
+    
+        /* compute max iterations across all procs */
+        uint64_t all_iters;
+        MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    
+        /* set file view to be sequence of datatypes past header */
+        MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
+    
+        /* compute byte offset to read our element */
+        MPI_Offset read_offset = disp + (MPI_Offset)offset * extent_file;
+    
+        /* iterate with multiple reads until all records are read */
+        uint64_t totalcount = 0;
+        while (all_iters > 0) {
+            /* determine number to read */
+            int read_count = (int) bufcount;
+            uint64_t remaining = count - totalcount;
+            if (remaining < bufcount) {
+                read_count = (int) remaining;
+            }
 
-    /* free buffer */
-    buft_free(&files);
+            /* issue a collective read */
+            MPI_File_read_at_all(fh, read_offset, buf, read_count, dt, &status);
+
+            /* update our offset with the number of bytes we just read */
+            read_offset += (MPI_Offset)read_count * (MPI_Offset)extent_file;
+            totalcount += (uint64_t) read_count;
+
+            /* unpack data from buffer into list */
+            char* ptr = (char*) buf;
+            uint64_t packcount = 0;
+            while (packcount < (uint64_t) read_count) {
+                /* unpack item from buffer and advance pointer */
+                list_insert_ptr(flist, ptr, 0, chars);
+                ptr += extent_file;
+                packcount++;
+            }
+    
+            /* one less iteration */
+            all_iters--;
+        }
+
+        /* free buffer */
+        bayer_free(&buf);
+
+        /* free off our datatype */
+        MPI_Type_free(&dt);
+    }
 
     *outdisp = disp;
     return;
@@ -2331,10 +2372,6 @@ static void read_cache_v3(
     buf_t* users  = &flist->users;
     buf_t* groups = &flist->groups;
 
-    /* create buf_t object to hold data from file */
-    buf_t files;
-    buft_init(&files);
-
     /* get our rank */
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -2350,14 +2387,14 @@ static void read_cache_v3(
     disp += 8 * 8; /* 8 consecutive uint64_t types in external32 */
 
     uint64_t all_count;
-    *outstart     = header[0];
-    *outend       = header[1];
-    users->count  = header[2];
-    users->chars  = header[3];
-    groups->count = header[4];
-    groups->chars = header[5];
-    all_count     = header[6];
-    files.chars   = header[7];
+    *outstart        = header[0];
+    *outend          = header[1];
+    users->count     = header[2];
+    users->chars     = header[3];
+    groups->count    = header[4];
+    groups->chars    = header[5];
+    all_count        = header[6];
+    uint64_t chars   = header[7];
 
     /* compute count for each process */
     uint64_t count = all_count / (uint64_t)ranks;
@@ -2365,7 +2402,6 @@ static void read_cache_v3(
     if ((uint64_t)rank < remainder) {
         count++;
     }
-    files.count = count;
 
     /* get our offset */
     uint64_t offset;
@@ -2421,41 +2457,86 @@ static void read_cache_v3(
     }
 
     /* read files, if any */
-    if (all_count > 0 && files.chars > 0) {
+    if (all_count > 0 && chars > 0) {
         /* create types */
-        create_stattype(flist->detail, (int)files.chars,   &(files.dt));
+        MPI_Datatype dt;
+        create_stattype(flist->detail, (int)chars, &dt);
 
         /* get extents */
         MPI_Aint lb_file, extent_file;
-        MPI_Type_get_extent(files.dt, &lb_file, &extent_file);
+        MPI_Type_get_extent(dt, &lb_file, &extent_file);
 
-        /* allocate memory to hold data */
-        size_t bufsize_file = files.count * (size_t)extent_file;
-        files.buf = (void*) BAYER_MALLOC(bufsize_file);
-        files.bufsize = bufsize_file;
+        /* in order to avoid blowing out memory, we'll pack into a smaller
+         * buffer and iteratively make many collective reads */
 
-        /* collective read of stat info */
-        MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
-        MPI_Offset read_offset = disp + (MPI_Offset)offset * extent_file;
-        MPI_File_read_at_all(fh, read_offset, files.buf, (int)files.count, files.dt, &status);
-        disp += (MPI_Offset)all_count * extent_file;
-
-        /* for each file, insert an entry into our list */
-        uint64_t i = 0;
-        char* ptr = (char*) files.buf;
-        while (i < count) {
-            list_insert_ptr(flist, ptr, 1, files.chars);
-            ptr += extent_file;
-            i++;
+        /* allocate a buffer, ensure it's large enough to hold at least one
+         * complete record */
+        size_t bufsize = 1024*1024;
+        if (bufsize < (size_t) extent_file) {
+            bufsize = (size_t) extent_file;
         }
+        void* buf = BAYER_MALLOC(bufsize);
+    
+        /* compute number of items we can fit in each read iteration */
+        uint64_t bufcount = (uint64_t)bufsize / (uint64_t)extent_file;
+    
+        /* determine number of iterations we need to read all items */
+        uint64_t iters = count / bufcount;
+        if (iters * bufcount < count) {
+            iters++;
+        }
+    
+        /* compute max iterations across all procs */
+        uint64_t all_iters;
+        MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    
+        /* set file view to be sequence of datatypes past header */
+        MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
+    
+        /* compute byte offset to read our element */
+        MPI_Offset read_offset = disp + (MPI_Offset)offset * extent_file;
+    
+        /* iterate with multiple reads until all records are read */
+        uint64_t totalcount = 0;
+        while (all_iters > 0) {
+            /* determine number to read */
+            int read_count = (int) bufcount;
+            uint64_t remaining = count - totalcount;
+            if (remaining < bufcount) {
+                read_count = (int) remaining;
+            }
+
+            /* issue a collective read */
+            MPI_File_read_at_all(fh, read_offset, buf, read_count, dt, &status);
+
+            /* update our offset with the number of bytes we just read */
+            read_offset += (MPI_Offset)read_count * (MPI_Offset)extent_file;
+            totalcount += (uint64_t) read_count;
+
+            /* unpack data from buffer into list */
+            char* ptr = (char*) buf;
+            uint64_t packcount = 0;
+            while (packcount < (uint64_t) read_count) {
+                /* unpack item from buffer and advance pointer */
+                list_insert_ptr(flist, ptr, 1, chars);
+                ptr += extent_file;
+                packcount++;
+            }
+    
+            /* one less iteration */
+            all_iters--;
+        }
+
+        /* free buffer */
+        bayer_free(&buf);
+
+        /* free off our datatype */
+        MPI_Type_free(&dt);
     }
 
     /* create maps of users and groups */
     create_map(&flist->users, flist->user_id2name);
     create_map(&flist->groups, flist->group_id2name);
-
-    /* free buffer */
-    buft_free(&files);
 
     *outdisp = disp;
     return;
@@ -2546,26 +2627,38 @@ static void write_cache_readdir(
     uint64_t walk_end,
     flist_t* flist)
 {
-    /* convert list to contiguous buffer */
-    buf_t files;
-    buft_init(&files);
-    list_convert_to_dt(flist, &files);
-
-    /* get our rank and number of ranks in job */
-    int rank, ranks;
+    /* get our rank in job */
+    int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-    /* get total file count */
-    uint64_t count = files.count;
+    /* get number of items in our list and total file count */
+    uint64_t count     = flist->list_count;
     uint64_t all_count = flist->total_files;
+    uint64_t offset    = flist->offset;
 
-    /* get our offset */
-    uint64_t offset;
-    MPI_Exscan(&count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    if (rank == 0) {
-        offset = 0;
+    /* find smallest length that fits max and consists of integer
+     * number of 8 byte segments */
+    int max = (int) flist->max_file_name;
+    int chars = max / 8;
+    if (chars * 8 < max) {
+        chars++;
     }
+    chars *= 8;
+
+    /* build datatype to hold file info */
+    MPI_Datatype dt;
+    create_stattype(flist->detail, chars, &dt);
+
+    /* get extent of stat type */
+    MPI_Aint lb, extent;
+    MPI_Type_get_extent(dt, &lb, &extent);
+
+    /* determine number of bytes we'll write */
+    uint64_t bytes = (uint64_t)extent * count;
+
+    /* compute max bytes across all procs */
+    uint64_t maxbytes;
+    MPI_Allreduce(&bytes, &maxbytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* open file */
     MPI_Status status;
@@ -2580,11 +2673,11 @@ static void write_cache_readdir(
 
     /* prepare header */
     uint64_t header[5];
-    header[0] = 2;            /* file version */
-    header[1] = walk_start;   /* time_t when file walk started */
-    header[2] = walk_end;     /* time_t when file walk stopped */
-    header[3] = all_count;    /* total number of stat entries */
-    header[4] = files.chars;  /* number of chars in file name */
+    header[0] = 2;               /* file version */
+    header[1] = walk_start;      /* time_t when file walk started */
+    header[2] = walk_end;        /* time_t when file walk stopped */
+    header[3] = all_count;       /* total number of stat entries */
+    header[4] = (uint64_t)chars; /* number of chars in file name */
 
     /* write the header */
     MPI_Offset disp = 0;
@@ -2594,24 +2687,69 @@ static void write_cache_readdir(
     }
     disp += 5 * 8;
 
-    if (files.dt != MPI_DATATYPE_NULL) {
-        /* get extents of file datatypes */
-        MPI_Aint lb_file, extent_file;
-        MPI_Type_get_extent(files.dt, &lb_file, &extent_file);
+    /* in order to avoid blowing out memory, we'll pack into a smaller
+     * buffer and iteratively make many collective writes */
+
+    /* allocate a buffer, ensure it's large enough to hold at least one
+     * complete record */
+    size_t bufsize = 1024*1024;
+    if (bufsize < (size_t) extent) {
+        bufsize = (size_t) extent;
+    }
+    void* buf = BAYER_MALLOC(bufsize);
+
+    /* compute number of items we can fit in each write iteration */
+    uint64_t bufcount = (uint64_t)bufsize / (uint64_t)extent;
+
+    /* determine number of iterations we need to write all items */
+    uint64_t iters = count / bufcount;
+    if (iters * bufcount < count) {
+        iters++;
+    }
+
+    /* compute max iterations across all procs */
+    uint64_t all_iters;
+    MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* set file view to be sequence of datatypes past header */
+    MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
+
+    /* compute byte offset to write our element */
+    MPI_Offset write_offset = disp + (MPI_Offset)offset * extent;
+
+    /* iterate with multiple writes until all records are written */
+    const elem_t* current = flist->list_head;
+    while (all_iters > 0) {
+        /* copy stat data into write buffer */
+        char* ptr = (char*) buf;
+        uint64_t packcount = 0;
+        while (current != NULL && packcount < bufcount) {
+            /* pack item into buffer and advance pointer */
+            size_t bytes = list_elem_pack(ptr, flist->detail, (uint64_t)chars, current);
+            ptr += bytes;
+            packcount++;
+            current = current->next;
+        }
 
         /* collective write of file info */
-        MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
-        MPI_Offset write_offset = disp + (MPI_Offset)offset * extent_file;
-        int write_count = (int) count;
-        MPI_File_write_at_all(fh, write_offset, files.buf, write_count, files.dt, &status);
-        disp += (MPI_Offset)all_count * extent_file;
+        int write_count = (int) packcount;
+        MPI_File_write_at_all(fh, write_offset, buf, write_count, dt, &status);
+
+        /* update our offset with the number of bytes we just wrote */
+        write_offset += (MPI_Offset)packcount * (MPI_Offset)extent;
+
+        /* one less iteration */
+        all_iters--;
     }
+
+    /* free write buffer */
+    bayer_free(&buf);
 
     /* close file */
     MPI_File_close(&fh);
 
-    /* free buffer */
-    buft_free(&files);
+    /* free the datatype */
+    MPI_Type_free(&dt);
 
     return;
 }
@@ -2625,26 +2763,38 @@ static void write_cache_stat(
     buf_t* users  = &flist->users;
     buf_t* groups = &flist->groups;
 
-    /* convert list to contiguous buffer */
-    buf_t files;
-    buft_init(&files);
-    list_convert_to_dt(flist, &files);
-
-    /* get our rank and number of ranks in job */
-    int rank, ranks;
+    /* get our rank in job */
+    int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-    /* get total file count */
-    uint64_t count = files.count;
+    /* get number of items in our list and total file count */
+    uint64_t count     = flist->list_count;
     uint64_t all_count = flist->total_files;
+    uint64_t offset    = flist->offset;
 
-    /* get our offset */
-    uint64_t offset;
-    MPI_Exscan(&count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    if (rank == 0) {
-        offset = 0;
+    /* find smallest length that fits max and consists of integer
+     * number of 8 byte segments */
+    int max = (int) flist->max_file_name;
+    int chars = max / 8;
+    if (chars * 8 < max) {
+        chars++;
     }
+    chars *= 8;
+
+    /* build datatype to hold file info */
+    MPI_Datatype dt;
+    create_stattype(flist->detail, chars, &dt);
+
+    /* get extent of stat type */
+    MPI_Aint lb, extent;
+    MPI_Type_get_extent(dt, &lb, &extent);
+
+    /* determine number of bytes we'll write */
+    uint64_t bytes = (uint64_t)extent * count;
+
+    /* compute max bytes across all procs */
+    uint64_t maxbytes;
+    MPI_Allreduce(&bytes, &maxbytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* open file */
     MPI_Status status;
@@ -2659,15 +2809,15 @@ static void write_cache_stat(
 
     /* prepare header */
     uint64_t header[9];
-    header[0] = 3;             /* file version */
-    header[1] = walk_start;    /* time_t when file walk started */
-    header[2] = walk_end;      /* time_t when file walk stopped */
-    header[3] = users->count;  /* number of user records */
-    header[4] = users->chars;  /* number of chars in user name */
-    header[5] = groups->count; /* number of group records */
-    header[6] = groups->chars; /* number of chars in group name */
-    header[7] = all_count;     /* total number of stat entries */
-    header[8] = files.chars;   /* number of chars in file name */
+    header[0] = 3;               /* file version */
+    header[1] = walk_start;      /* time_t when file walk started */
+    header[2] = walk_end;        /* time_t when file walk stopped */
+    header[3] = users->count;    /* number of user records */
+    header[4] = users->chars;    /* number of chars in user name */
+    header[5] = groups->count;   /* number of group records */
+    header[6] = groups->chars;   /* number of chars in group name */
+    header[7] = all_count;       /* total number of stat entries */
+    header[8] = (uint64_t)chars; /* number of chars in file name */
 
     /* write the header */
     MPI_Offset disp = 0;
@@ -2705,24 +2855,69 @@ static void write_cache_stat(
         disp += (MPI_Offset)groups->count * extent_group;
     }
 
-    if (files.dt != MPI_DATATYPE_NULL) {
-        /* get extent file */
-        MPI_Aint lb_file, extent_file;
-        MPI_Type_get_extent(files.dt, &lb_file, &extent_file);
+    /* in order to avoid blowing out memory, we'll pack into a smaller
+     * buffer and iteratively make many collective writes */
 
-        /* collective write of stat info */
-        MPI_File_set_view(fh, disp, files.dt, files.dt, datarep, MPI_INFO_NULL);
-        MPI_Offset write_offset = disp + (MPI_Offset)offset * extent_file;
-        int write_count = (int) count;
-        MPI_File_write_at_all(fh, write_offset, files.buf, write_count, files.dt, &status);
-        disp += (MPI_Offset)all_count * extent_file;
+    /* allocate a buffer, ensure it's large enough to hold at least one
+     * complete record */
+    size_t bufsize = 1024*1024;
+    if (bufsize < (size_t) extent) {
+        bufsize = (size_t) extent;
     }
+    void* buf = BAYER_MALLOC(bufsize);
+
+    /* compute number of items we can fit in each write iteration */
+    uint64_t bufcount = (uint64_t)bufsize / (uint64_t)extent;
+
+    /* determine number of iterations we need to write all items */
+    uint64_t iters = count / bufcount;
+    if (iters * bufcount < count) {
+        iters++;
+    }
+
+    /* compute max iterations across all procs */
+    uint64_t all_iters;
+    MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* set file view to be sequence of datatypes past header */
+    MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
+
+    /* compute byte offset to write our element */
+    MPI_Offset write_offset = disp + (MPI_Offset)offset * extent;
+
+    /* iterate with multiple writes until all records are written */
+    const elem_t* current = flist->list_head;
+    while (all_iters > 0) {
+        /* copy stat data into write buffer */
+        char* ptr = (char*) buf;
+        uint64_t packcount = 0;
+        while (current != NULL && packcount < bufcount) {
+            /* pack item into buffer and advance pointer */
+            size_t bytes = list_elem_pack(ptr, flist->detail, (uint64_t)chars, current);
+            ptr += bytes;
+            packcount++;
+            current = current->next;
+        }
+
+        /* collective write of file info */
+        int write_count = (int) packcount;
+        MPI_File_write_at_all(fh, write_offset, buf, write_count, dt, &status);
+
+        /* update our offset with the number of bytes we just wrote */
+        write_offset += (MPI_Offset)packcount * (MPI_Offset)extent;
+
+        /* one less iteration */
+        all_iters--;
+    }
+
+    /* free write buffer */
+    bayer_free(&buf);
 
     /* close file */
     MPI_File_close(&fh);
 
-    /* free buffer */
-    buft_free(&files);
+    /* free the datatype */
+    MPI_Type_free(&dt);
 
     return;
 }
