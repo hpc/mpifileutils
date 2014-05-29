@@ -483,10 +483,20 @@ int main(int argc, \
                 break;
 
             case 'k':
-                DCOPY_chunksize = atoi(optarg) * 1024 * 1024;
+                if (bayer_abtoull(optarg, &DCOPY_chunksize) != BAYER_SUCCESS) {
+                    if (DCOPY_global_rank == 0) {
+                        fprintf(stderr, "Failed to convert -k: %s\n", optarg);
+                        DCOPY_exit(EXIT_FAILURE);
+                    }
+                }
                 break;
             case 'b':
-                DCOPY_blocksize = atoi(optarg) * 1024 * 1024;
+                if (bayer_abtoull(optarg, &DCOPY_blocksize) != BAYER_SUCCESS) {
+                    if (DCOPY_global_rank == 0) {
+                        fprintf(stderr, "Failed to convert -b: %s\n", optarg);
+                        DCOPY_exit(EXIT_FAILURE);
+                    }
+                }
                 break;
 
             case '?':
