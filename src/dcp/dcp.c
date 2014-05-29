@@ -497,8 +497,7 @@ int main(int argc, \
                         DCOPY_exit(EXIT_FAILURE);
                     }
                 }
-                break;
-
+               break;
             case '?':
             default:
 
