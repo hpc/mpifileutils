@@ -850,10 +850,16 @@ static void print_file(bayer_flist flist, uint64_t idx, int rank)
 
         prepare_mode_format(mode);
 
+        printf("%s %s %s A%s M%s C%s %lu %s\n",
+               mode_format, username, groupname,
+               access_s, modify_s, create_s, (unsigned long)size, file
+              );
+#if 0
         printf("Mode=%lx(%s) UID=%d(%s) GUI=%d(%s) Access=%s Modify=%s Create=%s Size=%lu File=%s\n",
                (unsigned long)mode, mode_format, uid, username, gid, groupname,
                access_s, modify_s, create_s, (unsigned long)size, file
               );
+#endif
     }
     else {
         /* get type */
