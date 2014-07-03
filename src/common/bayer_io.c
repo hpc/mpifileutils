@@ -303,19 +303,13 @@ ssize_t bayer_read(const char* file, int fd, void* buf, size_t size)
         if (rc > 0) {
             /* read some data */
             n += rc;
+            tries = BAYER_IO_TRIES;
         }
         else if (rc == 0) {
             /* EOF */
             return n;
         }
         else {   /* (rc < 0) */
-            /* got an error, check whether it was serious */
-            if (errno == EINTR || errno == EAGAIN) {
-                /* sleep a bit before consecutive tries */
-                usleep(BAYER_IO_USLEEP);
-                continue;
-            }
-
             /* something worth printing an error about */
             tries--;
             if (tries <= 0) {
@@ -342,6 +336,7 @@ ssize_t bayer_write(const char* file, int fd, const void* buf, size_t size)
         if (rc > 0) {
             /* wrote some data */
             n += rc;
+            tries = BAYER_IO_TRIES;
         }
         else if (rc == 0) {
             /* something bad happened, print an error and abort */
@@ -350,13 +345,6 @@ ssize_t bayer_write(const char* file, int fd, const void* buf, size_t size)
                        );
         }
         else {   /* (rc < 0) */
-            /* got an error, check whether it was serious */
-            if (errno == EINTR || errno == EAGAIN) {
-                /* sleep a bit before consecutive tries */
-                usleep(BAYER_IO_USLEEP);
-                continue;
-            }
-
             /* something worth printing an error about */
             tries--;
             if (tries <= 0) {
