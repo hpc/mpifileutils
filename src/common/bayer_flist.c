@@ -416,6 +416,72 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
     return bytes;
 }
 
+static size_t list_elem_encode_size(const elem_t* elem)
+{
+    size_t reclen = strlen(elem->file); /* filename */
+    reclen += 2; /* | + type letter */
+    reclen += 1; /* trailing newline */
+    return reclen;
+}
+
+static size_t list_elem_encode(void* buf, const elem_t* elem)
+{
+    char* ptr = (char*) buf;
+
+    size_t len = strlen(elem->file);
+    strncpy(ptr, elem->file, len);
+    ptr += len;
+
+    *ptr = '|';
+    ptr++;
+
+    bayer_filetype type = elem->type;
+    if (type == BAYER_TYPE_FILE) {
+        *ptr = 'F';
+    } else if (type == BAYER_TYPE_DIR) {
+        *ptr = 'D';
+    } else if (type == BAYER_TYPE_LINK) {
+        *ptr = 'L';
+    } else {
+        *ptr = 'U';
+    }
+    ptr++;
+
+    *ptr = '\n';
+ 
+    size_t reclen = len + 3;
+    return reclen;
+}
+
+/* given a buffer, decode element and store values in elem */
+static void list_elem_decode(char* buf, elem_t* elem)
+{
+    /* get name and advance pointer */
+    const char* file = strtok(buf, "|");
+
+    /* copy path */
+    elem->file = BAYER_STRDUP(file);
+
+    /* set depth */
+    elem->depth = get_depth(file);
+
+    elem->detail = 0;
+
+    const char* type = strtok(NULL, "|");
+    char c = type[0];
+    if (c == 'F') {
+        elem->type = BAYER_TYPE_FILE;
+    } else if (c == 'D') {
+        elem->type = BAYER_TYPE_DIR;
+    } else if (c == 'L') {
+        elem->type = BAYER_TYPE_LINK;
+    } else {
+        elem->type = BAYER_TYPE_UNKNOWN;
+    }
+
+    return;
+}
+
 /* append element to tail of linked list */
 static void list_insert_elem(flist_t* flist, elem_t* elem)
 {
@@ -528,6 +594,21 @@ static void list_insert_copy(flist_t* flist, elem_t* src)
     elem->ctime      = src->ctime;
     elem->ctime_nsec = src->ctime_nsec;
     elem->size       = src->size;
+
+    /* append element to tail of linked list */
+    list_insert_elem(flist, elem);
+
+    return;
+}
+
+/* insert a file given a pointer to packed data */
+static void list_insert_decode(flist_t* flist, char* buf)
+{
+    /* create new element to record file path, file type, and stat info */
+    elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
+
+    /* decode buffer and store values in element */
+    list_elem_decode(buf, elem);
 
     /* append element to tail of linked list */
     list_insert_elem(flist, elem);
@@ -2201,6 +2282,222 @@ void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist
  * Read file list from file
  ***************************************/
 
+static uint64_t get_filesize(const char* name)
+{
+    uint64_t size = 0;
+    struct stat sb;
+    int rc = bayer_lstat(name, &sb);
+    if (rc == 0) {
+        size = (uint64_t) sb.st_size;
+    }
+    return size;
+}
+
+/* reads a file assuming variable length records stored one per line,
+ * data encoded in ASCII, fields separated by '|' characters,
+ * we divide the file into sections and each process is responsible
+ * for records in its section, tricky part is to handle records
+ * that spill from one section into the next */
+static void read_cache_variable(
+    const char* name,
+    MPI_File fh,
+    char* datarep,
+    flist_t* flist)
+{
+    MPI_Status status;
+
+    /* get our rank and number of ranks in job */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* assume data records start at byte 0,
+     * need to update this code if this is not the case */
+    MPI_Offset disp = 0;
+
+    /* indicate that we just have file names */
+    flist->detail = 0;
+
+    /* get file size to determine how much each process should read */
+    uint64_t filesize = get_filesize(name);
+
+    /* TODO: consider stripe width */
+
+    /* compute number of chunks in file */
+    uint64_t chunk_size = 1024 * 10;
+    uint64_t chunks = filesize / chunk_size;
+    if (chunks * chunk_size < filesize) {
+        chunks++;
+    }
+
+    /* compute chunk count for each process */
+    uint64_t chunk_count = chunks / (uint64_t) ranks;
+    uint64_t remainder = chunks - chunk_count * ranks;
+    if ((uint64_t) rank < remainder) {
+        chunk_count++;
+    }
+
+    /* get our chunk offset */
+    uint64_t chunk_offset;
+    MPI_Exscan(&chunk_count, &chunk_offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    if (rank == 0) {
+        chunk_offset = 0;
+    }
+
+    /* in order to avoid blowing out memory, we read into a fixed-size
+     * buffer and unpack */
+
+    /* allocate a buffer, ensure it's large enough to hold at least one
+     * complete record */
+    size_t bufsize = chunk_size;
+    void* buf1 = BAYER_MALLOC(bufsize);
+    void* buf2 = BAYER_MALLOC(bufsize);
+    void* buf  = buf1;
+    
+    /* set file view to be sequence of characters past header */
+    MPI_File_set_view(fh, disp, MPI_CHAR, MPI_CHAR, datarep, MPI_INFO_NULL);
+    
+    /* compute offset of first byte we'll read */
+    MPI_Offset read_offset = disp + (MPI_Offset) (chunk_offset * chunk_size);
+
+    /* compute offset of last byte we need to read,
+     * note we may actually read further if our last record spills
+     * into next chunk */
+    uint64_t last_offset = disp + (chunk_offset + chunk_count) * chunk_size;
+    if (last_offset > filesize) {
+        last_offset = filesize;
+    }
+    
+    /* read last character from chunk before our first,
+     * if this char is not a newline, then last record in the
+     * previous chunk spills into ours, in which case we need
+     * to scan past first newline */
+
+    /* assume we don't have to scan passt first newline */
+    int scan = 0;
+    if (read_offset > 0) {
+        /* read last byte in chunk before our first */
+        MPI_Offset pos = read_offset - 1;
+        MPI_File_read_at(fh, pos, buf, 1, MPI_CHAR, &status);
+
+        /* if last character is not newline, we need to scan past
+         * first new line in our chunk */
+        char* ptr = (char*) buf;
+        if (*ptr != '\n') {
+            scan = 1;
+        }
+    }
+
+    /* read data from file in chunks, decode records and insert in list */
+    uint64_t bufoffset = 0; /* offset within buffer where we should read data */
+    int done = 0;
+    while (! done) {
+        /* we're done if we there's nothing to read */
+        if ((uint64_t) read_offset >= filesize) {
+            break;
+        }
+
+        /* determine number to read, try to read a full buffer's worth,
+         * but reduce this if that overruns the end of the file */
+        int read_count = (int) (bufsize - bufoffset);
+        uint64_t remaining = filesize - (uint64_t) read_offset;
+        if (remaining < (uint64_t) read_count) {
+            read_count = (int) remaining;
+        }
+    
+        /* read in our chunk */
+        char* bufstart = (char*) buf + bufoffset;
+        MPI_File_read_at(fh, read_offset, bufstart, read_count, MPI_CHAR, &status);
+
+        /* TODO: check number of items read in status, in case file
+         * size changed somehow since we first read the file size */
+
+        /* update read offset for next time */
+        read_offset += (MPI_Offset) read_count;
+    
+        /* setup pointers to work with read buffer */
+        char* ptr = (char*) buf;
+        char* end = ptr + bufoffset + read_count;
+
+        /* scan past first newline (first part of block is a partial
+         * record handled by another process) */
+        if (scan) {
+            /* advance to the next newline character */
+            while(*ptr != '\n' && ptr != end) {
+                ptr++;
+            }
+
+            /* go one past newline character */
+            if (ptr != end) {
+                ptr++;
+            }
+
+            /* no need to do that again */
+            scan = 0;
+        }
+
+        /* process records */
+        char* start = ptr;
+        while (start != end) {
+            /* start points to beginning of a record, scan to
+             * search for end of record, advance ptr past next
+             * newline character or to end of buffer */
+            while(*ptr != '\n' && ptr != end) {
+                ptr++;
+            }
+
+            /* process record if we hit a newline,
+             * otherwise copy partial record to other buffer */
+            if (*ptr == '\n') {
+                 /* we've got a full record,
+                 * terminate record string with NUL */
+                *ptr = '\0';
+
+                /* process record */
+                list_insert_decode(flist, start);
+
+                /* go one past newline character */
+                ptr++;
+                start = ptr;
+
+                /* compute position of last byte we read,
+                 * stop if we have reached or exceeded the limit that
+                 * need to read */
+                uint64_t pos = ((uint64_t)(read_offset - read_count)) - bufoffset + (ptr - (char*)buf);
+                if (pos >= last_offset) {
+                    done = 1;
+                    break;
+                }
+            } else {
+                /* hit end of buffer but not end of record,
+                 * copy partial record to start of next buffer */
+
+                /* swap buffers */
+                if (buf == buf1) {
+                    buf = buf2;
+                } else {
+                    buf = buf1;
+                }
+
+                /* copy remainder to next buffer */
+                size_t len = (size_t) (ptr - start);
+                memcpy(buf, start, len);
+                bufoffset = (uint64_t) len;
+
+                /* done with this buffer */
+                break;
+            }
+        }
+    }
+
+    /* free buffer */
+    bayer_free(&buf2);
+    bayer_free(&buf1);
+    buf = NULL;
+
+    return;
+}
+
 /* file format:
  *   uint64_t timestamp when walk started
  *   uint64_t timestamp when walk ended
@@ -2592,6 +2889,7 @@ void bayer_flist_read_cache(
     }
     else {
         /* TODO: unknown file format */
+        read_cache_variable(name, fh, datarep, flist);
     }
 
     /* close file */
@@ -2613,6 +2911,120 @@ void bayer_flist_read_cache(
  * 3: version, start, end, files, users, user chars, groups, group chars,
  *    files, file chars, list (user, userid), list (group, groupid),
  *    list (stat) */
+
+/* write each record in ASCII format, terminated with newlines */
+static void write_cache_readdir_variable(
+    const char* name,
+    flist_t* flist)
+{
+    /* get our rank in job */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* walk the list to determine the number of bytes we'll write */
+    uint64_t bytes = 0;
+    uint64_t recmax = 0;
+    const elem_t* current = flist->list_head;
+    while (current != NULL) {
+        /* <name>|<type={D,F,L}>\n */
+        uint64_t reclen = (uint64_t) list_elem_encode_size(current);
+        if (recmax < reclen) {
+            recmax = reclen;
+        }
+        bytes += reclen;
+        current = current->next;
+    }
+
+    /* compute byte offset for each task */
+    uint64_t offset;
+    MPI_Scan(&bytes, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    if (rank == 0) {
+        offset = 0;
+    }
+
+    /* open file */
+    MPI_Status status;
+    MPI_File fh;
+    char datarep[] = "external32";
+    //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
+    int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
+    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
+
+    /* truncate file to 0 bytes */
+    MPI_File_set_size(fh, 0);
+
+    MPI_Offset disp = 0;
+#if 0
+    /* prepare header */
+    uint64_t header[5];
+    header[0] = 2;               /* file version */
+    header[1] = walk_start;      /* time_t when file walk started */
+    header[2] = walk_end;        /* time_t when file walk stopped */
+    header[3] = all_count;       /* total number of stat entries */
+    header[4] = (uint64_t)chars; /* number of chars in file name */
+
+    /* write the header */
+    MPI_Offset disp = 0;
+    MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
+    if (rank == 0) {
+        MPI_File_write_at(fh, disp, header, 5, MPI_UINT64_T, &status);
+    }
+    disp += 5 * 8;
+#endif
+
+    /* in order to avoid blowing out memory, we'll pack into a smaller
+     * buffer and iteratively make many collective writes */
+
+    /* allocate a buffer, ensure it's large enough to hold at least one
+     * complete record */
+    size_t bufsize = 1024*1024;
+    if (bufsize < recmax) {
+        bufsize = recmax;
+    }
+    void* buf = BAYER_MALLOC(bufsize);
+
+    /* set file view to be sequence of datatypes past header */
+    MPI_File_set_view(fh, disp, MPI_CHAR, MPI_CHAR, datarep, MPI_INFO_NULL);
+
+    /* compute byte offset to write our element */
+    MPI_Offset write_offset = disp + (MPI_Offset)offset;
+
+    /* iterate with multiple writes until all records are written */
+    current = flist->list_head;
+    while (current != NULL) {
+        /* copy stat data into write buffer */
+        char* ptr = (char*) buf;
+        size_t packsize = 0;
+        size_t recsize = list_elem_encode_size(current);
+        while (current != NULL && (packsize + recsize) <= bufsize) {
+            /* pack item into buffer and advance pointer */
+            size_t bytes = list_elem_encode(ptr, current);
+            ptr += bytes;
+            packsize += bytes;
+
+            /* get pointer to next element and update our recsize */
+            current = current->next;
+            if (current != NULL) {
+                recsize = list_elem_encode_size(current);
+            }
+        }
+
+        /* write file info */
+        int write_count = (int) packsize;
+        MPI_File_write_at(fh, write_offset, buf, write_count, MPI_CHAR, &status);
+
+        /* update our offset with the number of bytes we just wrote */
+        write_offset += (MPI_Offset) packsize;
+    }
+
+    /* free write buffer */
+    bayer_free(&buf);
+
+    /* close file */
+    MPI_File_close(&fh);
+
+    return;
+}
 
 /* file format:
  *   uint64_t timestamp when walk started
@@ -2655,10 +3067,6 @@ static void write_cache_readdir(
 
     /* determine number of bytes we'll write */
     uint64_t bytes = (uint64_t)extent * count;
-
-    /* compute max bytes across all procs */
-    uint64_t maxbytes;
-    MPI_Allreduce(&bytes, &maxbytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* open file */
     MPI_Status status;
@@ -2791,10 +3199,6 @@ static void write_cache_stat(
 
     /* determine number of bytes we'll write */
     uint64_t bytes = (uint64_t)extent * count;
-
-    /* compute max bytes across all procs */
-    uint64_t maxbytes;
-    MPI_Allreduce(&bytes, &maxbytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* open file */
     MPI_Status status;
@@ -2934,6 +3338,7 @@ void bayer_flist_write_cache(
     }
     else {
         write_cache_readdir(name, 0, 0, flist);
+        //write_cache_readdir_variable(name, flist);
     }
 
     return;
