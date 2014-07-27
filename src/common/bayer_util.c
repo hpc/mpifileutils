@@ -202,6 +202,12 @@ static void bayer_format_1024(
         }
     }
 
+    /* for values like 1005mb (more than 1000 but less than 1024 */
+    if (input > 1000.0 && idx < (units_len - 1)) {
+        input /= 1024.0;
+        idx++;
+    }
+
     /* set output paramaters */
     *val   = input;
     *units = units_list[idx];
