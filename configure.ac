@@ -75,6 +75,7 @@ AC_CONFIG_FILES([Makefile                \
                  src/dfilemaker/Makefile \
                  src/drm/Makefile        \
                  src/dwalk/Makefile      \
+                 src/dsh/Makefile        \
                  doc/Makefile            \
                  doc/html/Makefile       \
                  doc/man/Makefile        \
