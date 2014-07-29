@@ -16,6 +16,11 @@ extern "C" {
 // HAVE_STRUCT_STAT_ST_UMTIME
 // HAVE_STRUCT_STAT_ST_MTIME_USEC
 
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE 500
+#endif
+#include <limits.h>
+
 #include "bayer_util.h"
 #include "bayer_path.h"
 #include "bayer_io.h"
