@@ -110,7 +110,7 @@ popd
 pushd dtcmp.git
   git pull origin master
   git pull --tags origin master
-  git checkout v1.0.1
+  git checkout v1.0.2
 #  make distclean
 #  ./autogen.sh
   export CFLAGS=${OPT}
