@@ -1,14 +1,11 @@
 AUTOMAKE_OPTIONS = foreign
 ACLOCAL_AMFLAGS = -I m4
 
-SUBDIRS = src doc
+#SUBDIRS = src doc
+SUBDIRS = src
 
 if EXPERIMENTAL_ENABLED
   SUBDIRS += experimental
-endif
-
-if HAVE_PANDOC
-  SUBDIRS += doc
 endif
 
 if HAVE_NOSETESTS

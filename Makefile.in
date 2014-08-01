@@ -48,7 +48,6 @@ NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
 @EXPERIMENTAL_ENABLED_TRUE@am__append_1 = experimental
-@HAVE_PANDOC_TRUE@am__append_2 = doc
 subdir = .
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
 	$(top_srcdir)/configure $(am__configure_deps) \
@@ -126,7 +125,7 @@ am__define_uniq_tagged_files = \
 ETAGS = etags
 CTAGS = ctags
 CSCOPE = cscope
-DIST_SUBDIRS = src doc experimental
+DIST_SUBDIRS = src experimental
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 distdir = $(PACKAGE)-$(VERSION)
 top_distdir = $(distdir)
@@ -278,7 +277,9 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = foreign
 ACLOCAL_AMFLAGS = -I m4
-SUBDIRS = src doc $(am__append_1) $(am__append_2)
+
+#SUBDIRS = src doc
+SUBDIRS = src $(am__append_1)
 MAINTAINERCLEANFILES = \
 	aclocal.m4 config.guess config.xml              \
 	config.h.in config.sub configure install-sh     \
