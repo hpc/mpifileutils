@@ -14,6 +14,7 @@
 
 @SET_MAKE@
 
+
 VPATH = @srcdir@
 am__make_dryrun = \
   { \
@@ -49,7 +50,8 @@ NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
 DIST_COMMON = $(top_srcdir)/common.mk $(srcdir)/Makefile.in \
-	$(srcdir)/Makefile.am $(top_srcdir)/auxdir/depcomp
+	$(srcdir)/Makefile.am $(top_srcdir)/auxdir/depcomp \
+	$(noinst_HEADERS)
 subdir = src/common
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/lx_experimental.m4 \
@@ -120,6 +122,7 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
+HEADERS = $(noinst_HEADERS)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 # Read a list of newline-separated strings from the standard input,
 # and print each of them once, without duplicates.  Input order is
@@ -249,18 +252,28 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AM_CFLAGS = -std=gnu99 -ggdb -W -pedantic -Wall -Wextra -Wconversion -Wformat=2 -Winit-self -Wmissing-include-dirs -Wswitch-default -Wswitch-enum -Wuninitialized -Wunknown-pragmas -Wstrict-aliasing -Wfloat-equal -Wundef -Wbad-function-cast -Wcast-qual -Wcast-align -Wstrict-prototypes -Wmissing-prototypes -Wredundant-decls -Winline -Wdisabled-optimization -Wshadow -Wwrite-strings
 noinst_LIBRARIES = libfileutils_common.a
+noinst_HEADERS = \
+    bayer.h \
+    bayer_flist.h \
+    bayer_io.h \
+    bayer_param_path.h \
+    bayer_path.h \
+    bayer_util.h \
+    strmap.h \
+    list.h
+
 libfileutils_common_a_SOURCES = \
-                                bayer_flist.c \
-                                bayer_flist_remove.c \
-                                bayer_io.c \
-                                bayer_param_path.c \
-                                bayer_path.c \
-                                bayer_util.c \
-                                strmap.c
+    bayer_flist.c \
+    bayer_flist_remove.c \
+    bayer_io.c \
+    bayer_param_path.c \
+    bayer_path.c \
+    bayer_util.c \
+    strmap.c
 
 libfileutils_common_a_CPPFLAGS = \
-                                 $(MPI_CFLAGS) \
-                                 $(libcircle_CFLAGS)
+     $(MPI_CFLAGS) \
+     $(libcircle_CFLAGS)
 
 all: all-am
 
@@ -515,7 +528,7 @@ distdir: $(DISTFILES)
 	done
 check-am: all-am
 check: check-am
-all-am: Makefile $(LIBRARIES)
+all-am: Makefile $(LIBRARIES) $(HEADERS)
 installdirs:
 install: install-am
 install-exec: install-exec-am
