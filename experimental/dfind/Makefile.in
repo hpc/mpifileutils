@@ -14,6 +14,7 @@
 
 @SET_MAKE@
 
+
 VPATH = @srcdir@
 am__make_dryrun = \
   { \
@@ -49,7 +50,8 @@ NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
 DIST_COMMON = $(top_srcdir)/common.mk $(srcdir)/Makefile.in \
-	$(srcdir)/Makefile.am $(top_srcdir)/auxdir/depcomp
+	$(srcdir)/Makefile.am $(top_srcdir)/auxdir/depcomp \
+	$(noinst_HEADERS)
 bin_PROGRAMS = dfind$(EXEEXT)
 subdir = experimental/dfind
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -113,6 +115,7 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
+HEADERS = $(noinst_HEADERS)
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 # Read a list of newline-separated strings from the standard input,
 # and print each of them once, without duplicates.  Input order is
@@ -241,7 +244,18 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AM_CFLAGS = -std=gnu99 -ggdb -W -pedantic -Wall -Wextra -Wconversion -Wformat=2 -Winit-self -Wmissing-include-dirs -Wswitch-default -Wswitch-enum -Wuninitialized -Wunknown-pragmas -Wstrict-aliasing -Wfloat-equal -Wundef -Wbad-function-cast -Wcast-qual -Wcast-align -Wstrict-prototypes -Wmissing-prototypes -Wredundant-decls -Winline -Wdisabled-optimization -Wshadow -Wwrite-strings
-dfind_SOURCES = dfind.c handle.c pred.c queue.c
+noinst_HEADERS = \
+    common.h \
+    handle.h \
+    pred.h \
+    queue.h
+
+dfind_SOURCES = \
+    dfind.c \
+    handle.c \
+    pred.c \
+    queue.c
+
 dfind_CPPFLAGS = -I../../src/common/ $(MPI_CFLAGS) $(libcircle_CFLAGS)
 dfind_LDFLAGS = $(MPI_CLDFLAGS)
 dfind_LDADD = ../../src/common/libfileutils_common.a $(MPI_CLDFLAGS) $(libcircle_LIBS)
@@ -491,7 +505,7 @@ distdir: $(DISTFILES)
 	done
 check-am: all-am
 check: check-am
-all-am: Makefile $(PROGRAMS)
+all-am: Makefile $(PROGRAMS) $(HEADERS)
 installdirs:
 	for dir in "$(DESTDIR)$(bindir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \

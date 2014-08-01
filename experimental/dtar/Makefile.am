@@ -2,7 +2,10 @@ include $(top_srcdir)/common.mk
 
 bin_PROGRAMS = dtar
 
-dtar_SOURCES = copy.c dtar.c helper.c
+noinst_HEADERS = \
+    common.h
+
+dtar_SOURCES = dtar.c common.c handle_args.c
 dtar_CPPFLAGS = -I../../src/common/ \
 				$(MPI_CFLAGS) $(libcircle_CFLAGS) $(libarchive_CFLAGS)
 dtar_LDFLAGS = $(MPI_CLDFLAGS)

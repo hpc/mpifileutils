@@ -249,7 +249,7 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-SUBDIRS = dgrep dparallel dtar #dfind
+SUBDIRS = dgrep dparallel dfind dtar
 all: all-recursive
 
 .SUFFIXES:
