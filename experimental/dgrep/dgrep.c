@@ -1,6 +1,3 @@
-#include "dgrep.h"
-#include "log.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +6,9 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <ctype.h>
+
+#include "dgrep.h"
+#include "log.h"
 
 int DGREP_global_rank;
 FILE *DGREP_debug_stream;

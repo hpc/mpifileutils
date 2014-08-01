@@ -1,3 +1,5 @@
+#include <stdlib.h>
+
 #include "dparallel.h"
 
 /** The debug stream for all logging messages. */
