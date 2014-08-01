@@ -29,41 +29,52 @@ OPT="-g -O0"
 installdir=`pwd`/install
 
 # add latest autotools to our path
-#toolspath=`pwd`/autotools/install/bin
-#export PATH="${toolspath}:$PATH"
+toolspath=`pwd`/autotools/install/bin
+export PATH="${toolspath}:$PATH"
 
 mkdir -p deps
 cd deps
 
-libcircle=libcircle-0.2.1-rc.1
-lwgrp=lwgrp-1.0.2
-dtcmp=dtcmp-1.0.3
-libarchive=libarchive-3.1.2
-
 # fetch dependencies
-if [ ! -f ${libcircle}.tar.gz ] ; then
-  wget https://github.com/adammoody/libcircle/releases/download/v0.2.1-rc.1/${libcircle}.tar.gz
+if [ ! -d libcircle.git ] ; then
+  git clone git://github.com/hpc/libcircle.git libcircle.git
 fi
-if [ ! -f ${lwgrp}.tar.gz ] ; then
-  wget https://github.com/hpc/lwgrp/releases/download/v1.0.2/${lwgrp}.tar.gz
+if [ ! -d lwgrp.git ] ; then
+  git clone git://github.com/hpc/lwgrp.git lwgrp.git
 fi
-if [ ! -f ${dtcmp}.tar.gz ] ; then
-  wget https://github.com/hpc/dtcmp/releases/download/v1.0.3/${dtcmp}.tar.gz
+if [ ! -d dtcmp.git ] ; then
+  git clone git://github.com/hpc/dtcmp.git dtcmp.git
 fi
-if [ ! -f ${libarchive}.tar.gz ] ; then 
-  wget http://www.libarchive.org/downloads/${libarchive}.tar.gz
+if [ ! -f libarchive-3.1.2.tar.gz ] ; then 
+  wget http://www.libarchive.org/downloads/libarchive-3.1.2.tar.gz
+fi
+
+if [ ! -d libcircle.git ]; then
+  echo "missing libcircle"
+  exit 1
+fi
+if [ ! -d lwgrp.git ]; then
+  echo "missing lwgrp"
+  exit 1
+fi
+if [ ! -d dtcmp.git ]; then
+  echo "missing dtcmp"
+  exit 1
 fi
 
 # clean out our autotools install directory
-#toolsdir=`pwd`/autotools/install
+toolsdir=`pwd`/autotools/install
 
 # add autotools install bin to our path
-#export PATH=${toolsdir}/bin:$PATH
+export PATH=${toolsdir}/bin:$PATH
 
 # build dependencies
-rm -rf ${libcircle}
-tar -zxf ${libcircle}.tar.gz
-pushd ${libcircle}
+pushd libcircle.git
+  git pull origin master
+  git pull --tags origin master
+# comment me to get most recent version of libcircle
+# uncomment me to get specific tagged version libcircle
+  git checkout 0.2.0-rc.1
   export CFLAGS=${OPT}
   ./configure \
     --prefix=$installdir \
@@ -74,11 +85,15 @@ pushd ${libcircle}
     echo "failed to configure, build, or install libcircle"
     exit 1
   fi
+  git checkout master
 popd
 
-rm -rf ${lwgrp}
-tar -zxf ${lwgrp}.tar.gz
-pushd ${lwgrp}
+pushd lwgrp.git
+  git pull origin master
+  git pull --tags origin master
+  git checkout v1.0.1
+#  make distclean
+#  ./autogen.sh
   export CFLAGS=${OPT}
   ./configure \
     --prefix=${installdir} \
@@ -89,11 +104,15 @@ pushd ${lwgrp}
     echo "failed to configure, build, or install liblwgrp"
     exit 1
   fi
+  git checkout master
 popd
 
-rm -rf ${dtcmp}
-tar -zxf ${dtcmp}.tar.gz
-pushd ${dtcmp}
+pushd dtcmp.git
+  git pull origin master
+  git pull --tags origin master
+  git checkout v1.0.2
+#  make distclean
+#  ./autogen.sh
   export CFLAGS=${OPT}
   ./configure \
     --prefix=${installdir} \
@@ -105,11 +124,14 @@ pushd ${dtcmp}
     echo "failed to configure, build, or install libdtcmp"
     exit 1
   fi
+  git checkout master
 popd
 
-rm -rf ${libarchive}
-tar zxvf ${libarchive}.tar.gz
-pushd ${libarchive}
+rm -rf libarchive-3.1.2
+tar zxvf libarchive-3.1.2.tar.gz
+pushd libarchive-3.1.2
+#  make distclean
+#  ./autogen.sh
   export CFLAGS=${OPT}
   ./configure \
     --prefix=${installdir} && \
