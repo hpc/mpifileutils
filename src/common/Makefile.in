@@ -74,6 +74,7 @@ libfileutils_common_a_AR = $(AR) $(ARFLAGS)
 libfileutils_common_a_LIBADD =
 am_libfileutils_common_a_OBJECTS =  \
 	libfileutils_common_a-bayer_flist.$(OBJEXT) \
+	libfileutils_common_a-bayer_flist_remove.$(OBJEXT) \
 	libfileutils_common_a-bayer_io.$(OBJEXT) \
 	libfileutils_common_a-bayer_param_path.$(OBJEXT) \
 	libfileutils_common_a-bayer_path.$(OBJEXT) \
@@ -250,6 +251,7 @@ AM_CFLAGS = -std=gnu99 -ggdb -W -pedantic -Wall -Wextra -Wconversion -Wformat=2 
 noinst_LIBRARIES = libfileutils_common.a
 libfileutils_common_a_SOURCES = \
                                 bayer_flist.c \
+                                bayer_flist_remove.c \
                                 bayer_io.c \
                                 bayer_param_path.c \
                                 bayer_path.c \
@@ -310,6 +312,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfileutils_common_a-bayer_flist.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfileutils_common_a-bayer_flist_remove.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfileutils_common_a-bayer_io.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfileutils_common_a-bayer_param_path.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfileutils_common_a-bayer_path.Po@am__quote@
@@ -343,6 +346,20 @@ libfileutils_common_a-bayer_flist.obj: bayer_flist.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='bayer_flist.c' object='libfileutils_common_a-bayer_flist.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libfileutils_common_a-bayer_flist.obj `if test -f 'bayer_flist.c'; then $(CYGPATH_W) 'bayer_flist.c'; else $(CYGPATH_W) '$(srcdir)/bayer_flist.c'; fi`
+
+libfileutils_common_a-bayer_flist_remove.o: bayer_flist_remove.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libfileutils_common_a-bayer_flist_remove.o -MD -MP -MF $(DEPDIR)/libfileutils_common_a-bayer_flist_remove.Tpo -c -o libfileutils_common_a-bayer_flist_remove.o `test -f 'bayer_flist_remove.c' || echo '$(srcdir)/'`bayer_flist_remove.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfileutils_common_a-bayer_flist_remove.Tpo $(DEPDIR)/libfileutils_common_a-bayer_flist_remove.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='bayer_flist_remove.c' object='libfileutils_common_a-bayer_flist_remove.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libfileutils_common_a-bayer_flist_remove.o `test -f 'bayer_flist_remove.c' || echo '$(srcdir)/'`bayer_flist_remove.c
+
+libfileutils_common_a-bayer_flist_remove.obj: bayer_flist_remove.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libfileutils_common_a-bayer_flist_remove.obj -MD -MP -MF $(DEPDIR)/libfileutils_common_a-bayer_flist_remove.Tpo -c -o libfileutils_common_a-bayer_flist_remove.obj `if test -f 'bayer_flist_remove.c'; then $(CYGPATH_W) 'bayer_flist_remove.c'; else $(CYGPATH_W) '$(srcdir)/bayer_flist_remove.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfileutils_common_a-bayer_flist_remove.Tpo $(DEPDIR)/libfileutils_common_a-bayer_flist_remove.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='bayer_flist_remove.c' object='libfileutils_common_a-bayer_flist_remove.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libfileutils_common_a-bayer_flist_remove.obj `if test -f 'bayer_flist_remove.c'; then $(CYGPATH_W) 'bayer_flist_remove.c'; else $(CYGPATH_W) '$(srcdir)/bayer_flist_remove.c'; fi`
 
 libfileutils_common_a-bayer_io.o: bayer_io.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libfileutils_common_a-bayer_io.o -MD -MP -MF $(DEPDIR)/libfileutils_common_a-bayer_io.Tpo -c -o libfileutils_common_a-bayer_io.o `test -f 'bayer_io.c' || echo '$(srcdir)/'`bayer_io.c

@@ -1863,6 +1863,36 @@ int main(int argc, char** argv)
                     }
                 }
             }
+        } else if (strncmp(line, "rrm", 2) == 0) {
+            char subpath[1024];
+            int scan_rc = sscanf(line, "rrm %s\n", subpath);
+            if (scan_rc == 1) {
+                /* determine path to remove */
+                bayer_path* remove_path = NULL;
+                bayer_path* subp = bayer_path_from_str(subpath);
+                if (bayer_path_is_absolute(subp)) {
+                    /* we got an absolute path, reset our current path */
+                    remove_path = bayer_path_from_str(subpath);
+                } else {
+                    /* got a relative path, tack it on to existing path */
+                    remove_path = bayer_path_dup(path);
+                    bayer_path_append(remove_path, subp);
+                }
+                bayer_path_reduce(remove_path);
+
+                /* filter files by path and remove them */
+                bayer_flist filtered = filter_files_path(flist, remove_path);
+//                summarize_children(filtered, remove_path);
+                bayer_flist_remove(filtered);
+                bayer_flist_free(&filtered);
+
+                bayer_path_delete(&subp);
+                bayer_path_delete(&remove_path);
+            } else if (rank == 0) {
+                printf("Invalid 'rm' command\n");
+                fflush(stdout);
+            }
+        } else if (strncmp(line, "ls", 2) == 0) {
         } else {
             if (rank == 0) {
                 printf("Invalid command\n");
