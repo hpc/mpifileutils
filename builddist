@@ -27,8 +27,27 @@ export CFLAGS="-I${topdir}/src/common -DDCOPY_USE_XATTRS"
 export LDFLAGS="-Wl,-rpath,${topdir}/install/lib -L${topdir}/install/lib -lcircle"
 
 ../configure \
+  --prefix=/usr/local/fileutils \
+  --enable-experimental \
+  --with-libdtcmp=$installdir && \
+make dist
+if [ $? -ne 0 ] ; then
+  echo "failed to make dist file utils"
+  exit 1
+fi
+
+fileutils=fileutils-0.0.1-alpha.4
+rm -rf ${fileutils}
+tar -zxf ${fileutils}.tar.gz
+cd ${fileutils}
+
+mkdir build
+cd build
+
+../configure \
   --prefix=$installdir \
   --disable-silent-rules \
+  --enable-experimental \
   --with-libdtcmp=$installdir && \
 make VERBOSE=1 && \
 make VERBOSE=1 install

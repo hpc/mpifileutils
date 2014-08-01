@@ -28,13 +28,11 @@ OPT="-g -O0"
 
 installdir=`pwd`/install
 
-# add latest autotools to our path
-#toolspath=`pwd`/autotools/install/bin
-#export PATH="${toolspath}:$PATH"
-
 mkdir -p deps
 cd deps
 
+# specify versions of software
+# (may need to update some other lines further below)
 libcircle=libcircle-0.2.1-rc.1
 lwgrp=lwgrp-1.0.2
 dtcmp=dtcmp-1.0.3
@@ -53,12 +51,6 @@ fi
 if [ ! -f ${libarchive}.tar.gz ] ; then 
   wget http://www.libarchive.org/downloads/${libarchive}.tar.gz
 fi
-
-# clean out our autotools install directory
-#toolsdir=`pwd`/autotools/install
-
-# add autotools install bin to our path
-#export PATH=${toolsdir}/bin:$PATH
 
 # build dependencies
 rm -rf ${libcircle}
