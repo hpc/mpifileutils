@@ -1387,7 +1387,7 @@ Optional Features:
                           do not reject slow dependency extractors
   --disable-dependency-tracking
                           speeds up one-time build
-  --with-experimental     enable experimental utilities
+  --enable-experimental   enable experimental utilities
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -6354,8 +6354,12 @@ fi
 
 
 
-ac_config_files="$ac_config_files Makefile src/Makefile src/common/Makefile src/dcmp/Makefile src/dcp/Makefile src/dcp2/Makefile src/dfilemaker/Makefile src/drm/Makefile src/dwalk/Makefile src/dsh/Makefile doc/Makefile doc/html/Makefile doc/man/Makefile doc/man/man1/Makefile"
+ac_config_files="$ac_config_files Makefile src/Makefile src/common/Makefile src/dcmp/Makefile src/dcp/Makefile src/dcp2/Makefile src/dfilemaker/Makefile src/drm/Makefile src/dwalk/Makefile src/dsh/Makefile"
 
+#                 doc/Makefile            \
+#                 doc/html/Makefile       \
+#                 doc/man/Makefile        \
+#                 doc/man/man1/Makefile   \
 
 # Check if we should build the experimental utilities.
 
@@ -6365,10 +6369,14 @@ $as_echo_n "checking if experimental tools are enabled... " >&6; }
 if test "${enable_experimental+set}" = set; then :
   enableval=$enable_experimental;
       x_ac_experimental=yes
+      { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
 
 else
 
       x_ac_experimental=no
+      { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
 
 
 fi
@@ -7145,10 +7153,6 @@ do
     "src/drm/Makefile") CONFIG_FILES="$CONFIG_FILES src/drm/Makefile" ;;
     "src/dwalk/Makefile") CONFIG_FILES="$CONFIG_FILES src/dwalk/Makefile" ;;
     "src/dsh/Makefile") CONFIG_FILES="$CONFIG_FILES src/dsh/Makefile" ;;
-    "doc/Makefile") CONFIG_FILES="$CONFIG_FILES doc/Makefile" ;;
-    "doc/html/Makefile") CONFIG_FILES="$CONFIG_FILES doc/html/Makefile" ;;
-    "doc/man/Makefile") CONFIG_FILES="$CONFIG_FILES doc/man/Makefile" ;;
-    "doc/man/man1/Makefile") CONFIG_FILES="$CONFIG_FILES doc/man/man1/Makefile" ;;
     "experimental/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/Makefile" ;;
     "experimental/dfind/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dfind/Makefile" ;;
     "experimental/dgrep/Makefile") CONFIG_FILES="$CONFIG_FILES experimental/dgrep/Makefile" ;;
