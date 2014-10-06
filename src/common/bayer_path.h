@@ -42,8 +42,8 @@ typedef struct bayer_path_elem_struct {
 
 /* define the structure for a path object */
 typedef struct {
-  int components;      /* number of components in path */
-  size_t chars;        /* number of chars in path */
+  int components;        /* number of components in path */
+  size_t chars;          /* number of chars in path */
   bayer_path_elem* head; /* pointer to first element */
   bayer_path_elem* tail; /* pointer to last element */
 } bayer_path;

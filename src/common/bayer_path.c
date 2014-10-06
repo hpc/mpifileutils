@@ -485,12 +485,22 @@ int bayer_path_components(const bayer_path* path)
 size_t bayer_path_strlen(const bayer_path* path)
 {
     if (path != NULL) {
-        /* need a '/' between components so include this in our count */
         int components = path->components;
         if (components > 0) {
+            /* special case for root directory, we want to print "/"
+             * not the empty string */
+            bayer_path_elem* head = path->head;
+            if (components == 1 && strcmp(head->component, "") == 0) {
+                /* if we only one component and it is the empty string,
+                 * print this as the root directory */
+                return 1;
+            }
+
+            /* otherwise, need a '/' between components so include
+             * this in our count */
             size_t slashes = (size_t)(components - 1);
             size_t chars   = path->chars;
-            size_t len  = slashes + chars;
+            size_t len     = slashes + chars;
             return len;
         }
     }
@@ -500,6 +510,15 @@ size_t bayer_path_strlen(const bayer_path* path)
 /* copies path into buf, caller must ensure buf is large enough */
 static int bayer_path_strcpy_internal(char* buf, const bayer_path* path)
 {
+    /* special case for root directory,
+     * we want to print "/" not the empty string */
+    int components = path->components;
+    if (components == 1 && strcmp(path->head->component, "") == 0) {
+        /* got the root directory, just print "/" */
+        strcpy(buf, "/");
+        return BAYER_SUCCESS;
+    }
+
     /* copy contents into string buffer */
     char* ptr = buf;
     bayer_path_elem* current = path->head;
@@ -1177,7 +1196,10 @@ int bayer_path_reduce(bayer_path* path)
                         bayer_path_elem_free(&current);
                     }
                     else {
-                        BAYER_ABORT(-1, "Cannot pop past root directory");
+                        /* trying to pop past root directory, just drop the ".." */
+                        //BAYER_ABORT(-1, "Cannot pop past root directory");
+                        bayer_path_elem_extract(path, current);
+                        bayer_path_elem_free(&current);
                     }
                 }
                 else {
