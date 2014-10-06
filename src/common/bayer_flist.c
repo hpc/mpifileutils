@@ -3337,8 +3337,8 @@ void bayer_flist_write_cache(
         write_cache_stat(name, 0, 0, flist);
     }
     else {
-        write_cache_readdir(name, 0, 0, flist);
-        //write_cache_readdir_variable(name, flist);
+        //write_cache_readdir(name, 0, 0, flist);
+        write_cache_readdir_variable(name, flist);
     }
 
     return;

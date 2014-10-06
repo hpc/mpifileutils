@@ -23,7 +23,7 @@
 
 /* TODO: change globals to struct */
 static int verbose   = 0;
-static int walk_stat = 1;
+static int walk_stat = 0;
 
 /*****************************
  * Global functions used by remove routines
@@ -569,6 +569,7 @@ static void remove_files(bayer_flist flist)
     bayer_flist* lists;
     bayer_flist_array_by_depth(flist, &levels, &minlevel, &lists);
 
+#if 0
     /* dive from shallow to deep, ensure all directories have write bit set */
     for (level = 0; level < levels; level++) {
         /* get list of items for this level */
@@ -610,6 +611,7 @@ static void remove_files(bayer_flist flist)
         /* wait for all procs to finish before we start next level */
         MPI_Barrier(MPI_COMM_WORLD);
     }
+#endif
 
     /* now remove files starting from deepest level */
     for (level = levels - 1; level >= 0; level--) {
@@ -842,9 +844,11 @@ int main(int argc, char** argv)
         }
     }
 
-    /* remove files */
+    /* remove files without setting writing bit on parent
+     * directories, we expect this to clear most files */
     double start_remove = MPI_Wtime();
-    remove_files(flist);
+//    remove_files(flist);
+    bayer_flist_unlink(flist);
     double end_remove = MPI_Wtime();
 
     /* report remove count, time, and rate */

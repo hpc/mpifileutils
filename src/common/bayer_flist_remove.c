@@ -556,7 +556,7 @@ static void remove_libcircle(bayer_flist list, uint64_t* rmcount)
 /* removes list of items, sets write bits on directories from
  * top-to-bottom, then removes items one level at a time starting
  * from the deepest */
-void bayer_flist_remove(bayer_flist flist)
+void bayer_flist_unlink(bayer_flist flist)
 {
     int level;
 

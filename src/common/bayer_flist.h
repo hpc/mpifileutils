@@ -168,8 +168,8 @@ size_t bayer_flist_distribute_map(
  * exchange items among ranks and return new output list */
 bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* args);
 
-/* delete all items in flist */
-void bayer_flist_remove(bayer_flist flist);
+/* unlink all items in flist */
+void bayer_flist_unlink(bayer_flist flist);
 
 #endif /* BAYER_FLIST_H */
 
