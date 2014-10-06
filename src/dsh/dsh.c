@@ -16,6 +16,13 @@
 #include <grp.h> /* for getgrent */
 #include <errno.h>
 
+#if 0
+/* use readline for prompt processing */
+#include <stdio.h>
+#include <readline/readline.h>
+#include <readline/history.h>
+#endif
+
 #include "libcircle.h"
 #include "dtcmp.h"
 #include "bayer.h"
@@ -291,13 +298,18 @@ static void filter_files(bayer_flist* pflist)
     return;
 }
 
-static bayer_flist filter_files_path(bayer_flist flist, bayer_path* path)
+/* pick out all files that are contained within a given directory,
+ * we include the directory itself if the inclusive flag is set */
+static void filter_files_path(bayer_flist flist, bayer_path* path, int inclusive, bayer_flist* out_eligible, bayer_flist* out_leftover)
 {
+    /* the files that satisfy the filter are copied to eligible,
+     * while others are copied to leftover */
     bayer_flist eligible = bayer_flist_subset(flist);
+    bayer_flist leftover = bayer_flist_subset(flist);
 
+    /* get the parent directory in string form to compare during
+     * inclusive checks */
     const char* path_str = bayer_path_strdup(path);
-    size_t path_str_len = strlen(path_str);
-    int path_comps = bayer_path_components(path);
 
     uint64_t idx = 0;
     uint64_t files = bayer_flist_size(flist);
@@ -307,17 +319,13 @@ static bayer_flist filter_files_path(bayer_flist flist, bayer_path* path)
 
         if (bayer_path_is_child(path, fpath)) {
             bayer_flist_file_copy(flist, idx, eligible);
+        } else if (inclusive && strcmp(path_str, filename) == 0) {
+            /* also include path itself if inclusive flag is set */
+            bayer_flist_file_copy(flist, idx, eligible);
+        } else {
+            /* this file does not match the filter */
+            bayer_flist_file_copy(flist, idx, leftover);
         }
-
-#if 0
-        /* determine if this file has path as its prefix */
-        if (strncmp(path_str, filename, path_str_len) == 0) {
-//            int fcomps = bayer_path_components(fpath);
-//            if (fcomps == path_comps || fcomps == path_comps + 1) {
-                bayer_flist_file_copy(flist, idx, eligible);
-//            }
-        }
-#endif
 
         bayer_path_delete(&fpath);
         idx++;
@@ -325,8 +333,12 @@ static bayer_flist filter_files_path(bayer_flist flist, bayer_path* path)
     bayer_free(&path_str);
 
     bayer_flist_summarize(eligible);
+    bayer_flist_summarize(leftover);
 
-    return eligible;
+    *out_eligible = eligible;
+    *out_leftover = leftover;
+
+    return;
 }
 
 static void sum_child(bayer_flist flist, uint64_t idx, uint64_t* vals)
@@ -354,7 +366,7 @@ static uint64_t* decode_addr(const char* str)
 }
 
 /* gather data from procs to rank 0 */
-static void print_sums(uint64_t count, uint64_t allmax, uint64_t maxcount, uint64_t sum_bytes, uint64_t sum_count, MPI_Datatype dt, void* buf)
+static void print_sums(bayer_path* origpath, uint64_t count, uint64_t allmax, uint64_t maxcount, uint64_t sum_bytes, uint64_t sum_count, MPI_Datatype dt, void* buf)
 {
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -425,10 +437,12 @@ static void print_sums(uint64_t count, uint64_t allmax, uint64_t maxcount, uint6
         bayer_format_bytes(allsum_bytes, &agg_size_tmp, &agg_size_units);
     
         /* print header info */
+        char* origpath_str = bayer_path_strdup(origpath);
         printf("--------------------------\n");
-        printf("    Bytes %*s Name\n", digits, "Items");
-        printf("%6.2f %2s %*llu\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) allsum_count);
+        printf("    Bytes %*s Path\n", digits, "Items");
+        printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) allsum_count, origpath_str);
         printf("--------------------------\n");
+        bayer_free(&origpath_str);
 
         uint64_t i;
         char* ptr = (char*) recvbuf;
@@ -458,7 +472,10 @@ static void print_sums(uint64_t count, uint64_t allmax, uint64_t maxcount, uint6
     return;
 }
 
-static void sort_scan_sort(uint64_t allmax, uint64_t numchildren, strmap* children)
+/* here we sort all items by child name, execute scans to sum data
+ * for a given name, and then finally resort and print values based
+ * on those sums */
+static void sort_scan_sort(bayer_path* origpath, uint64_t allmax, uint64_t numchildren, strmap* children)
 {
     /* get our rank */
     int rank;
@@ -646,7 +663,7 @@ static void sort_scan_sort(uint64_t allmax, uint64_t numchildren, strmap* childr
     );
 
     /* print sorted data */
-    print_sums(report_count, allmax, maxcount, sum_bytes, sum_count, report_keysat, sorted_reportbuf);
+    print_sums(origpath, report_count, allmax, maxcount, sum_bytes, sum_count, report_keysat, sorted_reportbuf);
 
     bayer_free(&sorted_reportbuf);
     bayer_free(&reportbuf);
@@ -751,16 +768,9 @@ static void summarize_children(bayer_flist flist, bayer_path* path)
     uint64_t allmax;
     MPI_Allreduce(&maxname, &allmax, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
 
-    /* print current working dir as first item */
-    if (rank == 0) {
-        char* path_str = bayer_path_strdup(path);
-        printf("%s\n", path_str);
-        bayer_free(&path_str);
-    }
-
     /* if we have a non-empty name, print it */
     if (allmax > 0) {
-        sort_scan_sort(allmax, numchildren, children);
+        sort_scan_sort(path, allmax, numchildren, children);
     }
 
     /* free data structure allocated for each child */
@@ -1767,17 +1777,22 @@ int main(int argc, char** argv)
 
     /* start process from the root directory */
     bayer_path* path = bayer_path_from_str("/");
+    bayer_path_reduce(path);
 
     /* start command loop */
     while (1) {
         int print = 0;
         char* sortfields = NULL;
 
+// http://web.mit.edu/gnu/doc/html/rlman_2.html
+// http://sunsite.ualberta.ca/Documentation/Gnu/readline-4.1/html_node/readline_45.html
         /* print prompt */
+//        char* input = NULL;
         if (rank == 0) {
             char* path_str = bayer_path_strdup(path);
             printf("%s >>:\n", path_str);
             fflush(stdout);
+//            input = readline(NULL);
             bayer_free(&path_str);
         }
 
@@ -1785,6 +1800,11 @@ int main(int argc, char** argv)
         int size = 0;
         char line[1024];
         if (rank == 0) {
+#if 0
+            strncpy(line, input, sizeof(line));
+            size = strlen(input) + 1;
+            add_history(input);
+#endif
             char* val = fgets(line, sizeof(line), stdin);
 
             /* TODO: check that we got a whole line */
@@ -1794,6 +1814,8 @@ int main(int argc, char** argv)
                 size = strlen(val) + 1;
             }
         }
+
+//        free(input);
 
         /* bcast data to all tasks, bcast length of 0 if nothing read */
         MPI_Bcast(&size, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -1863,9 +1885,9 @@ int main(int argc, char** argv)
                     }
                 }
             }
-        } else if (strncmp(line, "rrm", 2) == 0) {
+        } else if (strncmp(line, "rm", 2) == 0) {
             char subpath[1024];
-            int scan_rc = sscanf(line, "rrm %s\n", subpath);
+            int scan_rc = sscanf(line, "rm %s\n", subpath);
             if (scan_rc == 1) {
                 /* determine path to remove */
                 bayer_path* remove_path = NULL;
@@ -1880,11 +1902,18 @@ int main(int argc, char** argv)
                 }
                 bayer_path_reduce(remove_path);
 
-                /* filter files by path and remove them */
-                bayer_flist filtered = filter_files_path(flist, remove_path);
-//                summarize_children(filtered, remove_path);
-                bayer_flist_remove(filtered);
+                /* filter files by path and remove them, include the path (directory)
+                 * as an item to be removed */
+                int inclusive = 1;
+                bayer_flist filtered, leftover;
+                filter_files_path(flist, remove_path, inclusive, &filtered, &leftover);
+                bayer_flist_unlink(filtered);
                 bayer_flist_free(&filtered);
+
+                /* to update our list after removing files above, set flist
+                 * to just the remaining set of files */
+                bayer_flist_free(&flist);
+                flist = leftover;
 
                 bayer_path_delete(&subp);
                 bayer_path_delete(&remove_path);
@@ -1896,19 +1925,23 @@ int main(int argc, char** argv)
         } else {
             if (rank == 0) {
                 printf("Invalid command\n");
-                printf("Commands: pwd, cd, ls, exit\n");
+                printf("Commands: pwd, cd, ls, rm, exit\n");
                 fflush(stdout);
             }
         }
         
         if (print) {
-            /* filter files by path */
-            bayer_flist filtered = filter_files_path(flist, path);
+            /* filter files by path, exclude the path itself from the list,
+             * just list its contents */
+            int inclusive = 0;
+            bayer_flist filtered, leftover;
+            filter_files_path(flist, path, inclusive, &filtered, &leftover);
 
             summarize_children(filtered, path);
 
             /* free the list */
             bayer_flist_free(&filtered);
+            bayer_flist_free(&leftover);
         }
 
         bayer_free(&sortfields);
