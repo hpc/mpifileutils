@@ -171,6 +171,13 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* ar
 /* unlink all items in flist */
 void bayer_flist_unlink(bayer_flist flist);
 
+/* sort flist by specified fields, given as common-delimitted list
+ * precede field name with '-' character to reverse sort order:
+ *   name,user,group,uid,gid,atime,mtime,ctime,size
+ * For example to sort by size in descending order, followed by name
+ *   char fields[] = "size,-name"; */
+int bayer_flist_sort(const char* fields, bayer_flist* flist);
+
 #endif /* BAYER_FLIST_H */
 
 /* enable C++ codes to include this header directly */
