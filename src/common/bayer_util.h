@@ -115,6 +115,10 @@ void bayer_bcast_strdup(
   MPI_Comm comm
 );
 
+/* allocate a formatted string */
+#define BAYER_STRDUPF(X, ...) bayer_strdupf(__FILE__, __LINE__, X, __VA_ARGS__);
+char* bayer_strdupf(const char* file, int line, const char* format, ...);
+
 /* caller passes in void** not void*, use void* to avoid excessive
  * compiler warnings, free memory if pointer is not NULL, set
  * pointer to NULL */

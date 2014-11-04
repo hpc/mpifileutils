@@ -118,6 +118,33 @@ char* bayer_strdup(const char* str, const char* file, int line)
     return NULL;
 }
 
+char* bayer_strdupf(const char* file, int line, const char* format, ...)
+{
+  va_list args;
+  char* str = NULL;
+
+  /* check that we have a format string */
+  if (format == NULL) {
+    return NULL;
+  }
+
+  /* compute the size of the string we need to allocate */
+  va_start(args, format);
+  int size = vsnprintf(NULL, 0, format, args) + 1;
+  va_end(args);
+
+  /* allocate and print the string */
+  if (size > 0) {
+    str = (char*) bayer_malloc(size, file, line);
+
+    va_start(args, format);
+    vsnprintf(str, size, format, args);
+    va_end(args);
+  }
+
+  return str;
+}
+
 /* free memory if pointer is not NULL, set pointer to NULL */
 void bayer_free(void* p)
 {
