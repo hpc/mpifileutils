@@ -77,6 +77,7 @@ libfileutils_common_a_LIBADD =
 am_libfileutils_common_a_OBJECTS =  \
 	libfileutils_common_a-bayer_flist.$(OBJEXT) \
 	libfileutils_common_a-bayer_flist_remove.$(OBJEXT) \
+	libfileutils_common_a-bayer_flist_sort.$(OBJEXT) \
 	libfileutils_common_a-bayer_io.$(OBJEXT) \
 	libfileutils_common_a-bayer_param_path.$(OBJEXT) \
 	libfileutils_common_a-bayer_path.$(OBJEXT) \
@@ -265,6 +266,7 @@ noinst_HEADERS = \
 libfileutils_common_a_SOURCES = \
     bayer_flist.c \
     bayer_flist_remove.c \
+    bayer_flist_sort.c \
     bayer_io.c \
     bayer_param_path.c \
     bayer_path.c \
@@ -326,6 +328,7 @@ distclean-compile:
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfileutils_common_a-bayer_flist.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfileutils_common_a-bayer_flist_remove.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfileutils_common_a-bayer_flist_sort.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfileutils_common_a-bayer_io.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfileutils_common_a-bayer_param_path.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libfileutils_common_a-bayer_path.Po@am__quote@
@@ -373,6 +376,20 @@ libfileutils_common_a-bayer_flist_remove.obj: bayer_flist_remove.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='bayer_flist_remove.c' object='libfileutils_common_a-bayer_flist_remove.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libfileutils_common_a-bayer_flist_remove.obj `if test -f 'bayer_flist_remove.c'; then $(CYGPATH_W) 'bayer_flist_remove.c'; else $(CYGPATH_W) '$(srcdir)/bayer_flist_remove.c'; fi`
+
+libfileutils_common_a-bayer_flist_sort.o: bayer_flist_sort.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libfileutils_common_a-bayer_flist_sort.o -MD -MP -MF $(DEPDIR)/libfileutils_common_a-bayer_flist_sort.Tpo -c -o libfileutils_common_a-bayer_flist_sort.o `test -f 'bayer_flist_sort.c' || echo '$(srcdir)/'`bayer_flist_sort.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfileutils_common_a-bayer_flist_sort.Tpo $(DEPDIR)/libfileutils_common_a-bayer_flist_sort.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='bayer_flist_sort.c' object='libfileutils_common_a-bayer_flist_sort.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libfileutils_common_a-bayer_flist_sort.o `test -f 'bayer_flist_sort.c' || echo '$(srcdir)/'`bayer_flist_sort.c
+
+libfileutils_common_a-bayer_flist_sort.obj: bayer_flist_sort.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libfileutils_common_a-bayer_flist_sort.obj -MD -MP -MF $(DEPDIR)/libfileutils_common_a-bayer_flist_sort.Tpo -c -o libfileutils_common_a-bayer_flist_sort.obj `if test -f 'bayer_flist_sort.c'; then $(CYGPATH_W) 'bayer_flist_sort.c'; else $(CYGPATH_W) '$(srcdir)/bayer_flist_sort.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libfileutils_common_a-bayer_flist_sort.Tpo $(DEPDIR)/libfileutils_common_a-bayer_flist_sort.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='bayer_flist_sort.c' object='libfileutils_common_a-bayer_flist_sort.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o libfileutils_common_a-bayer_flist_sort.obj `if test -f 'bayer_flist_sort.c'; then $(CYGPATH_W) 'bayer_flist_sort.c'; else $(CYGPATH_W) '$(srcdir)/bayer_flist_sort.c'; fi`
 
 libfileutils_common_a-bayer_io.o: bayer_io.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libfileutils_common_a_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT libfileutils_common_a-bayer_io.o -MD -MP -MF $(DEPDIR)/libfileutils_common_a-bayer_io.Tpo -c -o libfileutils_common_a-bayer_io.o `test -f 'bayer_io.c' || echo '$(srcdir)/'`bayer_io.c
