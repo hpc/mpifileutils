@@ -335,6 +335,7 @@ int main(int argc, char** argv)
 
     /* initialize MPI */
     MPI_Init(&argc, &argv);
+    bayer_init();
 
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -517,9 +518,6 @@ int main(int argc, char** argv)
     /* TODO: check stat fields fit within MPI types */
     // if (sizeof(st_uid) > uint64_t) error(); etc...
 
-    /* initialize our sorting library */
-    DTCMP_Init();
-
     uint64_t all_count = 0;
     uint64_t walk_start, walk_end;
 
@@ -662,9 +660,6 @@ int main(int argc, char** argv)
     bayer_free(&outputname);
     bayer_free(&inputname);
 
-    /* shut down the sorting library */
-    DTCMP_Finalize();
-
     /* free the path parameters */
     for (i = 0; i < numpaths; i++) {
         bayer_param_path_free(&paths[i]);
@@ -672,6 +667,7 @@ int main(int argc, char** argv)
     bayer_free(&paths);
 
     /* shut down MPI */
+    bayer_finalize();
     MPI_Finalize();
 
     return 0;
