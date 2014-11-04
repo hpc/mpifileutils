@@ -349,6 +349,89 @@ int bayer_abtoull(const char* str, unsigned long long* val)
     return BAYER_SUCCESS;
 }
 
+/* give a mode type, print permission bits in ls -l form,
+ * e.g., -rwxr--r-- for a file of 755
+ * buf must be at least 11 characters long */
+void bayer_format_mode(mode_t mode, char* buf)
+{
+    if (S_ISDIR(mode)) {
+        buf[0] = 'd';
+    }
+    else if (S_ISLNK(mode)) {
+        buf[0] = 'l';
+    }
+    else {
+        buf[0] = '-';
+    }
+
+    if (S_IRUSR & mode) {
+        buf[1] = 'r';
+    }
+    else {
+        buf[1] = '-';
+    }
+
+    if (S_IWUSR & mode) {
+        buf[2] = 'w';
+    }
+    else {
+        buf[2] = '-';
+    }
+
+    if (S_IXUSR & mode) {
+        buf[3] = 'x';
+    }
+    else {
+        buf[3] = '-';
+    }
+
+    if (S_IRGRP & mode) {
+        buf[4] = 'r';
+    }
+    else {
+        buf[4] = '-';
+    }
+
+    if (S_IWGRP & mode) {
+        buf[5] = 'w';
+    }
+    else {
+        buf[5] = '-';
+    }
+
+    if (S_IXGRP & mode) {
+        buf[6] = 'x';
+    }
+    else {
+        buf[6] = '-';
+    }
+
+    if (S_IROTH & mode) {
+        buf[7] = 'r';
+    }
+    else {
+        buf[7] = '-';
+    }
+
+    if (S_IWOTH & mode) {
+        buf[8] = 'w';
+    }
+    else {
+        buf[8] = '-';
+    }
+
+    if (S_IXOTH & mode) {
+        buf[9] = 'x';
+    }
+    else {
+        buf[9] = '-';
+    }
+
+    buf[10] = '\0';
+
+    return;
+}
+
 void bayer_pack_uint32(char** pptr, uint32_t value)
 {
     /* TODO: convert to network order */

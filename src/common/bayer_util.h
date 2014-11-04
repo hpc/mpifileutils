@@ -105,8 +105,9 @@ char* bayer_strdup(
   int line
 );
 
-/* broadcast string from root rank and allocate copy in recv on all
- * ranks including the root, caller must free recv str with bayer_recv */
+/* broadcast string from root rank and allocate memory and return copy
+ * in recv on all ranks including the root, caller must free recv str
+ * with bayer_free */
 void bayer_bcast_strdup(
   const char* send,
   char** recv,
@@ -144,6 +145,11 @@ void bayer_format_bw(double bw, double* val, const char** units);
  * Returns converted value in val parameter.  This
  * parameter is only updated if successful. */
 int bayer_abtoull(const char* str, unsigned long long* val);
+
+/* give a mode type, print permission bits in ls -l form,
+ * e.g., -rwxr--r-- for a file of 755
+ * buf must be at least 11 characters long */
+void bayer_format_mode(mode_t mode, char* buf);
 
 /* given address of pointer to buffer, pack value into buffer in
  * network order and advance pointer */

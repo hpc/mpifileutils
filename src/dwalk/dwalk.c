@@ -126,87 +126,6 @@ static void print_summary(bayer_flist flist)
     return;
 }
 
-static char mode_format[11];
-static void prepare_mode_format(mode_t mode)
-{
-    if (S_ISDIR(mode)) {
-        mode_format[0] = 'd';
-    }
-    else if (S_ISLNK(mode)) {
-        mode_format[0] = 'l';
-    }
-    else {
-        mode_format[0] = '-';
-    }
-
-    if (S_IRUSR & mode) {
-        mode_format[1] = 'r';
-    }
-    else {
-        mode_format[1] = '-';
-    }
-
-    if (S_IWUSR & mode) {
-        mode_format[2] = 'w';
-    }
-    else {
-        mode_format[2] = '-';
-    }
-
-    if (S_IXUSR & mode) {
-        mode_format[3] = 'x';
-    }
-    else {
-        mode_format[3] = '-';
-    }
-
-    if (S_IRGRP & mode) {
-        mode_format[4] = 'r';
-    }
-    else {
-        mode_format[4] = '-';
-    }
-
-    if (S_IWGRP & mode) {
-        mode_format[5] = 'w';
-    }
-    else {
-        mode_format[5] = '-';
-    }
-
-    if (S_IXGRP & mode) {
-        mode_format[6] = 'x';
-    }
-    else {
-        mode_format[6] = '-';
-    }
-
-    if (S_IROTH & mode) {
-        mode_format[7] = 'r';
-    }
-    else {
-        mode_format[7] = '-';
-    }
-
-    if (S_IWOTH & mode) {
-        mode_format[8] = 'w';
-    }
-    else {
-        mode_format[8] = '-';
-    }
-
-    if (S_IXOTH & mode) {
-        mode_format[9] = 'x';
-    }
-    else {
-        mode_format[9] = '-';
-    }
-
-    mode_format[10] = '\0';
-
-    return;
-}
-
 static char type_str_unknown[] = "UNK";
 static char type_str_dir[]     = "DIR";
 static char type_str_file[]    = "REG";
@@ -246,7 +165,8 @@ static void print_file(bayer_flist flist, uint64_t idx, int rank)
             create_s[0] = '\0';
         }
 
-        prepare_mode_format(mode);
+        char mode_format[11];
+        bayer_format_mode(mode, mode_format);
 
         printf("%s %s %s A%s M%s C%s %lu %s\n",
                mode_format, username, groupname,
