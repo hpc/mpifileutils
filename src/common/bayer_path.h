@@ -203,8 +203,15 @@ char* bayer_path_strdup_abs_reduce_str(const char* str);
 /* return 1 if path starts with an empty string, 0 otherwise */
 int bayer_path_is_absolute(const bayer_path* path);
 
-/* return 1 if child is contained in tree starting at parent, 0 otherwise */
-int bayer_path_is_child(const bayer_path* parent, const bayer_path* child);
+typedef enum {
+    BAYER_PATH_EQUAL   = 0,
+    BAYER_PATH_SRC_CHILD,
+    BAYER_PATH_DEST_CHILD,
+    BAYER_PATH_DIFF,
+} bayer_path_result;
+
+bayer_path_result bayer_path_cmp(const bayer_path* src,
+	const bayer_path* dest);
 
 /* compute and return relative path from src to dst */
 bayer_path* bayer_path_relative(const bayer_path* src, const bayer_path* dst);

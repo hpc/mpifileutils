@@ -114,6 +114,7 @@ typedef struct {
 typedef struct {
     int    copy_into_dir; /* flag indicating whether copying into existing dir */
     char*  dest_path;     /* prefex of destination directory */
+    char*  input_file;    /* file name of input list*/
     bool   force;         /* wehther to unlink existing file before open */
     bool   preserve;      /* wether to preserve timestamps, ownership, permissions, etc. */
     bool   synchronous;   /* whether to use O_DIRECT */

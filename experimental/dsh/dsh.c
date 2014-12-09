@@ -338,7 +338,7 @@ static void filter_files_path(bayer_flist flist, bayer_path* path, int inclusive
         const char* filename = bayer_flist_file_get_name(flist, idx);
         bayer_path* fpath = bayer_path_from_str(filename);
 
-        if (bayer_path_is_child(path, fpath)) {
+        if (bayer_path_cmp(path, fpath) == BAYER_PATH_DEST_CHILD) {
             bayer_flist_file_copy(flist, idx, eligible);
         } else if (inclusive && strcmp(path_str, filename) == 0) {
             /* also include path itself if inclusive flag is set */

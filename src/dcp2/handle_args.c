@@ -399,4 +399,29 @@ void DCOPY_free_path_args(void)
     bayer_free(&src_params);
 }
 
+int DCOPY_input_flist_skip(const char* name, void* args)
+{
+    int i;
+    bayer_path *path = bayer_path_from_str(name);
+
+    for (i = 0; i < num_src_params; i++) {
+        char* src_name = src_params[i].path;
+        const char* src_path = bayer_path_from_str(src_name);
+
+        bayer_path_result result = bayer_path_cmp(path, src_path);
+        if (result == BAYER_PATH_SRC_CHILD ||
+               result == BAYER_PATH_EQUAL) {
+               BAYER_LOG(BAYER_LOG_INFO, "Need to copy %s because of %s.",
+                   name, src_name);
+                       bayer_path_delete(&src_path);
+                       bayer_path_delete(&path);
+            return 0;
+        }
+        bayer_path_delete(&src_path);
+    }
+    BAYER_LOG(BAYER_LOG_INFO, "Skip %s.", name);
+    bayer_path_delete(&path);
+    return 1;
+}
+
 /* EOF */

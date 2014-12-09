@@ -36,4 +36,6 @@ void DCOPY_free_path_args(void);
 
 void DCOPY_enqueue_work_objects(CIRCLE_handle* handle);
 
+int DCOPY_input_flist_skip(const char* name, void* args);
+
 #endif /* __DCOPY_HANDLE_ARGS_H */

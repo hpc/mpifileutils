@@ -973,3 +973,49 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
 
     return;
 }
+
+/* Set up and execute directory walk */
+void bayer_flist_stat(
+  bayer_flist input_flist,
+  bayer_flist flist,
+  bayer_flist_skip_fn skip_fn,
+  void *skip_args)
+{
+    uint64_t idx;
+    struct stat st;
+    int status;
+    const char* name;
+    flist_t* file_list = (flist_t*)flist;
+
+    /* We will stat the file */
+    file_list->detail = 1;
+    if (file_list->have_users == 0) {
+        get_users(&file_list->users);
+        create_map(&file_list->users, file_list->user_id2name);
+        file_list->have_users = 1;
+    }
+    if (file_list->have_groups == 0) {
+        get_groups(&file_list->groups);
+        create_map(&file_list->groups, file_list->group_id2name);
+        file_list->have_groups = 1;
+    }
+
+    for (idx = 0; idx < bayer_flist_size(input_flist); idx++) {
+        name = bayer_flist_file_get_name(input_flist, idx);
+
+        if (skip_fn(name, skip_args)) {
+            BAYER_LOG(BAYER_LOG_INFO, "skip %s");
+            continue;
+        }
+
+        status = bayer_lstat(name, &st);
+        if (status != 0) {
+            BAYER_LOG(BAYER_LOG_ERR, "bayer_lstat(): %d", status);
+            continue;
+        }
+        list_insert_stat(flist, name, st.st_mode, &st);
+    }
+
+    /* compute global summary */
+    list_compute_summary(file_list);
+}

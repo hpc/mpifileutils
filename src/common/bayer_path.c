@@ -1279,52 +1279,67 @@ int bayer_path_is_absolute(const bayer_path* path)
     return 0;
 }
 
-/* return 1 if child is contained in tree starting at parent, 0 otherwise */
-int bayer_path_is_child(const bayer_path* parent, const bayer_path* child)
+/* same as above, but prepend curr working dir if path not absolute */
+bayer_path* bayer_path_abs_reduce(const bayer_path* path)
+{
+    bayer_path* newpath = bayer_path_dup(path);
+	if (! bayer_path_is_absolute(newpath)) {
+        char cwd[PATH_MAX];
+        bayer_getcwd(cwd, PATH_MAX);
+        bayer_path_prepend_str(newpath, cwd);
+    }
+    bayer_path_reduce(newpath);
+    return newpath;
+}
+
+bayer_path_result bayer_path_cmp(const bayer_path* src,
+	const bayer_path* dest)
 {
     /* check that we got pointers to both parent and child paths */
-    if (parent == NULL || child == NULL) {
-        return 0;
+    if (src == NULL || dest == NULL) {
+        return BAYER_PATH_DIFF;
     }
 
     /* check that parent and child aren't NULL paths */
-    if (bayer_path_is_null(parent)) {
-        return 0;
-    }
-    if (bayer_path_is_null(child)) {
-        return 0;
+    if (bayer_path_is_null(src) || (bayer_path_is_null(dest))) {
+        return BAYER_PATH_DIFF;
     }
 
-    /* TODO: check that paths are absolute */
-
-    /* TODO: reduce paths? */
+	bayer_path* abs_src = bayer_path_abs_reduce(src);
+	bayer_path* abs_dest = bayer_path_abs_reduce(dest);
 
     /* get pointers to start of parent and child */
-    int equal = 1;
-    bayer_path_elem* parent_elem = parent->head;
-    bayer_path_elem* child_elem  = child->head;
-    while (parent_elem != NULL && child_elem != NULL) {
+    bayer_path_result result = BAYER_PATH_EQUAL;
+    bayer_path_elem* src_elem = abs_src->head;
+    bayer_path_elem* dest_elem  = abs_dest->head;
+    while (src_elem != NULL && dest_elem != NULL) {
         /* compare strings for this element */
-        const char* parent_component = parent_elem->component;
-        const char* child_component  = child_elem->component;
-        if (strcmp(parent_component, child_component) != 0) {
-            /* found a component in child that's not in parent */
-            equal = 0;
+        const char* src_component = src_elem->component;
+        const char* dest_component  = dest_elem->component;
+        if (strcmp(src_component, dest_component) != 0) {
+            /* found a component in src that's not in dest */
+            result = BAYER_PATH_DIFF;
             break;
         }
 
         /* advance to compare next element */
-        parent_elem = parent_elem->next;
-        child_elem  = child_elem->next;
+        src_elem = src_elem->next;
+        dest_elem  = dest_elem->next;
     }
 
-    /* if everything is equal and we've run out of parent components
-     * but not child components, assume child path is under parent path */
-    if (equal && parent_elem == NULL && child_elem != NULL) {
-        return 1;
+    /* if everything is equal and we've run out of src components
+     * but not dest components, assume dest path is under src path */
+    if (result == BAYER_PATH_EQUAL) {
+        if (src_elem == NULL && dest_elem != NULL) {
+            result = BAYER_PATH_DEST_CHILD;
+        } else if (src_elem != NULL && dest_elem == NULL) {
+            result = BAYER_PATH_SRC_CHILD;
+        }
     }
 
-    return 0;
+	bayer_path_delete(&abs_src);
+	bayer_path_delete(&abs_dest);
+    return result;
 }
 
 /* compute and return relative path from src to dst */
