@@ -118,6 +118,7 @@ typedef struct {
     bool   force;         /* wehther to unlink existing file before open */
     bool   preserve;      /* wether to preserve timestamps, ownership, permissions, etc. */
     bool   synchronous;   /* whether to use O_DIRECT */
+    bool   sparse;        /* whether to create sparse files */
     size_t chunk_size;    /* size to chunk files by */
     size_t block_size;    /* block size to read/write to file system */
     char*  block_buf1;    /* buffer to read / write data */

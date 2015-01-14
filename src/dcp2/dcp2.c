@@ -372,6 +372,38 @@ static int create_file(bayer_flist list, uint64_t idx)
         DCOPY_copy_xattrs(list, idx, dest_path);
     }
 
+    /* Truncate destination files when sparse file is enabled */
+    if (DCOPY_user_opts.sparse) {
+        const char* name = bayer_flist_file_get_name(list, idx);
+        struct stat st;
+        int status;
+
+        /* get name of destination file */
+        char* dest_path = DCOPY_build_dest(name);
+        /* No need to copy it */
+        if (dest_path == NULL) {
+            continue;
+        }
+
+        status = bayer_lstat(dest_path, &st);
+        if (status == 0) {
+            status = truncate64(dest_path, 0);
+            if (status) {
+                BAYER_LOG(BAYER_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
+                          dest_path, errno, strerror(errno));
+            }
+        } else if (errno == -ENOENT) {
+            status = 0;
+        } else {
+            BAYER_LOG(BAYER_LOG_ERR, "bayer_lstat() file: %s (errno=%d %s)",
+                      dest_path, errno, strerror(errno));
+        }
+        bayer_free(&dest_path);
+        if (status) {
+            return;
+        }
+    }
+
     /* free destination path */
     bayer_free(&dest_path);
 
@@ -456,6 +488,37 @@ static int create_files(int levels, int minlevel, bayer_flist* lists)
     return rc;
 }
 
+static int is_all_null(const char* buf,
+                       uint64_t buf_size)
+{
+    uint64_t i;
+    for (i = 0; i < buf_size; i++) {
+        if (buf[i] != 0)
+            return 0;
+    }
+    return 1;
+}
+
+static int is_eof(const char* file, int fd)
+{
+    /* read one byte from fd to determine whether this is EOF.
+    * This is not efficient, but it is the only reliable way */
+    char buf[1];
+    ssize_t num_of_bytes_read = bayer_read(file, fd, buf, 1);
+
+    /* check for EOF */
+    if(!num_of_bytes_read) {
+        return 1;
+    }
+
+    if(bayer_lseek(file, fd, -1, SEEK_CUR) == (off_t)-1) {
+        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in path `%s' errno=%d %s", \
+                  file, errno, strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
 static int copy_file(
     const char* src,
     const char* dest,
@@ -537,9 +600,36 @@ static int copy_file(
             bytes_to_write = buf_size;
         }
 
-        /* write data to destination file */
-        ssize_t num_of_bytes_written = bayer_write(dest, out_fd, buf,
-                                     bytes_to_write);
+        /* Write data to destination file.
+         * Do nothing for a hole in the middle of a file,
+         * because write of next chunk will create one for us.
+         * Write only the last byte to create the whole,
+         * if the whole is next to EOF.
+         */
+        ssize_t num_of_bytes_written = bytes_to_write;
+        if (DCOPY_user_opts.sparse && is_all_null(buf, bytes_to_write)) {
+            int end_of_file = is_eof(src, in_fd);
+            if (end_of_file < 0)
+                return -1;
+            if (end_of_file) {
+                /* seek to offset in destination file */
+                if(bayer_lseek(dest, out_fd, bytes_to_write - 1, SEEK_CUR) == (off_t)-1) {
+                    BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+                        dest, errno, strerror(errno));
+                    return -1;
+                }
+                bayer_write(dest, out_fd, buf, 1);
+            } else {
+                if(bayer_lseek(dest, out_fd, bytes_to_write, SEEK_CUR) == (off_t)-1) {
+                    BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+                        dest, errno, strerror(errno));
+                    return -1;
+                }
+            }
+        } else {
+            num_of_bytes_written = bayer_write(dest, out_fd, buf,
+                                               bytes_to_write);
+        }
 
         /* check for an error */
         if(num_of_bytes_written < 0) {
@@ -571,7 +661,12 @@ static int copy_file(
     }
 #endif
 
-    /* if we wrote the last chunk, truncate the file */
+    /* if we wrote the last chunk, truncate the file,
+     * no need to truncate if sparse file is enabled
+     */
+    if (DCOPY_user_opts.sparse) {
+        return 0;
+    }
     off_t last_written = offset + length;
     off_t file_size_offt = (off_t) file_size;
     if (last_written >= file_size_offt || file_size == 0) {
@@ -726,6 +821,7 @@ void DCOPY_print_usage(void)
     printf("  -i, --input <file>  - read list from file\n");
     printf("  -p, --preserve      - preserve permissions, ownership, timestamps, extended attributes\n");
     printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
+    printf("  -S, --sparse        - create sparse files when possible\n");
     printf("  -v, --version       - print version info\n");
     printf("  -h, --help          - print usage\n");
     printf("\n");
@@ -784,6 +880,9 @@ int main(int argc, \
     /* By default, don't use O_DIRECT. */
     DCOPY_user_opts.synchronous = false;
 
+    /* By default, don't use sparse file. */
+    DCOPY_user_opts.sparse = false;
+
     /* Set default chunk size */
     DCOPY_user_opts.chunk_size = DCOPY_CHUNK_SIZE;
 
@@ -800,12 +899,13 @@ int main(int argc, \
         {"input"                , required_argument, 0, 'i'},
         {"preserve"             , no_argument      , 0, 'p'},
         {"synchronous"          , no_argument      , 0, 's'},
+        {"sparse"               , no_argument      , 0, 'S'},
         {"version"              , no_argument      , 0, 'v'},
         {0                      , 0                , 0, 0  }
     };
 
     /* Parse options */
-    while((c = getopt_long(argc, argv, "d:fhi:pusv", \
+    while((c = getopt_long(argc, argv, "d:fhi:pusSv", \
                            long_options, &option_index)) != -1) {
         switch(c) {
 
@@ -901,6 +1001,15 @@ int main(int argc, \
 
                 if(DCOPY_global_rank == 0) {
                     BAYER_LOG(BAYER_LOG_INFO, "Using synchronous read/write (O_DIRECT)");
+                }
+
+                break;
+
+            case 'S':
+                DCOPY_user_opts.sparse = true;
+
+                if(DCOPY_global_rank == 0) {
+                    BAYER_LOG(BAYER_LOG_INFO, "Using sparse file");
                 }
 
                 break;
