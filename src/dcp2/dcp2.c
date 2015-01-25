@@ -32,7 +32,11 @@
 #include <inttypes.h>
 #include <unistd.h>
 #include <errno.h>
+#include <sys/ioctl.h>
+#include <sys/param.h>
 
+#include <linux/fs.h>
+#include <linux/fiemap.h>
 /** Options specified by the user. */
 extern DCOPY_options_t DCOPY_user_opts;
 
@@ -519,29 +523,15 @@ static int is_eof(const char* file, int fd)
     return 0;
 }
 
-static int copy_file(
+static int copy_file_normal(
     const char* src,
     const char* dest,
+    const int in_fd,
+    const int out_fd,
     off_t offset,
     off_t length,
     uint64_t file_size)
 {
-    /* open the input file */
-    int in_fd = DCOPY_open_file(src, 1, &DCOPY_src_cache);
-    if(in_fd < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to open input file `%s' errno=%d %s",
-            src, errno, strerror(errno));
-        return -1;
-    }
-
-    /* open the output file */
-    int out_fd = DCOPY_open_file(dest, 0, &DCOPY_dst_cache);
-    if(out_fd < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to open output file `%s' errno=%d %s",
-            dest, errno, strerror(errno));
-        return -1;
-    }
-
     /* hint that we'll read from file sequentially */
 //    posix_fadvise(in_fd, offset, chunk_size, POSIX_FADV_SEQUENTIAL);
 
@@ -682,6 +672,209 @@ static int copy_file(
     return 0;
 }
 
+static int copy_file_fiemap(
+    const char* src,
+    const char* dest,
+    const int in_fd,
+    const int out_fd,
+    uint64_t chunk_offset,
+    uint64_t chunk_count,
+    uint64_t file_size,
+    bool* normal_copy_required)
+{
+    struct stat sb;
+    size_t chunk_size = (size_t)DCOPY_user_opts.chunk_size;
+    struct fiemap *fiemap;
+    size_t extents_size;
+    unsigned int i;
+    size_t last_ext_start = chunk_size * chunk_offset;
+    size_t last_ext_len = 0;
+
+    *normal_copy_required = true;
+    if (DCOPY_user_opts.synchronous)
+        goto fail_normal_copy;
+
+    if ((fiemap = (struct fiemap*)malloc(sizeof(struct fiemap))) == NULL) {
+        BAYER_LOG(BAYER_LOG_ERR, "Out of memory allocating fiemap\n");
+        goto fail_normal_copy;
+    }
+    memset(fiemap, 0, sizeof(struct fiemap));
+
+    fiemap->fm_start = chunk_size * chunk_offset;
+    fiemap->fm_length = chunk_size * chunk_count;
+    fiemap->fm_flags = FIEMAP_FLAG_SYNC;
+    fiemap->fm_extent_count = 0;
+    fiemap->fm_mapped_extents = 0;
+
+    if (fstat(in_fd, &sb) < 0)
+        goto fail_normal_copy;
+
+    if (ioctl(in_fd, FS_IOC_FIEMAP, fiemap) < 0) {
+        BAYER_LOG(BAYER_LOG_ERR, "fiemap ioctl() failed for src %s\n", src);
+        goto fail_normal_copy;
+    }
+
+    extents_size = sizeof(struct fiemap_extent) *
+                         (fiemap->fm_mapped_extents);
+
+    if ((fiemap = (struct fiemap*)realloc(fiemap,sizeof(struct fiemap) +
+                                  extents_size)) == NULL) {
+        BAYER_LOG(BAYER_LOG_ERR, "Out of memory reallocating fiemap\n");
+        goto fail_normal_copy;
+    }
+
+    memset(fiemap->fm_extents, 0, extents_size);
+    fiemap->fm_extent_count = fiemap->fm_mapped_extents;
+    fiemap->fm_mapped_extents = 0;
+
+    if (ioctl(in_fd, FS_IOC_FIEMAP, fiemap) < 0) {
+        BAYER_LOG(BAYER_LOG_ERR, "fiemap ioctl() failed for src %s\n", src);
+        goto fail_normal_copy;
+    }
+
+    if (fiemap->fm_mapped_extents > 0) {
+        uint64_t fe_logical = fiemap->fm_extents[0].fe_logical;
+        uint64_t fe_length = fiemap->fm_extents[0].fe_length;
+        if (fe_logical < chunk_size * chunk_offset) {
+            fiemap->fm_extents[0].fe_length -= chunk_size * chunk_offset -
+                                           fe_logical;
+            fiemap->fm_extents[0].fe_logical = chunk_size * chunk_offset;
+        }
+
+	fe_logical = fiemap->fm_extents[fiemap->fm_mapped_extents - 1].fe_logical;
+        fe_length = fiemap->fm_extents[fiemap->fm_mapped_extents - 1].fe_length;
+        if (fe_logical + fe_length > (chunk_offset + chunk_count) * chunk_size) {
+           fiemap->fm_extents[fiemap->fm_mapped_extents - 1].fe_length -=
+           fe_logical + fe_length - (chunk_offset + chunk_count) * chunk_size;
+        }
+    }
+
+    *normal_copy_required = false;
+    /* seek to offset in source file */
+    if(bayer_lseek(src, in_fd, (off_t)last_ext_start, SEEK_SET) < 0) {
+        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
+            src, errno, strerror(errno));
+        goto fail;
+    }
+
+    /* seek to offset in destination file */
+    if(bayer_lseek(dest, out_fd, (off_t)last_ext_start, SEEK_SET) < 0) {
+        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+            dest, errno, strerror(errno));
+        goto fail;
+    }
+
+    for (i = 0; i < fiemap->fm_mapped_extents; i++) {
+        size_t ext_start;
+        size_t ext_len;
+        size_t ext_hole_size;
+
+        size_t buf_size = DCOPY_user_opts.block_size;
+        void* buf = DCOPY_user_opts.block_buf1;
+
+        ext_start = fiemap->fm_extents[i].fe_logical;
+        ext_len = fiemap->fm_extents[i].fe_length;
+        ext_hole_size = ext_start - (last_ext_start + last_ext_len);
+
+        if (ext_hole_size) {
+            if (bayer_lseek(src, in_fd, (off_t)ext_start, SEEK_SET) < 0) {
+                BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
+                    src, errno, strerror(errno));
+                goto fail;
+            }
+            if (bayer_lseek(dest, out_fd, (off_t)ext_hole_size, SEEK_CUR) < 0) {
+                BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+                    dest, errno, strerror(errno));
+                goto fail;
+            }
+        }
+
+        last_ext_start = ext_start;
+        last_ext_len = ext_len;
+
+        while (ext_len) {
+            ssize_t num_read = bayer_read(src, in_fd, buf, MIN(ext_len, buf_size));
+
+            if (!num_read)
+                break;
+
+            ssize_t num_written = bayer_write(dest, out_fd, buf, (size_t)num_read);
+
+            if (num_written < 0) {
+                BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
+                          src, dest, errno, strerror(errno));
+                goto fail;
+            }
+            if (num_written != num_read) {
+                BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s'",
+                    src, dest);
+                goto fail;
+            }
+
+            ext_len -= (size_t)num_written;
+            DCOPY_statistics.total_bytes_copied += (int64_t) num_written;
+        }
+    }
+
+    off_t last_written = (off_t) (chunk_size * (chunk_offset + chunk_count));
+    off_t file_size_offt = (off_t) file_size;
+    if (last_written >= file_size_offt || file_size == 0) {
+        if(truncate64(dest, file_size_offt) < 0) {
+            BAYER_LOG(BAYER_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
+                dest, errno, strerror(errno));
+            goto fail;
+       }
+    }
+
+    if (last_written >= file_size_offt)
+        DCOPY_statistics.total_size += (int64_t) (file_size_offt -
+                                       (off_t) (chunk_size * chunk_offset));
+    else
+        DCOPY_statistics.total_size += (int64_t) (chunk_size * (chunk_offset + chunk_count));
+
+    free(fiemap);
+    return 0;
+
+fail:
+    free(fiemap);
+fail_normal_copy:
+    return -1;
+}
+
+static int copy_file(
+    const char* src,
+    const char* dest,
+    uint64_t chunk_offset,
+    uint64_t chunk_count,
+    uint64_t file_size)
+{
+    int ret;
+    bool normal_copy_required;
+    /* open the input file */
+    int in_fd = DCOPY_open_file(src, 1, &DCOPY_src_cache);
+    if(in_fd < 0) {
+        BAYER_LOG(BAYER_LOG_ERR, "Failed to open input file `%s' errno=%d %s",
+            src, errno, strerror(errno));
+        return -1;
+    }
+
+    /* open the output file */
+    int out_fd = DCOPY_open_file(dest, 0, &DCOPY_dst_cache);
+    if(out_fd < 0) {
+        BAYER_LOG(BAYER_LOG_ERR, "Failed to open output file `%s' errno=%d %s",
+            dest, errno, strerror(errno));
+        return -1;
+    }
+
+    if (DCOPY_user_opts.sparse) {
+        ret = copy_file_fiemap(src, dest, in_fd, out_fd, chunk_offset,
+                               chunk_count, file_size, &normal_copy_required);
+        if (!ret || !normal_copy_required)
+            return ret;
+    }
+    return copy_file_normal(src, dest, in_fd, out_fd, chunk_offset,
+                            chunk_count, file_size);
+}
 /* After receiving all incoming chunks, process open and write their chunks 
  * to the files. The process which writes the last chunk to each file also 
  * truncates the file to correct size.  A 0-byte file still has one chunk. */
