@@ -1,6 +1,6 @@
 AC_DEFUN([X_AC_DTCMP], [
   AC_MSG_CHECKING([for libDTCMP])
-  AC_ARG_WITH([libdtcmp], [AC_HELP_STRING([--with-dtcmp=PATH], 
+  AC_ARG_WITH([dtcmp], [AC_HELP_STRING([--with-dtcmp=PATH],
     [path to installed libDTCMP [default=/usr/local]])], [
     LIBDTCMP_INCLUDE="${withval}/include"
     LIBDTCMP_LIB="${withval}/lib"

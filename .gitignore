@@ -17,6 +17,12 @@
 *.exe
 *.out
 *.app
+src/dcmp/dcmp
+src/dcp/dcp
+src/dcp2/dcp2
+src/dfilemaker/dfilemaker
+src/dsh/dsh
+src/dwalk/dwalk
 
 .pc
 deps
