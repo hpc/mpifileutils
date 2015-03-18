@@ -96,12 +96,13 @@ void bayer_flist_walk_paths(
 );
 
 /* skip function pointer: given a path input, along with user-provided
- * arguments, compute whether to skip enqueue this path.
- * return 1 if skip enqueue, 0 if not.
- */
+ * arguments, compute whether to enqueue this file in output list of
+ * bayer_flist_stat, return 1 if file should be skipped, 0 if not. */
 typedef int (*bayer_flist_skip_fn) (const char* path, void* args);
 
-/* create file list by stating files */
+/* Given an input file list, stat each file and enqueue details
+ * in output file list, skip entries excluded by skip function
+ * and skip args */
 void bayer_flist_stat(
     bayer_flist input_flist,
     bayer_flist flist,

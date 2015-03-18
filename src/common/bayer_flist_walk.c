@@ -974,7 +974,9 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
     return;
 }
 
-/* Set up and execute directory walk */
+/* Given an input file list, stat each file and enqueue details
+ * in output file list, skip entries excluded by skip function
+ * and skip args */
 void bayer_flist_stat(
   bayer_flist input_flist,
   bayer_flist flist,
@@ -987,32 +989,43 @@ void bayer_flist_stat(
     const char* name;
     flist_t* file_list = (flist_t*)flist;
 
-    /* We will stat the file */
+    /* we will stat all items in output list */
     file_list->detail = 1;
+
+    /* get user data if needed */
     if (file_list->have_users == 0) {
         get_users(&file_list->users);
         create_map(&file_list->users, file_list->user_id2name);
         file_list->have_users = 1;
     }
+
+    /* get groups data if needed */
     if (file_list->have_groups == 0) {
         get_groups(&file_list->groups);
         create_map(&file_list->groups, file_list->group_id2name);
         file_list->have_groups = 1;
     }
 
+    /* step through each item in input list and stat it */
     for (idx = 0; idx < bayer_flist_size(input_flist); idx++) {
+        /* get name of item */
         name = bayer_flist_file_get_name(input_flist, idx);
 
-        if (skip_fn(name, skip_args)) {
+        /* check whether we should skip this item */
+        if (skip_fn != NULL && skip_fn(name, skip_args)) {
+            /* skip this file, don't include it in new list */
             BAYER_LOG(BAYER_LOG_INFO, "skip %s");
             continue;
         }
 
+        /* stat the item */
         status = bayer_lstat(name, &st);
         if (status != 0) {
             BAYER_LOG(BAYER_LOG_ERR, "bayer_lstat(): %d", status);
             continue;
         }
+
+        /* insert item into output list */
         list_insert_stat(flist, name, st.st_mode, &st);
     }
 
