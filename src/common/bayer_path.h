@@ -203,15 +203,16 @@ char* bayer_path_strdup_abs_reduce_str(const char* str);
 /* return 1 if path starts with an empty string, 0 otherwise */
 int bayer_path_is_absolute(const bayer_path* path);
 
+/* value returned by bayer_path_cmp */
 typedef enum {
-    BAYER_PATH_EQUAL   = 0,
-    BAYER_PATH_SRC_CHILD,
-    BAYER_PATH_DEST_CHILD,
-    BAYER_PATH_DIFF,
+    BAYER_PATH_EQUAL   = 0, /* src and dest paths are same */
+    BAYER_PATH_SRC_CHILD,   /* src is contained within dest */
+    BAYER_PATH_DEST_CHILD,  /* dest is contained within child */
+    BAYER_PATH_DIFF,        /* src and dest are different and one does not contain the other */
 } bayer_path_result;
 
-bayer_path_result bayer_path_cmp(const bayer_path* src,
-	const bayer_path* dest);
+/* compare two paths and return one of above results */
+bayer_path_result bayer_path_cmp(const bayer_path* src, const bayer_path* dest);
 
 /* compute and return relative path from src to dst */
 bayer_path* bayer_path_relative(const bayer_path* src, const bayer_path* dst);

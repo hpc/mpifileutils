@@ -1279,11 +1279,12 @@ int bayer_path_is_absolute(const bayer_path* path)
     return 0;
 }
 
-/* same as above, but prepend curr working dir if path not absolute */
+/* given a path, create a copy, prepernd curr working dir if path
+ * not absolute, and reduce it */
 bayer_path* bayer_path_abs_reduce(const bayer_path* path)
 {
     bayer_path* newpath = bayer_path_dup(path);
-	if (! bayer_path_is_absolute(newpath)) {
+    if (! bayer_path_is_absolute(newpath)) {
         char cwd[PATH_MAX];
         bayer_getcwd(cwd, PATH_MAX);
         bayer_path_prepend_str(newpath, cwd);
@@ -1292,53 +1293,70 @@ bayer_path* bayer_path_abs_reduce(const bayer_path* path)
     return newpath;
 }
 
-bayer_path_result bayer_path_cmp(const bayer_path* src,
-	const bayer_path* dest)
+bayer_path_result bayer_path_cmp(const bayer_path* src, const bayer_path* dst)
 {
-    /* check that we got pointers to both parent and child paths */
-    if (src == NULL || dest == NULL) {
-        return BAYER_PATH_DIFF;
+    /* check that we got pointers to both src and dst */
+    if (src == NULL || dst == NULL) {
+        /* if one is NULL but not both, consider them to be different */
+        if (src != NULL || dst != NULL) {
+            return BAYER_PATH_DIFF;
+        }
+
+        /* both values are NULL, so consider them to be equal */
+        return BAYER_PATH_EQUAL;
     }
 
-    /* check that parent and child aren't NULL paths */
-    if (bayer_path_is_null(src) || (bayer_path_is_null(dest))) {
-        return BAYER_PATH_DIFF;
+    /* check that src and dst aren't NULL paths */
+    int src_null = bayer_path_is_null(src);
+    int dst_null = bayer_path_is_null(dst);
+    if (src_null || dst_null) {
+        /* if one is NULL but not both, consider them to be different */
+        if ((! src_null) || (! dst_null)) {
+            return BAYER_PATH_DIFF;
+        }
+
+        /* both values are NULL, so consider them to be equal */
+        return BAYER_PATH_EQUAL;
     }
 
-	bayer_path* abs_src = bayer_path_abs_reduce(src);
-	bayer_path* abs_dest = bayer_path_abs_reduce(dest);
+    /* force source and destination to absolute form and reduce them */
+    bayer_path* abs_src = bayer_path_abs_reduce(src);
+    bayer_path* abs_dst = bayer_path_abs_reduce(dst);
 
     /* get pointers to start of parent and child */
     bayer_path_result result = BAYER_PATH_EQUAL;
     bayer_path_elem* src_elem = abs_src->head;
-    bayer_path_elem* dest_elem  = abs_dest->head;
-    while (src_elem != NULL && dest_elem != NULL) {
+    bayer_path_elem* dst_elem = abs_dst->head;
+    while (src_elem != NULL && dst_elem != NULL) {
         /* compare strings for this element */
         const char* src_component = src_elem->component;
-        const char* dest_component  = dest_elem->component;
-        if (strcmp(src_component, dest_component) != 0) {
-            /* found a component in src that's not in dest */
+        const char* dst_component = dst_elem->component;
+        if (strcmp(src_component, dst_component) != 0) {
+            /* found a component in src that's not in dst */
             result = BAYER_PATH_DIFF;
             break;
         }
 
         /* advance to compare next element */
         src_elem = src_elem->next;
-        dest_elem  = dest_elem->next;
+        dst_elem = dst_elem->next;
     }
 
-    /* if everything is equal and we've run out of src components
-     * but not dest components, assume dest path is under src path */
+    /* if everything is equal so far, but we've run out of components,
+     * check to see if one is contained within the other */
     if (result == BAYER_PATH_EQUAL) {
-        if (src_elem == NULL && dest_elem != NULL) {
+        if (src_elem == NULL && dst_elem != NULL) {
+            /* src is contained within dst */
             result = BAYER_PATH_DEST_CHILD;
-        } else if (src_elem != NULL && dest_elem == NULL) {
+        } else if (src_elem != NULL && dst_elem == NULL) {
+            /* dst is contained within source */
             result = BAYER_PATH_SRC_CHILD;
         }
     }
 
-	bayer_path_delete(&abs_src);
-	bayer_path_delete(&abs_dest);
+    bayer_path_delete(&abs_src);
+    bayer_path_delete(&abs_dst);
+
     return result;
 }
 
