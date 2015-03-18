@@ -381,34 +381,45 @@ static int create_file(bayer_flist list, uint64_t idx)
 
     /* Truncate destination files when sparse file is enabled */
     if (DCOPY_user_opts.sparse) {
+        /* get name of item to be copied */
         const char* name = bayer_flist_file_get_name(list, idx);
-        struct stat st;
-        int status;
 
         /* get name of destination file */
         char* dest_path = DCOPY_build_dest(name);
 
         /* No need to copy it */
         if (dest_path == NULL) {
+            /* item was not contained within a source path,
+             * so we couldn't compute its destination name,
+             * so skip it */
             continue;
         }
 
-        status = bayer_lstat(dest_path, &st);
+        /* truncate destination file to 0 bytes */
+        struct stat st;
+        int status = bayer_lstat(dest_path, &st);
         if (status == 0) {
+            /* destination exists, truncate it to 0 bytes */
             status = truncate64(dest_path, 0);
             if (status) {
                 BAYER_LOG(BAYER_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
                           dest_path, errno, strerror(errno));
             }
         } else if (errno == -ENOENT) {
+            /* destination does not exist, which is fine */
             status = 0;
         } else {
+            /* had an error stating destination file */
             BAYER_LOG(BAYER_LOG_ERR, "bayer_lstat() file: %s (errno=%d %s)",
                       dest_path, errno, strerror(errno));
         }
+
+        /* free the destination path */
         bayer_free(&dest_path);
+
         if (status) {
-            return;
+            /* do we need to abort here? */
+            //return;
         }
     }
 
@@ -496,31 +507,37 @@ static int create_files(int levels, int minlevel, bayer_flist* lists)
     return rc;
 }
 
-static int is_all_null(const char* buf,
-                       uint64_t buf_size)
+/* return 1 if entire buffer is 0, return 0 if any byte is not 0,
+ * we avoid writing NULL blocks when supporting sparse files */
+static int is_all_null(const char* buf, uint64_t buf_size)
 {
     uint64_t i;
     for (i = 0; i < buf_size; i++) {
-        if (buf[i] != 0)
+        if (buf[i] != 0) {
             return 0;
+        }
     }
     return 1;
 }
 
+/* when using sparse files, we need to write the last byte if the
+ * hole is adjacent to EOF, so we need to detect whether we're at
+ * the end of the file */
 static int is_eof(const char* file, int fd)
 {
     /* read one byte from fd to determine whether this is EOF.
-    * This is not efficient, but it is the only reliable way */
+     * This is not efficient, but it is the only reliable way */
     char buf[1];
     ssize_t num_of_bytes_read = bayer_read(file, fd, buf, 1);
 
-    /* check for EOF */
-    if(!num_of_bytes_read) {
+    /* return if we detect EOF */
+    if(! num_of_bytes_read) {
         return 1;
     }
 
+    /* otherwise, we're not at EOF yet, seek back one byte */
     if(bayer_lseek(file, fd, -1, SEEK_CUR) == (off_t)-1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in path `%s' errno=%d %s", \
+        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in path `%s' errno=%d %s",
                   file, errno, strerror(errno));
         return -1;
     }
@@ -597,23 +614,35 @@ static int copy_file_normal(
         /* Write data to destination file.
          * Do nothing for a hole in the middle of a file,
          * because write of next chunk will create one for us.
-         * Write only the last byte to create the whole,
-         * if the whole is next to EOF.
-         */
+         * Write only the last byte to create the hole,
+         * if the hole is next to EOF. */
         ssize_t num_of_bytes_written = bytes_to_write;
         if (DCOPY_user_opts.sparse && is_all_null(buf, bytes_to_write)) {
+            /* TODO: isn't there a better way to know if we're at EOF,
+             * e.g., by using file size? */
+            /* determine whether we're at the end of the file */
             int end_of_file = is_eof(src, in_fd);
-            if (end_of_file < 0)
+            if (end_of_file < 0) {
+                /* hit an error while looking for EOF */
                 return -1;
+            }
+
+            /* if we're at the end of the file, write out a byte,
+             * otherwise just seek out destination file pointer
+             * ahead without writing anything */
             if (end_of_file) {
-                /* seek to offset in destination file */
+                /* seek to last byte position in file */
                 if(bayer_lseek(dest, out_fd, bytes_to_write - 1, SEEK_CUR) == (off_t)-1) {
                     BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
                         dest, errno, strerror(errno));
                     return -1;
                 }
+
+                /* write out a single byte */
                 bayer_write(dest, out_fd, buf, 1);
             } else {
+                /* this section of the destination file is all 0,
+                 * seek past this section */
                 if(bayer_lseek(dest, out_fd, bytes_to_write, SEEK_CUR) == (off_t)-1) {
                     BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
                         dest, errno, strerror(errno));
@@ -621,8 +650,8 @@ static int copy_file_normal(
                 }
             }
         } else {
-            num_of_bytes_written = bayer_write(dest, out_fd, buf,
-                                               bytes_to_write);
+            /* write bytes to destination file */
+            num_of_bytes_written = bayer_write(dest, out_fd, buf, bytes_to_write);
         }
 
         /* check for an error */
@@ -655,12 +684,13 @@ static int copy_file_normal(
     }
 #endif
 
-    /* if we wrote the last chunk, truncate the file,
-     * no need to truncate if sparse file is enabled
-     */
+    /* no need to truncate if sparse file is enabled,
+     * since we truncated files when they were first created */
     if (DCOPY_user_opts.sparse) {
         return 0;
     }
+
+    /* if we wrote the last chunk, truncate the file */
     off_t last_written = offset + length;
     off_t file_size_offt = (off_t) file_size;
     if (last_written >= file_size_offt || file_size == 0) {
