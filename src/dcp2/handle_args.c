@@ -322,6 +322,9 @@ void DCOPY_walk_paths(bayer_flist flist)
     }
 }
 
+/* given an item name, determine which source path this item
+ * is contained within, extract directory components from source
+ * path to this item and then prepend destination prefix. */
 char* DCOPY_build_dest(const char* name)
 {
     /* identify which source directory this came from */
@@ -341,7 +344,8 @@ char* DCOPY_build_dest(const char* name)
         }
     }
 
-    /* hopefully this won't happen... */
+    /* this will happen if the named item is not a child of any
+     * source paths */
     if (idx == -1) {
         return NULL;
     }
@@ -374,7 +378,7 @@ char* DCOPY_build_dest(const char* name)
     /* prepend destination path */
     bayer_path_prepend_str(item, dest_param.path);
 
-    /* conver to a NUL-terminated string */
+    /* convert to a NUL-terminated string */
     char* dest = bayer_path_strdup(item);
 
     /* free our temporary paths */
@@ -401,24 +405,31 @@ void DCOPY_free_path_args(void)
 
 int DCOPY_input_flist_skip(const char* name, void* args)
 {
-    int i;
-    bayer_path *path = bayer_path_from_str(name);
+    /* create bayer_path from name */
+    bayer_path* path = bayer_path_from_str(name);
 
+    /* iterate over each source path */
+    int i;
     for (i = 0; i < num_src_params; i++) {
+        /* create bayer_path of source path */
         char* src_name = src_params[i].path;
         const char* src_path = bayer_path_from_str(src_name);
 
+        /* check whether path is contained within or equal to
+         * source path and if so, we need to copy this file */
         bayer_path_result result = bayer_path_cmp(path, src_path);
-        if (result == BAYER_PATH_SRC_CHILD ||
-               result == BAYER_PATH_EQUAL) {
+        if (result == BAYER_PATH_SRC_CHILD || result == BAYER_PATH_EQUAL) {
                BAYER_LOG(BAYER_LOG_INFO, "Need to copy %s because of %s.",
                    name, src_name);
-                       bayer_path_delete(&src_path);
-                       bayer_path_delete(&path);
+            bayer_path_delete(&src_path);
+            bayer_path_delete(&path);
             return 0;
         }
         bayer_path_delete(&src_path);
     }
+
+    /* the path in name is not a child of any source paths,
+     * so skip this file */
     BAYER_LOG(BAYER_LOG_INFO, "Skip %s.", name);
     bayer_path_delete(&path);
     return 1;

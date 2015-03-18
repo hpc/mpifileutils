@@ -174,6 +174,7 @@ static int create_directory(bayer_flist list, uint64_t idx)
 
     /* get destination name */
     char* dest_path = DCOPY_build_dest(name);
+
     /* No need to copy it */
     if (dest_path == NULL) {
         return 0;
@@ -288,6 +289,7 @@ static int create_link(bayer_flist list, uint64_t idx)
 
     /* get destination name */
     const char* dest_path = DCOPY_build_dest(src_path);
+
     /* No need to copy it */
     if (dest_path == NULL) {
         return 0;
@@ -344,6 +346,7 @@ static int create_file(bayer_flist list, uint64_t idx)
 
     /* get destination name */
     const char* dest_path = DCOPY_build_dest(src_path);
+
     /* No need to copy it */
     if (dest_path == NULL) {
         return 0;
@@ -384,6 +387,7 @@ static int create_file(bayer_flist list, uint64_t idx)
 
         /* get name of destination file */
         char* dest_path = DCOPY_build_dest(name);
+
         /* No need to copy it */
         if (dest_path == NULL) {
             continue;
@@ -741,7 +745,7 @@ static int copy_file_fiemap(
             fiemap->fm_extents[0].fe_logical = chunk_size * chunk_offset;
         }
 
-	fe_logical = fiemap->fm_extents[fiemap->fm_mapped_extents - 1].fe_logical;
+        fe_logical = fiemap->fm_extents[fiemap->fm_mapped_extents - 1].fe_logical;
         fe_length = fiemap->fm_extents[fiemap->fm_mapped_extents - 1].fe_length;
         if (fe_logical + fe_length > (chunk_offset + chunk_count) * chunk_size) {
            fiemap->fm_extents[fiemap->fm_mapped_extents - 1].fe_length -=
@@ -896,6 +900,7 @@ static void copy_files(bayer_flist list)
     while (p != NULL) {
         /* get name of destination file */
         char* dest_path = DCOPY_build_dest(p->name);
+
         /* No need to copy it */
         if (dest_path == NULL) {
             continue;
@@ -955,6 +960,7 @@ static void DCOPY_set_metadata(int levels, int minlevel, bayer_flist* lists)
             /* get destination name of item */
             const char* name = bayer_flist_file_get_name(list, idx);
             char* dest = DCOPY_build_dest(name);
+
             /* No need to copy it */
             if (dest == NULL) {
                 continue;
