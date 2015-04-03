@@ -967,7 +967,7 @@ static void DCOPY_set_metadata(int levels, int minlevel, bayer_flist* lists)
 
     /* now set timestamps on files starting from deepest level */
     int level;
-    for (level = levels-1; level > 0; level--) {
+    for (level = levels-1; level >= 0; level--) {
         /* get list at this level */
         bayer_flist list = lists[level];
 
