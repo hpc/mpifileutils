@@ -37,6 +37,15 @@ Makefile
 /config.status
 /stamp-h1
 
+aclocal.m4
+auxdir/depcomp
+auxdir/missing
+configure
+
+Makefile.in
+*/Makefile.in
+*/*/Makefile.in
+
 # Vagrant/Ansible artifacts
 /devops/vagrant_ansible_inventory_*
 /devops/.vagrant
