@@ -1,10 +1,11 @@
-AC_INIT([fileutils],[0.0.1-alpha.4],[fileutils-discuss@googlegroups.com],[fileutils],[http://fileutils.io])
+AC_INIT([fileutils],[0.0.1-alpha.5],[fileutils-discuss@googlegroups.com],[fileutils],[http://fileutils.io])
 
 # Keep artifacts in directories as much as possible.
 AC_CONFIG_AUX_DIR(auxdir)
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
 
+# add foreign option to avoid GPL files
 AM_INIT_AUTOMAKE([foreign])
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
