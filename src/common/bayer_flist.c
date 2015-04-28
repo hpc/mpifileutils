@@ -102,7 +102,8 @@ typedef struct flist {
 
 /* Need global variables during walk to record top directory
  * and file list */
-static char CURRENT_DIR[PATH_MAX];
+static uint64_t CURRENT_NUM_DIRS;
+static char** CURRENT_DIRS;
 static flist_t* CURRENT_LIST;
 
 /****************************************
@@ -1493,25 +1494,28 @@ done:
 /** Call back given to initialize the dataset. */
 static void walk_lustrestat_create(CIRCLE_handle* handle)
 {
-    char* path = CURRENT_DIR;
+    uint64_t i;
+    for (i = 0; i < CURRENT_NUM_DIRS; i++) {
+        const char* path = CURRENT_DIRS[i];
 
-    /* stat top level item */
-    struct stat st;
-    int status = bayer_lstat(path, &st);
-    if (status != 0) {
-        /* TODO: print error */
-        return;
-    }
+        /* stat top level item */
+        struct stat st;
+        int status = bayer_lstat(path, &st);
+        if (status != 0) {
+            /* TODO: print error */
+            return;
+        }
 
-    /* increment our item count */
-    reduce_items++;
+        /* increment our item count */
+        reduce_items++;
 
-    /* record item info */
-    list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+        /* record item info */
+        list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
 
-    /* recurse into directory */
-    if (S_ISDIR(st.st_mode)) {
-        walk_lustrestat_process_dir(path, handle);
+        /* recurse into directory */
+        if (S_ISDIR(st.st_mode)) {
+            walk_lustrestat_process_dir(path, handle);
+        }
     }
 
     return;
@@ -1647,25 +1651,28 @@ static void walk_getdents_process_dir(char* dir, CIRCLE_handle* handle)
 /** Call back given to initialize the dataset. */
 static void walk_getdents_create(CIRCLE_handle* handle)
 {
-    char* path = CURRENT_DIR;
+    uint64_t i;
+    for (i = 0; i < CURRENT_NUM_DIRS; i++) {
+        const char* path = CURRENT_DIRS[i];
 
-    /* stat top level item */
-    struct stat st;
-    int status = bayer_lstat(path, &st);
-    if (status != 0) {
-        /* TODO: print error */
-        return;
-    }
+        /* stat top level item */
+        struct stat st;
+        int status = bayer_lstat(path, &st);
+        if (status != 0) {
+            /* TODO: print error */
+            return;
+        }
 
-    /* increment our item count */
-    reduce_items++;
+        /* increment our item count */
+        reduce_items++;
 
-    /* record item info */
-    list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+        /* record item info */
+        list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
 
-    /* recurse into directory */
-    if (S_ISDIR(st.st_mode)) {
-        walk_getdents_process_dir(path, handle);
+        /* recurse into directory */
+        if (S_ISDIR(st.st_mode)) {
+            walk_getdents_process_dir(path, handle);
+        }
     }
 
     return;
@@ -1765,25 +1772,28 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
 /** Call back given to initialize the dataset. */
 static void walk_readdir_create(CIRCLE_handle* handle)
 {
-    char* path = CURRENT_DIR;
+    uint64_t i;
+    for (i = 0; i < CURRENT_NUM_DIRS; i++) {
+        char* path = CURRENT_DIRS[i];
 
-    /* stat top level item */
-    struct stat st;
-    int status = bayer_lstat(path, &st);
-    if (status != 0) {
-        /* TODO: print error */
-        return;
-    }
+        /* stat top level item */
+        struct stat st;
+        int status = bayer_lstat(path, &st);
+        if (status != 0) {
+            /* TODO: print error */
+            return;
+        }
 
-    /* increment our item count */
-    reduce_items++;
+        /* increment our item count */
+        reduce_items++;
 
-    /* record item info */
-    list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+        /* record item info */
+        list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
 
-    /* recurse into directory */
-    if (S_ISDIR(st.st_mode)) {
-        walk_readdir_process_dir(path, handle);
+        /* recurse into directory */
+        if (S_ISDIR(st.st_mode)) {
+            walk_readdir_process_dir(path, handle);
+        }
     }
 
     return;
@@ -1852,8 +1862,12 @@ static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
 /** Call back given to initialize the dataset. */
 static void walk_stat_create(CIRCLE_handle* handle)
 {
-    /* we'll call stat on every item */
-    handle->enqueue(CURRENT_DIR);
+    uint64_t i;
+    for (i = 0; i < CURRENT_NUM_DIRS; i++) {
+        /* we'll call stat on every item */
+        const char* path = CURRENT_DIRS[i];
+        handle->enqueue(path);
+    }
 }
 
 /** Callback given to process the dataset. */
@@ -2215,6 +2229,13 @@ bayer_flist bayer_flist_subset(bayer_flist src)
 /* Set up and execute directory walk */
 void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist)
 {
+    bayer_flist_walk_paths(1, &dirpath, use_stat, bflist);
+    return;
+}
+
+/* Set up and execute directory walk */
+void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, bayer_flist bflist)
+{
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
 
@@ -2225,9 +2246,13 @@ void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist
     enum CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
     CIRCLE_enable_logging(loglevel);
 
+    /* TODO: check that paths is not NULL */
+    /* TODO: check that each path is within limits */
+
     /* set some global variables to do the file walk */
-    strncpy(CURRENT_DIR, dirpath, PATH_MAX);
-    CURRENT_LIST = flist;
+    CURRENT_NUM_DIRS = num_paths;
+    CURRENT_DIRS     = paths;
+    CURRENT_LIST     = flist;
 
     /* we lookup users and groups first in case we can use
      * them to filter the walk */

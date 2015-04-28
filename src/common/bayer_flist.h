@@ -49,6 +49,14 @@ void bayer_flist_walk_path(
   bayer_flist flist
 );
 
+/* create file list by walking list of directories */
+void bayer_flist_walk_paths(
+  uint64_t num_paths,
+  const char** paths,
+  int use_stat,
+  bayer_flist flist
+);
+
 /* read file list from file */
 void bayer_flist_read_cache(
   const char* name,
