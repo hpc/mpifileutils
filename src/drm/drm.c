@@ -158,6 +158,16 @@ int main(int argc, char** argv)
     if (walk) {
         /* report walk count, time, and rate */
         double start_walk = MPI_Wtime();
+
+        /* TODO: modify walk_path to accept an flist as input,
+         * then walk each directory listed in flist */
+
+        /* TODO: the code below will be reused elsewhere */
+
+        /* allocate memory to hold a list of paths */
+        const char** path_list = (char**) BAYER_MALLOC(numpaths * sizeof(char*));
+
+        /* fill list of paths and print each one */
         for (i = 0; i < numpaths; i++) {
             /* get path for this step */
             const char* target = paths[i].path;
@@ -174,12 +184,21 @@ int main(int argc, char** argv)
                     walk_s[0] = '\0';
                 }
                 printf("%s: Walking %s\n", walk_s, target);
-                fflush(stdout);
             }
 
-            /* walk file tree and record stat data for each file */
-            bayer_flist_walk_path(target, walk_stat, flist);
+            /* record pointer to path in list */
+            path_list[i] = target;
         }
+        if (verbose && rank == 0) {
+            fflush(stdout);
+        }
+
+        /* walk file tree and record stat data for each file */
+        bayer_flist_walk_paths((uint64_t) numpaths, path_list, walk_stat, flist);
+
+        /* free the list */
+        bayer_free(&path_list);
+
         double end_walk = MPI_Wtime();
 
         /* report walk count, time, and rate */
