@@ -147,9 +147,6 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    /* initialize our sorting library */
-    DTCMP_Init();
-
     /* create an empty file list */
     bayer_flist flist = bayer_flist_new();
 
@@ -255,9 +252,6 @@ int main(int argc, char** argv)
 
     /* free the file list */
     bayer_flist_free(&flist);
-
-    /* shut down the sorting library */
-    DTCMP_Finalize();
 
     /* free the path parameters */
     for (i = 0; i < numpaths; i++) {
