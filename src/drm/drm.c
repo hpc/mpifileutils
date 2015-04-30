@@ -118,11 +118,9 @@ int main(int argc, char** argv)
         paths = (bayer_param_path*) BAYER_MALLOC((size_t)numpaths * sizeof(bayer_param_path));
 
         /* process each path */
-        for (i = 0; i < numpaths; i++) {
-            const char* path = argv[optind];
-            bayer_param_path_set(path, &paths[i]);
-            optind++;
-        }
+        char** p = &argv[optind];
+        bayer_param_path_set_all(numpaths, p, paths);
+        optind += numpaths;
 
         /* don't allow input file and walk */
         if (inputname != NULL) {
