@@ -151,63 +151,8 @@ int main(int argc, char** argv)
     /* get our list of files, either by walking or reading an
      * input file */
     if (walk) {
-        /* report walk count, time, and rate */
-        double start_walk = MPI_Wtime();
-
-        /* TODO: modify walk_path to accept an flist as input,
-         * then walk each directory listed in flist */
-
-        /* TODO: the code below will be reused elsewhere */
-
-        /* allocate memory to hold a list of paths */
-        const char** path_list = (char**) BAYER_MALLOC(numpaths * sizeof(char*));
-
-        /* fill list of paths and print each one */
-        for (i = 0; i < numpaths; i++) {
-            /* get path for this step */
-            const char* target = paths[i].path;
-
-            /* print message to user that we're starting */
-            if (verbose && rank == 0) {
-                time_t walk_start_t = time(NULL);
-                if (walk_start_t == (time_t)-1) {
-                    /* TODO: ERROR! */
-                }
-                char walk_s[30];
-                size_t rc = strftime(walk_s, sizeof(walk_s) - 1, "%FT%T", localtime(&walk_start_t));
-                if (rc == 0) {
-                    walk_s[0] = '\0';
-                }
-                printf("%s: Walking %s\n", walk_s, target);
-            }
-
-            /* record pointer to path in list */
-            path_list[i] = target;
-        }
-        if (verbose && rank == 0) {
-            fflush(stdout);
-        }
-
-        /* walk file tree and record stat data for each file */
-        bayer_flist_walk_paths((uint64_t) numpaths, path_list, walk_stat, flist);
-
-        /* free the list */
-        bayer_free(&path_list);
-
-        double end_walk = MPI_Wtime();
-
-        /* report walk count, time, and rate */
-        if (verbose && rank == 0) {
-            uint64_t all_count = bayer_flist_global_size(flist);
-            double time_diff = end_walk - start_walk;
-            double rate = 0.0;
-            if (time_diff > 0.0) {
-                rate = ((double)all_count) / time_diff;
-            }
-            printf("Walked %lu files in %f seconds (%f files/sec)\n",
-                   all_count, time_diff, rate
-                  );
-        }
+        /* walk list of input paths */
+        bayer_param_path_walk(numpaths, paths, walk_stat, flist);
     }
     else {
         /* read list from file */

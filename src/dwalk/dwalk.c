@@ -516,72 +516,12 @@ int main(int argc, char** argv)
     /* TODO: check stat fields fit within MPI types */
     // if (sizeof(st_uid) > uint64_t) error(); etc...
 
-    uint64_t all_count = 0;
-
     /* create an empty file list */
     bayer_flist flist = bayer_flist_new();
 
     if (walk) {
-        /* report walk count, time, and rate */
-        double start_walk = MPI_Wtime();
-
-        /* TODO: modify walk_path to accept an flist as input,
-         * then walk each directory listed in flist */
-
-        /* TODO: the code below will be reused elsewhere */
-
-        /* allocate memory to hold a list of paths */
-        const char** path_list = (const char**) BAYER_MALLOC(numpaths * sizeof(char*));
-
-        /* fill list of paths and print each one */
-        for (i = 0; i < numpaths; i++) {
-            /* get path for this step */
-            const char* target = paths[i].path;
-
-            /* print message to user that we're starting */
-            if (verbose && rank == 0) {
-                time_t walk_start_t = time(NULL);
-                if (walk_start_t == (time_t)-1) {
-                    /* TODO: ERROR! */
-                }
-                char walk_s[30];
-                size_t rc = strftime(walk_s, sizeof(walk_s) - 1, "%FT%T", localtime(&walk_start_t));
-                if (rc == 0) {
-                    walk_s[0] = '\0';
-                }
-                printf("%s: Walking %s\n", walk_s, target);
-            }
-
-            /* record pointer to path in list */
-            path_list[i] = target;
-        }
-        if (verbose && rank == 0) {
-            fflush(stdout);
-        }
-
-        /* walk file tree and record stat data for each file */
-        bayer_flist_walk_paths((uint64_t) numpaths, path_list, walk_stat, flist);
-
-        /* free the list */
-        bayer_free(&path_list);
-
-        double end_walk = MPI_Wtime();
-
-        /* get total file count */
-        all_count = bayer_flist_global_size(flist);
-
-        /* report walk count, time, and rate */
-        if (verbose && rank == 0) {
-            all_count = bayer_flist_global_size(flist);
-            double secs = end_walk - start_walk;
-            double rate = 0.0;
-            if (secs > 0.0) {
-                rate = ((double)all_count) / secs;
-            }
-            printf("Walked %lu files in %f seconds (%f files/sec)\n",
-                   all_count, secs, rate
-                  );
-        }
+        /* walk list of input paths */
+        bayer_param_path_walk(numpaths, paths, walk_stat, flist);
     }
     else {
         /* read data from cache file */
@@ -590,10 +530,10 @@ int main(int argc, char** argv)
         double end_read = MPI_Wtime();
 
         /* get total file count */
-        all_count = bayer_flist_global_size(flist);
 
         /* report read count, time, and rate */
         if (verbose && rank == 0) {
+            uint64_t all_count = bayer_flist_global_size(flist);
             double secs = end_read - start_read;
             double rate = 0.0;
             if (secs > 0.0) {
@@ -618,6 +558,7 @@ int main(int argc, char** argv)
 
         /* report sort count, time, and rate */
         if (verbose && rank == 0) {
+            uint64_t all_count = bayer_flist_global_size(flist);
             double secs = end_sort - start_sort;
             double rate = 0.0;
             if (secs > 0.0) {
@@ -650,6 +591,7 @@ int main(int argc, char** argv)
 
         /* report write count, time, and rate */
         if (verbose && rank == 0) {
+            uint64_t all_count = bayer_flist_global_size(flist);
             double secs = end_write - start_write;
             double rate = 0.0;
             if (secs > 0.0) {
