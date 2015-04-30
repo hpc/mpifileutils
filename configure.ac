@@ -1,4 +1,4 @@
-AC_INIT([fileutils],[0.0.1-alpha.5],[fileutils-discuss@googlegroups.com],[fileutils],[http://fileutils.io])
+AC_INIT([fileutils],[0.0.1-alpha.6],[fileutils-discuss@googlegroups.com],[fileutils],[http://fileutils.io])
 
 # Keep artifacts in directories as much as possible.
 AC_CONFIG_AUX_DIR(auxdir)

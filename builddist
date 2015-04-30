@@ -5,6 +5,8 @@ use mvapich2-gnu
 
 set -x
 
+fileutils=fileutils-0.0.1-alpha.6
+
 topdir=`pwd`
 installdir=$topdir/install
 
@@ -36,7 +38,9 @@ if [ $? -ne 0 ] ; then
   exit 1
 fi
 
-fileutils=fileutils-0.0.1-alpha.4
+cp fileutils*.tar.gz ../.
+exit 0
+
 rm -rf ${fileutils}
 tar -zxf ${fileutils}.tar.gz
 cd ${fileutils}
