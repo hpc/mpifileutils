@@ -2236,8 +2236,37 @@ void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist
 /* Set up and execute directory walk */
 void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, bayer_flist bflist)
 {
+    /* report walk count, time, and rate */
+    double start_walk = MPI_Wtime();
+
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
+
+    /* get our rank and number of ranks in job */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* hard code this for now, until we get options structure */
+    int verbose = 1;
+
+    /* print message to user that we're starting */
+    if (verbose && rank == 0) {
+        uint64_t i;
+        for (i = 0; i < num_paths; i++) {
+            time_t walk_start_t = time(NULL);
+            if (walk_start_t == (time_t)-1) {
+                /* TODO: ERROR! */
+            }
+            char walk_s[30];
+            size_t rc = strftime(walk_s, sizeof(walk_s) - 1, "%FT%T", localtime(&walk_start_t));
+            if (rc == 0) {
+                walk_s[0] = '\0';
+            }
+            printf("%s: Walking %s\n", walk_s, paths[i]);
+        }
+        fflush(stdout);
+    }
 
     /* initialize libcircle */
     CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL);
@@ -2299,6 +2328,21 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
 
     /* compute global summary */
     list_compute_summary(flist);
+
+    double end_walk = MPI_Wtime();
+
+    /* report walk count, time, and rate */
+    if (verbose && rank == 0) {
+        uint64_t all_count = bayer_flist_global_size(flist);
+        double time_diff = end_walk - start_walk;
+        double rate = 0.0;
+        if (time_diff > 0.0) {
+            rate = ((double)all_count) / time_diff;
+        }
+        printf("Walked %lu files in %f seconds (%f files/sec)\n",
+               all_count, time_diff, rate
+              );
+    }
 
     return;
 }
