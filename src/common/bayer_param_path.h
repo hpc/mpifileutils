@@ -50,6 +50,12 @@ typedef struct bayer_param_path_t {
     struct stat target_stat; /* stat of target path */
 } bayer_param_path;
 
+/* set fields in params according to paths,
+ * the number of paths is specified in num,
+ * paths is an array of char* of length num pointing to the input paths,
+ * params is an array of length num to hold output */
+void bayer_param_path_set_all(uint64_t num, const char** paths, bayer_param_path* params);
+
 /* set fields in param according to path */
 void bayer_param_path_set(const char* path, bayer_param_path* param);
 
