@@ -123,6 +123,9 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
 {
     uint64_t idx;
 
+    /* initialize our remove count */
+    *rmcount = 0;
+
     /* get our rank and number of ranks in job */
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -140,9 +143,6 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
     uint64_t my_count  = bayer_flist_size(flist);
     uint64_t all_count = bayer_flist_global_size(flist);
     uint64_t offset    = bayer_flist_global_offset(flist);
-
-    /* for this implementation, we remove our portion of the list */
-    *rmcount = my_count;
 
     /* compute number of bytes we'll send */
     size_t sendbytes = 0;
@@ -292,6 +292,9 @@ static void remove_spread(bayer_flist flist, uint64_t* rmcount)
 
         /* delete item */
         remove_type(type, name);
+
+        /* keep tally of number of items we deleted */
+        *rmcount++;
 
         /* go to next item */
         size_t item_size = strlen(item) + 1;
