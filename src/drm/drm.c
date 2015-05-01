@@ -118,8 +118,10 @@ int main(int argc, char** argv)
         paths = (bayer_param_path*) BAYER_MALLOC((size_t)numpaths * sizeof(bayer_param_path));
 
         /* process each path */
-        char** p = &argv[optind];
-        bayer_param_path_set_all(numpaths, p, paths);
+        char** argpaths = &argv[optind];
+        bayer_param_path_set_all(numpaths, argpaths, paths);
+
+        /* advance to next set of options */
         optind += numpaths;
 
         /* don't allow input file and walk */
@@ -197,9 +199,9 @@ int main(int argc, char** argv)
     bayer_flist_free(&flist);
 
     /* free the path parameters */
-    for (i = 0; i < numpaths; i++) {
-        bayer_param_path_free(&paths[i]);
-    }
+    bayer_param_path_free_all(numpaths, paths);
+
+    /* free memory allocated to hold params */
     bayer_free(&paths);
 
     /* free the input file name */

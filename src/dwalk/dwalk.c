@@ -612,9 +612,9 @@ int main(int argc, char** argv)
     bayer_free(&inputname);
 
     /* free the path parameters */
-    for (i = 0; i < numpaths; i++) {
-        bayer_param_path_free(&paths[i]);
-    }
+    bayer_param_path_free_all(numpaths, paths);
+
+    /* free memory allocated to hold params */
     bayer_free(&paths);
 
     /* shut down MPI */
