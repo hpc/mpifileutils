@@ -178,22 +178,7 @@ int main(int argc, char** argv)
 
     /* remove files without setting writing bit on parent
      * directories, we expect this to clear most files */
-    double start_remove = MPI_Wtime();
     bayer_flist_unlink(flist);
-    double end_remove = MPI_Wtime();
-
-    /* report remove count, time, and rate */
-    if (verbose && rank == 0) {
-        uint64_t all_count = bayer_flist_global_size(flist);
-        double time_diff = end_remove - start_remove;
-        double rate = 0.0;
-        if (time_diff > 0.0) {
-            rate = ((double)all_count) / time_diff;
-        }
-        printf("Removed %lu files in %f seconds (%f files/sec)\n",
-               all_count, time_diff, rate
-              );
-    }
 
     /* free the file list */
     bayer_flist_free(&flist);
