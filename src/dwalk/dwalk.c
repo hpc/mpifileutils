@@ -534,23 +534,7 @@ int main(int argc, char** argv)
     /* sort files */
     if (sortfields != NULL) {
         /* TODO: don't sort unless all_count > 0 */
-
-        double start_sort = MPI_Wtime();
         bayer_flist_sort(sortfields, &flist);
-        double end_sort = MPI_Wtime();
-
-        /* report sort count, time, and rate */
-        if (verbose && rank == 0) {
-            uint64_t all_count = bayer_flist_global_size(flist);
-            double secs = end_sort - start_sort;
-            double rate = 0.0;
-            if (secs > 0.0) {
-                rate = ((double)all_count) / secs;
-            }
-            printf("Sorted %lu files in %f seconds (%f files/sec)\n",
-                   all_count, secs, rate
-                  );
-        }
     }
 
     /* print details for individual files */

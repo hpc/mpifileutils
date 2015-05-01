@@ -592,12 +592,38 @@ int bayer_flist_sort(const char* sortfields, bayer_flist* pflist)
 
     bayer_flist flist = *pflist;
 
+    /* start timer */
+    double start_sort = MPI_Wtime();
+
+    /* hard code this for now, until we get options structure */
+    int verbose = 1;
+
+    /* get our rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
     int rc;
     if (bayer_flist_have_detail(flist)) {
         rc = sort_files_stat(sortfields, pflist);
     }
     else {
         rc = sort_files_readdir(sortfields, pflist);
+    }
+
+    /* end timer */
+    double end_sort = MPI_Wtime();
+
+    /* report sort count, time, and rate */
+    if (verbose && rank == 0) {
+        uint64_t all_count = bayer_flist_global_size(flist);
+        double secs = end_sort - start_sort;
+        double rate = 0.0;
+        if (secs > 0.0) {
+            rate = ((double)all_count) / secs;
+        }
+        printf("Sorted %lu files in %f seconds (%f files/sec)\n",
+               all_count, secs, rate
+              );
     }
 
     return rc;

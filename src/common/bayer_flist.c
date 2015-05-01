@@ -3430,15 +3430,15 @@ void bayer_flist_write_cache(
     /* hard code this for now, until we get options structure */
     int verbose = 1;
 
-    /* report the filename we're writing to */
-    if (verbose && rank == 0) {
-        printf("Writing to output file: %s\n", outputname);
-        fflush(stdout);
-    }
-
     /* get our rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* report the filename we're writing to */
+    if (verbose && rank == 0) {
+        printf("Writing to output file: %s\n", name);
+        fflush(stdout);
+    }
 
     if (flist->detail) {
         write_cache_stat(name, 0, 0, flist);
