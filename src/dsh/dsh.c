@@ -1471,7 +1471,7 @@ static void print_files(bayer_flist flist, bayer_path* path)
         while (tmpidx < tmpsize) {
             print_file(tmplist, tmpidx, rank);
             tmpidx++;
-            if (tmpidx == range) {
+            if (tmpidx == range && tmpsize > 2 * range) {
                 printf("\n<snip>\n\n");
             }
         }
@@ -1953,27 +1953,7 @@ int main(int argc, char** argv)
 #if 0
     /* write data to cache file */
     if (outputname != NULL) {
-        /* report the filename we're writing to */
-        if (verbose && rank == 0) {
-            printf("Writing to output file: %s\n", outputname);
-            fflush(stdout);
-        }
-
-        double start_write = MPI_Wtime();
         bayer_flist_write_cache(outputname, flist);
-        double end_write = MPI_Wtime();
-
-        /* report write count, time, and rate */
-        if (verbose && rank == 0) {
-            double secs = end_write - start_write;
-            double rate = 0.0;
-            if (secs > 0.0) {
-                rate = ((double)all_count) / secs;
-            }
-            printf("Wrote %lu files in %f seconds (%f files/sec)\n",
-                   all_count, secs, rate
-                  );
-        }
     }
 #endif
 
