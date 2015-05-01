@@ -155,7 +155,8 @@ static void print_file(bayer_flist flist, uint64_t idx, int rank)
         time_t modify_t = (time_t) mod;
         time_t create_t = (time_t) cre;
         size_t access_rc = strftime(access_s, sizeof(access_s) - 1, "%FT%T", localtime(&access_t));
-        size_t modify_rc = strftime(modify_s, sizeof(modify_s) - 1, "%FT%T", localtime(&modify_t));
+        //size_t modify_rc = strftime(modify_s, sizeof(modify_s) - 1, "%FT%T", localtime(&modify_t));
+        size_t modify_rc = strftime(modify_s, sizeof(modify_s) - 1, "%b %e %Y %H:%M", localtime(&modify_t));
         size_t create_rc = strftime(create_s, sizeof(create_s) - 1, "%FT%T", localtime(&create_t));
         if (access_rc == 0 || modify_rc == 0 || create_rc == 0) {
             /* error */
@@ -167,11 +168,19 @@ static void print_file(bayer_flist flist, uint64_t idx, int rank)
         char mode_format[11];
         bayer_format_mode(mode, mode_format);
 
+        double size_tmp;
+        const char* size_units;
+        bayer_format_bytes(size, &size_tmp, &size_units);
+
+        printf("%s %s %s %7.3f %2s %s %s\n",
+               mode_format, username, groupname,
+               size_tmp, size_units, modify_s, file
+              );
+#if 0
         printf("%s %s %s A%s M%s C%s %lu %s\n",
                mode_format, username, groupname,
                access_s, modify_s, create_s, (unsigned long)size, file
               );
-#if 0
         printf("Mode=%lx(%s) UID=%d(%s) GUI=%d(%s) Access=%s Modify=%s Create=%s Size=%lu File=%s\n",
                (unsigned long)mode, mode_format, uid, username, gid, groupname,
                access_s, modify_s, create_s, (unsigned long)size, file
@@ -289,7 +298,8 @@ static void print_files(bayer_flist flist)
         while (tmpidx < tmpsize) {
             print_file(tmplist, tmpidx, rank);
             tmpidx++;
-            if (tmpidx == range) {
+            if (tmpidx == range && tmpsize > 2 * range) {
+                /* going to have to leave some out */
                 printf("\n<snip>\n\n");
             }
         }
