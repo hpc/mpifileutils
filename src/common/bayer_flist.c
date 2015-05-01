@@ -2247,11 +2247,8 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-    /* hard code this for now, until we get options structure */
-    int verbose = 1;
-
     /* print message to user that we're starting */
-    if (verbose && rank == 0) {
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
         uint64_t i;
         for (i = 0; i < num_paths; i++) {
             time_t walk_start_t = time(NULL);
@@ -2332,7 +2329,7 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
     double end_walk = MPI_Wtime();
 
     /* report walk count, time, and rate */
-    if (verbose && rank == 0) {
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
         uint64_t all_count = bayer_flist_global_size(flist);
         double time_diff = end_walk - start_walk;
         double rate = 0.0;
@@ -2918,12 +2915,15 @@ void bayer_flist_read_cache(
     /* start timer */
     double start_read = MPI_Wtime();
 
-    /* hard code this for now, until we get options structure */
-    int verbose = 1;
-
     /* get our rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* report the filename we're writing to */
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
+        printf("Reading from input file: %s\n", name);
+        fflush(stdout);
+    }
 
     /* open file */
     int rc;
@@ -2977,7 +2977,7 @@ void bayer_flist_read_cache(
     double end_read = MPI_Wtime();
 
     /* report read count, time, and rate */
-    if (verbose && rank == 0) {
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
         uint64_t all_count = bayer_flist_global_size(flist);
         double time_diff = end_read - start_read;
         double rate = 0.0;
@@ -3427,15 +3427,8 @@ void bayer_flist_write_cache(
     /* start timer */
     double start_write = MPI_Wtime();
 
-    /* hard code this for now, until we get options structure */
-    int verbose = 1;
-
-    /* get our rank */
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
     /* report the filename we're writing to */
-    if (verbose && rank == 0) {
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
         printf("Writing to output file: %s\n", name);
         fflush(stdout);
     }
@@ -3452,7 +3445,7 @@ void bayer_flist_write_cache(
     double end_write = MPI_Wtime();
 
     /* report write count, time, and rate */
-    if (verbose && rank == 0) {
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
         uint64_t all_count = bayer_flist_global_size(flist);
         double secs = end_write - start_write;
         double rate = 0.0;

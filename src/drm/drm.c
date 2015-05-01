@@ -22,7 +22,6 @@
 #include "bayer.h"
 
 /* TODO: change globals to struct */
-static int verbose   = 0;
 static int walk_stat = 0;
 
 /*****************************
@@ -92,7 +91,7 @@ int main(int argc, char** argv)
                 usage = 1;
                 break;
             case 'v':
-                verbose = 1;
+                bayer_debug_level = BAYER_LOG_VERBOSE;
                 break;
             case '?':
                 usage = 1;

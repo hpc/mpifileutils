@@ -23,11 +23,12 @@ extern "C" {
 #include <unistd.h>
 
 typedef enum {
-    BAYER_LOG_FATAL = 1,
-    BAYER_LOG_ERR   = 2,
-    BAYER_LOG_WARN  = 3,
-    BAYER_LOG_INFO  = 4,
-    BAYER_LOG_DBG   = 5
+    BAYER_LOG_FATAL   = 1,
+    BAYER_LOG_ERR     = 2,
+    BAYER_LOG_WARN    = 3,
+    BAYER_LOG_INFO    = 4,
+    BAYER_LOG_VERBOSE = 5,
+    BAYER_LOG_DBG     = 6
 } bayer_loglevel;
 
 extern int bayer_initialized;

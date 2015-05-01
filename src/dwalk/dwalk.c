@@ -23,7 +23,6 @@
 // getpwent getgrent to read user and group entries
 
 /* TODO: change globals to struct */
-static int verbose   = 0;
 static int walk_stat = 1;
 
 /* keep stats during walk */
@@ -99,7 +98,7 @@ static void print_summary(bayer_flist flist)
     MPI_Allreduce(&total_bytes,   &all_bytes,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* convert total size to units */
-    if (verbose && rank == 0) {
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && rank == 0) {
         printf("Items: %llu\n", (unsigned long long) all_count);
         printf("  Directories: %llu\n", (unsigned long long) all_dirs);
         printf("  Files: %llu\n", (unsigned long long) all_files);
@@ -402,7 +401,7 @@ int main(int argc, char** argv)
                 usage = 1;
                 break;
             case 'v':
-                verbose = 1;
+                bayer_debug_level = BAYER_LOG_VERBOSE;
                 break;
             case '?':
                 usage = 1;

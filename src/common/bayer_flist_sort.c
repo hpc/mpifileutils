@@ -590,18 +590,13 @@ int bayer_flist_sort(const char* sortfields, bayer_flist* pflist)
         return BAYER_FAILURE;
     }
 
+    /* get pointer to list */
     bayer_flist flist = *pflist;
 
     /* start timer */
     double start_sort = MPI_Wtime();
 
-    /* hard code this for now, until we get options structure */
-    int verbose = 1;
-
-    /* get our rank */
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
+    /* sort list */
     int rc;
     if (bayer_flist_have_detail(flist)) {
         rc = sort_files_stat(sortfields, pflist);
@@ -614,7 +609,7 @@ int bayer_flist_sort(const char* sortfields, bayer_flist* pflist)
     double end_sort = MPI_Wtime();
 
     /* report sort count, time, and rate */
-    if (verbose && rank == 0) {
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
         uint64_t all_count = bayer_flist_global_size(flist);
         double secs = end_sort - start_sort;
         double rate = 0.0;

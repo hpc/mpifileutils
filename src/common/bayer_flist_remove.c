@@ -21,9 +21,6 @@
 #include "dtcmp.h"
 #include "bayer.h"
 
-/* TODO: change globals to struct */
-static int verbose = 1;
-
 /*****************************
  * Global functions used by remove routines
  ****************************/
@@ -522,7 +519,7 @@ static void remove_libcircle(bayer_flist list, uint64_t* rmcount)
 
     /* set libcircle verbosity level */
     enum CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
-    if (verbose) {
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE) {
         //        loglevel = CIRCLE_LOG_INFO;
     }
     CIRCLE_enable_logging(loglevel);
@@ -562,11 +559,6 @@ static void remove_libcircle(bayer_flist list, uint64_t* rmcount)
 void bayer_flist_unlink(bayer_flist flist)
 {
     int level;
-
-    /* get our rank and number of ranks in job */
-    int rank, ranks;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* wait for all tasks and start timer */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -642,7 +634,7 @@ void bayer_flist_unlink(bayer_flist flist)
 
         double end = MPI_Wtime();
 
-        if (verbose) {
+        if (bayer_debug_level >= BAYER_LOG_VERBOSE) {
             uint64_t min, max, sum;
             MPI_Allreduce(&count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
             MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
@@ -652,7 +644,7 @@ void bayer_flist_unlink(bayer_flist flist)
                 rate = (double)sum / (end - start);
             }
             double time_diff = end - start;
-            if (rank == 0) {
+            if (bayer_rank == 0) {
                 printf("level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
                        (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
                       );
@@ -668,7 +660,7 @@ void bayer_flist_unlink(bayer_flist flist)
     double end_remove = MPI_Wtime();
 
     /* report remove count, time, and rate */
-    if (verbose && rank == 0) {
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
         uint64_t all_count = bayer_flist_global_size(flist);
         double time_diff = end_remove - start_remove;
         double rate = 0.0;
