@@ -525,24 +525,7 @@ int main(int argc, char** argv)
     }
     else {
         /* read data from cache file */
-        double start_read = MPI_Wtime();
         bayer_flist_read_cache(inputname, flist);
-        double end_read = MPI_Wtime();
-
-        /* get total file count */
-
-        /* report read count, time, and rate */
-        if (verbose && rank == 0) {
-            uint64_t all_count = bayer_flist_global_size(flist);
-            double secs = end_read - start_read;
-            double rate = 0.0;
-            if (secs > 0.0) {
-                rate = ((double)all_count) / secs;
-            }
-            printf("Read %lu files in %f seconds (%f files/sec)\n",
-                   all_count, secs, rate
-                  );
-        }
     }
 
     /* TODO: filter files */
@@ -570,37 +553,17 @@ int main(int argc, char** argv)
         }
     }
 
-    /* print files */
+    /* print details for individual files */
     if (print) {
         print_files(flist);
     }
 
+    /* print summary about all files */
     print_summary(flist);
 
     /* write data to cache file */
     if (outputname != NULL) {
-        /* report the filename we're writing to */
-        if (verbose && rank == 0) {
-            printf("Writing to output file: %s\n", outputname);
-            fflush(stdout);
-        }
-
-        double start_write = MPI_Wtime();
         bayer_flist_write_cache(outputname, flist);
-        double end_write = MPI_Wtime();
-
-        /* report write count, time, and rate */
-        if (verbose && rank == 0) {
-            uint64_t all_count = bayer_flist_global_size(flist);
-            double secs = end_write - start_write;
-            double rate = 0.0;
-            if (secs > 0.0) {
-                rate = ((double)all_count) / secs;
-            }
-            printf("Wrote %lu files in %f seconds (%f files/sec)\n",
-                   all_count, secs, rate
-                  );
-        }
     }
 
     /* free users, groups, and files objects */

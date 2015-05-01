@@ -2915,6 +2915,12 @@ void bayer_flist_read_cache(
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
 
+    /* start timer */
+    double start_read = MPI_Wtime();
+
+    /* hard code this for now, until we get options structure */
+    int verbose = 1;
+
     /* get our rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -2966,6 +2972,22 @@ void bayer_flist_read_cache(
 
     /* compute global summary */
     list_compute_summary(flist);
+
+    /* end timer */
+    double end_read = MPI_Wtime();
+
+    /* report read count, time, and rate */
+    if (verbose && rank == 0) {
+        uint64_t all_count = bayer_flist_global_size(flist);
+        double time_diff = end_read - start_read;
+        double rate = 0.0;
+        if (time_diff > 0.0) {
+            rate = ((double)all_count) / time_diff;
+        }
+        printf("Read %lu files in %f seconds (%f files/sec)\n",
+               all_count, time_diff, rate
+              );
+    }
 
     return;
 }
@@ -3402,12 +3424,44 @@ void bayer_flist_write_cache(
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
 
+    /* start timer */
+    double start_write = MPI_Wtime();
+
+    /* hard code this for now, until we get options structure */
+    int verbose = 1;
+
+    /* report the filename we're writing to */
+    if (verbose && rank == 0) {
+        printf("Writing to output file: %s\n", outputname);
+        fflush(stdout);
+    }
+
+    /* get our rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
     if (flist->detail) {
         write_cache_stat(name, 0, 0, flist);
     }
     else {
         //write_cache_readdir(name, 0, 0, flist);
         write_cache_readdir_variable(name, flist);
+    }
+
+    /* end timer */
+    double end_write = MPI_Wtime();
+
+    /* report write count, time, and rate */
+    if (verbose && rank == 0) {
+        uint64_t all_count = bayer_flist_global_size(flist);
+        double secs = end_write - start_write;
+        double rate = 0.0;
+        if (secs > 0.0) {
+            rate = ((double)all_count) / secs;
+        }
+        printf("Wrote %lu files in %f seconds (%f files/sec)\n",
+               all_count, secs, rate
+              );
     }
 
     return;

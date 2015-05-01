@@ -158,26 +158,10 @@ int main(int argc, char** argv)
     }
     else {
         /* read list from file */
-        double start_read = MPI_Wtime();
         bayer_flist_read_cache(inputname, flist);
-        double end_read = MPI_Wtime();
-
-        /* report read count, time, and rate */
-        if (verbose && rank == 0) {
-            uint64_t all_count = bayer_flist_global_size(flist);
-            double time_diff = end_read - start_read;
-            double rate = 0.0;
-            if (time_diff > 0.0) {
-                rate = ((double)all_count) / time_diff;
-            }
-            printf("Read %lu files in %f seconds (%f files/sec)\n",
-                   all_count, time_diff, rate
-                  );
-        }
     }
 
-    /* remove files without setting writing bit on parent
-     * directories, we expect this to clear most files */
+    /* remove files */
     bayer_flist_unlink(flist);
 
     /* free the file list */
