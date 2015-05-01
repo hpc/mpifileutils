@@ -56,6 +56,9 @@ typedef struct bayer_param_path_t {
  * params is an array of length num to hold output */
 void bayer_param_path_set_all(uint64_t num, const char** paths, bayer_param_path* params);
 
+/* free resources allocated in call to bayer_param_path_set_all */
+void bayer_param_path_free_all(uint64_t num, bayer_param_path* params);
+
 /* set fields in param according to path */
 void bayer_param_path_set(const char* path, bayer_param_path* param);
 

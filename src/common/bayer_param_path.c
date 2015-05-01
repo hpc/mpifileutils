@@ -427,6 +427,32 @@ void bayer_param_path_set_all(uint64_t num, const char** paths, bayer_param_path
     return;
 }
 
+/* free resources allocated in call to bayer_param_path_set_all */
+void bayer_param_path_free_all(uint64_t num, bayer_param_path* params)
+{
+    /* make sure we got a valid pointer */
+    if (params != NULL) {
+        /* free memory for each param */
+        uint64_t i;
+        for (i = 0; i < num; i++) {
+            /* get pointer to param structure */
+            bayer_param_path* param = &params[i];
+
+            /* free memory and reinit */
+            if (param != NULL) {
+                /* free all mememory */
+                bayer_free(&param->orig);
+                bayer_free(&param->path);
+                bayer_free(&param->target);
+
+                /* initialize all fields */
+                bayer_param_path_init(param);
+            }
+        }
+    }
+    return;
+}
+
 /* set fields in param according to path */
 void bayer_param_path_set(const char* path, bayer_param_path* param)
 {
@@ -437,15 +463,7 @@ void bayer_param_path_set(const char* path, bayer_param_path* param)
 /* free memory associated with param */
 void bayer_param_path_free(bayer_param_path* param)
 {
-    if (param != NULL) {
-        /* free all mememory */
-        bayer_free(&param->orig);
-        bayer_free(&param->path);
-        bayer_free(&param->target);
-
-        /* initialize all fields */
-        bayer_param_path_init(param);
-    }
+    bayer_param_path_free_all(1, param);
     return;
 }
 
