@@ -2,7 +2,7 @@
 Copyrights
 ---------------------
 
-Copyright (c) 2006-2007,2011-2013, Los Alamos National Security, LLC.
+Copyright (c) 2006-2007,2011-2015, Los Alamos National Security, LLC.
   (LA-CC-06-077, LA-CC-10-066, LA-CC-14-046)
 
 Copyright (c) 2013-2015, Lawrence Livermore National Security, LLC.
@@ -10,7 +10,7 @@ Copyright (c) 2013-2015, Lawrence Livermore National Security, LLC.
   Written by Adam Moody <moody20@llnl.gov>.
   CODE-XXXXXX
 
-Copyright (2013-2014) UT-Battelle, LLC under Contract No.
+Copyright (2013-2015) UT-Battelle, LLC under Contract No.
 DE-AC05-00OR22725 with the Department of Energy.
 
 Copyright (c) 2015, DataDirect Networks, Inc.
@@ -33,16 +33,16 @@ modification, are permitted provided that the following conditions are met:
    * Redistributions in binary form must reproduce the above copyright
      notice, this list of conditions and the following disclaimer in the
      documentation and/or other materials provided with the distribution.
-   * Neither the names of the LANS/LANL, LLNS/LLNL, UT-Battelle, DataDirect
-     Networks, Inc. nor the names of its contributors may be used to
-     endorse or promote products derived from this software without
+   * Neither the names of the LANS/LANL; LLNS/LLNL; UT-Battelle, LLC;
+     DataDirect Networks, Inc.; nor the names of its contributors may be
+     used to endorse or promote products derived from this software without
      specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
 WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
 DISCLAIMED. IN NO EVENT SHALL LOS ALAMOS NATIONAL SECURITY, LLC; LAWRENCE
-LIVERMORE NATIONAL SECURITY, LLC; UT-BATTELLE, LLC; DATADIRECT NETWORKS, INC;
+LIVERMORE NATIONAL SECURITY, LLC; UT-BATTELLE, LLC; DataDirect Networks, Inc.;
 OR U.S. GOVERNMENT BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
 EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT
 OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
@@ -56,20 +56,22 @@ Additional BSD Notice
 
 1. This notice is required to be provided under our contract with the U.S.
    Department of Energy (DOE). This work was produced at Lawrence Livermore
-   National Laboratory under Contract No. DE-AC52-07NA27344 with the DOE.
+   National Laboratory under Contract No. DE-AC52-07NA27344 with the DOE,
+   and by UT-Battelle, LLC under Contract No. DE-AC-00OR22725 with the DOE.
 
-2. Neither the United States Government nor Lawrence Livermore National
-   Security, LLC nor any of their employees, makes any warranty, express or
-   implied, or assumes any liability or responsibility for the accuracy,
-   completeness, or usefulness of any information, apparatus, product, or
-   process disclosed, or represents that its use would not infringe
-   privately-owned rights.
+2. Neither the United States Government, nor Lawrence Livermore National
+   Security, LLC, nor UT-Battelle, LLC, nor DataDirect Networks, Inc., nor any
+   of their employees, makes any warranty, express or implied, or assumes any
+   liability or responsibility for the accuracy, completeness, or usefulness of
+   any information, apparatus, product, or process disclosed, or represents
+   that its use would not infringe privately-owned rights.
 
 3. Also, reference herein to any specific commercial products, process, or
    services by trade name, trademark, manufacturer or otherwise does not
    necessarily constitute or imply its endorsement, recommendation, or
-   favoring by the United States Government or Lawrence Livermore National
-   Security, LLC. The views and opinions of authors expressed herein do not
-   necessarily state or reflect those of the United States Government or
-   Lawrence Livermore National Security, LLC, and shall not be used for
-   advertising or product endorsement purposes.
+   favoring by the United States Government; Los Alamos National Security, LLC;
+   Lawrence Livermore National Security, LLC; UT-Battelle, LLC, or DataDirect
+   Networks, Inc.. The views and opinions of authors expressed herein do not
+   necessarily state or reflect those of the United States Government; Lawrence
+   Livermore National Security, LLC; UT-Battelle, LLC, or DataDirect Networks, Inc.
+   and shall not be used for advertising or product endorsement purposes.
