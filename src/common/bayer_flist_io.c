@@ -148,6 +148,11 @@ static void list_elem_decode(char* buf, elem_t* elem)
     elem->detail = 0;
 
     const char* type = strtok(NULL, "|");
+    if (type == NULL) {
+        elem->type = BAYER_TYPE_UNKNOWN;
+        return;
+    }
+
     char c = type[0];
     if (c == 'F') {
         elem->type = BAYER_TYPE_FILE;
