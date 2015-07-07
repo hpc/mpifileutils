@@ -90,7 +90,7 @@ AC_CONFIG_FILES([experimental/Makefile           \
                  experimental/dgrep/Makefile     \
                  experimental/dparallel/Makefile \
                  experimental/dtar/Makefile      \
-                 src/dsh/Makefile        \
+                 experimental/dsh/Makefile        \
 ])
 fi
 
