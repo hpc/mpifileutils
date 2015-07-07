@@ -1,3 +1,24 @@
+/*
+ * Copyright (c) 2013-2015, Lawrence Livermore National Security, LLC.
+ *   Produced at the Lawrence Livermore National Laboratory
+ *   Written by Adam Moody <moody20@llnl.gov>.
+ *   CODE-673838
+ *
+ * Copyright (c) 2006-2007,2011-2015, Los Alamos National Security, LLC.
+ *   (LA-CC-06-077, LA-CC-10-066, LA-CC-14-046)
+ *
+ * Copyright (2013-2015) UT-Battelle, LLC under Contract No.
+ *   DE-AC05-00OR22725 with the Department of Energy.
+ *
+ * Copyright (c) 2015, DataDirect Networks, Inc.
+ * 
+ * All rights reserved.
+ *
+ * This file is part of mpiFileUtils.
+ * For details, see https://github.com/hpc/fileutils.
+ * Please also read the LICENSE file.
+*/
+
 #include <stdio.h>
 #include <unistd.h>
 #include <getopt.h>
@@ -36,16 +57,20 @@ static void print_usage(void)
 
 typedef enum _dcmp_state {
     /* initial state */
-    DCMPS_INIT   = 'A',
+    DCMPS_INIT = 'A',
+
     /* have common data/metadata */
     DCMPS_COMMON,
+
     /* have common data/metadata, not valid for DCMPF_EXIST */
     DCMPS_DIFFER,
+
      /*
       * This file only exist in src directory.
       * Only valid for DCMPF_EXIST.
       */
     DCMPS_ONLY_SRC,
+
      /*
       * This file only exist in dest directory.
       * Only valid for DCMPF_EXIST.
@@ -53,6 +78,7 @@ typedef enum _dcmp_state {
       * becuase we don't want to waste a loop in dcmp_strmap_compare()
       */
     DCMPS_ONLY_DEST,
+
     DCMPS_MAX,
 } dcmp_state;
 
@@ -177,6 +203,7 @@ static int dcmp_field_from_string(const char* string, dcmp_field *field)
     }
     return -ENOENT;
 }
+
 static const char* dcmp_state_to_string(dcmp_state state, int simple)
 {
     switch (state) {

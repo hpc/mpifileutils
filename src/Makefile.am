@@ -1,1 +1,1 @@
-SUBDIRS = common dcmp dcp dcp2 dfilemaker drm dwalk dsh
+SUBDIRS = common dcmp dcp dcp2 dfilemaker drm dwalk
