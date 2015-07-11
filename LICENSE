@@ -35,10 +35,11 @@ modification, are permitted provided that the following conditions are met:
      notice, this list of conditions and the following disclaimer in the
      documentation and/or other materials provided with the distribution.
 
-   * Neither the names of LLNS/LLNL; LANS/LANL; UT-Battelle, LLC;
-     DataDirect Networks, Inc.; nor the names of its contributors may be
-     used to endorse or promote products derived from this software without
-     specific prior written permission.
+   * Neither the names of LLNS/LLNL; Los Alamos National Security, LLC;
+     Los Alamos National Laboratory; LANL; UT-Battelle, LLC; DataDirect
+     Networks, Inc.; the U.S. Government; nor the names of its contributors
+     may be used to endorse or promote products derived from this software
+     without specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -60,7 +61,9 @@ Additional BSD Notice
 1. This notice is required to be provided under our contract with the U.S.
    Department of Energy (DOE). This work was produced at Lawrence Livermore
    National Laboratory under Contract No. DE-AC52-07NA27344 with the DOE,
-   and by UT-Battelle, LLC under Contract No. DE-AC-00OR22725 with the DOE.
+   by Los Alamos National Laboratory (LANL) under U.S. Government contract
+   DE-AC52-06NA25396, and by UT-Battelle, LLC under Contract No.
+   DE-AC-00OR22725 with the DOE.
 
 2. Neither the United States Government, nor Lawrence Livermore National
    Security, LLC, nor Los Alamos National Security, LLC, nor UT-Battelle, LLC,
