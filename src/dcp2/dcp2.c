@@ -821,6 +821,15 @@ static void copy_files(bayer_flist list)
             recv_ranks++;
         }
     }
+    
+    /* build the list of ranks to receive from */
+    int *recvranklist = (int *)BAYER_MALLOC(sizeof(int) * recv_ranks);
+    int recv_count = 0;
+    for (i = 0; i < ranks; i++) {
+        if (recvlist[i]) {
+            recvranklist[recv_count++] = i;
+        }
+    }
  
     /* determine number of messages we'll have outstanding */
     int msgs = send_ranks + recv_ranks;
@@ -843,8 +852,7 @@ static void copy_files(bayer_flist list)
 
     /* post irecv to get sizes */
     for (i = 0; i < recv_ranks; i++) {
-        int recv_rank = first_recv_rank + i;
-        MPI_Irecv(&recv_counts[i], 1, MPI_INT, recv_rank, 0, MPI_COMM_WORLD, &request[i]);
+        MPI_Irecv(&recv_counts[i], 1, MPI_INT, recvranklist[i], 0, MPI_COMM_WORLD, &request[i]);
     }
 
     /* post isend to send sizes */
@@ -893,9 +901,8 @@ static void copy_files(bayer_flist list)
     /* post irecv for incoming data */
     char* recvptr = recvbuf;
     for (i = 0; i < recv_ranks; i++) {
-        int recv_rank = first_recv_rank + i;
         int recv_count = recv_counts[i];
-        MPI_Irecv(recvptr, recv_count, MPI_BYTE, recv_rank, 0, MPI_COMM_WORLD, &request[i]);
+        MPI_Irecv(recvptr, recv_count, MPI_BYTE, recvranklist[i], 0, MPI_COMM_WORLD, &request[i]);
         recvptr += recv_count;
     }
 
@@ -949,6 +956,8 @@ static void copy_files(bayer_flist list)
         }
 
     }
+
+    bayer_free(&recvranklist);
 
     bayer_free(&recvbuf);
     bayer_free(&sendbufs);
