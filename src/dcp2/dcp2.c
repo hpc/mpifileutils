@@ -827,7 +827,8 @@ static void copy_files(bayer_flist list)
     int recv_count = 0;
     for (i = 0; i < ranks; i++) {
         if (recvlist[i]) {
-            recvranklist[recv_count++] = i;
+            recvranklist[recv_count] = i;
+            recv_count++;
         }
     }
  
@@ -852,7 +853,8 @@ static void copy_files(bayer_flist list)
 
     /* post irecv to get sizes */
     for (i = 0; i < recv_ranks; i++) {
-        MPI_Irecv(&recv_counts[i], 1, MPI_INT, recvranklist[i], 0, MPI_COMM_WORLD, &request[i]);
+        int recv_rank = recvranklist[i];
+        MPI_Irecv(&recv_counts[i], 1, MPI_INT, recv_rank, 0, MPI_COMM_WORLD, &request[i]);
     }
 
     /* post isend to send sizes */
@@ -902,7 +904,8 @@ static void copy_files(bayer_flist list)
     char* recvptr = recvbuf;
     for (i = 0; i < recv_ranks; i++) {
         int recv_count = recv_counts[i];
-        MPI_Irecv(recvptr, recv_count, MPI_BYTE, recvranklist[i], 0, MPI_COMM_WORLD, &request[i]);
+        int recv_rank = recvranklist[i];
+        MPI_Irecv(recvptr, recv_count, MPI_BYTE, recv_rank, 0, MPI_COMM_WORLD, &request[i]);
         recvptr += recv_count;
     }
 
