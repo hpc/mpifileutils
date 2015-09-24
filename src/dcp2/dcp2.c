@@ -360,7 +360,7 @@ static int create_file(bayer_flist list, uint64_t idx)
     /* free destination path */
     bayer_free(&dest_path);
 
-    /* increment our directory count by one */
+    /* increment our file count by one */
     DCOPY_statistics.total_files++;
 
     return 0;
@@ -402,6 +402,7 @@ static int create_files(int levels, int minlevel, bayer_flist* lists)
 
             /* process files and links */
             if (type == BAYER_TYPE_FILE) {
+                /* TODO: skip file if it's not readable */
                 create_file(list, idx);
                 count++;
             } else if (type == BAYER_TYPE_LINK) {
@@ -981,6 +982,9 @@ static void copy_files(bayer_flist list)
     bayer_free(&sendlist);
     bayer_free(&recvlist);
 
+    /* wait for all procs to finish copying data */
+    MPI_Barrier(MPI_COMM_WORLD);
+
     return;
 }
 
@@ -1018,6 +1022,8 @@ static void DCOPY_set_metadata(int levels, int minlevel, bayer_flist* lists)
             if (type == BAYER_TYPE_LINK) {
                 continue;
             }
+
+            /* TODO: skip file if it's not readable */
 
             /* get destination name of item */
             const char* name = bayer_flist_file_get_name(list, idx);
@@ -1303,6 +1309,8 @@ int main(int argc, \
     int levels, minlevel;
     bayer_flist* lists;
     bayer_flist_array_by_depth(flist, &levels, &minlevel, &lists);
+
+    /* TODO: filter out files that are bigger than 0 bytes if we can't read them */
 
     /* create directories, from top down */
     create_directories(levels, minlevel, lists);
