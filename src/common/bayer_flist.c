@@ -2672,7 +2672,7 @@ static void read_cache_v2(
     
         /* compute max iterations across all procs */
         uint64_t all_iters;
-        MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
     
         /* set file view to be sequence of datatypes past header */
         MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
@@ -2871,7 +2871,7 @@ static void read_cache_v3(
     
         /* compute max iterations across all procs */
         uint64_t all_iters;
-        MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
     
         /* set file view to be sequence of datatypes past header */
         MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
@@ -3228,7 +3228,7 @@ static void write_cache_readdir(
 
     /* compute max iterations across all procs */
     uint64_t all_iters;
-    MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
 
     /* set file view to be sequence of datatypes past header */
     MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
@@ -3392,7 +3392,7 @@ static void write_cache_stat(
 
     /* compute max iterations across all procs */
     uint64_t all_iters;
-    MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
 
     /* set file view to be sequence of datatypes past header */
     MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
