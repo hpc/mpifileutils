@@ -2404,8 +2404,13 @@ static void read_cache_variable(
     /* indicate that we just have file names */
     flist->detail = 0;
 
-    /* get file size to determine how much each process should read */
-    uint64_t filesize = get_filesize(name);
+    /* get file size to determine how much each process should read,
+     * just have rank 0 read this and bcast to everyone */
+    uint64_t filesize;
+    if (rank == 0) {
+       filesize = get_filesize(name);
+    }
+    MPI_Bcast(&filesize, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
     /* TODO: consider stripe width */
 
@@ -2443,8 +2448,9 @@ static void read_cache_variable(
     /* set file view to be sequence of characters past header */
     MPI_File_set_view(fh, disp, MPI_CHAR, MPI_CHAR, datarep, MPI_INFO_NULL);
     
-    /* compute offset of first byte we'll read */
-    MPI_Offset read_offset = disp + (MPI_Offset) (chunk_offset * chunk_size);
+    /* compute offset of first byte we'll read,
+     * the set_view above means we should start our offset at 0 */
+    MPI_Offset read_offset = (MPI_Offset) (chunk_offset * chunk_size);
 
     /* compute offset of last byte we need to read,
      * note we may actually read further if our last record spills
@@ -2459,7 +2465,7 @@ static void read_cache_variable(
      * previous chunk spills into ours, in which case we need
      * to scan past first newline */
 
-    /* assume we don't have to scan passt first newline */
+    /* assume we don't have to scan past first newline */
     int scan = 0;
     if (read_offset > 0) {
         /* read last byte in chunk before our first */
@@ -2764,7 +2770,7 @@ static void read_cache_v3(
     uint64_t header[8];
     MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
     if (rank == 0) {
-        MPI_File_read_at(fh, disp, header, 8, MPI_UINT64_T, &status);
+        MPI_File_read_at(fh, 0, header, 8, MPI_UINT64_T, &status);
     }
     MPI_Bcast(header, 8, MPI_UINT64_T, 0, MPI_COMM_WORLD);
     disp += 8 * 8; /* 8 consecutive uint64_t types in external32 */
@@ -2810,7 +2816,7 @@ static void read_cache_v3(
         /* read data */
         MPI_File_set_view(fh, disp, users->dt, users->dt, datarep, MPI_INFO_NULL);
         if (rank == 0) {
-            MPI_File_read_at(fh, disp, users->buf, (int)users->count, users->dt, &status);
+            MPI_File_read_at(fh, 0, users->buf, (int)users->count, users->dt, &status);
         }
         MPI_Bcast(users->buf, (int)users->count, users->dt, 0, MPI_COMM_WORLD);
         disp += (MPI_Offset) bufsize_user;
@@ -2833,7 +2839,7 @@ static void read_cache_v3(
         /* read data */
         MPI_File_set_view(fh, disp, groups->dt, groups->dt, datarep, MPI_INFO_NULL);
         if (rank == 0) {
-            MPI_File_read_at(fh, disp, groups->buf, (int)groups->count, groups->dt, &status);
+            MPI_File_read_at(fh, 0, groups->buf, (int)groups->count, groups->dt, &status);
         }
         MPI_Bcast(groups->buf, (int)groups->count, groups->dt, 0, MPI_COMM_WORLD);
         disp += (MPI_Offset) bufsize_group;
@@ -2877,7 +2883,7 @@ static void read_cache_v3(
         MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
     
         /* compute byte offset to read our element */
-        MPI_Offset read_offset = disp + (MPI_Offset)offset * extent_file;
+        MPI_Offset read_offset = (MPI_Offset)offset;
     
         /* iterate with multiple reads until all records are read */
         uint64_t totalcount = 0;
@@ -2892,8 +2898,8 @@ static void read_cache_v3(
             /* issue a collective read */
             MPI_File_read_at_all(fh, read_offset, buf, read_count, dt, &status);
 
-            /* update our offset with the number of bytes we just read */
-            read_offset += (MPI_Offset)read_count * (MPI_Offset)extent_file;
+            /* update our offset with the number of items we just read */
+            read_offset += (MPI_Offset)read_count;
             totalcount += (uint64_t) read_count;
 
             /* unpack data from buffer into list */
@@ -2966,7 +2972,7 @@ void bayer_flist_read_cache(
     uint64_t version;
     MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
     if (rank == 0) {
-        MPI_File_read_at(fh, disp, &version, 1, MPI_UINT64_T, &status);
+        MPI_File_read_at(fh, 0, &version, 1, MPI_UINT64_T, &status);
     }
     MPI_Bcast(&version, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
     disp += 1 * 8; /* 9 consecutive uint64_t types in external32 */
@@ -3049,9 +3055,7 @@ static void write_cache_readdir_variable(
     /* compute byte offset for each task */
     uint64_t offset;
     MPI_Scan(&bytes, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    if (rank == 0) {
-        offset = 0;
-    }
+    offset -= bytes;
 
     /* open file */
     MPI_Status status;
@@ -3097,8 +3101,9 @@ static void write_cache_readdir_variable(
     /* set file view to be sequence of datatypes past header */
     MPI_File_set_view(fh, disp, MPI_CHAR, MPI_CHAR, datarep, MPI_INFO_NULL);
 
-    /* compute byte offset to write our element */
-    MPI_Offset write_offset = disp + (MPI_Offset)offset;
+    /* compute byte offset to write our element,
+     * set_view above means our offset here should start from 0 */
+    MPI_Offset write_offset = (MPI_Offset)offset;
 
     /* iterate with multiple writes until all records are written */
     current = flist->list_head;
@@ -3202,7 +3207,7 @@ static void write_cache_readdir(
     MPI_Offset disp = 0;
     MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
     if (rank == 0) {
-        MPI_File_write_at(fh, disp, header, 5, MPI_UINT64_T, &status);
+        MPI_File_write_at(fh, 0, header, 5, MPI_UINT64_T, &status);
     }
     disp += 5 * 8;
 
@@ -3234,7 +3239,7 @@ static void write_cache_readdir(
     MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
 
     /* compute byte offset to write our element */
-    MPI_Offset write_offset = disp + (MPI_Offset)offset * extent;
+    MPI_Offset write_offset = (MPI_Offset)offset;
 
     /* iterate with multiple writes until all records are written */
     const elem_t* current = flist->list_head;
@@ -3255,7 +3260,7 @@ static void write_cache_readdir(
         MPI_File_write_at_all(fh, write_offset, buf, write_count, dt, &status);
 
         /* update our offset with the number of bytes we just wrote */
-        write_offset += (MPI_Offset)packcount * (MPI_Offset)extent;
+        write_offset += (MPI_Offset)packcount;
 
         /* one less iteration */
         all_iters--;
@@ -3338,7 +3343,7 @@ static void write_cache_stat(
     MPI_Offset disp = 0;
     MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
     if (rank == 0) {
-        MPI_File_write_at(fh, disp, header, 9, MPI_UINT64_T, &status);
+        MPI_File_write_at(fh, 0, header, 9, MPI_UINT64_T, &status);
     }
     disp += 9 * 8;
 
@@ -3351,7 +3356,7 @@ static void write_cache_stat(
         MPI_File_set_view(fh, disp, users->dt, users->dt, datarep, MPI_INFO_NULL);
         if (rank == 0) {
             int write_count = (int) users->count;
-            MPI_File_write_at(fh, disp, users->buf, write_count, users->dt, &status);
+            MPI_File_write_at(fh, 0, users->buf, write_count, users->dt, &status);
         }
         disp += (MPI_Offset)users->count * extent_user;
     }
@@ -3365,7 +3370,7 @@ static void write_cache_stat(
         MPI_File_set_view(fh, disp, groups->dt, groups->dt, datarep, MPI_INFO_NULL);
         if (rank == 0) {
             int write_count = (int) groups->count;
-            MPI_File_write_at(fh, disp, groups->buf, write_count, groups->dt, &status);
+            MPI_File_write_at(fh, 0, groups->buf, write_count, groups->dt, &status);
         }
         disp += (MPI_Offset)groups->count * extent_group;
     }
@@ -3398,7 +3403,7 @@ static void write_cache_stat(
     MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
 
     /* compute byte offset to write our element */
-    MPI_Offset write_offset = disp + (MPI_Offset)offset * extent;
+    MPI_Offset write_offset = (MPI_Offset)offset;
 
     /* iterate with multiple writes until all records are written */
     const elem_t* current = flist->list_head;
@@ -3419,7 +3424,7 @@ static void write_cache_stat(
         MPI_File_write_at_all(fh, write_offset, buf, write_count, dt, &status);
 
         /* update our offset with the number of bytes we just wrote */
-        write_offset += (MPI_Offset)packcount * (MPI_Offset)extent;
+        write_offset += (MPI_Offset)packcount;
 
         /* one less iteration */
         all_iters--;
