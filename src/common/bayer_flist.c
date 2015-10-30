@@ -2415,7 +2415,7 @@ static void read_cache_variable(
     /* TODO: consider stripe width */
 
     /* compute number of chunks in file */
-    uint64_t chunk_size = 1024 * 10;
+    uint64_t chunk_size = 1024 * 1024;
     uint64_t chunks = filesize / chunk_size;
     if (chunks * chunk_size < filesize) {
         chunks++;
@@ -2507,7 +2507,8 @@ static void read_cache_variable(
         /* update read offset for next time */
         read_offset += (MPI_Offset) read_count;
     
-        /* setup pointers to work with read buffer */
+        /* setup pointers to work with read buffer,
+         * note that end points one char past last valid character */
         char* ptr = (char*) buf;
         char* end = ptr + bufoffset + read_count;
 
@@ -2515,7 +2516,7 @@ static void read_cache_variable(
          * record handled by another process) */
         if (scan) {
             /* advance to the next newline character */
-            while(*ptr != '\n' && ptr != end) {
+            while (ptr != end && *ptr != '\n') {
                 ptr++;
             }
 
@@ -2534,14 +2535,14 @@ static void read_cache_variable(
             /* start points to beginning of a record, scan to
              * search for end of record, advance ptr past next
              * newline character or to end of buffer */
-            while(*ptr != '\n' && ptr != end) {
+            while (ptr != end && *ptr != '\n') {
                 ptr++;
             }
 
             /* process record if we hit a newline,
              * otherwise copy partial record to other buffer */
-            if (*ptr == '\n') {
-                 /* we've got a full record,
+            if (ptr != end) {
+                /* we must be on a newline,
                  * terminate record string with NUL */
                 *ptr = '\0';
 
@@ -2559,6 +2560,11 @@ static void read_cache_variable(
                 if (pos >= last_offset) {
                     done = 1;
                     break;
+                }
+
+                /* if newline was at end of buffer, reset offset into read buffer */
+                if (ptr >= end) {
+                    bufoffset = 0;
                 }
             } else {
                 /* hit end of buffer but not end of record,
