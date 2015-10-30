@@ -318,7 +318,7 @@ static void print_files(bayer_flist flist)
         while (tmpidx < tmpsize) {
             print_file(tmplist, tmpidx, rank);
             tmpidx++;
-            if (tmpidx == range && tmpsize > 2 * range) {
+            if (tmpidx == range && total > 2 * range) {
                 /* going to have to leave some out */
                 printf("\n<snip>\n\n");
             }
