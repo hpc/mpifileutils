@@ -2763,8 +2763,11 @@ static void read_cache_v3(
                 read_count = (int) remaining;
             }
 
+            /* TODO: read_at_all w/ external32 is broken in ROMIO as of MPICH-3.2rc1 */
+
             /* issue a collective read */
-            MPI_File_read_at_all(fh, read_offset, buf, read_count, dt, &status);
+            //MPI_File_read_at_all(fh, read_offset, buf, read_count, dt, &status);
+            MPI_File_read_at(fh, read_offset, buf, read_count, dt, &status);
 
             /* update our offset with the number of items we just read */
             read_offset += (MPI_Offset)read_count;
