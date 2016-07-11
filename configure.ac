@@ -70,6 +70,7 @@ X_AC_DTCMP
 AC_CONFIG_FILES([Makefile                \
                  src/Makefile            \
                  src/common/Makefile     \
+                 src/dchmod/Makefile     \
                  src/dcmp/Makefile       \
                  src/dcp/Makefile        \
                  src/dcp2/Makefile       \
