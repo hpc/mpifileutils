@@ -209,7 +209,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:lhv",
+                    argc, argv, "i:g:lhv",
                     long_options, &option_index
                 );
 
