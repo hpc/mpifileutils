@@ -227,14 +227,15 @@ int main(int argc, char** argv)
             case 'g':
                 groupname = BAYER_STRDUP(optarg);
                 break;
+	    case 'm':
+	    	modestr = BAYER_STRDUP(optarg);
+		break;
             case 'h':
                 usage = 1;
                 break;
             case 'v':
                 bayer_debug_level = BAYER_LOG_VERBOSE;
                 break;
-	    case 'm':
-		modestr = BAYER_STRDUP(optarg);	
             case '?':
                 usage = 1;
                 break;
@@ -316,6 +317,9 @@ int main(int argc, char** argv)
 
     /* free the group name */
     bayer_free(&groupname);
+
+    /* free the modestr */
+    bayer_free(&modestr);
 
     /* free the input file name */
     bayer_free(&inputname);
