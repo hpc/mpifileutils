@@ -174,6 +174,7 @@ static void print_usage(void)
     printf("  -g, --group <name>  - change group to specified group name\n");
     printf("  -v, --verbose       - verbose output\n");
     printf("  -h, --help          - print usage\n");
+    printf("  -m, --mode	  - sets mode\n"); 
     printf("\n");
     fflush(stdout);
     return;
@@ -195,12 +196,14 @@ int main(int argc, char** argv)
     /* parse command line options */
     char* inputname = NULL;
     char* groupname = NULL;
+    char* modestr = NULL;
     int walk = 0;
 
     int option_index = 0;
     static struct option long_options[] = {
         {"input",    1, 0, 'i'},
         {"group",    1, 0, 'g'},
+	{"mode",     1, 0, 'm'},
         {"help",     0, 0, 'h'},
         {"verbose",  0, 0, 'v'},
         {0, 0, 0, 0}
@@ -209,7 +212,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:g:lhv",
+                    argc, argv, "i:g:m:lhv",
                     long_options, &option_index
                 );
 
@@ -230,6 +233,8 @@ int main(int argc, char** argv)
             case 'v':
                 bayer_debug_level = BAYER_LOG_VERBOSE;
                 break;
+	    case 'm':
+		modestr = BAYER_STRDUP(optarg);	
             case '?':
                 usage = 1;
                 break;
