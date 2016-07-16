@@ -29,6 +29,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <time.h> /* asctime / localtime */
+#include <ctype.h>
 
 #include <pwd.h> /* for getpwent */
 #include <grp.h> /* for getgrent */
@@ -47,7 +48,6 @@ static int walk_stat = 1;
 /*****************************
  * Driver functions
  ****************************/
-
 static int lookup_gid(const char* name, gid_t* gid)
 {
     uint64_t values[2];
@@ -90,9 +90,45 @@ static int lookup_gid(const char* name, gid_t* gid)
     return rc;
 }
 
+static int parse_modebits(const char* modestr, mode_t* mode) {
+	int rc = 0;
+ 	int i;
+	*mode = (mode_t)0;
+	if (modestr != NULL && modestr[0] == '0' && strlen(modestr) == 4) {
+		for (i = 0; i <= strlen(modestr) - 1; i++) {
+			if (isdigit(modestr[i])) {
+				if (modestr[i] < '0' || modestr[i] > '7') {
+					rc = 0;			
+				}
+				else {
+					rc = 1;
+				}
+			}
+			else {
+				rc = 0;
+			}	
+                }				
+	}
+	long modestr_octal = strtol(modestr, NULL, 8);
+	if (rc) {
+	        mode_t permbits[12] = {S_ISUID, S_ISGID, S_ISVTX, 
+				       S_IRUSR, S_IWUSR, S_IXUSR, 
+				       S_IRGRP, S_IWGRP, S_IXGRP, 
+				       S_IROTH, S_IWOTH, S_IXOTH };
+		long mask = 1 << 11;
+		for (int i = 0; i < 12; i++) {
+			if (mask & modestr_octal) {
+				*mode |= permbits[i];
+			}
+			mask >>= 1;
+		}
+       } 
+        return rc;	
+}
+
 static void flist_chmod(
     bayer_flist flist,
-    const char* grname)
+    const char* grname, const char* modestr)
 {
     /* lookup groupid if set, bail out if not */
     gid_t gid;
@@ -103,7 +139,11 @@ static void flist_chmod(
             return;
         }
     }
-
+    mode_t new_mode; 
+    if (modestr != NULL) {
+    	parse_modebits(modestr, &new_mode);
+    }
+	
     /* each process directly removes its elements */
     uint64_t idx;
     uint64_t size = bayer_flist_size(flist);
@@ -135,30 +175,22 @@ static void flist_chmod(
                 }
             }
         }
+	if (modestr != NULL) {
 
-        /* get mode and type */
-        bayer_filetype type = bayer_flist_file_get_type(flist, idx);
-        mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, idx);
+        	/* get mode and type */
+        	bayer_filetype type = bayer_flist_file_get_type(flist, idx);
+        	mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, idx);
 
-        /* change mode, unless item is a link */
-        if(type != BAYER_TYPE_LINK) {
-            /* flip on group read bit, if user bit is set */
-            if(mode & S_IRUSR) {
-                mode |= S_IRGRP;
-            }
-
-            /* flip on group execute bit, if user execute bit is set */
-            if(mode & S_IXUSR) {
-                mode |= S_IXGRP;
-            }
-
-            /* set the mode on the file */
-            if(bayer_chmod(dest_path, mode) != 0) {
-                BAYER_LOG(BAYER_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
-                    dest_path, errno, strerror(errno)
-                   );
-            }
-        }
+        	/* change mode, unless item is a link */
+        	if(type != BAYER_TYPE_LINK) {
+            		/* set the mode on the file */
+                	if(bayer_chmod(dest_path, new_mode) != 0) {
+                		BAYER_LOG(BAYER_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
+                        	dest_path, errno, strerror(errno)
+                   		);
+            		}
+        	}
+	}
     }
 
     return;
@@ -172,9 +204,9 @@ static void print_usage(void)
     printf("Options:\n");
     printf("  -i, --input <file>  - read list from file\n");
     printf("  -g, --group <name>  - change group to specified group name\n");
+    printf("  -m, --mode <string> - change mode\n");    
     printf("  -v, --verbose       - verbose output\n");
     printf("  -h, --help          - print usage\n");
-    printf("  -m, --mode	  - sets mode\n"); 
     printf("\n");
     fflush(stdout);
     return;
@@ -278,7 +310,16 @@ int main(int argc, char** argv)
             usage = 1;
         }
     }
-
+    if (modestr != NULL) {
+    	mode_t mode; 
+    	int valid = parse_modebits(modestr, &mode);
+    		if (!valid) {
+			usage = 1;
+			if (rank == 0) {
+				printf("invalid mode string: %s\n", modestr);
+			}
+    		} 
+    }
     /* print usage if we need to */
     if (usage) {
         if (rank == 0) {
@@ -304,7 +345,7 @@ int main(int argc, char** argv)
     }
 
     /* change group and permissions */
-    flist_chmod(flist, groupname);
+    flist_chmod(flist, groupname, modestr);
 
     /* free the file list */
     bayer_flist_free(&flist);
