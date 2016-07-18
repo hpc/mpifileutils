@@ -90,34 +90,50 @@ static int lookup_gid(const char* name, gid_t* gid)
     return rc;
 }
 
-static int parse_modebits(const char* modestr, mode_t* mode) {
-	int rc = 0;
+static * valid_modebits(const char* modestr) {
  	int i;
-	*mode = (mode_t)0;
+        int* mode_type = malloc(3);
+        mode_type[0] = mode_type[1] = mode_type[2] = 0; 
+
+        /* mode_type[0]: octal = 1, symbolic = 0
+         * mode_type[1]: octal = 0, symbolic = 1
+         * mode_type[2]: octal_valid or symbolic_valid 
+         * depends on mode_type[0] or mode_type[1], i.e
+         * if it is octal then mode_type[0] and mode_type[2]
+         * will both be 1 */
+        
 	if (modestr != NULL) {
-            if (strlen(modestr) <= 4) { 
+            /* if it is octal then assume it will start with a digit */
+            if (strlen(modestr) <= 4 && isdigit(modestr[0])) { 
 		for (i = 0; i <= strlen(modestr) - 1; i++) {
 			/* check if a digit and in the range 0-7 */
                         if (isdigit(modestr[i])) {
 				if (modestr[i] < '0' || modestr[i] > '7') {
-					rc = 0;
+                                        mode_type[2] = 0;
                                         break;                        
 				}
 				else {
-					rc = 1;
+                                        mode_type[2] = 1;
 				}
 			}
 			else {
-				rc = 0;
+                                mode_type[2] = 0;
                                 break;
 			}	
                 }
-            } else {
-                rc = 0;
+                mode_type[0]= 1;
             }
+           /* TODO: if it is symbolic do checks [u,g,a], [+,-], then [r,w,x]*/ 
 	}
-	long modestr_octal = strtol(modestr, NULL, 8);
-	if (rc) {
+        return mode_type;	
+}
+
+static mode_t parse_modebits(const char* modestr, mode_t* mode) {
+        mode_t new_mode = NULL;
+        int * check_mode = valid_modebits(modestr);
+        if (check_mode[0] == 1 && check_mode[2] == 1) {
+                *mode = (mode_t)0;
+                long modestr_octal = strtol(modestr, NULL, 8);
 	        mode_t permbits[12] = {S_ISUID, S_ISGID, S_ISVTX, 
 				       S_IRUSR, S_IWUSR, S_IXUSR, 
 				       S_IRGRP, S_IWGRP, S_IXGRP, 
@@ -129,8 +145,10 @@ static int parse_modebits(const char* modestr, mode_t* mode) {
 			}
 			mask >>= 1;
 		}
-       } 
-       return rc;	
+                new_mode = *mode;
+       }
+       free(check_mode);
+       return new_mode;    
 }
 
 static void flist_chmod(
@@ -236,6 +254,7 @@ int main(int argc, char** argv)
     char* inputname = NULL;
     char* groupname = NULL;
     char* modestr = NULL;
+    char* mode_type = NULL;
     int walk = 0;
 
     int option_index = 0;
@@ -319,7 +338,7 @@ int main(int argc, char** argv)
     }
     if (modestr != NULL) {
     	mode_t mode; 
-    	int valid = parse_modebits(modestr, &mode);
+    	int valid = valid_modebits(modestr);
     		if (!valid) {
 			usage = 1;
 			if (rank == 0) {
