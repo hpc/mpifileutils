@@ -94,11 +94,14 @@ static int parse_modebits(const char* modestr, mode_t* mode) {
 	int rc = 0;
  	int i;
 	*mode = (mode_t)0;
-	if (modestr != NULL && modestr[0] == '0' && strlen(modestr) == 4) {
+	if (modestr != NULL) {
+            if (strlen(modestr) <= 4) { 
 		for (i = 0; i <= strlen(modestr) - 1; i++) {
-			if (isdigit(modestr[i])) {
+			/* check if a digit and in the range 0-7 */
+                        if (isdigit(modestr[i])) {
 				if (modestr[i] < '0' || modestr[i] > '7') {
-					rc = 0;			
+					rc = 0;
+                                        break;                        
 				}
 				else {
 					rc = 1;
@@ -106,15 +109,19 @@ static int parse_modebits(const char* modestr, mode_t* mode) {
 			}
 			else {
 				rc = 0;
+                                break;
 			}	
-                }				
+                }
+            } else {
+                rc = 0;
+            }
 	}
 	long modestr_octal = strtol(modestr, NULL, 8);
 	if (rc) {
 	        mode_t permbits[12] = {S_ISUID, S_ISGID, S_ISVTX, 
 				       S_IRUSR, S_IWUSR, S_IXUSR, 
 				       S_IRGRP, S_IWGRP, S_IXGRP, 
-				       S_IROTH, S_IWOTH, S_IXOTH };
+				       S_IROTH, S_IWOTH, S_IXOTH};
 		long mask = 1 << 11;
 		for (int i = 0; i < 12; i++) {
 			if (mask & modestr_octal) {
@@ -123,7 +130,7 @@ static int parse_modebits(const char* modestr, mode_t* mode) {
 			mask >>= 1;
 		}
        } 
-        return rc;	
+       return rc;	
 }
 
 static void flist_chmod(
