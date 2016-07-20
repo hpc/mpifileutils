@@ -30,6 +30,7 @@
 #include <getopt.h>
 #include <time.h> /* asctime / localtime */
 #include <ctype.h>
+#include <regex.h>
 
 #include <pwd.h> /* for getpwent */
 #include <grp.h> /* for getgrent */
@@ -92,6 +93,8 @@ static int lookup_gid(const char* name, gid_t* gid)
 
 static * valid_modebits(const char* modestr) {
  	int i;
+        regex_t regex;
+        int regex_return;
         int* mode_type = malloc(3);
         mode_type[0] = mode_type[1] = mode_type[2] = 0; 
 
@@ -99,14 +102,14 @@ static * valid_modebits(const char* modestr) {
          * mode_type[1]: octal = 0, symbolic = 1
          * mode_type[2]: octal_valid or symbolic_valid 
          * depends on mode_type[0] or mode_type[1], i.e
-         * if it is octal then mode_type[0] and mode_type[2]
+         * if it is octal & valid then mode_type[0] and mode_type[2]
          * will both be 1 */
         
 	if (modestr != NULL) {
             /* if it is octal then assume it will start with a digit */
             if (strlen(modestr) <= 4 && isdigit(modestr[0])) { 
 		for (i = 0; i <= strlen(modestr) - 1; i++) {
-			/* check if a digit and in the range 0-7 */
+			/* check if a digit and in the range 0 - 7 */
                         if (isdigit(modestr[i])) {
 				if (modestr[i] < '0' || modestr[i] > '7') {
                                         mode_type[2] = 0;
@@ -122,16 +125,40 @@ static * valid_modebits(const char* modestr) {
 			}	
                 }
                 mode_type[0]= 1;
-            }
-           /* TODO: if it is symbolic do checks [u,g,a], [+,-], then [r,w,x]*/ 
-	}
+           }
+           /* TODO: if it is symbolic do checks later add = */
+           else {
+                //compile regular expression 
+                mode_type[1] = 1; 
+                regex_return = regcomp(&regex, "[u*g*a*][-+][r*w*x*]", 0);
+                
+                if (regex_return) {
+                        printf(stderr, "could not compile regex\n");
+                }
+                /* execute regular expression */
+                regex_return = regexec(&regex, modestr, 0, NULL, 0);
+                printf("modestr: %s\n", modestr); 
+                 
+                if (!regex_return) {
+                        //there was a match!
+                        mode_type[2] = 1;  
+                }
+	   }
+        }
         return mode_type;	
 }
 
 static mode_t parse_modebits(const char* modestr, mode_t* mode) {
         mode_t new_mode = NULL;
+        int plus = 0;
+        int u_count, g_count, a_count, r_count, w_count, x_count;
+        u_count = g_count = a_count = r_count = w_count = x_count = 0;
+        char* u_string = malloc(20);
+        char* g_string = malloc(20);
+        char* a_string = malloc(20);
+        char build_octal[100];
         int * check_mode = valid_modebits(modestr);
-        if (check_mode[0] == 1 && check_mode[2] == 1) {
+        if (check_mode[0] == 1 && check_mode[2] == 1 && check_mode[1] != 1) {
                 *mode = (mode_t)0;
                 long modestr_octal = strtol(modestr, NULL, 8);
 	        mode_t permbits[12] = {S_ISUID, S_ISGID, S_ISVTX, 
@@ -147,6 +174,71 @@ static mode_t parse_modebits(const char* modestr, mode_t* mode) {
 		}
                 new_mode = *mode;
        }
+       if (check_mode[1] == 1 && check_mode[2] == 1 && check_mode[0] != 1) {
+                     
+                for (int i = 0; i <= strlen(modestr) - 1; i++) {
+                        if (modestr[i] == '+') {
+                                plus = 1;
+                                break;
+                        }
+                }
+                if (plus) {
+                    for (int i = 0; i <= strlen(modestr) - 1; i++) {
+                        if (modestr[i] == 'u') u_count++;
+                        if (modestr[i] == 'g') g_count++;
+                        if (modestr[i] == 'a') a_count++;
+                        if (modestr[i] == 'r') r_count++;
+                        if (modestr[i] == 'w') w_count++;
+                        if (modestr[i] == 'x') x_count++;
+                    }
+                    int ur_count, uw_count, ux_count;
+                    ur_count = uw_count = ux_count = 0;
+                    if (u_count >= 1 && r_count >= 1) ur_count = ur_count + 4;
+                    if (u_count >= 1 && w_count >= 1) uw_count = uw_count + 2;
+                    if (u_count >= 1 && x_count >= 1) ux_count = ux_count + 1;
+                    u_count = 0;
+                    u_count = ur_count + uw_count + ux_count;
+                    /* get the group's r,w,x permissions selected*/
+                    int gr_count, gw_count, gx_count;
+                    gr_count = gw_count = gx_count = 0;
+                    if (g_count >= 1 && r_count >= 1) gr_count = gr_count + 4;
+                    if (g_count >= 1 && w_count >= 1) gw_count = gw_count + 2;
+                    if (g_count >= 1 && x_count >= 1) gx_count = gx_count + 1;
+                    g_count = 0;
+                    g_count = gr_count + gw_count + gx_count;
+                    /* get the other's r,w,x permissions selected*/
+                    int ar_count, aw_count, ax_count;
+                    ar_count = aw_count = ax_count = 0;
+                    if (a_count >= 1 && r_count >= 1) ar_count = ar_count + 4;
+                    if (a_count >= 1 && w_count >= 1) aw_count = aw_count + 2;
+                    if (a_count >= 1 && x_count >= 1) ax_count = ax_count + 1;
+                    a_count = 0;
+                    a_count = ar_count + aw_count + ax_count;
+                    snprintf(u_string, 20, "%d", u_count);
+                    snprintf(g_string, 20, "%d", g_count);
+                    snprintf(a_string, 20, "%d", a_count);
+                    strcpy(build_octal, u_string);
+                    strcat(build_octal, g_string);
+                    strcat(build_octal, a_string);
+                    new_mode = (mode_t)0;
+                    long modestr_octal = strtol(build_octal, NULL, 8);
+	            mode_t permbits[12] = {S_ISUID, S_ISGID, S_ISVTX, 
+				       S_IRUSR, S_IWUSR, S_IXUSR, 
+				       S_IRGRP, S_IWGRP, S_IXGRP, 
+				       S_IROTH, S_IWOTH, S_IXOTH};
+		    long mask = 1 << 11;
+		    for (int i = 0; i < 12; i++) {
+			if (mask & modestr_octal) {
+				new_mode |= permbits[i];
+			}
+			mask >>= 1;
+		    }  
+                    *mode |= new_mode; 
+             }               
+       }
+       free(u_string);
+       free(g_string);
+       free(a_string);
        free(check_mode);
        return new_mode;    
 }
@@ -338,8 +430,8 @@ int main(int argc, char** argv)
     }
     if (modestr != NULL) {
     	mode_t mode; 
-    	int valid = valid_modebits(modestr);
-    		if (!valid) {
+    	int* valid = valid_modebits(modestr);
+    		if (valid[2] == 0) {
 			usage = 1;
 			if (rank == 0) {
 				printf("invalid mode string: %s\n", modestr);
