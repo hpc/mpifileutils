@@ -137,7 +137,6 @@ static * valid_modebits(const char* modestr) {
                 }
                 /* execute regular expression */
                 regex_return = regexec(&regex, modestr, 0, NULL, 0);
-                printf("modestr: %s\n", modestr); 
                  
                 if (!regex_return) {
                         //there was a match!
@@ -148,15 +147,63 @@ static * valid_modebits(const char* modestr) {
         return mode_type;	
 }
 
-static mode_t parse_modebits(const char* modestr, mode_t* mode) {
+static int parse_rwx(const char* str, int* read, int* write, int* execute) {
+    *read = 0;
+    *write = 0;
+    *execute = 0;
+    while (str[0] == 'r' || str[0] == 'w' || str[0] == 'x') {
+        if (str[0] == 'r') {
+            *read = 1;
+        } else if (str[0] == 'w') {
+            *write = 1;
+        } else if (str[0] == 'x') {
+            *execute = 1;
+        } else {
+            return 0;
+        }
+        str++;
+    } 
+    return 1;
+}
+
+static int parse_plusminus(const char* str, int* plus, int* read, int* write, int* execute) {
+    int rc = 1;
+    if (str[0] == '+') {
+        *plus = 1;
+        str++;
+        rc = parse_rwx(str, &read, &write, &execute);
+    } else if (str[0] == '-') {
+        *plus = 0;
+        str++;
+        rc = parse_rwx(str, &read, &write, &execute);
+    } else {
+        return 0;
+    }     
+    return rc;
+}
+
+static int parse_uga(const char* str, int* usr, int* group, int* all, int* plus, int* read, int* write, int* execute) {
+    int rc = 1;
+    *usr = 0;
+    *group = 0;
+    *all = 0;
+    while (str[0] == 'u' || str[0] == 'g' || str[0] == 'a'){
+        if (str[0] == 'u') {
+            *usr = 1;
+        } else if (str[0] == 'g') {
+            *group = 1;
+        } else if (str[0] == 'a') {
+            *all = 1;
+        }
+        str++; 
+    }
+    rc = parse_plusminus(str, &plus, &read, &write, &execute);
+    return rc;       
+}
+
+
+static mode_t parse_modebits(const char* modestr, mode_t old_mode, mode_t* mode) {
         mode_t new_mode = NULL;
-        int plus = 0;
-        int u_count, g_count, a_count, r_count, w_count, x_count;
-        u_count = g_count = a_count = r_count = w_count = x_count = 0;
-        char* u_string = malloc(20);
-        char* g_string = malloc(20);
-        char* a_string = malloc(20);
-        char build_octal[100];
         int * check_mode = valid_modebits(modestr);
         if (check_mode[0] == 1 && check_mode[2] == 1 && check_mode[1] != 1) {
                 *mode = (mode_t)0;
@@ -175,70 +222,88 @@ static mode_t parse_modebits(const char* modestr, mode_t* mode) {
                 new_mode = *mode;
        }
        if (check_mode[1] == 1 && check_mode[2] == 1 && check_mode[0] != 1) {
-                     
-                for (int i = 0; i <= strlen(modestr) - 1; i++) {
-                        if (modestr[i] == '+') {
-                                plus = 1;
-                                break;
-                        }
+                   int usr;
+                   int group;
+                   int all;
+                   int plus;
+                   int read;
+                   int write;
+                   int execute;
+                   *mode = old_mode;
+                   int rc = parse_uga(modestr, &usr, &group, &all, &plus, &read, &write, &execute);
+                   if (rc) {
+                        if (usr) {
+                                if (plus) {
+                                        if(read) {
+                                                *mode |= S_IRUSR;
+                                        }
+                                        if(write) {
+                                                *mode |= S_IWUSR;
+                                        }
+                                        if(execute) {
+                                                *mode |= S_IXUSR;
+                                        } 
+                                } else {
+                                        if(read) {
+                                                *mode &= ~S_IRUSR;
+                                        }
+                                        if(write) {
+                                                *mode &= ~S_IWUSR;
+                                        }
+                                        if(execute) {
+                                                *mode &= ~S_IXUSR;
+                                        } 
+                                }
+                        } 
+                        if (group) {
+                                if (plus) {
+                                        if(read) {
+                                                *mode |= S_IRGRP;
+                                        }
+                                        if(write) {
+                                                *mode |= S_IWGRP;
+                                        }
+                                        if(execute) {
+                                                *mode |= S_IXGRP;
+                                        } 
+                                } else {
+                                        if(read) {
+                                                *mode &= ~S_IRGRP;
+                                        }
+                                        if(write) {
+                                                *mode &= ~S_IWGRP;
+                                        }
+                                        if(execute) {
+                                                *mode &= ~S_IXGRP;
+                                        } 
+                                }
+                        } 
+                        if (all) {
+                                if (plus) {
+                                        if(read) {
+                                                *mode |= S_IROTH;
+                                        }
+                                        if(write) {
+                                                *mode |= S_IWOTH;
+                                        }
+                                        if(execute) {
+                                                *mode |= S_IXOTH;
+                                        } 
+                                } else {
+                                        if(read) {
+                                                *mode &= ~S_IROTH;
+                                        }
+                                        if(write) {
+                                                *mode &= ~S_IWOTH;
+                                        }
+                                        if(execute) {
+                                                *mode &= ~S_IXOTH;
+                                        } 
+                                }
+                        }      
+                                 
                 }
-                if (plus) {
-                    for (int i = 0; i <= strlen(modestr) - 1; i++) {
-                        if (modestr[i] == 'u') u_count++;
-                        if (modestr[i] == 'g') g_count++;
-                        if (modestr[i] == 'a') a_count++;
-                        if (modestr[i] == 'r') r_count++;
-                        if (modestr[i] == 'w') w_count++;
-                        if (modestr[i] == 'x') x_count++;
-                    }
-                    int ur_count, uw_count, ux_count;
-                    ur_count = uw_count = ux_count = 0;
-                    if (u_count >= 1 && r_count >= 1) ur_count = ur_count + 4;
-                    if (u_count >= 1 && w_count >= 1) uw_count = uw_count + 2;
-                    if (u_count >= 1 && x_count >= 1) ux_count = ux_count + 1;
-                    u_count = 0;
-                    u_count = ur_count + uw_count + ux_count;
-                    /* get the group's r,w,x permissions selected*/
-                    int gr_count, gw_count, gx_count;
-                    gr_count = gw_count = gx_count = 0;
-                    if (g_count >= 1 && r_count >= 1) gr_count = gr_count + 4;
-                    if (g_count >= 1 && w_count >= 1) gw_count = gw_count + 2;
-                    if (g_count >= 1 && x_count >= 1) gx_count = gx_count + 1;
-                    g_count = 0;
-                    g_count = gr_count + gw_count + gx_count;
-                    /* get the other's r,w,x permissions selected*/
-                    int ar_count, aw_count, ax_count;
-                    ar_count = aw_count = ax_count = 0;
-                    if (a_count >= 1 && r_count >= 1) ar_count = ar_count + 4;
-                    if (a_count >= 1 && w_count >= 1) aw_count = aw_count + 2;
-                    if (a_count >= 1 && x_count >= 1) ax_count = ax_count + 1;
-                    a_count = 0;
-                    a_count = ar_count + aw_count + ax_count;
-                    snprintf(u_string, 20, "%d", u_count);
-                    snprintf(g_string, 20, "%d", g_count);
-                    snprintf(a_string, 20, "%d", a_count);
-                    strcpy(build_octal, u_string);
-                    strcat(build_octal, g_string);
-                    strcat(build_octal, a_string);
-                    new_mode = (mode_t)0;
-                    long modestr_octal = strtol(build_octal, NULL, 8);
-	            mode_t permbits[12] = {S_ISUID, S_ISGID, S_ISVTX, 
-				       S_IRUSR, S_IWUSR, S_IXUSR, 
-				       S_IRGRP, S_IWGRP, S_IXGRP, 
-				       S_IROTH, S_IWOTH, S_IXOTH};
-		    long mask = 1 << 11;
-		    for (int i = 0; i < 12; i++) {
-			if (mask & modestr_octal) {
-				new_mode |= permbits[i];
-			}
-			mask >>= 1;
-		    }  
-                    *mode |= new_mode; 
-             }               
        }
-       free(u_string);
-       free(g_string);
-       free(a_string);
        free(check_mode);
        return new_mode;    
 }
@@ -255,10 +320,6 @@ static void flist_chmod(
             /* failed to get group id, bail out */
             return;
         }
-    }
-    mode_t new_mode; 
-    if (modestr != NULL) {
-    	parse_modebits(modestr, &new_mode);
     }
 	
     /* each process directly removes its elements */
@@ -300,6 +361,10 @@ static void flist_chmod(
 
         	/* change mode, unless item is a link */
         	if(type != BAYER_TYPE_LINK) {
+                        mode_t new_mode; 
+                        if (modestr != NULL) {
+    	                        parse_modebits(modestr, mode, &new_mode);
+                        }
             		/* set the mode on the file */
                 	if(bayer_chmod(dest_path, new_mode) != 0) {
                 		BAYER_LOG(BAYER_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
