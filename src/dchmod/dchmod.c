@@ -148,6 +148,7 @@ static * valid_modebits(const char* modestr) {
 }
 
 static int parse_rwx(const char* str, int* read, int* write, int* execute) {
+    int rc = 1;
     *read = 0;
     *write = 0;
     *execute = 0;
@@ -158,27 +159,28 @@ static int parse_rwx(const char* str, int* read, int* write, int* execute) {
             *write = 1;
         } else if (str[0] == 'x') {
             *execute = 1;
-        } else {
-            return 0;
+        } else if (rc != 1) {
+            rc = 0;
         }
         str++;
-    } 
-    return 1;
+    }
+    return rc;
 }
 
 static int parse_plusminus(const char* str, int* plus, int* read, int* write, int* execute) {
     int rc = 1;
+    *plus = 0;
     if (str[0] == '+') {
         *plus = 1;
         str++;
-        rc = parse_rwx(str, &read, &write, &execute);
+        rc = parse_rwx(str, read, write, execute);
     } else if (str[0] == '-') {
         *plus = 0;
         str++;
-        rc = parse_rwx(str, &read, &write, &execute);
-    } else {
-        return 0;
-    }     
+        rc = parse_rwx(str, read, write, execute);
+    } else if (rc != 1) {
+        rc = 0;
+    }
     return rc;
 }
 
@@ -194,10 +196,12 @@ static int parse_uga(const char* str, int* usr, int* group, int* all, int* plus,
             *group = 1;
         } else if (str[0] == 'a') {
             *all = 1;
+        } else if (rc != 1) {
+            rc = 0;
         }
         str++; 
     }
-    rc = parse_plusminus(str, &plus, &read, &write, &execute);
+    rc = parse_plusminus(str, plus, read, write, execute);
     return rc;       
 }
 
@@ -225,7 +229,7 @@ static mode_t parse_modebits(const char* modestr, mode_t old_mode, mode_t* mode)
                    int usr;
                    int group;
                    int all;
-                   int plus;
+                   int plus;           
                    int read;
                    int write;
                    int execute;
