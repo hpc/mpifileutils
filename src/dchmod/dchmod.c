@@ -130,7 +130,7 @@ static * valid_modebits(const char* modestr) {
            else {
                 //compile regular expression 
                 mode_type[1] = 1; 
-                regex_return = regcomp(&regex, "[u*g*a*][-+][r*w*x*]", 0);
+                regex_return = regcomp(&regex, "[u*g*a*][-+][r*w*x*X*]", 0);
                 
                 if (regex_return) {
                         printf(stderr, "could not compile regex\n");
@@ -147,18 +147,21 @@ static * valid_modebits(const char* modestr) {
         return mode_type;	
 }
 
-static int parse_rwx(const char* str, int* read, int* write, int* execute) {
+static int parse_rwx(const char* str, int* read, int* write, int* execute, int* capital_execute) {
     int rc = 1;
     *read = 0;
     *write = 0;
     *execute = 0;
-    while (str[0] == 'r' || str[0] == 'w' || str[0] == 'x') {
+    *capital_execute = 0;
+    while (str[0] == 'r' || str[0] == 'w' || str[0] == 'x' || str[0] == 'X') {
         if (str[0] == 'r') {
             *read = 1;
         } else if (str[0] == 'w') {
             *write = 1;
         } else if (str[0] == 'x') {
             *execute = 1;
+        } else if (str[0] == 'X') {
+            *capital_execute = 1;
         } else if (rc != 1) {
             rc = 0;
         }
@@ -167,24 +170,24 @@ static int parse_rwx(const char* str, int* read, int* write, int* execute) {
     return rc;
 }
 
-static int parse_plusminus(const char* str, int* plus, int* read, int* write, int* execute) {
+static int parse_plusminus(const char* str, int* plus, int* read, int* write, int* execute, int* capital_execute) {
     int rc = 1;
     *plus = 0;
     if (str[0] == '+') {
         *plus = 1;
         str++;
-        rc = parse_rwx(str, read, write, execute);
+        rc = parse_rwx(str, read, write, execute, capital_execute);
     } else if (str[0] == '-') {
         *plus = 0;
         str++;
-        rc = parse_rwx(str, read, write, execute);
+        rc = parse_rwx(str, read, write, execute, capital_execute);
     } else if (rc != 1) {
         rc = 0;
     }
     return rc;
 }
 
-static int parse_uga(const char* str, int* usr, int* group, int* all, int* plus, int* read, int* write, int* execute) {
+static int parse_uga(const char* str, int* usr, int* group, int* all, int* plus, int* read, int* write, int* execute, int* capital_execute) {
     int rc = 1;
     *usr = 0;
     *group = 0;
@@ -201,12 +204,12 @@ static int parse_uga(const char* str, int* usr, int* group, int* all, int* plus,
         }
         str++; 
     }
-    rc = parse_plusminus(str, plus, read, write, execute);
+    rc = parse_plusminus(str, plus, read, write, execute, capital_execute);
     return rc;       
 }
 
 
-static mode_t parse_modebits(const char* modestr, mode_t old_mode, mode_t* mode) {
+static mode_t parse_modebits(const char* modestr, mode_t old_mode, mode_t* mode, bayer_filetype type) {
         mode_t new_mode = NULL;
         int * check_mode = valid_modebits(modestr);
         if (check_mode[0] == 1 && check_mode[2] == 1 && check_mode[1] != 1) {
@@ -233,76 +236,97 @@ static mode_t parse_modebits(const char* modestr, mode_t old_mode, mode_t* mode)
                    int read;
                    int write;
                    int execute;
+                   int capital_execute;
                    *mode = old_mode;
-                   int rc = parse_uga(modestr, &usr, &group, &all, &plus, &read, &write, &execute);
+                   int rc = parse_uga(modestr, &usr, &group, &all, &plus, &read, &write, &execute, &capital_execute);
                    if (rc) {
                         if (usr) {
                                 if (plus) {
-                                        if(read) {
+                                        if (read) {
                                                 *mode |= S_IRUSR;
                                         }
-                                        if(write) {
+                                        if (write) {
                                                 *mode |= S_IWUSR;
                                         }
-                                        if(execute) {
+                                        if (execute) {
                                                 *mode |= S_IXUSR;
                                         } 
                                 } else {
-                                        if(read) {
+                                        if (read) {
                                                 *mode &= ~S_IRUSR;
                                         }
-                                        if(write) {
+                                        if (write) {
                                                 *mode &= ~S_IWUSR;
                                         }
-                                        if(execute) {
+                                        if (execute) {
                                                 *mode &= ~S_IXUSR;
                                         } 
                                 }
                         } 
                         if (group) {
                                 if (plus) {
-                                        if(read) {
+                                        if (read) {
                                                 *mode |= S_IRGRP;
                                         }
-                                        if(write) {
+                                        if (write) {
                                                 *mode |= S_IWGRP;
                                         }
-                                        if(execute) {
+                                        if (execute) {
                                                 *mode |= S_IXGRP;
                                         } 
+                                        if (capital_execute || type == BAYER_TYPE_DIR) {
+                                            if (*mode & S_IXUSR) {
+                                                *mode |= S_IXGRP;
+                                            }
+                                        }  
                                 } else {
-                                        if(read) {
+                                        if (read) {
                                                 *mode &= ~S_IRGRP;
                                         }
-                                        if(write) {
+                                        if (write) {
                                                 *mode &= ~S_IWGRP;
                                         }
-                                        if(execute) {
+                                        if (execute) {
                                                 *mode &= ~S_IXGRP;
                                         } 
+                                        if (capital_execute || type == BAYER_TYPE_DIR) {
+                                                if (*mode & S_IXUSR) {
+                                                    *mode &= ~S_IXGRP;
+                                                }
+                                        }  
                                 }
                         } 
                         if (all) {
                                 if (plus) {
-                                        if(read) {
+                                        if (read) {
                                                 *mode |= S_IROTH;
                                         }
-                                        if(write) {
+                                        if (write) {
                                                 *mode |= S_IWOTH;
                                         }
-                                        if(execute) {
+                                        if (execute) {
                                                 *mode |= S_IXOTH;
-                                        } 
+                                        }
+                                        if (capital_execute || type == BAYER_TYPE_DIR) {
+                                            if (*mode & S_IXUSR) {
+                                                *mode |= S_IXOTH;
+                                            }
+                                        }  
                                 } else {
-                                        if(read) {
+                                        if (read) {
                                                 *mode &= ~S_IROTH;
                                         }
-                                        if(write) {
+                                        if (write) {
                                                 *mode &= ~S_IWOTH;
                                         }
-                                        if(execute) {
+                                        if (execute) {
                                                 *mode &= ~S_IXOTH;
-                                        } 
+                                        }
+                                        if (capital_execute || type == BAYER_TYPE_DIR) {
+                                                if (*mode & S_IXUSR) {
+                                                    *mode &= ~S_IXOTH;
+                                                }
+                                        }         
                                 }
                         }      
                                  
@@ -367,7 +391,7 @@ static void flist_chmod(
         	if(type != BAYER_TYPE_LINK) {
                         mode_t new_mode; 
                         if (modestr != NULL) {
-    	                        parse_modebits(modestr, mode, &new_mode);
+    	                        parse_modebits(modestr, mode, &new_mode, type);
                         }
             		/* set the mode on the file */
                 	if(bayer_chmod(dest_path, new_mode) != 0) {
