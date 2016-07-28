@@ -225,7 +225,7 @@ static int parse_uga(const char* str, struct perms* p) {
 static void parse_modebits(char* modestr, struct perms** p_head) {
         int * check_mode = valid_modebits(modestr);
         if (check_mode[0] == 1 && check_mode[2] == 1 && check_mode[1] != 1) {
-                struct perms* p = malloc(sizeof(struct perms));
+                struct perms* p = BAYER_MALLOC(sizeof(struct perms));
                 p->next = NULL;
                 p->octal = 1;
                 p->mode_octal = strtol(modestr, NULL, 8);
@@ -602,7 +602,7 @@ int main(int argc, char** argv)
     struct perms* current = head;
     while (current != NULL) {
         tmp = current;
-        free(current);
+        bayer_free(&current);
         current = tmp->next;
     }
 
