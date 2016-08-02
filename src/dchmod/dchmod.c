@@ -58,6 +58,11 @@ struct perms {
         int execute;
         int capital_execute;
         struct perms* next;
+        int assignment;
+        char source;
+        int target_u;
+        int target_g;
+        int target_a;
 };
 
 /*****************************
@@ -142,9 +147,9 @@ static * valid_modebits(const char* modestr) {
            }
            /* TODO: if it is symbolic do checks later add = */
            else {
-                //compile regular expression 
+                /* compile regular expression */
                 mode_type[1] = 1; 
-                regex_return = regcomp(&regex, "[u*g*a*][-+][r*w*x*X*]", 0);
+                regex_return = regcomp(&regex, "[u*g*a*][-+=][r*w*x*X*uga]", 0);
                 
                 if (regex_return) {
                         printf(stderr, "could not compile regex\n");
@@ -159,6 +164,49 @@ static * valid_modebits(const char* modestr) {
 	   }
         }
         return mode_type;	
+}
+
+
+static int parse_target(const char* str, struct perms* p) {
+    int rc = 1;
+    p->target_u = 0;
+    p->target_g = 0;
+    p->target_a = 0;
+    while (str[0] == 'u' || str[0] == 'g' || str[0] == 'a') {
+        printf("str[0] in parse_target: %c\n", str[0]);
+        if (str[0] == 'u') {
+            p->target_u = 1;
+        } else if (str[0] == 'g') {
+            p->target_g = 1;
+        } else if (str[0] == 'a') {
+            p->target_a = 1;
+        } else {
+            rc = 0;
+        }
+        str--;
+    }
+    return rc;
+}
+
+static int parse_source(const char* str, struct perms* p) {
+    int rc = 1;
+    p->source = NULL;
+    if (str[0] == 'u') {
+        p->source = 'u';
+        str -= 2;
+        rc = parse_target(str, p);
+    } else if (str[0] == 'g') {
+        p->source = 'g';
+        str -= 2;
+        rc = parse_target(str, p);
+    } else if (str[0] == 'a') {
+        p->source = 'a';
+        str -= 2;
+        rc = parse_target(str, p);
+    } else {
+        rc = 0;
+    }
+    return rc;
 }
 
 static int parse_rwx(const char* str, struct perms* p) {
@@ -195,6 +243,10 @@ static int parse_plusminus(const char* str, struct perms* p) {
         p->plus = 0;
         str++;
         rc = parse_rwx(str, p);
+    } else if (str[0] == '=') {
+        p->assignment = 1;
+        str++;
+        rc = parse_source(str, p);
     } else if (rc != 1) {
         rc = 0;
     }
@@ -264,10 +316,103 @@ static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, baye
 			}
 			mask >>= 1;
 		}
-       }
-        else {
-                   struct perms *p = head;
-                   *mode = old_mode;
+       } else if (head->assignment) {
+           *mode = old_mode;
+           mode_t old_bits = *mode;
+           *mode = (mode_t)0;
+           if (head->source == 'u') {
+               if (head->target_g) {
+                        if (old_bits & S_IRUSR) {
+                                *mode |= S_IRUSR;
+                                *mode |= S_IRGRP;
+                        }
+                        if (old_bits & S_IWUSR) {
+                                *mode |= S_IWUSR;
+                                *mode |= S_IWGRP;
+                        }
+                        if (old_bits & S_IXUSR) {
+                                *mode |= S_IXUSR;
+                                *mode |= S_IXGRP;
+                        }
+               }
+               if (head->target_a) {
+                        if (old_bits & S_IRUSR) {
+                                *mode |= S_IRUSR;
+                                *mode |= S_IROTH;
+                        }
+                        if (old_bits & S_IWUSR) {
+                                *mode |= S_IWUSR;
+                                *mode |= S_IWOTH;
+                        }
+                        if (old_bits & S_IXUSR) {
+                                *mode |= S_IXUSR;
+                                *mode |= S_IXOTH;
+                        }
+                }
+           } else if (head->source == 'g') {
+               if (head->target_u) {
+                        if (old_bits & S_IRGRP) {
+                                *mode |= S_IRGRP;
+                                *mode |= S_IRUSR;
+                        }
+                        if (old_bits & S_IWGRP) {
+                                *mode |= S_IWGRP;
+                                *mode |= S_IWUSR;
+                        }
+                        if (old_bits & S_IXGRP) {
+                                *mode |= S_IXGRP;
+                                *mode |= S_IXUSR;
+                        }
+               }
+               if (head->target_a) {
+                        if (old_bits & S_IRGRP) {
+                                *mode |= S_IRGRP;
+                                *mode |= S_IROTH;
+                        }
+                        if (old_bits & S_IWUSR) {
+                                *mode |= S_IWGRP;
+                                *mode |= S_IWOTH;
+                        }
+                        if (old_bits & S_IXUSR) {
+                                *mode |= S_IXGRP;
+                                *mode |= S_IXOTH;
+                        }
+                }
+
+         } else if (head->source == 'a') {
+              if (head->target_u) {
+                        if (old_bits & S_IROTH) {
+                                *mode |= S_IROTH;
+                                *mode |= S_IRUSR;
+                        }
+                        if (old_bits & S_IWOTH) {
+                                *mode |= S_IWOTH;
+                                *mode |= S_IWUSR;
+                        }
+                        if (old_bits & S_IXOTH) {
+                                *mode |= S_IXOTH;
+                                *mode |= S_IXUSR;
+                        }
+               }
+               if (head->target_g) {
+                        if (old_bits & S_IROTH) {
+                                *mode |= S_IROTH;
+                                *mode |= S_IRGRP;
+                        }
+                        if (old_bits & S_IWOTH) {
+                                *mode |= S_IWOTH;
+                                *mode |= S_IWGRP;
+                        }
+                        if (old_bits & S_IXOTH) {
+                                *mode |= S_IXOTH;
+                                *mode |= S_IXGRP;
+                        }
+                }
+                
+         }
+       } else {
+              struct perms *p = head;
+              *mode = old_mode;
               while (p != NULL) {
                    if (p->usr) {
                            if (p->plus) {
