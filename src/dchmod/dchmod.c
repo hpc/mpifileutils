@@ -173,7 +173,6 @@ static int parse_target(const char* str, struct perms* p) {
     p->target_g = 0;
     p->target_a = 0;
     while (str[0] == 'u' || str[0] == 'g' || str[0] == 'a') {
-        printf("str[0] in parse_target: %c\n", str[0]);
         if (str[0] == 'u') {
             p->target_u = 1;
         } else if (str[0] == 'g') {
@@ -276,6 +275,7 @@ static int parse_uga(const char* str, struct perms* p) {
 
 static void parse_modebits(char* modestr, struct perms** p_head) {
         int * check_mode = valid_modebits(modestr);
+        char* tmpstr;
         if (check_mode[0] == 1 && check_mode[2] == 1 && check_mode[1] != 1) {
                 struct perms* p = BAYER_MALLOC(sizeof(struct perms));
                 p->next = NULL;
@@ -285,7 +285,8 @@ static void parse_modebits(char* modestr, struct perms** p_head) {
        }
        if (check_mode[1] == 1 && check_mode[2] == 1 && check_mode[0] != 1) {
              struct perms* tail = NULL;
-             for(char* token = strtok(modestr, ","); token != NULL; token = strtok(NULL, ",")) {
+             tmpstr = BAYER_STRDUP(modestr);
+             for(char* token = strtok(tmpstr, ","); token != NULL; token = strtok(NULL, ",")) {
                 struct perms* p = malloc(sizeof(struct perms));
                 p->next = NULL;
                 p->octal = 0;
@@ -299,6 +300,7 @@ static void parse_modebits(char* modestr, struct perms** p_head) {
                 tail = p;
              }
        }
+       free(tmpstr);
        free(check_mode);
 }
 
@@ -317,9 +319,16 @@ static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, baye
 			mask >>= 1;
 		}
        } else if (head->assignment) {
+           mode_t permbits_id[2] = {S_ISUID, S_ISGID, S_ISVTX};
+           long mask_id = 1 << 11;
            *mode = old_mode;
            mode_t old_bits = *mode;
            *mode = (mode_t)0;
+           for (int i = 0; i < 3; i++) {
+               if (mask_id & old_bits) {
+                   *mode |= permbits_id[i];
+               }
+           }
            if (head->source == 'u') {
                if (head->target_g) {
                         if (old_bits & S_IRUSR) {
