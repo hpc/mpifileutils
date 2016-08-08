@@ -60,9 +60,6 @@ struct perms {
         struct perms* next;
         int assignment;
         char source;
-        int target_u;
-        int target_g;
-        int target_a;
 };
 
 /*****************************
@@ -110,98 +107,21 @@ static int lookup_gid(const char* name, gid_t* gid)
     return rc;
 }
 
-static * valid_modebits(const char* modestr) {
- 	int i;
-        regex_t regex;
-        int regex_return;
-        int* mode_type = (int*)malloc(3 * sizeof(int));
-        mode_type[0] = mode_type[1] = mode_type[2] = 0; 
-
-        /* mode_type[0]: octal = 1, symbolic = 0
-         * mode_type[1]: octal = 0, symbolic = 1
-         * mode_type[2]: octal_valid or symbolic_valid 
-         * depends on mode_type[0] or mode_type[1], i.e
-         * if it is octal & valid then mode_type[0] and mode_type[2]
-         * will both be 1 */
-        
-	if (modestr != NULL) {
-            /* if it is octal then assume it will start with a digit */
-            if (strlen(modestr) <= 4 && isdigit(modestr[0])) { 
-		for (i = 0; i <= strlen(modestr) - 1; i++) {
-			/* check if a digit and in the range 0 - 7 */
-                        if (isdigit(modestr[i])) {
-				if (modestr[i] < '0' || modestr[i] > '7') {
-                                        mode_type[2] = 0;
-                                        break;                        
-				}
-				else {
-                                        mode_type[2] = 1;
-				}
-			}
-			else {
-                                mode_type[2] = 0;
-                                break;
-			}	
-                }
-                mode_type[0]= 1;
-           }
-           /* TODO: if it is symbolic do checks later add = */
-           else {
-                /* compile regular expression */
-                mode_type[1] = 1; 
-                regex_return = regcomp(&regex, "[u*g*a*][-+=][r*w*x*X*uga]", 0);
-                
-                if (regex_return) {
-                        printf(stderr, "could not compile regex\n");
-                }
-                /* execute regular expression */
-                regex_return = regexec(&regex, modestr, 0, NULL, 0);
-                 
-                if (!regex_return) {
-                        //there was a match!
-                        mode_type[2] = 1;  
-                }
-	   }
-        }
-        return mode_type;	
-}
-
-
-static int parse_target(const char* str, struct perms* p) {
-    int rc = 1;
-    p->target_u = 0;
-    p->target_g = 0;
-    p->target_a = 0;
-    while (str[0] == 'u' || str[0] == 'g' || str[0] == 'a') {
-        if (str[0] == 'u') {
-            p->target_u = 1;
-        } else if (str[0] == 'g') {
-            p->target_g = 1;
-        } else if (str[0] == 'a') {
-            p->target_a = 1;
-        } else {
-            rc = 0;
-        }
-        str--;
-    }
-    return rc;
-}
 
 static int parse_source(const char* str, struct perms* p) {
     int rc = 1;
-    p->source = NULL;
-    if (str[0] == 'u') {
-        p->source = 'u';
-        str -= 2;
-        rc = parse_target(str, p);
-    } else if (str[0] == 'g') {
-        p->source = 'g';
-        str -= 2;
-        rc = parse_target(str, p);
-    } else if (str[0] == 'a') {
-        p->source = 'a';
-        str -= 2;
-        rc = parse_target(str, p);
+    p->source = '\0';
+    if (strlen(str) == 1) {
+    /* source can be only one of (u, g, or a) find it and keep a copy in p->source */
+        if (str[0] == 'u') {
+                p->source = 'u';
+        } else if (str[0] == 'g') {
+                p->source = 'g';
+        } else if (str[0] == 'a') {
+                p->source = 'a';
+        } else {
+                rc = 0;
+        }
     } else {
         rc = 0;
     }
@@ -214,6 +134,7 @@ static int parse_rwx(const char* str, struct perms* p) {
     p->write = 0;
     p->execute = 0;
     p->capital_execute = 0;
+    /* set all of the r,w, and x flags */
     while (str[0] == 'r' || str[0] == 'w' || str[0] == 'x' || str[0] == 'X') {
         if (str[0] == 'r') {
             p->read = 1;
@@ -234,6 +155,8 @@ static int parse_rwx(const char* str, struct perms* p) {
 static int parse_plusminus(const char* str, struct perms* p) {
     int rc = 1;
     p->plus = 0;
+    p->assignment = 0;
+    /* set the plus, minus, or equal flags */
     if (str[0] == '+') {
         p->plus = 1;
         str++;
@@ -257,6 +180,7 @@ static int parse_uga(const char* str, struct perms* p) {
     p->usr = 0;
     p->group = 0;
     p->all = 0;
+    /* set the user, group, and all flags */
     while (str[0] == 'u' || str[0] == 'g' || str[0] == 'a'){
         if (str[0] == 'u') {
             p->usr = 1;
@@ -273,244 +197,324 @@ static int parse_uga(const char* str, struct perms* p) {
     return rc;       
 }
 
-static void parse_modebits(char* modestr, struct perms** p_head) {
-        int * check_mode = valid_modebits(modestr);
-        char* tmpstr;
-        if (check_mode[0] == 1 && check_mode[2] == 1 && check_mode[1] != 1) {
+static void free_list(struct perms** p_head) {
+    struct perms* tmp;
+    struct perms* head = *p_head;
+    struct perms* current = head;
+    /* free the memory for the linked list of structs */
+    while (current != NULL) {
+        tmp = current;
+        bayer_free(&current);
+        current = tmp->next;
+    }
+    *p_head = NULL;
+}
+
+static int parse_modebits(char* modestr, struct perms** p_head) {
+        int rc = 0;
+	if (modestr != NULL) {
+            rc = 1;
+            int octal = 0;
+            /* if it is octal then assume it will start with a digit */
+            if (strlen(modestr) <= 4) {
+                octal = 1; 
+                /* make sure you only have digits and is in the range 0 - 7 */
+		for (int i = 0; i <= strlen(modestr) - 1; i++) {
+		        if (modestr[i] < '0' || modestr[i] > '7') {
+                                octal = 0;
+                                break;                        
+		        }
+                }
+           }
+          /* if in octal mode then just create one node that head points to */
+        if (octal) {
+                rc = 1;
                 struct perms* p = BAYER_MALLOC(sizeof(struct perms));
                 p->next = NULL;
                 p->octal = 1;
                 p->mode_octal = strtol(modestr, NULL, 8);
                 *p_head = p;
-       }
-       if (check_mode[1] == 1 && check_mode[2] == 1 && check_mode[0] != 1) {
+         /* if it is not in octal mode assume you are in symbolic mode */
+       } else { 
              struct perms* tail = NULL;
-             tmpstr = BAYER_STRDUP(modestr);
+             /* make a copy of the input string in case there is an error with the input */
+             char* tmpstr = BAYER_STRDUP(modestr);
+             /* create a linked list of structs that gets broken up based on the comma syntax
+              * i.e. u+r,g+x */
              for(char* token = strtok(tmpstr, ","); token != NULL; token = strtok(NULL, ",")) {
+                 /* allocate memory for a new struct and set the next pointer to null also
+                  * turn octal mode off */
                 struct perms* p = malloc(sizeof(struct perms));
                 p->next = NULL;
                 p->octal = 0;
-                parse_uga(token, p);
+                /* start parsing this 'token' of the input string */
+                rc = parse_uga(token, p);
+                /* if the tail is not null then point the tail at the latest struct/token */
                 if (tail != NULL) {
                     tail->next = p;
                 }
+                /* if head is not pointing at anything then this token is the head of the list */
                 if(*p_head == NULL) {
                     *p_head = p;
                 }
+                /* have the tail point at the current/last struct */
                 tail = p;
+                /* if there was an error parsing the string then free the memory of the list */
+                if (rc != 1) {
+                    free_list(p_head);
+                    break;
+                }
              }
+             /* free the duplicated string */
+             bayer_free(&tmpstr);
        }
-       free(tmpstr);
-       free(check_mode);
+      }
+      return rc;
+}
+
+static void read_source_bits(struct perms* p, mode_t bits, int* read, int* write, int* execute) {
+    *read = 0;
+    *write = 0;
+    *execute = 0;
+    /* based on the source (u,g, or a) then check which bits were on for each one (r,w, or x) */
+    if(p->source == 'u') {
+        if (bits & S_IRUSR) {
+                *read = 1;
+        }
+        if (bits & S_IWUSR) {
+                *write = 1;
+        }
+        if (bits & S_IXUSR) {
+                *execute = 1;
+        }
+    }
+    if(p->source == 'g') {
+        if (bits & S_IRGRP) {
+                *read = 1;
+        }
+        if (bits & S_IWGRP) {
+                *write = 1;
+        }
+        if (bits & S_IXGRP) {
+                *execute = 1;
+        }
+    }
+    if(p->source == 'a') {
+        if (bits & S_IROTH) {
+                *read = 1;
+        }
+        if (bits & S_IWOTH) {
+                *write = 1;
+        }
+        if (bits & S_IXOTH) {
+                *execute = 1;
+        }
+    }    
+}
+
+static void set_assign_bits(struct perms* p, mode_t* mode, int* read, int* write, int* execute) {
+    /* set the r, w, x bits on usr, group, and execute based on if the flags were set with parsing
+     * the input string */
+    if (p->usr) {
+        if (read) {
+                *mode |= S_IRUSR;
+        } else {
+                *mode &= ~S_IRUSR;
+        }
+        if (write) {
+                *mode |= S_IWUSR;
+        } else {
+                *mode &= ~S_IWUSR;
+        }
+        if (execute) {
+            *mode |= S_IXUSR;
+        } else {
+            *mode &= ~S_IXUSR;
+        }
+     } 
+     if (p->group) {
+        if (read) {
+            *mode |= S_IRGRP;
+        } else {
+            *mode &= ~S_IRGRP;
+        }
+        if (write) {
+            *mode |= S_IWGRP;
+        } else {
+            *mode &= ~S_IWGRP;
+        }
+        if (execute) {
+            *mode |= S_IXGRP;
+        } else {
+            *mode &= ~S_IXGRP;
+        }
+    }
+    if (p->all) {
+        if (read) {
+                *mode |= S_IROTH;
+        } else {
+                *mode &= ~S_IROTH;
+        }
+        if (write) {
+                *mode |= S_IWOTH;
+        } else {
+                *mode &= ~S_IWOTH;
+        }
+        if (execute) {
+                *mode |= S_IXOTH;
+        } else {
+                *mode &= ~S_IXOTH;
+        }
+    }
+}
+
+static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* type) {
+        /* set the bits based on flags set when parsing input string */
+        if (p->usr) {
+                if (p->plus) {
+                        if (p->read) {
+                                *mode |= S_IRUSR;
+                        }
+                        if (p->write) {
+                                *mode |= S_IWUSR;
+                        }
+                        if (p->execute) {
+                                *mode |= S_IXUSR;
+                        } 
+                 } else {
+                        if (p->read) {
+                                *mode &= ~S_IRUSR;
+                        }
+                        if (p->write) {
+                                *mode &= ~S_IWUSR;
+                        }
+                        if (p->execute) {
+                                *mode &= ~S_IXUSR;
+                        } 
+                 }
+         }
+         /* all & group check the capital_execute flag, so if there is a 
+         * capital X in the input string i.e g+X then if the usr execute 
+         * bit is set the group execute bit will be set to on. If the usr
+         * execute bit is not on, then it will be left alone. If the usr
+         * says something like ug+X then the usr bit in the input string
+         * will be ignored. In the case of something like g-X, then it will
+         * ALWAYS turn off the group or all execute bit. This is slightly 
+         * different behavior then the +X, but it is intentional and how
+         * chmod also works. +X is not symmetric with -X */ 
+         if (p->group) {
+                if (p->plus) {
+                        if (p->read) {
+                                *mode |= S_IRGRP;
+                        }
+                        if (p->write) {
+                                *mode |= S_IWGRP;
+                        }
+                        if (p->execute) {
+                                *mode |= S_IXGRP;
+                        } 
+                        if (p->capital_execute) {
+                                if (*mode & S_IXUSR || *type == BAYER_TYPE_DIR) {
+                                        *mode |= S_IXGRP;
+                                }
+                        }  
+                } else {
+                        if (p->read) {
+                                *mode &= ~S_IRGRP;
+                        }
+                        if (p->write) {
+                                *mode &= ~S_IWGRP;
+                        }
+                        if (p->execute) {
+                                *mode &= ~S_IXGRP;
+                        } 
+                        if (p->capital_execute) {
+                                *mode &= ~S_IXGRP;
+                        }  
+                }
+         } 
+         if (p->all) {
+             if (p->plus) {
+                 if (p->read) {
+                     *mode |= S_IROTH;
+                 }
+                 if (p->write) {
+                     *mode |= S_IWOTH;
+                 }
+                 if (p->execute) {
+                     *mode |= S_IXOTH;
+                 }
+                 if (p->capital_execute) {
+                     if (*mode & S_IXUSR || *type == BAYER_TYPE_DIR) {
+                         *mode |= S_IXOTH;
+                     }
+                 }
+             } else {
+                if (p->read) {
+                     *mode &= ~S_IROTH;
+                }
+                if (p->write) {
+                     *mode &= ~S_IWOTH;
+                }
+                if (p->execute) {
+                     *mode &= ~S_IXOTH;
+                }
+                if (p->capital_execute) {
+                     *mode &= ~S_IXOTH;
+                }
+           }         
+      }
 }
 
 static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, bayer_filetype type) {
+        /* if in octal mode then loop through and check which ones are on based on the mask and
+         * the current octal mode bits */
         if (head->octal) {
                 *mode = (mode_t)0;
+                /* array of constants to check which mode bits are on or off */
 	        mode_t permbits[12] = {S_ISUID, S_ISGID, S_ISVTX, 
 				       S_IRUSR, S_IWUSR, S_IXUSR, 
 				       S_IRGRP, S_IWGRP, S_IXGRP, 
 				       S_IROTH, S_IWOTH, S_IXOTH};
+                /* start with the bit all the way to the left (of 12 bits) on */
 		long mask = 1 << 11;
 		for (int i = 0; i < 12; i++) {
+                        /* use mask to check which bits are on and loop through
+                         * each element in the array of constants, and if it is 
+                         * on (the mode bits pass in as input) then update the 
+                         * current mode */
 			if (mask & head->mode_octal) {
 				*mode |= permbits[i];
 			}
+                        /* move the 'on' bit to the right one each time through the loop */
 			mask >>= 1;
 		}
-       } else if (head->assignment) {
-           mode_t permbits_id[2] = {S_ISUID, S_ISGID, S_ISVTX};
-           long mask_id = 1 << 11;
+       } else { 
+           struct perms *p = head;
            *mode = old_mode;
-           mode_t old_bits = *mode;
-           *mode = (mode_t)0;
-           for (int i = 0; i < 3; i++) {
-               if (mask_id & old_bits) {
-                   *mode |= permbits_id[i];
-               }
-           }
-           if (head->source == 'u') {
-               if (head->target_g) {
-                        if (old_bits & S_IRUSR) {
-                                *mode |= S_IRUSR;
-                                *mode |= S_IRGRP;
-                        }
-                        if (old_bits & S_IWUSR) {
-                                *mode |= S_IWUSR;
-                                *mode |= S_IWGRP;
-                        }
-                        if (old_bits & S_IXUSR) {
-                                *mode |= S_IXUSR;
-                                *mode |= S_IXGRP;
-                        }
-               }
-               if (head->target_a) {
-                        if (old_bits & S_IRUSR) {
-                                *mode |= S_IRUSR;
-                                *mode |= S_IROTH;
-                        }
-                        if (old_bits & S_IWUSR) {
-                                *mode |= S_IWUSR;
-                                *mode |= S_IWOTH;
-                        }
-                        if (old_bits & S_IXUSR) {
-                                *mode |= S_IXUSR;
-                                *mode |= S_IXOTH;
-                        }
-                }
-           } else if (head->source == 'g') {
-               if (head->target_u) {
-                        if (old_bits & S_IRGRP) {
-                                *mode |= S_IRGRP;
-                                *mode |= S_IRUSR;
-                        }
-                        if (old_bits & S_IWGRP) {
-                                *mode |= S_IWGRP;
-                                *mode |= S_IWUSR;
-                        }
-                        if (old_bits & S_IXGRP) {
-                                *mode |= S_IXGRP;
-                                *mode |= S_IXUSR;
-                        }
-               }
-               if (head->target_a) {
-                        if (old_bits & S_IRGRP) {
-                                *mode |= S_IRGRP;
-                                *mode |= S_IROTH;
-                        }
-                        if (old_bits & S_IWUSR) {
-                                *mode |= S_IWGRP;
-                                *mode |= S_IWOTH;
-                        }
-                        if (old_bits & S_IXUSR) {
-                                *mode |= S_IXGRP;
-                                *mode |= S_IXOTH;
-                        }
-                }
-
-         } else if (head->source == 'a') {
-              if (head->target_u) {
-                        if (old_bits & S_IROTH) {
-                                *mode |= S_IROTH;
-                                *mode |= S_IRUSR;
-                        }
-                        if (old_bits & S_IWOTH) {
-                                *mode |= S_IWOTH;
-                                *mode |= S_IWUSR;
-                        }
-                        if (old_bits & S_IXOTH) {
-                                *mode |= S_IXOTH;
-                                *mode |= S_IXUSR;
-                        }
-               }
-               if (head->target_g) {
-                        if (old_bits & S_IROTH) {
-                                *mode |= S_IROTH;
-                                *mode |= S_IRGRP;
-                        }
-                        if (old_bits & S_IWOTH) {
-                                *mode |= S_IWOTH;
-                                *mode |= S_IWGRP;
-                        }
-                        if (old_bits & S_IXOTH) {
-                                *mode |= S_IXOTH;
-                                *mode |= S_IXGRP;
-                        }
-                }
-                
+           /* if in synbolic mode then loop through the linked list of structs */
+           while (p != NULL) { 
+               /* if the assignment flag is set (equal's was found when parsing the input string)
+                * then break it up into source & target i.e u=g, then the the taret is u and the source 
+                * is g. So, all of u's bits will be set the same as g's bits */
+                if (p->assignment) {
+                    int read, write, execute;
+                    /* find the source bit with read_source_bits, only can be one at a time (u, g, or a), and 
+                     * set appropriate read, write, execute flags */
+                    read_source_bits(p, old_mode, &read, &write, &execute);
+                    *mode = old_mode;
+                    /* if usr, group, or execute were on when parsing the input string then they are considered
+                     * a target and the new mode is change accordingly in set_assign_bits */
+                    set_assign_bits(p, mode, &read, &write, &execute);                   
+                 } else {
+                   /* if the assignment flag is not set then just use 
+                    * regular symbolic notation to check if usr, group, or all is set, then 
+                    * plus/minus, and change new mode accordingly */
+                    set_symbolic_bits(p, mode, &type); 
+                 }
+             /* update pointer to next element of linked list */        
+             p = p->next; 
          }
-       } else {
-              struct perms *p = head;
-              *mode = old_mode;
-              while (p != NULL) {
-                   if (p->usr) {
-                           if (p->plus) {
-                                   if (p->read) {
-                                           *mode |= S_IRUSR;
-                                   }
-                                   if (p->write) {
-                                           *mode |= S_IWUSR;
-                                   }
-                                   if (p->execute) {
-                                           *mode |= S_IXUSR;
-                                   } 
-                           } else {
-                                   if (p->read) {
-                                           *mode &= ~S_IRUSR;
-                                   }
-                                   if (p->write) {
-                                           *mode &= ~S_IWUSR;
-                                   }
-                                   if (p->execute) {
-                                           *mode &= ~S_IXUSR;
-                                   } 
-                           }
-                   } 
-                   if (p->group) {
-                           if (p->plus) {
-                                   if (p->read) {
-                                           *mode |= S_IRGRP;
-                                   }
-                                   if (p->write) {
-                                           *mode |= S_IWGRP;
-                                   }
-                                   if (p->execute) {
-                                           *mode |= S_IXGRP;
-                                   } 
-                                   if (p->capital_execute) {
-                                       if (*mode & S_IXUSR || type == BAYER_TYPE_DIR) {
-                                           *mode |= S_IXGRP;
-                                       }
-                                   }  
-                           } else {
-                                   if (p->read) {
-                                           *mode &= ~S_IRGRP;
-                                   }
-                                   if (p->write) {
-                                           *mode &= ~S_IWGRP;
-                                   }
-                                   if (p->execute) {
-                                           *mode &= ~S_IXGRP;
-                                   } 
-                                   if (p->capital_execute) {
-                                               *mode &= ~S_IXGRP;
-                                   }  
-                           }
-                   } 
-                   if (p->all) {
-                           if (p->plus) {
-                                   if (p->read) {
-                                           *mode |= S_IROTH;
-                                   }
-                                   if (p->write) {
-                                           *mode |= S_IWOTH;
-                                   }
-                                   if (p->execute) {
-                                           *mode |= S_IXOTH;
-                                   }
-                                   if (p->capital_execute) {
-                                       if (*mode & S_IXUSR || type == BAYER_TYPE_DIR) {
-                                           *mode |= S_IXOTH;
-                                       }
-                                   }  
-                           } else {
-                                   if (p->read) {
-                                           *mode &= ~S_IROTH;
-                                   }
-                                   if (p->write) {
-                                           *mode &= ~S_IWOTH;
-                                   }
-                                   if (p->execute) {
-                                           *mode &= ~S_IXOTH;
-                                   }
-                                   if (p->capital_execute) {
-                                               *mode &= ~S_IXOTH;
-                                   }         
-                           }
-                   }
-                   p = p->next;      
-               }        
-              
        }
 }
 
@@ -563,6 +567,7 @@ static void flist_chmod(
 
         	/* get mode and type */
         	bayer_filetype type = bayer_flist_file_get_type(flist, idx);
+                /* TODO: if in octal mode skip this call */
         	mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, idx);
 
         	/* change mode, unless item is a link */
@@ -700,8 +705,8 @@ int main(int argc, char** argv)
     }
     if (modestr != NULL) {
     	mode_t mode; 
-    	int* valid = valid_modebits(modestr);
-    		if (valid[2] == 0) {
+    	int valid = parse_modebits(modestr, &head);
+    		if (!valid) {
 			usage = 1;
 			if (rank == 0) {
 				printf("invalid mode string: %s\n", modestr);
@@ -718,13 +723,12 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    parse_modebits(modestr, &head);
-
     /* create an empty file list */
     bayer_flist flist = bayer_flist_new();
 
     /* get our list of files, either by walking or reading an
      * input file */
+    /*TODO: if in octal mode set walk_stat=0 */
     if (walk) {
         /* walk list of input paths */
         bayer_param_path_walk(numpaths, paths, walk_stat, flist);
@@ -752,13 +756,7 @@ int main(int argc, char** argv)
     /* free the modestr */
     bayer_free(&modestr);
 
-    struct perms* tmp;
-    struct perms* current = head;
-    while (current != NULL) {
-        tmp = current;
-        bayer_free(&current);
-        current = tmp->next;
-    }
+    free_list(&head);
 
     /* free the input file name */
     bayer_free(&inputname);
