@@ -316,51 +316,51 @@ static void set_assign_bits(struct perms* p, mode_t* mode, int* read, int* write
     /* set the r, w, x bits on usr, group, and execute based on if the flags were set with parsing
      * the input string */
     if (p->usr) {
-        if (read) {
+        if (*read) {
                 *mode |= S_IRUSR;
         } else {
                 *mode &= ~S_IRUSR;
         }
-        if (write) {
+        if (*write) {
                 *mode |= S_IWUSR;
         } else {
                 *mode &= ~S_IWUSR;
         }
-        if (execute) {
+        if (*execute) {
             *mode |= S_IXUSR;
         } else {
             *mode &= ~S_IXUSR;
         }
      } 
      if (p->group) {
-        if (read) {
+        if (*read) {
             *mode |= S_IRGRP;
         } else {
             *mode &= ~S_IRGRP;
         }
-        if (write) {
+        if (*write) {
             *mode |= S_IWGRP;
         } else {
             *mode &= ~S_IWGRP;
         }
-        if (execute) {
+        if (*execute) {
             *mode |= S_IXGRP;
         } else {
             *mode &= ~S_IXGRP;
         }
     }
     if (p->all) {
-        if (read) {
+        if (*read) {
                 *mode |= S_IROTH;
         } else {
                 *mode &= ~S_IROTH;
         }
-        if (write) {
+        if (*write) {
                 *mode |= S_IWOTH;
         } else {
                 *mode &= ~S_IWOTH;
         }
-        if (execute) {
+        if (*execute) {
                 *mode |= S_IXOTH;
         } else {
                 *mode &= ~S_IXOTH;
@@ -502,7 +502,6 @@ static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, baye
                     /* find the source bit with read_source_bits, only can be one at a time (u, g, or a), and 
                      * set appropriate read, write, execute flags */
                     read_source_bits(p, old_mode, &read, &write, &execute);
-                    *mode = old_mode;
                     /* if usr, group, or execute were on when parsing the input string then they are considered
                      * a target and the new mode is change accordingly in set_assign_bits */
                     set_assign_bits(p, mode, &read, &write, &execute);                   
@@ -567,9 +566,11 @@ static void flist_chmod(
 
         	/* get mode and type */
         	bayer_filetype type = bayer_flist_file_get_type(flist, idx);
-                /* TODO: if in octal mode skip this call */
-        	mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, idx);
-
+                /* if in octal mode skip this call */
+        	mode_t mode;
+                if (head->octal) {
+                    (mode_t) bayer_flist_file_get_mode(flist, idx);
+                }
         	/* change mode, unless item is a link */
         	if(type != BAYER_TYPE_LINK) {
                         mode_t new_mode; 
@@ -728,8 +729,11 @@ int main(int argc, char** argv)
 
     /* get our list of files, either by walking or reading an
      * input file */
-    /*TODO: if in octal mode set walk_stat=0 */
     if (walk) {
+        /* if in octal mode set walk_stat=0 */
+        if (head->octal) {
+            walk_stat = 0;
+        }
         /* walk list of input paths */
         bayer_param_path_walk(numpaths, paths, walk_stat, flist);
     }
@@ -755,7 +759,8 @@ int main(int argc, char** argv)
 
     /* free the modestr */
     bayer_free(&modestr);
-
+        
+    /* free the head of the list */
     free_list(&head);
 
     /* free the input file name */
