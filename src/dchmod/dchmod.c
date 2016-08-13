@@ -519,8 +519,10 @@ static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, baye
 
 static void flist_chmod(
     bayer_flist flist,
-    const char* grname, struct perms* head)
+    const char* grname, struct perms* head, double* start_write, double* end_write)
 {
+    /* start timer */
+    *start_write = MPI_Wtime();
     /* lookup groupid if set, bail out if not */
     gid_t gid;
     if (grname != NULL) {
@@ -584,7 +586,8 @@ static void flist_chmod(
         	}
 	}
     }
-
+    /* end timer */
+    *end_write = MPI_Wtime();
     return;
 }
 
@@ -607,6 +610,10 @@ static void print_usage(void)
 int main(int argc, char** argv)
 {
     int i;
+
+    /* start and end time variables for dchmod */
+    double start_write;
+    double end_write;
 
     /* initialize MPI */
     MPI_Init(&argc, &argv);
@@ -741,9 +748,23 @@ int main(int argc, char** argv)
         /* read list from file */
         bayer_flist_read_cache(inputname, flist);
     }
+        
 
     /* change group and permissions */
-    flist_chmod(flist, groupname, head);
+    flist_chmod(flist, groupname, head, &start_write, &end_write);
+
+    /* report write count, time, and rate */
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
+        uint64_t all_count = bayer_flist_global_size(flist);
+        double secs = end_write - start_write;
+        double rate = 0.0;
+        if (secs > 0.0) {
+            rate = ((double)all_count) / secs;
+        }
+        printf("Wrote %lu files in %f seconds (%f files/sec)\n",
+               all_count, secs, rate
+              );
+    }
 
     /* free the file list */
     bayer_flist_free(&flist);
