@@ -694,7 +694,12 @@ static int copy_file_normal(
     off_t last_written = offset + length;
     off_t file_size_offt = (off_t) file_size;
     if (last_written >= file_size_offt || file_size == 0) {
-        if(truncate64(dest, file_size_offt) < 0) {
+       /*
+        * Use ftruncate() here rather than truncate(), because grouplock
+        * of Lustre would cause block to truncate() since the fd is different
+        * from the out_fd.
+        */
+        if(ftruncate(out_fd, file_size_offt) < 0) {
             BAYER_LOG(BAYER_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
                 dest, errno, strerror(errno));
             return -1;
@@ -853,7 +858,12 @@ static int copy_file_fiemap(
     off_t last_written = (off_t) (chunk_size * (chunk_offset + chunk_count));
     off_t file_size_offt = (off_t) file_size;
     if (last_written >= file_size_offt || file_size == 0) {
-        if(truncate64(dest, file_size_offt) < 0) {
+       /*
+        * Use ftruncate() here rather than truncate(), because grouplock
+        * of Lustre would cause block to truncate() since the fd is different
+        * from the out_fd.
+        */
+        if(ftruncate(out_fd, file_size_offt) < 0) {
             BAYER_LOG(BAYER_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
                 dest, errno, strerror(errno));
             goto fail;
@@ -1047,6 +1057,9 @@ void DCOPY_print_usage(void)
     /* printf("  -c, --compare       - read data back after writing to compare\n"); */
     printf("  -d, --debug <level> - specify debug verbosity level (default info)\n");
     printf("  -f, --force         - delete destination file if error on open\n");
+#ifdef LUSTRE_SUPPORT
+    printf("  -g, --groulock      - use Lustre grouplock when reading/writing file\n");
+#endif
     printf("  -i, --input <file>  - read list from file\n");
     printf("  -p, --preserve      - preserve permissions, ownership, timestamps, extended attributes\n");
     printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
@@ -1124,6 +1137,7 @@ int main(int argc, \
     static struct option long_options[] = {
         {"debug"                , required_argument, 0, 'd'},
         {"force"                , no_argument      , 0, 'f'},
+        {"grouplock"            , required_argument, 0, 'g'},
         {"help"                 , no_argument      , 0, 'h'},
         {"input"                , required_argument, 0, 'i'},
         {"preserve"             , no_argument      , 0, 'p'},
@@ -1134,7 +1148,7 @@ int main(int argc, \
     };
 
     /* Parse options */
-    while((c = getopt_long(argc, argv, "d:fhi:pusSv", \
+    while((c = getopt_long(argc, argv, "d:fg:hi:pusSv", \
                            long_options, &option_index)) != -1) {
         switch(c) {
 
@@ -1201,6 +1215,18 @@ int main(int argc, \
                 }
 
                 break;
+
+#ifdef LUSTRE_SUPPORT
+            case 'g':
+                DCOPY_user_opts.grouplock_id = atoi(optarg);
+
+                if(DCOPY_global_rank == 0) {
+                    BAYER_LOG(BAYER_LOG_INFO, "groulock ID: %d.",
+                        DCOPY_user_opts.grouplock_id);
+                }
+
+                break;
+#endif
 
             case 'h':
                 if(DCOPY_global_rank == 0) {

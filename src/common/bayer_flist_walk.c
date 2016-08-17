@@ -41,11 +41,10 @@
  * information.  This information may be incomplete, but it
  * is faster than a normal stat, which requires communication
  * with the MDS plus every OST a file is striped across. */
-//#define LUSTRE_STAT
-#ifdef LUSTRE_STAT
+#ifdef LUSTRE_SUPPORT
 #include <sys/ioctl.h>
 #include <lustre/lustre_user.h>
-#endif /* LUSTRE_STAT */
+#endif /* LUSTRE_SUPPORT */
 
 #include <pwd.h> /* for getpwent */
 #include <grp.h> /* for getgrent */
@@ -245,7 +244,7 @@ static void reduce_fini(const void* buf, size_t size)
     fflush(stdout);
 }
 
-#ifdef LUSTRE_STAT
+#ifdef LUSTRE_SUPPORT
 /****************************************
  * Walk directory tree using Lustre's MDS stat
  ***************************************/
@@ -449,7 +448,7 @@ static void walk_lustrestat_process(CIRCLE_handle* handle)
     return;
 }
 
-#endif /* LUSTRE_STAT */
+#endif /* LUSTRE_SUPPORT */
 
 /****************************************
  * Walk directory tree using stat at top level and getdents system call

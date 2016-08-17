@@ -29,6 +29,10 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <fcntl.h>
+#ifdef LUSTRE_SUPPORT
+#include <sys/ioctl.h>
+#include <lustre/lustre_user.h>
+#endif /* LUSTRE_SUPPORT */
 
 /** Where we should keep statistics related to this file copy. */
 DCOPY_statistics_t DCOPY_statistics;
@@ -84,6 +88,24 @@ int DCOPY_open_file(const char* file, int read_flag, DCOPY_file_cache_t* cache)
         cache->name = BAYER_STRDUP(file);
         cache->fd   = newfd;
         cache->read = read_flag;
+#ifdef LUSTRE_SUPPORT
+        /* Zero is an invalid ID for grouplock. */
+        if (DCOPY_user_opts.grouplock_id != 0) {
+            int rc;
+
+            rc = ioctl(newfd, LL_IOC_GROUP_LOCK, DCOPY_user_opts.grouplock_id);
+            if (rc) {
+                BAYER_LOG(BAYER_LOG_ERR, "Failed to obtain grouplock with ID %d "
+                    "on file `%s', ignoring this error: %s",
+                    DCOPY_user_opts.grouplock_id,
+                    file, strerror(errno));
+            } else {
+                BAYER_LOG(BAYER_LOG_INFO, "Obtained grouplock with ID %d "
+                    "on file `%s', fd %d", DCOPY_user_opts.grouplock_id,
+                    file, newfd);
+            }
+        }
+#endif
     }
 
     return newfd;

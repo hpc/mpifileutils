@@ -108,6 +108,9 @@
    slash. */
 #undef LSTAT_FOLLOWS_SLASHED_SYMLINK
 
+/* enable Lustre support */
+#undef LUSTRE_SUPPORT
+
 /* Name of package */
 #undef PACKAGE
 

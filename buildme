@@ -27,6 +27,7 @@ export CFLAGS="-I${topdir}/src/common -DDCOPY_USE_XATTRS"
 export LDFLAGS="-Wl,-rpath,${topdir}/install/lib -L${topdir}/install/lib -lcircle"
 
 ../configure \
+  --enable-lustre \
   --prefix=$installdir \
   --disable-silent-rules \
   --with-dtcmp=$installdir && \

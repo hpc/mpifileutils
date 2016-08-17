@@ -67,6 +67,9 @@ PKG_CHECK_MODULES([libcircle], libcircle)
 # Check for libdtcmp.
 X_AC_DTCMP
 
+# Check for Lustre
+X_AC_LUSTRE
+
 AC_CONFIG_FILES([Makefile                \
                  src/Makefile            \
                  src/common/Makefile     \
