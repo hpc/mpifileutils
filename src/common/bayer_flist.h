@@ -66,7 +66,8 @@ bayer_flist bayer_flist_subset(
 void bayer_flist_walk_path(
   const char* path,
   int use_stat,
-  bayer_flist flist
+  bayer_flist flist,
+  int dir_permissions
 );
 
 /* create file list by walking list of directories */
@@ -74,7 +75,8 @@ void bayer_flist_walk_paths(
   uint64_t num_paths,
   const char** paths,
   int use_stat,
-  bayer_flist flist
+  bayer_flist flist,
+  int dir_permissions
 );
 
 /* read file list from file */

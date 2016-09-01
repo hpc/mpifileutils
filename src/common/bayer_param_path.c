@@ -488,8 +488,9 @@ void bayer_param_path_free(bayer_param_path* param)
 }
 
 /* given a list of param_paths, walk each one and add to flist */
-void bayer_param_path_walk(uint64_t num, const bayer_param_path* params, int walk_stat, bayer_flist flist)
+void bayer_param_path_walk(uint64_t num, const bayer_param_path* params, int walk_stat, bayer_flist flist, int dir_perms)
 {
+    printf("dir_perms in path walk: %d\n", dir_perms);
     /* allocate memory to hold a list of paths */
     const char** path_list = (const char**) BAYER_MALLOC(num * sizeof(char*));
 
@@ -501,7 +502,7 @@ void bayer_param_path_walk(uint64_t num, const bayer_param_path* params, int wal
     }
 
     /* walk file tree and record stat data for each file */
-    bayer_flist_walk_paths((uint64_t) num, path_list, walk_stat, flist);
+    bayer_flist_walk_paths((uint64_t) num, path_list, walk_stat, flist, dir_perms);
 
     /* free the list */
     bayer_free(&path_list);

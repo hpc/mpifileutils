@@ -86,7 +86,7 @@ void bayer_param_path_set(const char* path, bayer_param_path* param);
 void bayer_param_path_free(bayer_param_path* param);
 
 /* given a list of param_paths, walk each one and add to flist */
-void bayer_param_path_walk(uint64_t num, const bayer_param_path* params, int walk_stat, bayer_flist flist);
+void bayer_param_path_walk(uint64_t num, const bayer_param_path* params, int walk_stat, bayer_flist flist, int dir_perms);
 
 #endif /* BAYER_PARAM_PATH_H */
 

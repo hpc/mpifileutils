@@ -125,6 +125,7 @@ typedef struct flist {
 static uint64_t CURRENT_NUM_DIRS;
 static char** CURRENT_DIRS;
 static flist_t* CURRENT_LIST;
+static int SET_DIR_PERMS;
 
 /****************************************
  * Functions on types
@@ -1915,6 +1916,14 @@ static void walk_stat_process(CIRCLE_handle* handle)
 
     /* recurse into directory */
     if (S_ISDIR(st.st_mode)) {
+        /* before more processing check if SET_DIR_PERMS is set,
+         * and set usr read and execute bits if need be */
+        if (SET_DIR_PERMS) {
+                /* turn on the usr read & execute bits */
+                st.st_mode |= S_IRUSR;
+                st.st_mode |= S_IXUSR;
+                bayer_chmod(path, st.st_mode); 
+        }
         /* TODO: check that we can recurse into directory */
         walk_stat_process_dir(path, handle);
     }
@@ -2247,17 +2256,25 @@ bayer_flist bayer_flist_subset(bayer_flist src)
 }
 
 /* Set up and execute directory walk */
-void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist)
+void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist, int dir_permissions)
 {
-    bayer_flist_walk_paths(1, &dirpath, use_stat, bflist);
+    bayer_flist_walk_paths(1, &dirpath, use_stat, bflist, dir_permissions);
     return;
 }
 
 /* Set up and execute directory walk */
-void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, bayer_flist bflist)
+void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, bayer_flist bflist, int dir_permissions)
 {
     /* report walk count, time, and rate */
     double start_walk = MPI_Wtime();
+
+    printf("dir_permissions: %d\n", dir_permissions);
+    /* if dir_permission is set to 1 then set global variable */
+    if (dir_permissions) {
+        SET_DIR_PERMS = 1;
+    } else {
+        SET_DIR_PERMS = 0;
+    }
 
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;

@@ -44,6 +44,7 @@
 
 /* TODO: change globals to struct */
 static int walk_stat = 1;
+static int dir_perm = 0;
 
 /* keep stats during walk */
 uint64_t total_dirs    = 0;
@@ -550,7 +551,7 @@ int main(int argc, char** argv)
 
     if (walk) {
         /* walk list of input paths */
-        bayer_param_path_walk(numpaths, paths, walk_stat, flist);
+        bayer_param_path_walk(numpaths, paths, walk_stat, flist, dir_perm);
     }
     else {
         /* read data from cache file */

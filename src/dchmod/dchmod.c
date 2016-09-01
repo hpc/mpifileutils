@@ -272,6 +272,42 @@ static int parse_modebits(char* modestr, struct perms** p_head) {
       return rc;
 }
 
+static void check_usr_input_perms(struct perms* head, int* dir_perms) {
+        /* flag to check if the usr read & execute bits are being turned on */
+        *dir_perms = 0;
+        if (head->octal) {
+                /* extra flags to check if usr read and execute are being tured on for octal */
+                int usr_r = 0;
+                int usr_x = 0;
+
+                /* use a mask to check if the usr_read and usr_execute bits are being turned on */
+		long usr_r_mask = 1 << 8;
+                long usr_x_mask = 1 << 6;
+                if (usr_r_mask & head->mode_octal) {
+                        usr_r = 1;
+                }
+                if (usr_x_mask & head->mode_octal) {
+                        usr_x = 1;
+                }
+                if (usr_r && usr_x) {
+                        *dir_perms = 1;
+                } 
+       } else { 
+       struct perms *p = head;
+       printf("value of usr flag"); 
+           
+                /* if in synbolic mode then loop through the linked list of structs to check for u+rx in input */
+                while (p != NULL) { 
+                        if ((p->usr && p->plus) && (p->read && p->execute)) {
+                                *dir_perms = 1;
+                        }
+                        /* update pointer to next element of linked list */        
+                        p = p->next; 
+                }
+     }
+        printf("value of dir_perms in check_usr: %d\n", *dir_perms);
+}
+
 static void read_source_bits(struct perms* p, mode_t* bits, int* read, int* write, int* execute) {
     *read = 0;
     *write = 0;
@@ -470,12 +506,17 @@ static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, baye
         /* if in octal mode then loop through and check which ones are on based on the mask and
          * the current octal mode bits */
         if (head->octal) {
+                /* extra flags to check if usr read and execute are being tured on for octal */
+                int usr_r = 0;
+                int usr_x = 0;
+                 
                 *mode = (mode_t)0;
                 /* array of constants to check which mode bits are on or off */
 	        mode_t permbits[12] = {S_ISUID, S_ISGID, S_ISVTX, 
 				       S_IRUSR, S_IWUSR, S_IXUSR, 
 				       S_IRGRP, S_IWGRP, S_IXGRP, 
 				       S_IROTH, S_IWOTH, S_IXOTH};
+
                 /* start with the bit all the way to the left (of 12 bits) on */
 		long mask = 1 << 11;
 		for (int i = 0; i < 12; i++) {
@@ -509,7 +550,7 @@ static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, baye
                    /* if the assignment flag is not set then just use 
                     * regular symbolic notation to check if usr, group, or all is set, then 
                     * plus/minus, and change new mode accordingly */
-                    set_symbolic_bits(p, mode, &type); 
+                    set_symbolic_bits(p, mode, &type);
                  }
              /* update pointer to next element of linked list */        
              p = p->next; 
@@ -628,6 +669,7 @@ int main(int argc, char** argv)
     char* mode_type = NULL;
     struct perms* head = NULL;
     int walk = 0;
+    int dir_perms = 0;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -731,6 +773,9 @@ int main(int argc, char** argv)
     /* create an empty file list */
     bayer_flist flist = bayer_flist_new();
 
+    check_usr_input_perms(head, &dir_perms);
+    printf("value of dir_perms before going into dchmod bayer path walk: %d\n", dir_perms);
+
     /* get our list of files, either by walking or reading an
      * input file */
     if (walk) {
@@ -739,7 +784,7 @@ int main(int argc, char** argv)
             walk_stat = 0;
         }
         /* walk list of input paths */
-        bayer_param_path_walk(numpaths, paths, walk_stat, flist);
+        bayer_param_path_walk(numpaths, paths, walk_stat, flist, dir_perms);
     }
     else {
         /* read list from file */
