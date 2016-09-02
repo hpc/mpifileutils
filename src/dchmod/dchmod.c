@@ -273,12 +273,14 @@ static int parse_modebits(char* modestr, struct perms** p_head) {
 }
 
 static void check_usr_input_perms(struct perms* head, int* dir_perms) {
+        /* extra flags to check if usr read and execute are being turned on */
+        int usr_r = 0;
+        int usr_x = 0;
         /* flag to check if the usr read & execute bits are being turned on */
         *dir_perms = 0;
         if (head->octal) {
-                /* extra flags to check if usr read and execute are being tured on for octal */
-                int usr_r = 0;
-                int usr_x = 0;
+                usr_r = 0;
+                usr_x = 0;
 
                 /* use a mask to check if the usr_read and usr_execute bits are being turned on */
 		long usr_r_mask = 1 << 8;
@@ -294,18 +296,31 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms) {
                 } 
        } else { 
        struct perms *p = head;
-       printf("value of usr flag"); 
-           
+
                 /* if in synbolic mode then loop through the linked list of structs to check for u+rx in input */
-                while (p != NULL) { 
-                        if ((p->usr && p->plus) && (p->read && p->execute)) {
-                                *dir_perms = 1;
+                while (p != NULL) {
+                        /* check if the execute and read are being turned on for each element of linked linked so 
+                         * that if say someone does something like u+r,u+x (so dir_perms=1) or u+rwx,u-rx (dir_perms=0)
+                         * it will still give the correct result */ 
+                        if ((p->usr && p->plus) && (p->read)) {
+                                usr_r = 1;
+                        } 
+                        if ((p->usr && (!p->plus)) && (p->read)){
+                                usr_r = 0;
+                        }
+                        if ((p->usr && p->plus) && (p->execute)) {
+                                usr_x = 1;
+                        }
+                        if ((p->usr && (!p->plus)) && (p->execute)) {
+                                usr_x = 0;
                         }
                         /* update pointer to next element of linked list */        
                         p = p->next; 
                 }
+                if (usr_r && usr_x) {
+                    *dir_perms = 1;
+                }
      }
-        printf("value of dir_perms in check_usr: %d\n", *dir_perms);
 }
 
 static void read_source_bits(struct perms* p, mode_t* bits, int* read, int* write, int* execute) {
@@ -774,7 +789,6 @@ int main(int argc, char** argv)
     bayer_flist flist = bayer_flist_new();
 
     check_usr_input_perms(head, &dir_perms);
-    printf("value of dir_perms before going into dchmod bayer path walk: %d\n", dir_perms);
 
     /* get our list of files, either by walking or reading an
      * input file */
