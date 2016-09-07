@@ -293,7 +293,7 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms) {
                 }
                 if (usr_r && usr_x) {
                         *dir_perms = 1;
-                } 
+                }
        } else { 
        struct perms *p = head;
 
@@ -521,10 +521,6 @@ static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, baye
         /* if in octal mode then loop through and check which ones are on based on the mask and
          * the current octal mode bits */
         if (head->octal) {
-                /* extra flags to check if usr read and execute are being tured on for octal */
-                int usr_r = 0;
-                int usr_x = 0;
-                 
                 *mode = (mode_t)0;
                 /* array of constants to check which mode bits are on or off */
 	        mode_t permbits[12] = {S_ISUID, S_ISGID, S_ISVTX, 

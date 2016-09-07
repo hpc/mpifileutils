@@ -1720,13 +1720,22 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
 
     /* if there is a permissions error and the usr read & execute are being turned
      * on when walk_stat=0 then catch the permissions error and turn the bits on */
-    /*if (SET_DIR_PERMS) {
-        if (dirp == NULL) {
-                if (errno == EACCES) {
-                        //need to add code to turn on user read & execute bits here???                        
+    if (dirp == NULL) {
+        if (errno == EACCES && SET_DIR_PERMS) {
+                struct stat st;
+                bayer_lstat(dir, &st);
+                // turn on the usr read & execute bits 
+                st.st_mode |= S_IRUSR;
+                st.st_mode |= S_IXUSR;
+                bayer_chmod(dir, st.st_mode);
+                dirp = bayer_opendir(dir);
+                if (dirp == NULL) {
+                        if (errno == EACCES) {
+                                printf("can't open directory at this time");
+                        } 
                 }
         }
-    }*/
+    }  
 
     if (! dirp) {
         /* TODO: print error */
@@ -2277,7 +2286,7 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
 {
     /* report walk count, time, and rate */
     double start_walk = MPI_Wtime();
-
+     
     /* if dir_permission is set to 1 then set global variable */
     if (dir_permissions) {
         SET_DIR_PERMS = 1;
