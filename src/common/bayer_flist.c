@@ -1731,7 +1731,7 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
                 dirp = bayer_opendir(dir);
                 if (dirp == NULL) {
                         if (errno == EACCES) {
-                                printf("can't open directory at this time");
+                                printf("can't open directory at this time\n");
                         } 
                 }
         }
@@ -1938,10 +1938,15 @@ static void walk_stat_process(CIRCLE_handle* handle)
         /* before more processing check if SET_DIR_PERMS is set,
          * and set usr read and execute bits if need be */
         if (SET_DIR_PERMS) {
-                /* turn on the usr read & execute bits */
-                st.st_mode |= S_IRUSR;
-                st.st_mode |= S_IXUSR;
-                bayer_chmod(path, st.st_mode); 
+                /* use masks to check if usr_r and usr_x are already on */
+                long usr_r_mask = 1 << 8;
+                long usr_x_mask = 1 << 6;
+                /* turn on the usr read & execute bits if they are not already on*/
+                if (!(usr_r_mask & st.st_mode) && (usr_x_mask & st.st_mode)) {
+                        st.st_mode |= S_IRUSR;
+                        st.st_mode |= S_IXUSR;
+                        bayer_chmod(path, st.st_mode); 
+                }
         }
         /* TODO: check that we can recurse into directory */
         walk_stat_process_dir(path, handle);

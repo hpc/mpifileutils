@@ -571,7 +571,7 @@ static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, baye
 
 static void flist_chmod(
     bayer_flist flist,
-    const char* grname, struct perms* head)
+    const char* grname, struct perms* head, char* exclude_exp)
 {
     /* lookup groupid if set, bail out if not */
     gid_t gid;
@@ -582,19 +582,69 @@ static void flist_chmod(
             return;
         }
     }
-	
+    
+    if (exclude_exp != NULL) {
+        regex_t regex;
+        int regex_return;
+        
+        /* compile regular expression & if it fails print error */
+        regex_return = regcomp(&regex, exclude_exp, 0);
+        if (regex_return) {
+                printf(stderr, "could not compile regex\n");
+        }
+        
+        uint64_t idx = 0;
+        uint64_t total = bayer_flist_global_size(flist);
+        bayer_flist filtered_flist = BAYER_MALLOC(sizeof(bayer_flist));
+        filtered_flist = bayer_flist_subset(flist);
+
+        /* copy the things that don't match the regex into a filtered list */
+        while (idx < total) {
+            char* file_name = bayer_flist_file_get_name(flist, idx);
+            /* execute regex on each filename */
+            regex_return = regexec(&regex, file_name, 0, NULL, 0);
+            /* if it doesn't match then copy it to the filtered list */
+            if (regex_return) {
+                bayer_flist_file_copy(flist, idx, filtered_flist);
+            }
+            idx++;
+        }
+        bayer_flist_summarize(filtered_flist);
+        flist = filtered_flist;
+        bayer_flist_free(&filtered_flist);
+    }
+
+    /* set up levels */  
+    int level;
+   
+    /* wait for all tasks and start timer */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double start_dchmod = MPI_Wtime(); 
+
+    /* split files into separate lists by directory depth */
+    int levels, minlevel;
+    bayer_flist* lists; 
+    bayer_flist_array_by_depth(flist, &levels, &minlevel, &lists);
+    printf("number of levels %d\n", levels);
+    /* remove files starting at the deepest level */
+    for (level = levels - 1; level >= 0; level--) {
+        double start = MPI_Wtime();
+
+        /* get list of items for this level */
+        bayer_flist list = lists[level];
+        
     /* each process directly removes its elements */
     uint64_t idx;
-    uint64_t size = bayer_flist_size(flist);
+    uint64_t size = bayer_flist_size(list);
     for (idx = 0; idx < size; idx++) {
         /* get file name */
-        const char* dest_path = bayer_flist_file_get_name(flist, idx);
+        const char* dest_path = bayer_flist_file_get_name(list, idx);
 
         /* update group if user gave a group name */
         if (grname != NULL) {
             /* get user id and group id of file */
-            uid_t uid = (uid_t) bayer_flist_file_get_uid(flist, idx);
-            gid_t oldgid = (gid_t) bayer_flist_file_get_gid(flist, idx);
+            uid_t uid = (uid_t) bayer_flist_file_get_uid(list, idx);
+            gid_t oldgid = (gid_t) bayer_flist_file_get_gid(list, idx);
 
             /* only bother to change group if it's different */
             if (oldgid != gid) {
@@ -617,11 +667,11 @@ static void flist_chmod(
 	if (head != NULL) {
 
         	/* get mode and type */
-        	bayer_filetype type = bayer_flist_file_get_type(flist, idx);
+        	bayer_filetype type = bayer_flist_file_get_type(list, idx);
                 /* if in octal mode skip this call */
         	mode_t mode = 0;
                 if (!head->octal) {
-                    mode = (mode_t) bayer_flist_file_get_mode(flist, idx);
+                    mode = (mode_t) bayer_flist_file_get_mode(list, idx);
                 }
         	/* change mode, unless item is a link */
         	if(type != BAYER_TYPE_LINK) {
@@ -635,6 +685,46 @@ static void flist_chmod(
             		}
         	}
 	}
+        /* wait for all processes to finish before we start with files at next level */
+        MPI_Barrier(MPI_COMM_WORLD);
+        double end = MPI_Wtime();
+
+        if (bayer_debug_level >= BAYER_LOG_VERBOSE) {
+            uint64_t min, max, sum;
+            MPI_Allreduce(&size, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
+            MPI_Allreduce(&size, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+            MPI_Allreduce(&size, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+            double rate = 0.0;
+            if (end - start > 0.0) {
+                rate = (double)sum / (end - start);
+            }
+            double time_diff = end - start;
+            if (bayer_rank == 0) {
+                printf("level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
+                       (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
+                      );
+                fflush(stdout);
+            }
+        }
+    }
+    }
+    bayer_flist_array_free(levels, &lists);
+
+    /* wait for all tasks */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double end_dchmod = MPI_Wtime();
+
+    /* report remove count, time, and rate */
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
+        uint64_t all_count = bayer_flist_global_size(flist);
+        double time_diff = end_dchmod - start_dchmod;
+        double rate = 0.0;
+        if (time_diff > 0.0) {
+            rate = ((double)all_count) / time_diff;
+        }
+        printf("changed permissions %lu items in %f seconds (%f items/sec)\n",
+               all_count, time_diff, rate
+              );
     }
 
     return;
@@ -648,7 +738,8 @@ static void print_usage(void)
     printf("Options:\n");
     printf("  -i, --input <file>  - read list from file\n");
     printf("  -g, --group <name>  - change group to specified group name\n");
-    printf("  -m, --mode <string> - change mode\n");    
+    printf("  -m, --mode <string> - change mode\n"); 
+    printf("  -e, --exclude <regular expression> - exclude a list of files from command\n");   
     printf("  -v, --verbose       - verbose output\n");
     printf("  -h, --help          - print usage\n");
     printf("\n");
@@ -677,7 +768,7 @@ int main(int argc, char** argv)
     char* inputname = NULL;
     char* groupname = NULL;
     char* modestr = NULL;
-    char* mode_type = NULL;
+    char* exclude_pattern = NULL;
     struct perms* head = NULL;
     int walk = 0;
     int dir_perms = 0;
@@ -687,6 +778,7 @@ int main(int argc, char** argv)
         {"input",    1, 0, 'i'},
         {"group",    1, 0, 'g'},
 	{"mode",     1, 0, 'm'},
+        {"exclude",   1, 0, 'e'},
         {"help",     0, 0, 'h'},
         {"verbose",  0, 0, 'v'},
         {0, 0, 0, 0}
@@ -695,7 +787,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:g:m:lhv",
+                    argc, argv, "i:g:m:e:lhv",
                     long_options, &option_index
                 );
 
@@ -713,6 +805,9 @@ int main(int argc, char** argv)
 	    case 'm':
 	    	modestr = BAYER_STRDUP(optarg);
 		break;
+            case 'e':
+                exclude_pattern = BAYER_STRDUP(optarg);
+                break;
             case 'h':
                 usage = 1;
                 break;
@@ -803,22 +898,22 @@ int main(int argc, char** argv)
        
 
     /* Make sure all processes have reached this point before starting timer */
-    MPI_Barrier(MPI_COMM_WORLD);
+    //MPI_Barrier(MPI_COMM_WORLD);
 
     /* start timer */
-    start_write = MPI_Wtime();
+    //start_write = MPI_Wtime();
 
     /* change group and permissions */
-    flist_chmod(flist, groupname, head);
+    flist_chmod(flist, groupname, head, exclude_pattern);
 
     /* Make sure all processes are done before stopping the timer */
-    MPI_Barrier(MPI_COMM_WORLD);
+    //MPI_Barrier(MPI_COMM_WORLD);
     
     /* end timer */
-    end_write = MPI_Wtime();
+    //end_write = MPI_Wtime();
 
     /* report write count, time, and rate */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
+    /*if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
         uint64_t all_count = bayer_flist_global_size(flist);
         double secs = end_write - start_write;
         double rate = 0.0;
@@ -828,7 +923,7 @@ int main(int argc, char** argv)
         printf("Wrote permissions for %lu files in %f seconds (%f files/sec)\n",
                all_count, secs, rate
               );
-    }
+    }*/
 
     /* free the file list */
     bayer_flist_free(&flist);
