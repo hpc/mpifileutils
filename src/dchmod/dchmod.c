@@ -570,9 +570,13 @@ static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, baye
 }
 
 static void flist_chmod(
-    bayer_flist flist,
+    bayer_flist flist, bayer_flist filtered_flist,
     const char* grname, struct perms* head, char* exclude_exp)
 {
+    /* use a pointer to flist to point at regular flist or filtered flist
+     * if one is used */
+    bayer_flist* flist_ptr = &flist;
+
     /* lookup groupid if set, bail out if not */
     gid_t gid;
     if (grname != NULL) {
@@ -582,7 +586,6 @@ static void flist_chmod(
             return;
         }
     }
-    
     if (exclude_exp != NULL) {
         regex_t regex;
         int regex_return;
@@ -594,24 +597,30 @@ static void flist_chmod(
         }
         
         uint64_t idx = 0;
-        uint64_t total = bayer_flist_global_size(flist);
-        bayer_flist filtered_flist = BAYER_MALLOC(sizeof(bayer_flist));
+        uint64_t size = bayer_flist_size(flist);
+
+        /* initialize filtered_flist */
         filtered_flist = bayer_flist_subset(flist);
 
         /* copy the things that don't match the regex into a filtered list */
-        while (idx < total) {
+        while (idx < size) {
             char* file_name = bayer_flist_file_get_name(flist, idx);
+
             /* execute regex on each filename */
             regex_return = regexec(&regex, file_name, 0, NULL, 0);
+
             /* if it doesn't match then copy it to the filtered list */
             if (regex_return) {
                 bayer_flist_file_copy(flist, idx, filtered_flist);
             }
             idx++;
         }
+
+        /* summarize the filtered list */
         bayer_flist_summarize(filtered_flist);
-        flist = filtered_flist;
-        bayer_flist_free(&filtered_flist);
+
+        /* update pointer to point at filtered list */
+        flist_ptr = &filtered_flist;
     }
 
     /* set up levels */  
@@ -624,8 +633,8 @@ static void flist_chmod(
     /* split files into separate lists by directory depth */
     int levels, minlevel;
     bayer_flist* lists; 
-    bayer_flist_array_by_depth(flist, &levels, &minlevel, &lists);
-    printf("number of levels %d\n", levels);
+    bayer_flist_array_by_depth(*flist_ptr, &levels, &minlevel, &lists);
+
     /* remove files starting at the deepest level */
     for (level = levels - 1; level >= 0; level--) {
         double start = MPI_Wtime();
@@ -633,96 +642,101 @@ static void flist_chmod(
         /* get list of items for this level */
         bayer_flist list = lists[level];
         
-    /* each process directly removes its elements */
-    uint64_t idx;
-    uint64_t size = bayer_flist_size(list);
-    for (idx = 0; idx < size; idx++) {
-        /* get file name */
-        const char* dest_path = bayer_flist_file_get_name(list, idx);
+        /* each process directly changes permissions on its elements for each level */
+        uint64_t idx;
+        uint64_t size = bayer_flist_size(list);
+        for (idx = 0; idx < size; idx++) {
+                /* get file name */
+                const char* dest_path = bayer_flist_file_get_name(list, idx);
 
-        /* update group if user gave a group name */
-        if (grname != NULL) {
-            /* get user id and group id of file */
-            uid_t uid = (uid_t) bayer_flist_file_get_uid(list, idx);
-            gid_t oldgid = (gid_t) bayer_flist_file_get_gid(list, idx);
+                /* update group if user gave a group name */
+                if (grname != NULL) {
+                        /* get user id and group id of file */
+                        uid_t uid = (uid_t) bayer_flist_file_get_uid(list, idx);
+                        gid_t oldgid = (gid_t) bayer_flist_file_get_gid(list, idx);
 
-            /* only bother to change group if it's different */
-            if (oldgid != gid) {
-                /* note that we use lchown to change ownership of link itself, it path happens to be a link */
-                if(bayer_lchown(dest_path, uid, gid) != 0) {
-                    /* TODO: are there other EPERM conditions we do want to report? */
+                        /* only bother to change group if it's different */
+                        if (oldgid != gid) {
+                                /* note that we use lchown to change ownership of link itself, it path happens to be a link */
+                                if(bayer_lchown(dest_path, uid, gid) != 0) {
+                                /* TODO: are there other EPERM conditions we do want to report? */
 
-                    /* since the user running dcp may not be the owner of the
-                     * file, we could hit an EPERM error here, and the file
-                     * will be left with the effective uid and gid of the dcp
-                     * process, don't bother reporting an error for that case */
-                    if (errno != EPERM) {
-                        BAYER_LOG(BAYER_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
-                            dest_path, errno, strerror(errno)
-                           );
-                    }
+                                /* since the user running dcp may not be the owner of the
+                                * file, we could hit an EPERM error here, and the file
+                                * will be left with the effective uid and gid of the dcp
+                                * process, don't bother reporting an error for that case */
+                                        if (errno != EPERM) {
+                                                BAYER_LOG(BAYER_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
+                                                dest_path, errno, strerror(errno)
+                                                );
+                                        }
+                                }
+                        }
                 }
-            }
-        }
-	if (head != NULL) {
+	        if (head != NULL) {
 
-        	/* get mode and type */
-        	bayer_filetype type = bayer_flist_file_get_type(list, idx);
-                /* if in octal mode skip this call */
-        	mode_t mode = 0;
-                if (!head->octal) {
-                    mode = (mode_t) bayer_flist_file_get_mode(list, idx);
+        	        /* get mode and type */
+        	        bayer_filetype type = bayer_flist_file_get_type(list, idx);
+
+                        /* if in octal mode skip this call */
+        	        mode_t mode = 0;
+                        if (!head->octal) {
+                                mode = (mode_t) bayer_flist_file_get_mode(list, idx);
+                        }
+
+        	        /* change mode, unless item is a link */
+        	        if(type != BAYER_TYPE_LINK) {
+                                mode_t new_mode; 
+    	                        set_modebits(head, mode, &new_mode, type);
+
+            		        /* set the mode on the file */
+                	        if(bayer_chmod(dest_path, new_mode) != 0) {
+                		        BAYER_LOG(BAYER_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
+                        	        dest_path, errno, strerror(errno)
+                   		        );
+            		        }
+        	        }
+	        }
+
+           /* wait for all processes to finish before we start with files at next level */
+           MPI_Barrier(MPI_COMM_WORLD);
+           double end = MPI_Wtime();
+           if (bayer_debug_level >= BAYER_LOG_VERBOSE) {
+                uint64_t min, max, sum;
+                MPI_Allreduce(&size, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
+                MPI_Allreduce(&size, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+                MPI_Allreduce(&size, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+                double rate = 0.0;
+                if (end - start > 0.0) {
+                        rate = (double)sum / (end - start);
                 }
-        	/* change mode, unless item is a link */
-        	if(type != BAYER_TYPE_LINK) {
-                        mode_t new_mode; 
-    	                set_modebits(head, mode, &new_mode, type);
-            		/* set the mode on the file */
-                	if(bayer_chmod(dest_path, new_mode) != 0) {
-                		BAYER_LOG(BAYER_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
-                        	dest_path, errno, strerror(errno)
-                   		);
-            		}
-        	}
-	}
-        /* wait for all processes to finish before we start with files at next level */
-        MPI_Barrier(MPI_COMM_WORLD);
-        double end = MPI_Wtime();
-
-        if (bayer_debug_level >= BAYER_LOG_VERBOSE) {
-            uint64_t min, max, sum;
-            MPI_Allreduce(&size, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-            MPI_Allreduce(&size, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-            MPI_Allreduce(&size, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-            double rate = 0.0;
-            if (end - start > 0.0) {
-                rate = (double)sum / (end - start);
-            }
-            double time_diff = end - start;
-            if (bayer_rank == 0) {
-                printf("level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
+                double time_diff = end - start;
+                if (bayer_rank == 0) {
+                        printf("level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
                        (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
-                      );
-                fflush(stdout);
-            }
-        }
+                        );
+                        fflush(stdout);
+                }
+          }
+       }
     }
-    }
+
+    /* free the array of lists */
     bayer_flist_array_free(levels, &lists);
 
-    /* wait for all tasks */
+    /* wait for all tasks & end timer */
     MPI_Barrier(MPI_COMM_WORLD);
     double end_dchmod = MPI_Wtime();
 
     /* report remove count, time, and rate */
     if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
-        uint64_t all_count = bayer_flist_global_size(flist);
+        uint64_t all_count = bayer_flist_global_size(*flist_ptr);
         double time_diff = end_dchmod - start_dchmod;
         double rate = 0.0;
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        printf("changed permissions %lu items in %f seconds (%f items/sec)\n",
+        printf("dchmod %lu items in %f seconds (%f items/sec)\n",
                all_count, time_diff, rate
               );
     }
@@ -878,6 +892,9 @@ int main(int argc, char** argv)
 
     /* create an empty file list */
     bayer_flist flist = bayer_flist_new();
+    
+    /* for filtered list if exclude pattern is used */
+    bayer_flist filtered_flist = NULL;
 
     check_usr_input_perms(head, &dir_perms);
 
@@ -895,35 +912,14 @@ int main(int argc, char** argv)
         /* read list from file */
         bayer_flist_read_cache(inputname, flist);
     }
-       
-
-    /* Make sure all processes have reached this point before starting timer */
-    //MPI_Barrier(MPI_COMM_WORLD);
-
-    /* start timer */
-    //start_write = MPI_Wtime();
 
     /* change group and permissions */
-    flist_chmod(flist, groupname, head, exclude_pattern);
+    flist_chmod(flist, filtered_flist, groupname, head, exclude_pattern);
 
-    /* Make sure all processes are done before stopping the timer */
-    //MPI_Barrier(MPI_COMM_WORLD);
-    
-    /* end timer */
-    //end_write = MPI_Wtime();
-
-    /* report write count, time, and rate */
-    /*if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
-        uint64_t all_count = bayer_flist_global_size(flist);
-        double secs = end_write - start_write;
-        double rate = 0.0;
-        if (secs > 0.0) {
-            rate = ((double)all_count) / secs;
-        }
-        printf("Wrote permissions for %lu files in %f seconds (%f files/sec)\n",
-               all_count, secs, rate
-              );
-    }*/
+    /* free filtered_flist if it was used */
+    if (filtered_flist != NULL) {
+        bayer_flist_free(&filtered_flist);
+    }
 
     /* free the file list */
     bayer_flist_free(&flist);
