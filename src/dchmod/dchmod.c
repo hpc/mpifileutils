@@ -276,8 +276,10 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms) {
         /* extra flags to check if usr read and execute are being turned on */
         int usr_r = 0;
         int usr_x = 0;
+
         /* flag to check if the usr read & execute bits are being turned on */
         *dir_perms = 0;
+
         if (head->octal) {
                 usr_r = 0;
                 usr_x = 0;
@@ -291,12 +293,13 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms) {
                 if (usr_x_mask & head->mode_octal) {
                         usr_x = 1;
                 }
+
+                /* only set the dir_perms flag if both the user execute and user read flags are on */
                 if (usr_r && usr_x) {
                         *dir_perms = 1;
                 }
-       } else { 
+       } else {
        struct perms *p = head;
-
                 /* if in synbolic mode then loop through the linked list of structs to check for u+rx in input */
                 while (p != NULL) {
                         /* check if the execute and read are being turned on for each element of linked linked so 
@@ -314,9 +317,12 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms) {
                         if ((p->usr && (!p->plus)) && (p->execute)) {
                                 usr_x = 0;
                         }
+
                         /* update pointer to next element of linked list */        
                         p = p->next; 
                 }
+
+                /* only set the dir_perms flag if both the user execute and user read flags are on */
                 if (usr_r && usr_x) {
                     *dir_perms = 1;
                 }
@@ -431,6 +437,11 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
                         }
                         if (p->execute) {
                                 *mode |= S_IXUSR;
+                        }
+                        if (p->capital_execute) {
+                            if (*type == BAYER_TYPE_DIR) {
+                                *mode |= S_IXUSR;
+                            }
                         } 
                  } else {
                         if (p->read) {
@@ -441,6 +452,11 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
                         }
                         if (p->execute) {
                                 *mode &= ~S_IXUSR;
+                        }
+                        if (p->capital_execute) {
+                            if (*type == BAYER_TYPE_DIR) {
+                                *mode &= ~S_IXUSR;
+                            }
                         } 
                  }
          }
@@ -569,6 +585,70 @@ static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, baye
        }
 }
 
+static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* grname, struct perms* head, gid_t* gid) {
+        /* each process directly changes permissions on its elements for each level */
+        uint64_t idx;
+        uint64_t size = bayer_flist_size(list);
+        for (idx = 0; idx < size; idx++) {
+                /* get file name */
+                const char* dest_path = bayer_flist_file_get_name(list, idx);
+
+                /* update group if user gave a group name */
+                if (grname != NULL) {
+                        /* get user id and group id of file */
+                        uid_t uid = (uid_t) bayer_flist_file_get_uid(list, idx);
+                        gid_t oldgid = (gid_t) bayer_flist_file_get_gid(list, idx);
+
+                        /* only bother to change group if it's different */
+                        if (oldgid != gid) {
+                                /* note that we use lchown to change ownership of link itself, it path happens to be a link */
+                                if(bayer_lchown(dest_path, uid, gid) != 0) {
+                                /* TODO: are there other EPERM conditions we do want to report? */
+
+                                /* since the user running dcp may not be the owner of the
+                                * file, we could hit an EPERM error here, and the file
+                                * will be left with the effective uid and gid of the dcp
+                                * process, don't bother reporting an error for that case */
+                                        if (errno != EPERM) {
+                                                BAYER_LOG(BAYER_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
+                                                dest_path, errno, strerror(errno)
+                                                );
+                                        }
+                                }
+                        }
+                }
+	        if (head != NULL) {
+
+        	        /* get mode and type */
+        	        bayer_filetype type = bayer_flist_file_get_type(list, idx);
+
+                        /* if in octal mode skip this call */
+        	        mode_t mode = 0;
+                        if (!head->octal) {
+                                mode = (mode_t) bayer_flist_file_get_mode(list, idx);
+                        }
+
+        	        /* change mode, unless item is a link */
+        	        if(type != BAYER_TYPE_LINK) {
+                                mode_t new_mode; 
+    	                        set_modebits(head, mode, &new_mode, type);
+
+            		        /* set the mode on the file */
+                	        if(bayer_chmod(dest_path, new_mode) != 0) {
+                		        BAYER_LOG(BAYER_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
+                        	        dest_path, errno, strerror(errno)
+                   		        );
+            		        }
+        	        }
+	        }
+       }
+
+       /* report number of permissions changed */
+       *dchmod_count = size;
+
+       return;
+}
+
 static void flist_chmod(
     bayer_flist flist, bayer_flist filtered_flist,
     const char* grname, struct perms* head, char* exclude_exp)
@@ -586,6 +666,8 @@ static void flist_chmod(
             return;
         }
     }
+
+    /* check if user passed in an exclude expression, if so then filter the list */
     if (exclude_exp != NULL) {
         regex_t regex;
         int regex_return;
@@ -642,66 +724,16 @@ static void flist_chmod(
         /* get list of items for this level */
         bayer_flist list = lists[level];
         
-        /* each process directly changes permissions on its elements for each level */
-        uint64_t idx;
-        uint64_t size = bayer_flist_size(list);
-        for (idx = 0; idx < size; idx++) {
-                /* get file name */
-                const char* dest_path = bayer_flist_file_get_name(list, idx);
+        uint64_t size = 0;
+        /* do a dchmod on each element in the list for this level & pass it the size */
+        dchmod_level(list, &size, grname, head, &gid);
 
-                /* update group if user gave a group name */
-                if (grname != NULL) {
-                        /* get user id and group id of file */
-                        uid_t uid = (uid_t) bayer_flist_file_get_uid(list, idx);
-                        gid_t oldgid = (gid_t) bayer_flist_file_get_gid(list, idx);
+        /* wait for all processes to finish before we start with files at next level */
+        MPI_Barrier(MPI_COMM_WORLD);
 
-                        /* only bother to change group if it's different */
-                        if (oldgid != gid) {
-                                /* note that we use lchown to change ownership of link itself, it path happens to be a link */
-                                if(bayer_lchown(dest_path, uid, gid) != 0) {
-                                /* TODO: are there other EPERM conditions we do want to report? */
+        double end = MPI_Wtime();
 
-                                /* since the user running dcp may not be the owner of the
-                                * file, we could hit an EPERM error here, and the file
-                                * will be left with the effective uid and gid of the dcp
-                                * process, don't bother reporting an error for that case */
-                                        if (errno != EPERM) {
-                                                BAYER_LOG(BAYER_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
-                                                dest_path, errno, strerror(errno)
-                                                );
-                                        }
-                                }
-                        }
-                }
-	        if (head != NULL) {
-
-        	        /* get mode and type */
-        	        bayer_filetype type = bayer_flist_file_get_type(list, idx);
-
-                        /* if in octal mode skip this call */
-        	        mode_t mode = 0;
-                        if (!head->octal) {
-                                mode = (mode_t) bayer_flist_file_get_mode(list, idx);
-                        }
-
-        	        /* change mode, unless item is a link */
-        	        if(type != BAYER_TYPE_LINK) {
-                                mode_t new_mode; 
-    	                        set_modebits(head, mode, &new_mode, type);
-
-            		        /* set the mode on the file */
-                	        if(bayer_chmod(dest_path, new_mode) != 0) {
-                		        BAYER_LOG(BAYER_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
-                        	        dest_path, errno, strerror(errno)
-                   		        );
-            		        }
-        	        }
-	        }
-
-           /* wait for all processes to finish before we start with files at next level */
-           MPI_Barrier(MPI_COMM_WORLD);
-           double end = MPI_Wtime();
-           if (bayer_debug_level >= BAYER_LOG_VERBOSE) {
+        if (bayer_debug_level >= BAYER_LOG_VERBOSE) {
                 uint64_t min, max, sum;
                 MPI_Allreduce(&size, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
                 MPI_Allreduce(&size, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
@@ -717,8 +749,7 @@ static void flist_chmod(
                         );
                         fflush(stdout);
                 }
-          }
-       }
+        }
     }
 
     /* free the array of lists */

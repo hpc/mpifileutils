@@ -1942,7 +1942,7 @@ static void walk_stat_process(CIRCLE_handle* handle)
                 long usr_r_mask = 1 << 8;
                 long usr_x_mask = 1 << 6;
                 /* turn on the usr read & execute bits if they are not already on*/
-                if (!(usr_r_mask & st.st_mode) && (usr_x_mask & st.st_mode)) {
+                if (!((usr_r_mask & st.st_mode) && (usr_x_mask & st.st_mode))) {
                         st.st_mode |= S_IRUSR;
                         st.st_mode |= S_IXUSR;
                         bayer_chmod(path, st.st_mode); 
