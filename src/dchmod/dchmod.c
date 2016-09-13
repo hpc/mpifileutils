@@ -112,6 +112,7 @@ static int parse_source(const char* str, struct perms* p) {
     int rc = 1;
     p->source = '\0';
     if (strlen(str) == 1) {
+
     /* source can be only one of (u, g, or a) find it and keep a copy in p->source */
         if (str[0] == 'u') {
                 p->source = 'u';
@@ -134,6 +135,7 @@ static int parse_rwx(const char* str, struct perms* p) {
     p->write = 0;
     p->execute = 0;
     p->capital_execute = 0;
+
     /* set all of the r,w, and x flags */
     while (str[0] == 'r' || str[0] == 'w' || str[0] == 'x' || str[0] == 'X') {
         if (str[0] == 'r') {
@@ -156,6 +158,7 @@ static int parse_plusminus(const char* str, struct perms* p) {
     int rc = 1;
     p->plus = 0;
     p->assignment = 0;
+
     /* set the plus, minus, or equal flags */
     if (str[0] == '+') {
         p->plus = 1;
@@ -180,6 +183,7 @@ static int parse_uga(const char* str, struct perms* p) {
     p->usr = 0;
     p->group = 0;
     p->all = 0;
+
     /* set the user, group, and all flags */
     while (str[0] == 'u' || str[0] == 'g' || str[0] == 'a'){
         if (str[0] == 'u') {
@@ -201,6 +205,7 @@ static void free_list(struct perms** p_head) {
     struct perms* tmp;
     struct perms* head = *p_head;
     struct perms* current = head;
+
     /* free the memory for the linked list of structs */
     while (current != NULL) {
         tmp = current;
@@ -215,9 +220,11 @@ static int parse_modebits(char* modestr, struct perms** p_head) {
 	if (modestr != NULL) {
             rc = 1;
             int octal = 0;
+
             /* if it is octal then assume it will start with a digit */
             if (strlen(modestr) <= 4) {
                 octal = 1; 
+
                 /* make sure you only have digits and is in the range 0 - 7 */
 		for (int i = 0; i <= strlen(modestr) - 1; i++) {
 		        if (modestr[i] < '0' || modestr[i] > '7') {
@@ -226,7 +233,8 @@ static int parse_modebits(char* modestr, struct perms** p_head) {
 		        }
                 }
            }
-          /* if in octal mode then just create one node that head points to */
+            
+        /* if in octal mode then just create one node that head points to */
         if (octal) {
                 rc = 1;
                 struct perms* p = BAYER_MALLOC(sizeof(struct perms));
@@ -234,37 +242,47 @@ static int parse_modebits(char* modestr, struct perms** p_head) {
                 p->octal = 1;
                 p->mode_octal = strtol(modestr, NULL, 8);
                 *p_head = p;
-         /* if it is not in octal mode assume you are in symbolic mode */
+
+       /* if it is not in octal mode assume you are in symbolic mode */
        } else { 
              struct perms* tail = NULL;
+
              /* make a copy of the input string in case there is an error with the input */
              char* tmpstr = BAYER_STRDUP(modestr);
+
              /* create a linked list of structs that gets broken up based on the comma syntax
               * i.e. u+r,g+x */
              for(char* token = strtok(tmpstr, ","); token != NULL; token = strtok(NULL, ",")) {
-                 /* allocate memory for a new struct and set the next pointer to null also
-                  * turn octal mode off */
+
+                /* allocate memory for a new struct and set the next pointer to null also
+                 * turn octal mode off */
                 struct perms* p = malloc(sizeof(struct perms));
                 p->next = NULL;
                 p->octal = 0;
+
                 /* start parsing this 'token' of the input string */
                 rc = parse_uga(token, p);
+
                 /* if the tail is not null then point the tail at the latest struct/token */
                 if (tail != NULL) {
                     tail->next = p;
                 }
+
                 /* if head is not pointing at anything then this token is the head of the list */
                 if(*p_head == NULL) {
                     *p_head = p;
                 }
+
                 /* have the tail point at the current/last struct */
                 tail = p;
+
                 /* if there was an error parsing the string then free the memory of the list */
                 if (rc != 1) {
                     free_list(p_head);
                     break;
                 }
              }
+
              /* free the duplicated string */
              bayer_free(&tmpstr);
        }
@@ -311,13 +329,13 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms) {
                         if ((p->usr && (!p->plus)) && (p->read)){
                                 usr_r = 0;
                         }
-                        if ((p->usr && p->plus) && (p->execute)) {
+                        if ((p->usr && p->plus) && (p->execute || p->capital_execute)) {
                                 usr_x = 1;
                         }
-                        if ((p->usr && (!p->plus)) && (p->execute)) {
+                        if ((p->usr && (!p->plus)) && (p->execute || p->capital_execute)) {
                                 usr_x = 0;
                         }
-
+                        
                         /* update pointer to next element of linked list */        
                         p = p->next; 
                 }
@@ -465,10 +483,10 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
          * bit is set the group execute bit will be set to on. If the usr
          * execute bit is not on, then it will be left alone. If the usr
          * says something like ug+X then the usr bit in the input string
-         * will be ignored. In the case of something like g-X, then it will
-         * ALWAYS turn off the group or all execute bit. This is slightly 
-         * different behavior then the +X, but it is intentional and how
-         * chmod also works. +X is not symmetric with -X */ 
+         * will be ignored unless it is a directory. In the case of something 
+         * like g-X, then it will ALWAYS turn off the group or all execute bit. 
+         * This is slightly different behavior then the +X, but it is intentional 
+         * and how chmod also works. */ 
          if (p->group) {
                 if (p->plus) {
                         if (p->read) {
