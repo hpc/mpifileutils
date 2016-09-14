@@ -501,7 +501,7 @@ void bayer_param_path_walk(uint64_t num, const bayer_param_path* params, int wal
     }
 
     /* walk file tree and record stat data for each file */
-    bayer_flist_walk_paths((uint64_t) num, path_list, walk_stat, flist, dir_perms);
+    bayer_flist_walk_paths((uint64_t) num, path_list, walk_stat, dir_perms, flist);
 
     /* free the list */
     bayer_free(&path_list);

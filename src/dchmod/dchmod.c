@@ -43,6 +43,7 @@
 #include "dtcmp.h"
 #include "bayer.h"
 
+
 /* TODO: change globals to struct */
 static int walk_stat = 1;
 
@@ -107,7 +108,6 @@ static int lookup_gid(const char* name, gid_t* gid)
 
     return rc;
 }
-
 
 static int parse_source(const char* str, struct perms* p)
 {
@@ -711,36 +711,19 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
     return;
 }
 
-static void flist_chmod(
-    bayer_flist flist, bayer_flist filtered_flist,
-    const char* grname, struct perms* head, char* exclude_exp, char* match_exp, int* name)
-{
-    /* use a pointer to flist to point at regular flist or filtered flist
-     * if one is used */
-    bayer_flist* flist_ptr = &flist;
+static bayer_flist* bayer_flist_filter_regex(bayer_flist flist, const char* exclude_exp, 
+        const char* match_exp, int* match_flag, int* exclude_flag, int* name_flag,
+        bayer_flist filtered_flist) {
 
-    /* flags to check how to filter the list */
-    int exclude = 0;
-    int match = 0;
+    /* pointer to correct flist if it gets filtered. if not, just points to flist */
+    bayer_flist* flist_ptr = &flist;
     char* regex_exp = NULL;
 
     /* set flags and reg expression */
-    if (exclude_exp != NULL) {
+    if (*exclude_flag) {
         regex_exp = BAYER_STRDUP(exclude_exp);
-        exclude = 1;
-    } else if (match_exp != NULL) {
+    } else if (*match_flag) {
         regex_exp = BAYER_STRDUP(match_exp);
-        match = 1;
-    }
-
-    /* lookup groupid if set, bail out if not */
-    gid_t gid;
-    if (grname != NULL) {
-        int lookup_rc = lookup_gid(grname, &gid);
-        if (lookup_rc == 0) {
-            /* failed to get group id, bail out */
-            return;
-        }
     }
 
     /* check if user passed in an exclude or match expression, if so then filter the list */
@@ -760,7 +743,8 @@ static void flist_chmod(
         /* initialize filtered_flist */
         filtered_flist = bayer_flist_subset(flist);
         
-        /* copy the things that don't match the regex into a filtered list */
+        /* copy the things that don't or do (based on input) match the regex into a 
+         * filtered list */
         while (idx < size) {
             char* file_name = bayer_flist_file_get_name(flist, idx);
 
@@ -776,16 +760,16 @@ static void flist_chmod(
 
             /* execute regex on each filename if user uses --name option then use 
              * basename (not full path) to match/exclude with */
-            if (*name) {
+            if (*name_flag) {
                 regex_return = regexec(&regex, basename, 0, NULL, 0);
             } else {
                 regex_return = regexec(&regex, file_name, 0, NULL, 0);
             }
 
             /* if it doesn't match then copy it to the filtered list */
-            if (regex_return && exclude) {
+            if (regex_return && *exclude_flag) {
                 bayer_flist_file_copy(flist, idx, filtered_flist);
-            } else if ((!regex_return) && match) {
+            } else if ((!regex_return) && *match_flag) {
                 bayer_flist_file_copy(flist, idx, filtered_flist);
             }
             /* free bayer path object and set pointer to NULL */
@@ -800,6 +784,28 @@ static void flist_chmod(
 
         /* update pointer to point at filtered list */
         flist_ptr = &filtered_flist;
+    }
+    
+    return flist_ptr;
+}
+
+static void flist_chmod(
+    bayer_flist flist, const char* grname, struct perms* head, char* exclude_exp, 
+    char* match_exp, int* match_flag, int* exclude_flag, int* name_flag, bayer_flist filtered_flist)
+{
+    /* use a pointer to flist to point at regular flist or filtered flist
+     * if one is used */
+    bayer_flist* flist_ptr = bayer_flist_filter_regex(flist, exclude_exp, match_exp, match_flag,
+            exclude_flag, name_flag, filtered_flist);
+
+    /* lookup groupid if set, bail out if not */
+    gid_t gid;
+    if (grname != NULL) {
+        int lookup_rc = lookup_gid(grname, &gid);
+        if (lookup_rc == 0) {
+            /* failed to get group id, bail out */
+            return;
+        }
     }
 
     /* set up levels */
@@ -878,12 +884,14 @@ static void print_usage(void)
     printf("Usage: dchmod [options] <path> ...\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -i, --input <file>  - read list from file\n");
-    printf("  -g, --group <name>  - change group to specified group name\n");
-    printf("  -m, --mode <string> - change mode\n");
+    printf("  -i, --input   <file>               - read list from file\n");
+    printf("  -g, --group   <name>               - change group to specified group name\n");
+    printf("  -m, --mode    <string>             - change mode\n");
     printf("  -e, --exclude <regular expression> - exclude a list of files from command\n");
-    printf("  -v, --verbose       - verbose output\n");
-    printf("  -h, --help          - print usage\n");
+    printf("  -a, --match   <regular expression> - match a list of files from command\n");
+    printf("  -n, --name                         - exclude a list of files from command\n");
+    printf("  -v, --verbose                      - verbose output\n");
+    printf("  -h, --help                          - print usage\n");
     printf("\n");
     fflush(stdout);
     return;
@@ -914,8 +922,13 @@ int main(int argc, char** argv)
     char* match_pattern = NULL;
     struct perms* head = NULL;
     int walk = 0;
+    /* flag used to check if permissions need to be 
+     * set on the walk */
     int dir_perms = 0;
-    int name;
+    /* flags used to filter the list */
+    int name_flag = 0;
+    int match_flag = 0;
+    int exclude_flag = 0;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -953,12 +966,14 @@ int main(int argc, char** argv)
                 break;
             case 'e':
                 exclude_pattern = BAYER_STRDUP(optarg);
+                exclude_flag = 1;
                 break;
             case 'a':
                 match_pattern = BAYER_STRDUP(optarg);
+                match_flag = 1;
                 break;
             case 'n':
-                name = 1;
+                name_flag = 1;
                 break;                
             case 'h':
                 usage = 1;
@@ -1052,7 +1067,8 @@ int main(int argc, char** argv)
     }
 
     /* change group and permissions */
-    flist_chmod(flist, filtered_flist, groupname, head, exclude_pattern, match_pattern, &name);
+    flist_chmod(flist, groupname, head, exclude_pattern, match_pattern, &match_flag,
+            &exclude_flag, &name_flag, filtered_flist);
 
     /* free filtered_flist if it was used */
     if (filtered_flist != NULL) {

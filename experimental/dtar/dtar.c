@@ -99,7 +99,7 @@ static void create_archive(char *filename) {
     /* walk path to get stats info on all files */
     DTAR_flist = bayer_flist_new();
     for (int i = 0; i < num_src_params; i++) {
-        bayer_flist_walk_path(src_params[i].path, 1, DTAR_flist);
+        bayer_flist_walk_path(src_params[i].path, 1, 0, DTAR_flist);
     }
 
     DTAR_count = bayer_flist_size(DTAR_flist);

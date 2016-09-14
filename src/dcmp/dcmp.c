@@ -1660,10 +1660,10 @@ int main(int argc, char **argv)
 
     /* walk source and destination paths */
     const char* path1 = param1.path;
-    bayer_flist_walk_path(path1, 1, flist1, 0);
+    bayer_flist_walk_path(path1, 1, 0, flist1);
 
     const char* path2 = param2.path;
-    bayer_flist_walk_path(path2, 1, flist2, 0);
+    bayer_flist_walk_path(path2, 1, 0, flist2);
 
     /* map files to ranks based on portion following prefix directory */
     bayer_flist flist3 = bayer_flist_remap(flist1, dcmp_map_fn, (void*)path1);

@@ -52,6 +52,7 @@
 /* TODO: change globals to struct */
 static int verbose   = 0;
 static int walk_stat = 1;
+static int dir_perms = 0;
 
 /* keep stats during walk */
 uint64_t total_dirs    = 0;
@@ -1748,7 +1749,7 @@ int main(int argc, char** argv)
             }
 
             /* walk file tree and record stat data for each file */
-            bayer_flist_walk_path(target, walk_stat, flist);
+            bayer_flist_walk_path(target, flist, walk_stat, dir_perms);
         }
         double end_walk = MPI_Wtime();
 

@@ -318,7 +318,7 @@ void DCOPY_walk_paths(bayer_flist flist)
         /* walk file tree and record stat data for each item */
         int walk_stat = 1;
         int dir_perm = 0;
-        bayer_flist_walk_path(target, walk_stat, flist, dir_perm);
+        bayer_flist_walk_path(target, walk_stat, dir_perm, flist);
     }
 }
 

@@ -2280,14 +2280,14 @@ bayer_flist bayer_flist_subset(bayer_flist src)
 }
 
 /* Set up and execute directory walk */
-void bayer_flist_walk_path(const char* dirpath, int use_stat, bayer_flist bflist, int dir_permissions)
+void bayer_flist_walk_path(const char* dirpath, int use_stat, int dir_permissions, bayer_flist bflist)
 {
-    bayer_flist_walk_paths(1, &dirpath, use_stat, bflist, dir_permissions);
+    bayer_flist_walk_paths(1, &dirpath, use_stat, dir_permissions, bflist);
     return;
 }
 
 /* Set up and execute directory walk */
-void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, bayer_flist bflist, int dir_permissions)
+void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, int dir_permissions, bayer_flist bflist)
 {
     /* report walk count, time, and rate */
     double start_walk = MPI_Wtime();
