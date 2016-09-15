@@ -30,7 +30,6 @@
 #include <getopt.h>
 #include <time.h> /* asctime / localtime */
 #include <ctype.h>
-#include <regex.h>
 
 #include <pwd.h> /* for getpwent */
 #include <grp.h> /* for getgrent */
@@ -567,9 +566,9 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
             if (p->execute) {
                 *mode |= S_IXOTH;
             }
-            /* if you get a+X this is imitating chmod where it turns on 
+            /* if you get a+X this is imitating chmod where it turns on
              * all of the execute bits for u,g, and a if it is a directory
-             * and if it is a file it only does if the user execute bit is 
+             * and if it is a file it only does if the user execute bit is
              * on */
             if (p->capital_execute) {
                 if (*mode & S_IXUSR || *type == BAYER_TYPE_DIR) {
@@ -719,67 +718,8 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
     return;
 }
 
-static bayer_flist bayer_flist_filter_regex(bayer_flist flist, 
-        char* regex_exp, int exclude, int name,
-        bayer_flist filtered_flist) {
-    
-    /* check if user passed in an exclude or match expression, if so then filter the list */
-    if (regex_exp != NULL) {
-        regex_t regex;
-        int regex_return;
-
-        /* compile regular expression & if it fails print error */
-        regex_return = regcomp(&regex, regex_exp, 0);
-        if (regex_return) {
-            printf(stderr, "could not compile regex\n");
-        }
-
-        uint64_t idx = 0;
-        uint64_t size = bayer_flist_size(flist);
-
-        /* copy the things that don't or do (based on input) match the regex into a 
-         * filtered list */
-        while (idx < size) {
-            char* file_name = bayer_flist_file_get_name(flist, idx);
-
-            /* create bayer_path object from a string path */
-            bayer_path* pathname = bayer_path_from_str(file_name);
-            /* get the last component of that path */
-            int rc = bayer_path_basename(pathname);
-            /* now get a string from the path */
-            char* basename = NULL;
-            if (rc == 0) {
-                basename = bayer_path_strdup(pathname);
-            }
-
-            /* execute regex on each filename if user uses --name option then use 
-             * basename (not full path) to match/exclude with */
-            if (name) {
-                regex_return = regexec(&regex, basename, 0, NULL, 0);
-            } else {
-                regex_return = regexec(&regex, file_name, 0, NULL, 0);
-            }
-
-            /* if it doesn't match then copy it to the filtered list */
-            if (regex_return && exclude) {
-                bayer_flist_file_copy(flist, idx, filtered_flist);
-            } else if ((!regex_return) && (!exclude)){
-                bayer_flist_file_copy(flist, idx, filtered_flist);
-            }
-            /* free bayer path object and set pointer to NULL */
-            bayer_path_delete(&pathname);
-            /* free the basename string */
-            bayer_free(&basename);
-            idx++;
-        }
-        /* summarize the filtered list */
-        bayer_flist_summarize(filtered_flist);
-    }
-    return filtered_flist;
-}
-
 static void flist_chmod(
-    bayer_flist flist, const char* grname, struct perms* head, char* regex_exp, 
+    bayer_flist flist, const char* grname, struct perms* head, char* regex_exp,
     int exclude, int name, bayer_flist filtered_flist)
 {
 
@@ -790,9 +730,9 @@ static void flist_chmod(
     /* if regex was used then filter the list */
     if (regex_exp != NULL) {
         bayer_flist filtered = bayer_flist_filter_regex(flist, regex_exp,
-        exclude, name, filtered_flist);
+                               exclude, name, filtered_flist);
         flist_ptr = &filtered;
-    }  
+    }
 
     /* lookup groupid if set, bail out if not */
     gid_t gid;
@@ -916,7 +856,7 @@ int main(int argc, char** argv)
     char* regex_exp = NULL;
     struct perms* head = NULL;
     int walk = 0;
-    /* flag used to check if permissions need to be 
+    /* flag used to check if permissions need to be
      * set on the walk */
     int dir_perms = 0;
     /* flags used to filter the list */
@@ -930,7 +870,7 @@ int main(int argc, char** argv)
         {"mode",     1, 0, 'm'},
         {"exclude",  1, 0, 'e'},
         {"match",    1, 0, 'a'},
-        {"name",    0, 0, 'n'}, 
+        {"name",    0, 0, 'n'},
         {"help",     0, 0, 'h'},
         {"verbose",  0, 0, 'v'},
         {0, 0, 0, 0}
@@ -967,7 +907,7 @@ int main(int argc, char** argv)
                 break;
             case 'n':
                 name = 1;
-                break;                
+                break;
             case 'h':
                 usage = 1;
                 break;

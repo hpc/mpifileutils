@@ -10,7 +10,7 @@
  *   DE-AC05-00OR22725 with the Department of Energy.
  *
  * Copyright (c) 2015, DataDirect Networks, Inc.
- * 
+ *
  * All rights reserved.
  *
  * This file is part of mpiFileUtils.
@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <time.h> /* asctime / localtime */
+#include <regex.h>
 
 /* These headers are needed to query the Lustre MDS for stat
  * information.  This information may be incomplete, but it
@@ -460,17 +461,20 @@ static size_t list_elem_encode(void* buf, const elem_t* elem)
     bayer_filetype type = elem->type;
     if (type == BAYER_TYPE_FILE) {
         *ptr = 'F';
-    } else if (type == BAYER_TYPE_DIR) {
+    }
+    else if (type == BAYER_TYPE_DIR) {
         *ptr = 'D';
-    } else if (type == BAYER_TYPE_LINK) {
+    }
+    else if (type == BAYER_TYPE_LINK) {
         *ptr = 'L';
-    } else {
+    }
+    else {
         *ptr = 'U';
     }
     ptr++;
 
     *ptr = '\n';
- 
+
     size_t reclen = len + 3;
     return reclen;
 }
@@ -493,11 +497,14 @@ static void list_elem_decode(char* buf, elem_t* elem)
     char c = type[0];
     if (c == 'F') {
         elem->type = BAYER_TYPE_FILE;
-    } else if (c == 'D') {
+    }
+    else if (c == 'D') {
         elem->type = BAYER_TYPE_DIR;
-    } else if (c == 'L') {
+    }
+    else if (c == 'L') {
         elem->type = BAYER_TYPE_LINK;
-    } else {
+    }
+    else {
         elem->type = BAYER_TYPE_UNKNOWN;
     }
 
@@ -1411,7 +1418,7 @@ static int lustre_mds_stat(int fd, char* fname, struct stat* sb)
 
     /* Copy lstat_t to struct stat */
     if (ret != -1) {
-        lstat_t* ls = (lstat_t*) &((struct lov_user_mds_data*) buf)->lmd_st;
+        lstat_t* ls = (lstat_t*) & ((struct lov_user_mds_data*) buf)->lmd_st;
         sb->st_dev     = ls->st_dev;
         sb->st_ino     = ls->st_ino;
         sb->st_mode    = ls->st_mode;
@@ -1722,20 +1729,20 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
      * on when walk_stat=0 then catch the permissions error and turn the bits on */
     if (dirp == NULL) {
         if (errno == EACCES && SET_DIR_PERMS) {
-                struct stat st;
-                bayer_lstat(dir, &st);
-                // turn on the usr read & execute bits 
-                st.st_mode |= S_IRUSR;
-                st.st_mode |= S_IXUSR;
-                bayer_chmod(dir, st.st_mode);
-                dirp = bayer_opendir(dir);
-                if (dirp == NULL) {
-                        if (errno == EACCES) {
-                                printf("can't open directory at this time\n");
-                        } 
+            struct stat st;
+            bayer_lstat(dir, &st);
+            // turn on the usr read & execute bits
+            st.st_mode |= S_IRUSR;
+            st.st_mode |= S_IXUSR;
+            bayer_chmod(dir, st.st_mode);
+            dirp = bayer_opendir(dir);
+            if (dirp == NULL) {
+                if (errno == EACCES) {
+                    printf("can't open directory at this time\n");
                 }
+            }
         }
-    }  
+    }
 
     if (! dirp) {
         /* TODO: print error */
@@ -1938,15 +1945,15 @@ static void walk_stat_process(CIRCLE_handle* handle)
         /* before more processing check if SET_DIR_PERMS is set,
          * and set usr read and execute bits if need be */
         if (SET_DIR_PERMS) {
-                /* use masks to check if usr_r and usr_x are already on */
-                long usr_r_mask = 1 << 8;
-                long usr_x_mask = 1 << 6;
-                /* turn on the usr read & execute bits if they are not already on*/
-                if (!((usr_r_mask & st.st_mode) && (usr_x_mask & st.st_mode))) {
-                        st.st_mode |= S_IRUSR;
-                        st.st_mode |= S_IXUSR;
-                        bayer_chmod(path, st.st_mode); 
-                }
+            /* use masks to check if usr_r and usr_x are already on */
+            long usr_r_mask = 1 << 8;
+            long usr_x_mask = 1 << 6;
+            /* turn on the usr read & execute bits if they are not already on*/
+            if (!((usr_r_mask & st.st_mode) && (usr_x_mask & st.st_mode))) {
+                st.st_mode |= S_IRUSR;
+                st.st_mode |= S_IXUSR;
+                bayer_chmod(path, st.st_mode);
+            }
         }
         /* TODO: check that we can recurse into directory */
         walk_stat_process_dir(path, handle);
@@ -2256,6 +2263,68 @@ retry:
     return;
 }
 
+bayer_flist bayer_flist_filter_regex(bayer_flist flist,
+                                     char* regex_exp, int exclude, int name,
+                                     bayer_flist filtered_flist)
+{
+
+    /* check if user passed in an exclude or match expression, if so then filter the list */
+    if (regex_exp != NULL) {
+        regex_t regex;
+        int regex_return;
+
+        /* compile regular expression & if it fails print error */
+        regex_return = regcomp(&regex, regex_exp, 0);
+        if (regex_return) {
+            printf(stderr, "could not compile regex\n");
+        }
+
+        uint64_t idx = 0;
+        uint64_t size = bayer_flist_size(flist);
+
+        /* copy the things that don't or do (based on input) match the regex into a
+         * filtered list */
+        while (idx < size) {
+            char* file_name = bayer_flist_file_get_name(flist, idx);
+
+            /* create bayer_path object from a string path */
+            bayer_path* pathname = bayer_path_from_str(file_name);
+            /* get the last component of that path */
+            int rc = bayer_path_basename(pathname);
+            /* now get a string from the path */
+            char* basename = NULL;
+            if (rc == 0) {
+                basename = bayer_path_strdup(pathname);
+            }
+
+            /* execute regex on each filename if user uses --name option then use
+             * basename (not full path) to match/exclude with */
+            if (name) {
+                regex_return = regexec(&regex, basename, 0, NULL, 0);
+            }
+            else {
+                regex_return = regexec(&regex, file_name, 0, NULL, 0);
+            }
+
+            /* if it doesn't match then copy it to the filtered list */
+            if (regex_return && exclude) {
+                bayer_flist_file_copy(flist, idx, filtered_flist);
+            }
+            else if ((!regex_return) && (!exclude)) {
+                bayer_flist_file_copy(flist, idx, filtered_flist);
+            }
+            /* free bayer path object and set pointer to NULL */
+            bayer_path_delete(&pathname);
+            /* free the basename string */
+            bayer_free(&basename);
+            idx++;
+        }
+        /* summarize the filtered list */
+        bayer_flist_summarize(filtered_flist);
+    }
+    return filtered_flist;
+}
+
 bayer_flist bayer_flist_subset(bayer_flist src)
 {
     /* allocate a new file list */
@@ -2291,11 +2360,12 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
 {
     /* report walk count, time, and rate */
     double start_walk = MPI_Wtime();
-     
+
     /* if dir_permission is set to 1 then set global variable */
     if (dir_permissions) {
         SET_DIR_PERMS = 1;
-    } else {
+    }
+    else {
         SET_DIR_PERMS = 0;
     }
 
@@ -2312,7 +2382,7 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
         uint64_t i;
         for (i = 0; i < num_paths; i++) {
             time_t walk_start_t = time(NULL);
-            if (walk_start_t == (time_t)-1) {
+            if (walk_start_t == (time_t) - 1) {
                 /* TODO: ERROR! */
             }
             char walk_s[30];
@@ -2362,15 +2432,15 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
         /* walk directories by calling stat on every item */
         CIRCLE_cb_create(&walk_stat_create);
         CIRCLE_cb_process(&walk_stat_process);
-//        CIRCLE_cb_create(&walk_lustrestat_create);
-//        CIRCLE_cb_process(&walk_lustrestat_process);
+        //        CIRCLE_cb_create(&walk_lustrestat_create);
+        //        CIRCLE_cb_process(&walk_lustrestat_process);
     }
     else {
         /* walk directories using file types in readdir */
         CIRCLE_cb_create(&walk_readdir_create);
         CIRCLE_cb_process(&walk_readdir_process);
-//        CIRCLE_cb_create(&walk_getdents_create);
-//        CIRCLE_cb_process(&walk_getdents_process);
+        //        CIRCLE_cb_create(&walk_getdents_create);
+        //        CIRCLE_cb_process(&walk_getdents_process);
     }
 
     /* prepare callbacks and initialize variables for reductions */
@@ -2448,7 +2518,7 @@ static void read_cache_variable(
      * just have rank 0 read this and bcast to everyone */
     uint64_t filesize;
     if (rank == 0) {
-       filesize = get_filesize(name);
+        filesize = get_filesize(name);
     }
     MPI_Bcast(&filesize, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
@@ -2484,13 +2554,13 @@ static void read_cache_variable(
     void* buf1 = BAYER_MALLOC(bufsize);
     void* buf2 = BAYER_MALLOC(bufsize);
     void* buf  = buf1;
-    
+
     /* set file view to be sequence of characters past header */
     MPI_File_set_view(fh, disp, MPI_CHAR, MPI_CHAR, datarep, MPI_INFO_NULL);
-    
+
     /* compute offset of first byte we'll read,
      * the set_view above means we should start our offset at 0 */
-    MPI_Offset read_offset = (MPI_Offset) (chunk_offset * chunk_size);
+    MPI_Offset read_offset = (MPI_Offset)(chunk_offset * chunk_size);
 
     /* compute offset of last byte we need to read,
      * note we may actually read further if our last record spills
@@ -2499,7 +2569,7 @@ static void read_cache_variable(
     if (last_offset > filesize) {
         last_offset = filesize;
     }
-    
+
     /* read last character from chunk before our first,
      * if this char is not a newline, then last record in the
      * previous chunk spills into ours, in which case we need
@@ -2531,12 +2601,12 @@ static void read_cache_variable(
 
         /* determine number to read, try to read a full buffer's worth,
          * but reduce this if that overruns the end of the file */
-        int read_count = (int) (bufsize - bufoffset);
+        int read_count = (int)(bufsize - bufoffset);
         uint64_t remaining = filesize - (uint64_t) read_offset;
         if (remaining < (uint64_t) read_count) {
             read_count = (int) remaining;
         }
-    
+
         /* read in our chunk */
         char* bufstart = (char*) buf + bufoffset;
         MPI_File_read_at(fh, read_offset, bufstart, read_count, MPI_CHAR, &status);
@@ -2546,7 +2616,7 @@ static void read_cache_variable(
 
         /* update read offset for next time */
         read_offset += (MPI_Offset) read_count;
-    
+
         /* setup pointers to work with read buffer,
          * note that end points one char past last valid character */
         char* ptr = (char*) buf;
@@ -2606,19 +2676,21 @@ static void read_cache_variable(
                 if (ptr >= end) {
                     bufoffset = 0;
                 }
-            } else {
+            }
+            else {
                 /* hit end of buffer but not end of record,
                  * copy partial record to start of next buffer */
 
                 /* swap buffers */
                 if (buf == buf1) {
                     buf = buf2;
-                } else {
+                }
+                else {
                     buf = buf1;
                 }
 
                 /* copy remainder to next buffer */
-                size_t len = (size_t) (ptr - start);
+                size_t len = (size_t)(ptr - start);
                 memcpy(buf, start, len);
                 bufoffset = (uint64_t) len;
 
@@ -2768,31 +2840,31 @@ static void read_cache_v3(
 
         /* allocate a buffer, ensure it's large enough to hold at least one
          * complete record */
-        size_t bufsize = 1024*1024;
+        size_t bufsize = 1024 * 1024;
         if (bufsize < (size_t) extent_file) {
             bufsize = (size_t) extent_file;
         }
         void* buf = BAYER_MALLOC(bufsize);
-    
+
         /* compute number of items we can fit in each read iteration */
         uint64_t bufcount = (uint64_t)bufsize / (uint64_t)extent_file;
-    
+
         /* determine number of iterations we need to read all items */
         uint64_t iters = count / bufcount;
         if (iters * bufcount < count) {
             iters++;
         }
-    
+
         /* compute max iterations across all procs */
         uint64_t all_iters;
         MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-    
+
         /* set file view to be sequence of datatypes past header */
         MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
-    
+
         /* compute byte offset to read our element */
         MPI_Offset read_offset = (MPI_Offset)offset;
-    
+
         /* iterate with multiple reads until all records are read */
         uint64_t totalcount = 0;
         while (all_iters > 0) {
@@ -2822,7 +2894,7 @@ static void read_cache_v3(
                 ptr += extent_file;
                 packcount++;
             }
-    
+
             /* one less iteration */
             all_iters--;
         }
@@ -3000,7 +3072,7 @@ static void write_cache_readdir_variable(
 
     /* allocate a buffer, ensure it's large enough to hold at least one
      * complete record */
-    size_t bufsize = 1024*1024;
+    size_t bufsize = 1024 * 1024;
     if (bufsize < recmax) {
         bufsize = recmax;
     }
@@ -3124,7 +3196,7 @@ static void write_cache_readdir(
 
     /* allocate a buffer, ensure it's large enough to hold at least one
      * complete record */
-    size_t bufsize = 1024*1024;
+    size_t bufsize = 1024 * 1024;
     if (bufsize < (size_t) extent) {
         bufsize = (size_t) extent;
     }
@@ -3288,7 +3360,7 @@ static void write_cache_stat(
 
     /* allocate a buffer, ensure it's large enough to hold at least one
      * complete record */
-    size_t bufsize = 1024*1024;
+    size_t bufsize = 1024 * 1024;
     if (bufsize < (size_t) extent) {
         bufsize = (size_t) extent;
     }
