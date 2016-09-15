@@ -567,9 +567,15 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
             if (p->execute) {
                 *mode |= S_IXOTH;
             }
+            /* if you get a+X this is imitating chmod where it turns on 
+             * all of the execute bits for u,g, and a if it is a directory
+             * and if it is a file it only does if the user execute bit is 
+             * on */
             if (p->capital_execute) {
                 if (*mode & S_IXUSR || *type == BAYER_TYPE_DIR) {
                     *mode |= S_IXOTH;
+                    *mode |= S_IXGRP;
+                    *mode |= S_IXUSR;
                 }
             }
         }
@@ -585,6 +591,8 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
             }
             if (p->capital_execute) {
                 *mode &= ~S_IXOTH;
+                *mode &= ~S_IXGRP;
+                *mode &= ~S_IXUSR;
             }
         }
     }
@@ -711,21 +719,10 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
     return;
 }
 
-static bayer_flist* bayer_flist_filter_regex(bayer_flist flist, const char* exclude_exp, 
-        const char* match_exp, int* match_flag, int* exclude_flag, int* name_flag,
+static bayer_flist bayer_flist_filter_regex(bayer_flist flist, 
+        char* regex_exp, int exclude, int name,
         bayer_flist filtered_flist) {
-
-    /* pointer to correct flist if it gets filtered. if not, just points to flist */
-    bayer_flist* flist_ptr = &flist;
-    char* regex_exp = NULL;
-
-    /* set flags and reg expression */
-    if (*exclude_flag) {
-        regex_exp = BAYER_STRDUP(exclude_exp);
-    } else if (*match_flag) {
-        regex_exp = BAYER_STRDUP(match_exp);
-    }
-
+    
     /* check if user passed in an exclude or match expression, if so then filter the list */
     if (regex_exp != NULL) {
         regex_t regex;
@@ -740,9 +737,6 @@ static bayer_flist* bayer_flist_filter_regex(bayer_flist flist, const char* excl
         uint64_t idx = 0;
         uint64_t size = bayer_flist_size(flist);
 
-        /* initialize filtered_flist */
-        filtered_flist = bayer_flist_subset(flist);
-        
         /* copy the things that don't or do (based on input) match the regex into a 
          * filtered list */
         while (idx < size) {
@@ -760,16 +754,16 @@ static bayer_flist* bayer_flist_filter_regex(bayer_flist flist, const char* excl
 
             /* execute regex on each filename if user uses --name option then use 
              * basename (not full path) to match/exclude with */
-            if (*name_flag) {
+            if (name) {
                 regex_return = regexec(&regex, basename, 0, NULL, 0);
             } else {
                 regex_return = regexec(&regex, file_name, 0, NULL, 0);
             }
 
             /* if it doesn't match then copy it to the filtered list */
-            if (regex_return && *exclude_flag) {
+            if (regex_return && exclude) {
                 bayer_flist_file_copy(flist, idx, filtered_flist);
-            } else if ((!regex_return) && *match_flag) {
+            } else if ((!regex_return) && (!exclude)){
                 bayer_flist_file_copy(flist, idx, filtered_flist);
             }
             /* free bayer path object and set pointer to NULL */
@@ -778,25 +772,27 @@ static bayer_flist* bayer_flist_filter_regex(bayer_flist flist, const char* excl
             bayer_free(&basename);
             idx++;
         }
-
         /* summarize the filtered list */
         bayer_flist_summarize(filtered_flist);
-
-        /* update pointer to point at filtered list */
-        flist_ptr = &filtered_flist;
     }
-    
-    return flist_ptr;
+    return filtered_flist;
 }
 
 static void flist_chmod(
-    bayer_flist flist, const char* grname, struct perms* head, char* exclude_exp, 
-    char* match_exp, int* match_flag, int* exclude_flag, int* name_flag, bayer_flist filtered_flist)
+    bayer_flist flist, const char* grname, struct perms* head, char* regex_exp, 
+    int exclude, int name, bayer_flist filtered_flist)
 {
+
     /* use a pointer to flist to point at regular flist or filtered flist
      * if one is used */
-    bayer_flist* flist_ptr = bayer_flist_filter_regex(flist, exclude_exp, match_exp, match_flag,
-            exclude_flag, name_flag, filtered_flist);
+    bayer_flist* flist_ptr = &flist;
+
+    /* if regex was used then filter the list */
+    if (regex_exp != NULL) {
+        bayer_flist filtered = bayer_flist_filter_regex(flist, regex_exp,
+        exclude, name, filtered_flist);
+        flist_ptr = &filtered;
+    }  
 
     /* lookup groupid if set, bail out if not */
     gid_t gid;
@@ -874,7 +870,6 @@ static void flist_chmod(
                all_count, time_diff, rate
               );
     }
-
     return;
 }
 
@@ -918,17 +913,15 @@ int main(int argc, char** argv)
     char* inputname = NULL;
     char* groupname = NULL;
     char* modestr = NULL;
-    char* exclude_pattern = NULL;
-    char* match_pattern = NULL;
+    char* regex_exp = NULL;
     struct perms* head = NULL;
     int walk = 0;
     /* flag used to check if permissions need to be 
      * set on the walk */
     int dir_perms = 0;
     /* flags used to filter the list */
-    int name_flag = 0;
-    int match_flag = 0;
-    int exclude_flag = 0;
+    int name = 0;
+    int exclude = 0;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -965,15 +958,15 @@ int main(int argc, char** argv)
                 modestr = BAYER_STRDUP(optarg);
                 break;
             case 'e':
-                exclude_pattern = BAYER_STRDUP(optarg);
-                exclude_flag = 1;
+                regex_exp = BAYER_STRDUP(optarg);
+                exclude = 1;
                 break;
             case 'a':
-                match_pattern = BAYER_STRDUP(optarg);
-                match_flag = 1;
+                regex_exp = BAYER_STRDUP(optarg);
+                exclude = 0;
                 break;
             case 'n':
-                name_flag = 1;
+                name = 1;
                 break;                
             case 'h':
                 usage = 1;
@@ -1047,7 +1040,7 @@ int main(int argc, char** argv)
     bayer_flist flist = bayer_flist_new();
 
     /* for filtered list if exclude pattern is used */
-    bayer_flist filtered_flist = NULL;
+    bayer_flist filtered_flist = bayer_flist_subset(flist);
 
     check_usr_input_perms(head, &dir_perms);
 
@@ -1067,13 +1060,10 @@ int main(int argc, char** argv)
     }
 
     /* change group and permissions */
-    flist_chmod(flist, groupname, head, exclude_pattern, match_pattern, &match_flag,
-            &exclude_flag, &name_flag, filtered_flist);
+    flist_chmod(flist, groupname, head, regex_exp, exclude, name, filtered_flist);
 
-    /* free filtered_flist if it was used */
-    if (filtered_flist != NULL) {
-        bayer_flist_free(&filtered_flist);
-    }
+    /* free filtered_flist */
+    bayer_flist_free(&filtered_flist);
 
     /* free the file list */
     bayer_flist_free(&flist);
@@ -1090,14 +1080,9 @@ int main(int argc, char** argv)
     /* free the modestr */
     bayer_free(&modestr);
 
-    /* free the exclude_pattern if it isn't null */
-    if (exclude_pattern != NULL) {
-        bayer_free(&exclude_pattern);
-    }
-
     /* free the match_pattern if it isn't null */
-    if (match_pattern != NULL) {
-        bayer_free(&match_pattern);
+    if (regex_exp != NULL) {
+        bayer_free(&regex_exp);
     }
 
     /* free the head of the list */
