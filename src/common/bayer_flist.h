@@ -62,9 +62,21 @@ bayer_flist bayer_flist_subset(
     bayer_flist srclist
 );
 
-/* filter an flist based on a regex */
-bayer_flist bayer_flist_filter_regex(bayer_flist flist,
-                                     char* regex_exp, int exclude, int name, bayer_flist filtered_flist);
+/* given an input flist, return a newly allocated flist consisting of 
+ * a filtered set by finding all items that match/don't match a given
+ * regular expression
+ *
+ *   exclude=0 - take matching items
+ *   exclude=1 - exclude matching items
+ *
+ *   name=0 - match against full path of item
+ *   name=1 - match against basename of item */
+bayer_flist bayer_flist_filter_regex(
+    bayer_flist flist,
+    const char* regex_exp,
+    int exclude,
+    int name
+);
 
 /* create file list by walking directory */
 void bayer_flist_walk_path(

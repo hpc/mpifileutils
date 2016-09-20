@@ -719,20 +719,11 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
 }
 
 static void flist_chmod(
-    bayer_flist flist, const char* grname, struct perms* head, char* regex_exp,
-    int exclude, int name, bayer_flist filtered_flist)
+    bayer_flist flist, const char* grname, struct perms* head)
 {
-
     /* use a pointer to flist to point at regular flist or filtered flist
      * if one is used */
     bayer_flist* flist_ptr = &flist;
-
-    /* if regex was used then filter the list */
-    if (regex_exp != NULL) {
-        bayer_flist filtered = bayer_flist_filter_regex(flist, regex_exp,
-                               exclude, name, filtered_flist);
-        flist_ptr = &filtered;
-    }
 
     /* lookup groupid if set, bail out if not */
     gid_t gid;
@@ -979,9 +970,6 @@ int main(int argc, char** argv)
     /* create an empty file list */
     bayer_flist flist = bayer_flist_new();
 
-    /* for filtered list if exclude pattern is used */
-    bayer_flist filtered_flist = bayer_flist_subset(flist);
-
     check_usr_input_perms(head, &dir_perms);
 
     /* get our list of files, either by walking or reading an
@@ -999,10 +987,23 @@ int main(int argc, char** argv)
         bayer_flist_read_cache(inputname, flist);
     }
 
-    /* change group and permissions */
-    flist_chmod(flist, groupname, head, regex_exp, exclude, name, filtered_flist);
+    /* assume we'll use the full list */
+    bayer_flist srclist = flist;
 
-    /* free filtered_flist */
+    /* filter the list if needed */
+    bayer_flist filtered_flist = BAYER_FLIST_NULL;
+    if (regex_exp != NULL) {
+        /* filter the list */
+        filtered_flist = bayer_flist_filter_regex(flist, regex_exp, exclude, name);
+
+        /* update our source list to use the filtered list instead of the original */
+        srclist = filtered_flist;
+    }
+
+    /* change group and permissions */
+    flist_chmod(srclist, groupname, head);
+
+    /* free the filtered flist (if any) */
     bayer_flist_free(&filtered_flist);
 
     /* free the file list */

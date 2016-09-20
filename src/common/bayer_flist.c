@@ -2263,68 +2263,6 @@ retry:
     return;
 }
 
-bayer_flist bayer_flist_filter_regex(bayer_flist flist,
-                                     char* regex_exp, int exclude, int name,
-                                     bayer_flist filtered_flist)
-{
-
-    /* check if user passed in an exclude or match expression, if so then filter the list */
-    if (regex_exp != NULL) {
-        regex_t regex;
-        int regex_return;
-
-        /* compile regular expression & if it fails print error */
-        regex_return = regcomp(&regex, regex_exp, 0);
-        if (regex_return) {
-            printf(stderr, "could not compile regex\n");
-        }
-
-        uint64_t idx = 0;
-        uint64_t size = bayer_flist_size(flist);
-
-        /* copy the things that don't or do (based on input) match the regex into a
-         * filtered list */
-        while (idx < size) {
-            char* file_name = bayer_flist_file_get_name(flist, idx);
-
-            /* create bayer_path object from a string path */
-            bayer_path* pathname = bayer_path_from_str(file_name);
-            /* get the last component of that path */
-            int rc = bayer_path_basename(pathname);
-            /* now get a string from the path */
-            char* basename = NULL;
-            if (rc == 0) {
-                basename = bayer_path_strdup(pathname);
-            }
-
-            /* execute regex on each filename if user uses --name option then use
-             * basename (not full path) to match/exclude with */
-            if (name) {
-                regex_return = regexec(&regex, basename, 0, NULL, 0);
-            }
-            else {
-                regex_return = regexec(&regex, file_name, 0, NULL, 0);
-            }
-
-            /* if it doesn't match then copy it to the filtered list */
-            if (regex_return && exclude) {
-                bayer_flist_file_copy(flist, idx, filtered_flist);
-            }
-            else if ((!regex_return) && (!exclude)) {
-                bayer_flist_file_copy(flist, idx, filtered_flist);
-            }
-            /* free bayer path object and set pointer to NULL */
-            bayer_path_delete(&pathname);
-            /* free the basename string */
-            bayer_free(&basename);
-            idx++;
-        }
-        /* summarize the filtered list */
-        bayer_flist_summarize(filtered_flist);
-    }
-    return filtered_flist;
-}
-
 bayer_flist bayer_flist_subset(bayer_flist src)
 {
     /* allocate a new file list */
@@ -2346,6 +2284,78 @@ bayer_flist bayer_flist_subset(bayer_flist src)
     }
 
     return bflist;
+}
+
+/* given an input flist, return a newly allocated flist consisting of 
+ * a filtered set by finding all items that match/don't match a given
+ * regular expression */
+bayer_flist bayer_flist_filter_regex(bayer_flist flist, const char* regex_exp, int exclude, int name)
+{
+    /* create our list to return */
+    bayer_flist dest = bayer_flist_subset(flist);
+
+    /* check if user passed in an expression, if so then filter the list */
+    if (regex_exp != NULL) {
+        /* compile regular expression, if it fails print error */
+        regex_t regex;
+        int regex_return = regcomp(&regex, regex_exp, 0);
+        if (regex_return) {
+            printf(stderr, "could not compile regex\n");
+        }
+
+        /* copy the things that don't or do (based on input) match the regex into a
+         * filtered list */
+        uint64_t idx = 0;
+        uint64_t size = bayer_flist_size(flist);
+        while (idx < size) {
+            /* get full path of item */
+            char* file_name = bayer_flist_file_get_name(flist, idx);
+
+            /* get basename of item (exclude the path) */
+            bayer_path* pathname = bayer_path_from_str(file_name);
+            bayer_path_basename(pathname);
+            char* basename = bayer_path_strdup(pathname);
+
+            /* execute regex on item, either against the basename or
+             * the full path depending on name flag */
+            if (name) {
+                /* run regex on basename */
+                regex_return = regexec(&regex, basename, 0, NULL, 0);
+            }
+            else {
+                /* run regex on full path */
+                regex_return = regexec(&regex, file_name, 0, NULL, 0);
+            }
+
+            /* copy item to the filtered list */
+            if (exclude) {
+                /* user wants to exclude items that match, so copy everything that
+                 * does not match */
+                if (regex_return == REG_NOMATCH) {
+                    bayer_flist_file_copy(flist, idx, dest);
+                }
+            }
+            else {
+                /* user wants to copy over any matching items */
+                if (regex_return == 0) {
+                    bayer_flist_file_copy(flist, idx, dest);
+                }
+            }
+
+            /* free the basename */
+            bayer_free(&basename);
+            bayer_path_delete(&pathname);
+
+            /* get next item in our list */
+            idx++;
+        }
+
+        /* summarize the filtered list */
+        bayer_flist_summarize(dest);
+    }
+
+    /* return the filtered list */
+    return dest;
 }
 
 /* Set up and execute directory walk */
