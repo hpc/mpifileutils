@@ -42,29 +42,49 @@
 #include "dtcmp.h"
 #include "bayer.h"
 
-
-/* TODO: change globals to struct */
+/* whether to do directory walk with stat of every ite */
 static int walk_stat = 1;
 
+/* we parse the mode string given by the user and build a linked list of
+ * permissions operations, this defines one element in that list.  This
+ * enables the user to specify a sequence of operations separated with
+ * commas like "u+r,g+x" */
 struct perms {
-    int octal;
-    long mode_octal;
-    int usr;
-    int group;
-    int all;
-    int plus;
-    int read;
-    int write;
-    int execute;
-    int capital_execute;
-    struct perms* next;
-    int assignment;
-    char source;
+    int octal;           /* set to 1 if mode_octal is valid */
+    long mode_octal;     /* records octal mode (converted to an integer) */
+    int usr;             /* set to 1 if user (owner) bits should be set (e.g. u+r) */
+    int group;           /* set to 1 if group bits should be set (e.g. g+r) */
+    int all;             /* set to 1 if other bits should be set (e.g. a+r) */
+    int plus;            /* set to 1 if mode has plus, set to 0 for minus */
+    int read;            /* set to 1 if 'r' is given */
+    int write;           /* set to 1 if 'w' is given */
+    int execute;         /* set to 1 if 'x' is given */
+    int capital_execute; /* set to 1 if 'X' is given */
+    int assignment;      /* set to 1 if operation is an assignment (e.g. g=u) */
+    char source;         /* records source of target: 'u', 'g', 'a' */
+    struct perms* next;  /* pointer to next perms struct in linked list */
 };
 
-/*****************************
- * Driver functions
- ****************************/
+/* free the linked list, given a pointer to the head */
+static void free_list(struct perms** p_head)
+{
+    struct perms* tmp;
+    struct perms* head = *p_head;
+    struct perms* current = head;
+
+    /* free the memory for the linked list of structs */
+    while (current != NULL) {
+        tmp = current;
+        bayer_free(&current);
+        current = tmp->next;
+    }
+
+    /* set the head pointer to NULL to indicate list has been freed */
+    *p_head = NULL;
+}
+
+/* given a group name, lookup and return the group id in gid,
+ * the return code is 0 if gid is valid (group was found), 1 otherwise */
 static int lookup_gid(const char* name, gid_t* gid)
 {
     uint64_t values[2];
@@ -108,13 +128,21 @@ static int lookup_gid(const char* name, gid_t* gid)
     return rc;
 }
 
+/* in an expression like g=u, g is the target, and u is the source,
+ * parse out and record the source in our perms struct */
 static int parse_source(const char* str, struct perms* p)
 {
+    /* assume the parse will succeed */
     int rc = 1;
-    p->source = '\0';
-    if (strlen(str) == 1) {
 
-        /* source can be only one of (u, g, or a) find it and keep a copy in p->source */
+    /* initialize our source field */
+    p->source = '\0';
+
+    /* only allow one character at this point */
+    if (strlen(str) == 1) {
+        /* we've got one source character, now check that
+         * it's valid, source can be only one of (u, g, or a),
+         * keep a copy in p->source */
         if (str[0] == 'u') {
             p->source = 'u';
         }
@@ -125,24 +153,33 @@ static int parse_source(const char* str, struct perms* p)
             p->source = 'a';
         }
         else {
+            /* source character was not u, g, or a */
             rc = 0;
         }
     }
     else {
+        /* string did not have exactly one character */
         rc = 0;
     }
+
     return rc;
 }
 
+/* for a string like u+rwX, parse and record the rwX portion */
 static int parse_rwx(const char* str, struct perms* p)
 {
+    /* assume the parse will succeed */
     int rc = 1;
+
+    /* intialize our fields */
     p->read = 0;
     p->write = 0;
     p->execute = 0;
     p->capital_execute = 0;
 
-    /* set all of the r,w, and x flags */
+    /* TODO: does this catch an invalid character like Z? */
+
+    /* set all of the r, w, and x flags */
     while (str[0] == 'r' || str[0] == 'w' || str[0] == 'x' || str[0] == 'X') {
         if (str[0] == 'r') {
             p->read = 1;
@@ -161,40 +198,56 @@ static int parse_rwx(const char* str, struct perms* p)
         }
         str++;
     }
+
     return rc;
 }
 
+/* for a string like g-w, parse the +/- character and record
+ * what we found */
 static int parse_plusminus(const char* str, struct perms* p)
 {
+    /* assume the parse will succeed */
     int rc = 1;
+
+    /* initialize our flags */
     p->plus = 0;
     p->assignment = 0;
 
     /* set the plus, minus, or equal flags */
     if (str[0] == '+') {
+        /* got a plus, go to next character and parse symbolic bits */
         p->plus = 1;
         str++;
         rc = parse_rwx(str, p);
     }
     else if (str[0] == '-') {
+        /* got a minus, go to next character and parse symbolic bits */
         p->plus = 0;
         str++;
         rc = parse_rwx(str, p);
     }
     else if (str[0] == '=') {
+        /* this is an assignment, go to next character and parse the source */
         p->assignment = 1;
         str++;
         rc = parse_source(str, p);
     }
-    else if (rc != 1) {
+    else {
+        /* parse error: found a character that is something other than a +, -, or = sign */
         rc = 0;
     }
+
+    /* return our parse return code */
     return rc;
 }
 
+/* parse target of user, group, or other */
 static int parse_uga(const char* str, struct perms* p)
 {
+    /* assume the parse will succeed */
     int rc = 1;
+
+    /* intialize our fields */
     p->usr = 0;
     p->group = 0;
     p->all = 0;
@@ -210,52 +263,43 @@ static int parse_uga(const char* str, struct perms* p)
         else if (str[0] == 'a') {
             p->all = 1;
         }
-        else if (rc != 1) {
-            rc = 0;
-        }
         str++;
     }
+
+    /* parse the remainder of the string */
     rc = parse_plusminus(str, p);
+
+    /* return whether parse succeeded */
     return rc;
 }
 
-static void free_list(struct perms** p_head)
-{
-    struct perms* tmp;
-    struct perms* head = *p_head;
-    struct perms* current = head;
-
-    /* free the memory for the linked list of structs */
-    while (current != NULL) {
-        tmp = current;
-        bayer_free(&current);
-        current = tmp->next;
-    }
-    *p_head = NULL;
-}
-
+/* given a mode string like "u+r,g-x", fill in a linked list of permission
+ * struct pointers */
 static int parse_modebits(char* modestr, struct perms** p_head)
 {
     int rc = 0;
     if (modestr != NULL) {
         rc = 1;
-        int octal = 0;
 
-        /* if it is octal then assume it will start with a digit */
+        /* check whether we're in octal mode */
+        int octal = 0;
         if (strlen(modestr) <= 4) {
+            /* got 4 or fewer characters, assume we're in octal mode for now */
             octal = 1;
 
-            /* make sure you only have digits and is in the range 0 - 7 */
+            /* make sure we only have digits and is in the range 0-7 */
             for (int i = 0; i <= strlen(modestr) - 1; i++) {
                 if (modestr[i] < '0' || modestr[i] > '7') {
+                    /* found a character out of octal range, can't be in octal */
                     octal = 0;
                     break;
                 }
             }
         }
 
-        /* if in octal mode then just create one node that head points to */
+        /* parse the modestring and create our list of permissions structures */
         if (octal) {
+            /* in octal mode, just create one node in our list */
             rc = 1;
             struct perms* p = BAYER_MALLOC(sizeof(struct perms));
             p->next = NULL;
@@ -263,18 +307,17 @@ static int parse_modebits(char* modestr, struct perms** p_head)
             p->mode_octal = strtol(modestr, NULL, 8);
             *p_head = p;
 
-            /* if it is not in octal mode assume you are in symbolic mode */
         }
         else {
+            /* if it is not in octal mode assume we are in symbolic mode */
             struct perms* tail = NULL;
 
-            /* make a copy of the input string in case there is an error with the input */
+            /* make a copy of the input string since strtok will clobber it */
             char* tmpstr = BAYER_STRDUP(modestr);
 
             /* create a linked list of structs that gets broken up based on the comma syntax
              * i.e. u+r,g+x */
             for (char* token = strtok(tmpstr, ","); token != NULL; token = strtok(NULL, ",")) {
-
                 /* allocate memory for a new struct and set the next pointer to null also
                  * turn octal mode off */
                 struct perms* p = malloc(sizeof(struct perms));
@@ -308,23 +351,26 @@ static int parse_modebits(char* modestr, struct perms** p_head)
             bayer_free(&tmpstr);
         }
     }
+
     return rc;
 }
 
+/* given a linked list of permissions structures, check whether user has given us
+ * something like "u+rx", "u+rX", or "u+r,u+X" since we need to set bits on
+ * directories during the walk in this case */
 static void check_usr_input_perms(struct perms* head, int* dir_perms)
 {
+    /* flag to check if the usr read & execute bits are being turned on,
+     * assume they are not */
+    *dir_perms = 0;
+
     /* extra flags to check if usr read and execute are being turned on */
     int usr_r = 0;
     int usr_x = 0;
 
-    /* flag to check if the usr read & execute bits are being turned on */
-    *dir_perms = 0;
-
     if (head->octal) {
-        usr_r = 0;
-        usr_x = 0;
-
-        /* use a mask to check if the usr_read and usr_execute bits are being turned on */
+        /* in octal mode, se we can check bits directly,
+         * use a mask to check if the usr_read and usr_execute bits are being turned on */
         long usr_r_mask = 1 << 8;
         long usr_x_mask = 1 << 6;
         if (usr_r_mask & head->mode_octal) {
@@ -333,153 +379,178 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms)
         if (usr_x_mask & head->mode_octal) {
             usr_x = 1;
         }
-
-        /* only set the dir_perms flag if both the user execute and user read flags are on */
-        if (usr_r && usr_x) {
-            *dir_perms = 1;
-        }
     }
     else {
+        /* in symbolic mode, loop through the linked list of structs to check for u+rx in input */
         struct perms* p = head;
-        /* if in synbolic mode then loop through the linked list of structs to check for u+rx in input */
         while (p != NULL) {
             /* check if the execute and read are being turned on for each element of linked linked so
              * that if say someone does something like u+r,u+x (so dir_perms=1) or u+rwx,u-rx (dir_perms=0)
              * it will still give the correct result */
             if ((p->usr && p->plus) && (p->read)) {
+                /* got something like u+r, turn read on */
                 usr_r = 1;
             }
-            if ((p->usr && (!p->plus)) && (p->read)) {
+            if ((p->usr && (! p->plus)) && (p->read)) {
+                /* got something like u-r, turn read off */
                 usr_r = 0;
             }
             if ((p->usr && p->plus) && (p->execute || p->capital_execute)) {
+                /* got something like u+x or u+X, turn execute on */
                 usr_x = 1;
             }
-            if ((p->usr && (!p->plus)) && (p->execute || p->capital_execute)) {
+            if ((p->usr && (! p->plus)) && (p->execute || p->capital_execute)) {
+                /* got something like u-x or u-X, turn execute off */
                 usr_x = 0;
             }
 
             /* update pointer to next element of linked list */
             p = p->next;
         }
-
-        /* only set the dir_perms flag if both the user execute and user read flags are on */
-        if (usr_r && usr_x) {
-            *dir_perms = 1;
-        }
     }
+
+    /* only set the dir_perms flag if both the user execute and user read flags are on */
+    if (usr_r && usr_x) {
+        *dir_perms = 1;
+    }
+
+    return;
 }
 
-static void read_source_bits(struct perms* p, mode_t* bits, int* read, int* write, int* execute)
+/* when running in assignment mode, we need to read the read/write/execute bits of the source in p */
+static void read_source_bits(const struct perms* p, mode_t mode, int* read, int* write, int* execute)
 {
+    /* assume all bits on the source are off */
     *read = 0;
     *write = 0;
     *execute = 0;
-    /* based on the source (u,g, or a) then check which bits were on for each one (r,w, or x) */
+
+    /* based on the source (u, g, or a) then check which bits were on for each one (r, w, or x) */
+
+    /* got something like g=u, so user is the source */
     if (p->source == 'u') {
-        if (*bits & S_IRUSR) {
+        if (mode & S_IRUSR) {
             *read = 1;
         }
-        if (*bits & S_IWUSR) {
+        if (mode & S_IWUSR) {
             *write = 1;
         }
-        if (*bits & S_IXUSR) {
+        if (mode & S_IXUSR) {
             *execute = 1;
         }
     }
+
+    /* got something like a=g, so group is the source */
     if (p->source == 'g') {
-        if (*bits & S_IRGRP) {
+        if (mode & S_IRGRP) {
             *read = 1;
         }
-        if (*bits & S_IWGRP) {
+        if (mode & S_IWGRP) {
             *write = 1;
         }
-        if (*bits & S_IXGRP) {
+        if (mode & S_IXGRP) {
             *execute = 1;
         }
     }
+
+    /* got something like g=a, so other is is the source */
     if (p->source == 'a') {
-        if (*bits & S_IROTH) {
+        if (mode & S_IROTH) {
             *read = 1;
         }
-        if (*bits & S_IWOTH) {
+        if (mode & S_IWOTH) {
             *write = 1;
         }
-        if (*bits & S_IXOTH) {
+        if (mode & S_IXOTH) {
             *execute = 1;
         }
     }
+
+    return;
 }
 
-static void set_assign_bits(struct perms* p, mode_t* mode, int* read, int* write, int* execute)
+/* update target bits in mode based on read/write/execute flags */
+static void set_target_bits(const struct perms* p, int read, int write, int execute, mode_t* mode)
 {
     /* set the r, w, x bits on usr, group, and execute based on if the flags were set with parsing
      * the input string */
+
+    /* got something like u=g, so user is the target */
     if (p->usr) {
-        if (*read) {
+        if (read) {
             *mode |= S_IRUSR;
         }
         else {
             *mode &= ~S_IRUSR;
         }
-        if (*write) {
+        if (write) {
             *mode |= S_IWUSR;
         }
         else {
             *mode &= ~S_IWUSR;
         }
-        if (*execute) {
+        if (execute) {
             *mode |= S_IXUSR;
         }
         else {
             *mode &= ~S_IXUSR;
         }
     }
+
+    /* got something like g=u, so group is the target */
     if (p->group) {
-        if (*read) {
+        if (read) {
             *mode |= S_IRGRP;
         }
         else {
             *mode &= ~S_IRGRP;
         }
-        if (*write) {
+        if (write) {
             *mode |= S_IWGRP;
         }
         else {
             *mode &= ~S_IWGRP;
         }
-        if (*execute) {
+        if (execute) {
             *mode |= S_IXGRP;
         }
         else {
             *mode &= ~S_IXGRP;
         }
     }
+
+    /* got something like a=u, so other is the target */
     if (p->all) {
-        if (*read) {
+        if (read) {
             *mode |= S_IROTH;
         }
         else {
             *mode &= ~S_IROTH;
         }
-        if (*write) {
+        if (write) {
             *mode |= S_IWOTH;
         }
         else {
             *mode &= ~S_IWOTH;
         }
-        if (*execute) {
+        if (execute) {
             *mode |= S_IXOTH;
         }
         else {
             *mode &= ~S_IXOTH;
         }
     }
+
+    return;
 }
 
-static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* type)
+/* given a pointer to a permissions struct, set mode bits according to symbolic
+ * strings like "ug+rX" */
+static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t* mode)
 {
     /* set the bits based on flags set when parsing input string */
+
+    /* this will handle things like u+r */
     if (p->usr) {
         if (p->plus) {
             if (p->read) {
@@ -492,7 +563,8 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
                 *mode |= S_IXUSR;
             }
             if (p->capital_execute) {
-                if (*type == BAYER_TYPE_DIR) {
+                /* TODO: let's add a comment here to describe why we do this */
+                if (type == BAYER_TYPE_DIR) {
                     *mode |= S_IXUSR;
                 }
             }
@@ -508,12 +580,14 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
                 *mode &= ~S_IXUSR;
             }
             if (p->capital_execute) {
-                if (*type == BAYER_TYPE_DIR) {
+                /* TODO: let's add a comment here to describe why we do this */
+                if (type == BAYER_TYPE_DIR) {
                     *mode &= ~S_IXUSR;
                 }
             }
         }
     }
+
     /* all & group check the capital_execute flag, so if there is a
     * capital X in the input string i.e g+X then if the usr execute
     * bit is set the group execute bit will be set to on. If the usr
@@ -523,6 +597,7 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
     * like g-X, then it will ALWAYS turn off the group or all execute bit.
     * This is slightly different behavior then the +X, but it is intentional
     * and how chmod also works. */
+
     if (p->group) {
         if (p->plus) {
             if (p->read) {
@@ -535,7 +610,8 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
                 *mode |= S_IXGRP;
             }
             if (p->capital_execute) {
-                if (*mode & S_IXUSR || *type == BAYER_TYPE_DIR) {
+                /* g+X: enable group execute if user execute is set, or if item is directory */
+                if (*mode & S_IXUSR || type == BAYER_TYPE_DIR) {
                     *mode |= S_IXGRP;
                 }
             }
@@ -551,10 +627,12 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
                 *mode &= ~S_IXGRP;
             }
             if (p->capital_execute) {
+                /* g-X: always disable group execute */
                 *mode &= ~S_IXGRP;
             }
         }
     }
+
     if (p->all) {
         if (p->plus) {
             if (p->read) {
@@ -567,11 +645,11 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
                 *mode |= S_IXOTH;
             }
             /* if you get a+X this is imitating chmod where it turns on
-             * all of the execute bits for u,g, and a if it is a directory
+             * all of the execute bits for u, g, and a if it is a directory
              * and if it is a file it only does if the user execute bit is
              * on */
             if (p->capital_execute) {
-                if (*mode & S_IXUSR || *type == BAYER_TYPE_DIR) {
+                if (*mode & S_IXUSR || type == BAYER_TYPE_DIR) {
                     *mode |= S_IXOTH;
                     *mode |= S_IXGRP;
                     *mode |= S_IXUSR;
@@ -595,14 +673,20 @@ static void set_symbolic_bits(struct perms* p, mode_t* mode, bayer_filetype* typ
             }
         }
     }
+
+    return;
 }
 
-static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, bayer_filetype type)
+/* given our list of permission ops, the type, and the current mode,
+ * compute what the new mode should be */
+static void set_modebits(struct perms* head, bayer_filetype type, mode_t old_mode, mode_t* mode)
 {
     /* if in octal mode then loop through and check which ones are on based on the mask and
      * the current octal mode bits */
     if (head->octal) {
-        *mode = (mode_t)0;
+        /* first turn off all bits */
+        *mode = (mode_t) 0;
+
         /* array of constants to check which mode bits are on or off */
         mode_t permbits[12] = {S_ISUID, S_ISGID, S_ISVTX,
                                S_IRUSR, S_IWUSR, S_IXUSR,
@@ -620,40 +704,45 @@ static void set_modebits(struct perms* head, mode_t old_mode, mode_t* mode, baye
             if (mask & head->mode_octal) {
                 *mode |= permbits[i];
             }
+
             /* move the 'on' bit to the right one each time through the loop */
             mask >>= 1;
         }
     }
     else {
-        struct perms* p = head;
+        /* initialize new mode to current mode */
         *mode = old_mode;
-        /* if in symbolic mode then loop through the linked list of structs */
+
+        /* in symbolic mode, loop through the linked list of structs */
+        struct perms* p = head;
         while (p != NULL) {
-            /* if the assignment flag is set (equal's was found when parsing the input string)
+            /* if the assignment flag is set (equals was found when parsing the input string)
              * then break it up into source & target i.e u=g, then the the taret is u and the source
              * is g. So, all of u's bits will be set the same as g's bits */
             if (p->assignment) {
-                int read, write, execute;
-                /* find the source bit with read_source_bits, only can be one at a time (u, g, or a), and
+                /* find the source bits with read_source_bits, only can be one at a time (u, g, or a), and
                  * set appropriate read, write, execute flags */
-                read_source_bits(p, mode, &read, &write, &execute);
-                /* if usr, group, or execute were on when parsing the input string then they are considered
-                 * a target and the new mode is change accordingly in set_assign_bits */
-                set_assign_bits(p, mode, &read, &write, &execute);
+                int read, write, execute;
+                read_source_bits(p, *mode, &read, &write, &execute);
+
+                /* if usr, group, or other were on when parsing the input string then they are considered
+                 * a target and the new mode is changed accordingly in set_target_bits */
+                set_target_bits(p, read, write, execute, mode);
             }
             else {
                 /* if the assignment flag is not set then just use
                  * regular symbolic notation to check if usr, group, or all is set, then
                  * plus/minus, and change new mode accordingly */
-                set_symbolic_bits(p, mode, &type);
+                set_symbolic_bits(p, type, mode);
             }
+
             /* update pointer to next element of linked list */
             p = p->next;
         }
     }
 }
 
-static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* grname, struct perms* head, gid_t* gid)
+static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* grname, struct perms* head, gid_t gid)
 {
     /* each process directly changes permissions on its elements for each level */
     uint64_t idx;
@@ -672,12 +761,12 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
             if (oldgid != gid) {
                 /* note that we use lchown to change ownership of link itself, it path happens to be a link */
                 if (bayer_lchown(dest_path, uid, gid) != 0) {
-                    /* TODO: are there other EPERM conditions we do want to report? */
+                    /* are there other EPERM conditions we do want to report? */
 
                     /* since the user running dcp may not be the owner of the
-                    * file, we could hit an EPERM error here, and the file
-                    * will be left with the effective uid and gid of the dcp
-                    * process, don't bother reporting an error for that case */
+                     * file, we could hit an EPERM error here, and the file
+                     * will be left with the effective uid and gid of the dcp
+                     * process, don't bother reporting an error for that case */
                     if (errno != EPERM) {
                         BAYER_LOG(BAYER_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
                                   dest_path, errno, strerror(errno)
@@ -686,21 +775,27 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
                 }
             }
         }
-        if (head != NULL) {
 
+        /* update permissions if we have a list of structs */
+        if (head != NULL) {
             /* get mode and type */
             bayer_filetype type = bayer_flist_file_get_type(list, idx);
 
             /* if in octal mode skip this call */
             mode_t mode = 0;
-            if (!head->octal) {
+            if (! head->octal) {
                 mode = (mode_t) bayer_flist_file_get_mode(list, idx);
             }
 
             /* change mode, unless item is a link */
             if (type != BAYER_TYPE_LINK) {
+                /* given our list of permission ops, the type, and the current mode,
+                 * compute what the new mode should be */
                 mode_t new_mode;
-                set_modebits(head, mode, &new_mode, type);
+                set_modebits(head, type, mode, &new_mode);
+
+                /* as an optimization here, we could avoid setting the mode if the new mode
+                 * matches the old mode */
 
                 /* set the mode on the file */
                 if (bayer_chmod(dest_path, new_mode) != 0) {
@@ -718,8 +813,7 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
     return;
 }
 
-static void flist_chmod(
-    bayer_flist flist, const char* grname, struct perms* head)
+static void flist_chmod(bayer_flist flist, const char* grname, struct perms* head)
 {
     /* use a pointer to flist to point at regular flist or filtered flist
      * if one is used */
@@ -735,9 +829,6 @@ static void flist_chmod(
         }
     }
 
-    /* set up levels */
-    int level;
-
     /* wait for all tasks and start timer */
     MPI_Barrier(MPI_COMM_WORLD);
     double start_dchmod = MPI_Wtime();
@@ -747,16 +838,17 @@ static void flist_chmod(
     bayer_flist* lists;
     bayer_flist_array_by_depth(*flist_ptr, &levels, &minlevel, &lists);
 
-    /* remove files starting at the deepest level */
-    for (level = levels - 1; level >= 0; level--) {
+    /* set bits on items starting at the deepest level, this is so we still get child items
+     * in the case that we're disabling bits on the parent items */
+    for (int level = levels - 1; level >= 0; level--) {
         double start = MPI_Wtime();
 
         /* get list of items for this level */
         bayer_flist list = lists[level];
 
-        uint64_t size = 0;
         /* do a dchmod on each element in the list for this level & pass it the size */
-        dchmod_level(list, &size, grname, head, &gid);
+        uint64_t size = 0;
+        dchmod_level(list, &size, grname, head, gid);
 
         /* wait for all processes to finish before we start with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
@@ -801,6 +893,7 @@ static void flist_chmod(
                all_count, time_diff, rate
               );
     }
+
     return;
 }
 
@@ -810,14 +903,14 @@ static void print_usage(void)
     printf("Usage: dchmod [options] <path> ...\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -i, --input   <file>               - read list from file\n");
-    printf("  -g, --group   <name>               - change group to specified group name\n");
-    printf("  -m, --mode    <string>             - change mode\n");
-    printf("  -e, --exclude <regular expression> - exclude a list of files from command\n");
-    printf("  -a, --match   <regular expression> - match a list of files from command\n");
-    printf("  -n, --name                         - exclude a list of files from command\n");
-    printf("  -v, --verbose                      - verbose output\n");
-    printf("  -h, --help                          - print usage\n");
+    printf("  -i, --input   <file>   - read list from file\n");
+    printf("  -g, --group   <name>   - change group to specified group name\n");
+    printf("  -m, --mode    <string> - change mode\n");
+    printf("  -e, --exclude <regex>  - exclude a list of files from command\n");
+    printf("  -a, --match   <regex>  - match a list of files from command\n");
+    printf("  -n, --name             - exclude a list of files from command\n");
+    printf("  -v, --verbose          - verbose output\n");
+    printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
     return;
@@ -825,12 +918,6 @@ static void print_usage(void)
 
 int main(int argc, char** argv)
 {
-    int i;
-
-    /* start and end time variables for dchmod */
-    double start_write;
-    double end_write;
-
     /* initialize MPI */
     MPI_Init(&argc, &argv);
     bayer_init();
@@ -843,16 +930,12 @@ int main(int argc, char** argv)
     /* parse command line options */
     char* inputname = NULL;
     char* groupname = NULL;
-    char* modestr = NULL;
+    char* modestr   = NULL;
     char* regex_exp = NULL;
     struct perms* head = NULL;
-    int walk = 0;
-    /* flag used to check if permissions need to be
-     * set on the walk */
-    int dir_perms = 0;
-    /* flags used to filter the list */
-    int name = 0;
-    int exclude = 0;
+    int walk        = 0;
+    int exclude     = 0;
+    int name        = 0;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -861,7 +944,7 @@ int main(int argc, char** argv)
         {"mode",     1, 0, 'm'},
         {"exclude",  1, 0, 'e'},
         {"match",    1, 0, 'a'},
-        {"name",    0, 0, 'n'},
+        {"name",     0, 0, 'n'},
         {"help",     0, 0, 'h'},
         {"verbose",  0, 0, 'v'},
         {0, 0, 0, 0}
@@ -947,16 +1030,21 @@ int main(int argc, char** argv)
             usage = 1;
         }
     }
+
+    /* check that our mode string parses correctly */
     if (modestr != NULL) {
-        mode_t mode;
         int valid = parse_modebits(modestr, &head);
-        if (!valid) {
+        if (! valid) {
             usage = 1;
             if (rank == 0) {
                 printf("invalid mode string: %s\n", modestr);
             }
+
+            /* free the head of the list */
+            free_list(&head);
         }
     }
+
     /* print usage if we need to */
     if (usage) {
         if (rank == 0) {
@@ -970,6 +1058,9 @@ int main(int argc, char** argv)
     /* create an empty file list */
     bayer_flist flist = bayer_flist_new();
 
+    /* flag used to check if permissions need to be
+     * set on the walk */
+    int dir_perms = 0;
     check_usr_input_perms(head, &dir_perms);
 
     /* get our list of files, either by walking or reading an
@@ -993,7 +1084,7 @@ int main(int argc, char** argv)
     /* filter the list if needed */
     bayer_flist filtered_flist = BAYER_FLIST_NULL;
     if (regex_exp != NULL) {
-        /* filter the list */
+        /* filter the list based on regex */
         filtered_flist = bayer_flist_filter_regex(flist, regex_exp, exclude, name);
 
         /* update our source list to use the filtered list instead of the original */
