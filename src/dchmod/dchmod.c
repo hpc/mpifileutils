@@ -54,7 +54,8 @@ struct perms {
     long mode_octal;     /* records octal mode (converted to an integer) */
     int usr;             /* set to 1 if user (owner) bits should be set (e.g. u+r) */
     int group;           /* set to 1 if group bits should be set (e.g. g+r) */
-    int all;             /* set to 1 if other bits should be set (e.g. a+r) */
+    int all;             /* set to 1 if all bits should be set (e.g. a+r) */
+    int other;           /* set to 1 if other bits should be set (e.g. o+r) */
     int plus;            /* set to 1 if mode has plus, set to 0 for minus */
     int read;            /* set to 1 if 'r' is given */
     int write;           /* set to 1 if 'w' is given */
@@ -179,8 +180,10 @@ static int parse_rwx(const char* str, struct perms* p)
 
     /* TODO: does this catch an invalid character like Z? */
 
-    /* set all of the r, w, and x flags */
-    while (str[0] == 'r' || str[0] == 'w' || str[0] == 'x' || str[0] == 'X') {
+    /* Using a do while loop seems to work ?. */
+
+    /* set all of the r, w, and x flags if valid characters */
+    do {
         if (str[0] == 'r') {
             p->read = 1;
         }
@@ -193,10 +196,16 @@ static int parse_rwx(const char* str, struct perms* p)
         else if (str[0] == 'X') {
             p->capital_execute = 1;
         }
-        else if (rc != 1) {
+        else {
             rc = 0;
+            break;
         }
         str++;
+    } while (str[0] == 'r' || str[0] == 'w' || str[0] == 'x' || str[0] == 'X');
+
+    /* check and make sure the last character is valid if it made it to the end of the string */
+    if (str[0] != '\0') {
+        rc = 0;
     }
 
     return rc;
@@ -251,9 +260,10 @@ static int parse_uga(const char* str, struct perms* p)
     p->usr = 0;
     p->group = 0;
     p->all = 0;
+    p->other = 0;
 
     /* set the user, group, and all flags */
-    while (str[0] == 'u' || str[0] == 'g' || str[0] == 'a') {
+    do {
         if (str[0] == 'u') {
             p->usr = 1;
         }
@@ -262,12 +272,23 @@ static int parse_uga(const char* str, struct perms* p)
         }
         else if (str[0] == 'a') {
             p->all = 1;
+        } 
+        else if (str[0] == 'o') {
+            p->other = 1;
+        } 
+        else {
+            rc = 0;
+            break;
         }
-        str++;
-    }
+        ++str;
+    } while  (str[0] == 'u' || str[0] == 'g' || str[0] == 'a' || str[0] == 'o');
+
+    /* if the next input in the string is invalid plusminus will catch it */
 
     /* parse the remainder of the string */
-    rc = parse_plusminus(str, p);
+    if (rc) {
+        rc = parse_plusminus(str, p);
+    }
 
     /* return whether parse succeeded */
     return rc;
@@ -326,6 +347,7 @@ static int parse_modebits(char* modestr, struct perms** p_head)
 
                 /* start parsing this 'token' of the input string */
                 rc = parse_uga(token, p);
+                printf("rc value in parse_modebits: %d\n", rc);
 
                 /* if the tail is not null then point the tail at the latest struct/token */
                 if (tail != NULL) {
@@ -357,7 +379,9 @@ static int parse_modebits(char* modestr, struct perms** p_head)
 
 /* given a linked list of permissions structures, check whether user has given us
  * something like "u+rx", "u+rX", or "u+r,u+X" since we need to set bits on
- * directories during the walk in this case */
+ * directories during the walk in this case. Also, check for turning on read and
+ * execute for the "all" bits as well because those can also turn on the user's
+ * read and execute bits */
 static void check_usr_input_perms(struct perms* head, int* dir_perms)
 {
     /* flag to check if the usr read & execute bits are being turned on,
@@ -367,6 +391,8 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms)
     /* extra flags to check if usr read and execute are being turned on */
     int usr_r = 0;
     int usr_x = 0;
+    int all_r = 0;
+    int all_x = 0; 
 
     if (head->octal) {
         /* in octal mode, se we can check bits directly,
@@ -391,7 +417,7 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms)
                 /* got something like u+r, turn read on */
                 usr_r = 1;
             }
-            if ((p->usr && (! p->plus)) && (p->read)) {
+            if  ((p->usr && (!p->plus)) && (p->read)) {
                 /* got something like u-r, turn read off */
                 usr_r = 0;
             }
@@ -404,13 +430,31 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms)
                 usr_x = 0;
             }
 
+            /* now do the same for "all" bits because it can also turn on the user
+             * read & execute */
+            if ((p->all && p->plus) && (p->read)) {
+                /* got something like a+r, turn read on */
+                all_r = 1;
+            }
+            if  ((p->all && (!p->plus)) && (p->read)) {
+                /* got something like a-r, turn read off */
+                all_r = 0;
+            }
+            if ((p->all && p->plus) && (p->execute || p->capital_execute)) {
+                /* got something like a+x or a+X, turn execute on */
+                all_x = 1;
+            }
+            if ((p->all && (! p->plus)) && (p->execute || p->capital_execute)) {
+                /* got something like a-x or a-X, turn execute off */
+                all_x = 0;
+            }
             /* update pointer to next element of linked list */
             p = p->next;
         }
     }
 
     /* only set the dir_perms flag if both the user execute and user read flags are on */
-    if (usr_r && usr_x) {
+    if ((usr_r && usr_x) || (all_r && all_x)) {
         *dir_perms = 1;
     }
 
@@ -453,8 +497,8 @@ static void read_source_bits(const struct perms* p, mode_t mode, int* read, int*
         }
     }
 
-    /* got something like g=a, so other is is the source */
-    if (p->source == 'a') {
+    /* got something like a=o, so other is the source */
+    if (p->source == 'o') {
         if (mode & S_IROTH) {
             *read = 1;
         }
@@ -462,6 +506,20 @@ static void read_source_bits(const struct perms* p, mode_t mode, int* read, int*
             *write = 1;
         }
         if (mode & S_IXOTH) {
+            *execute = 1;
+        }
+    }
+
+    /* got something like g=a, so all is is the source. Check
+     * all of the bits if "all" is the source */
+    if (p->source == 'a') {
+        if ((mode & S_IROTH) || (mode & S_IRGRP) || (mode & S_IRUSR)) {
+            *read = 1;
+        }
+        if ((mode & S_IWOTH) || (mode & S_IWGRP) || (mode & S_IWUSR)) {
+            *write = 1;
+        }
+        if ((mode & S_IXOTH) || (mode & S_IXGRP) || (mode & S_IXUSR)) {
             *execute = 1;
         }
     }
@@ -519,8 +577,8 @@ static void set_target_bits(const struct perms* p, int read, int write, int exec
         }
     }
 
-    /* got something like a=u, so other is the target */
-    if (p->all) {
+    /* got something like o=u, so other is the target */
+    if (p->other) {
         if (read) {
             *mode |= S_IROTH;
         }
@@ -541,6 +599,39 @@ static void set_target_bits(const struct perms* p, int read, int write, int exec
         }
     }
 
+    /* got something like a=u, so all is the target */
+    if (p->all) {
+        if (read) {
+            *mode |= S_IROTH;
+            *mode |= S_IRGRP;
+            *mode |= S_IRUSR;
+        }
+        else {
+            *mode &= ~S_IROTH;
+            *mode &= ~S_IRGRP;
+            *mode &= ~S_IRUSR;
+        }
+        if (write) {
+            *mode |= S_IWOTH;
+            *mode |= S_IWGRP;
+            *mode |= S_IWUSR;
+        }
+        else {
+            *mode &= ~S_IWOTH;
+            *mode &= ~S_IWGRP;
+            *mode &= ~S_IWUSR;
+        }
+        if (execute) {
+            *mode |= S_IXOTH;
+            *mode |= S_IXGRP;
+            *mode |= S_IXUSR;
+        }
+        else {
+            *mode &= ~S_IXOTH;
+            *mode &= ~S_IXGRP;
+            *mode &= ~S_IXUSR;
+        }
+    }
     return;
 }
 
@@ -563,7 +654,9 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
                 *mode |= S_IXUSR;
             }
             if (p->capital_execute) {
-                /* TODO: let's add a comment here to describe why we do this */
+                /* If it is a directory then always turn on the user execute
+                 * bit. This is also how chmod u+X behaves in the case of a 
+                 * directory. */
                 if (type == BAYER_TYPE_DIR) {
                     *mode |= S_IXUSR;
                 }
@@ -580,7 +673,9 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
                 *mode &= ~S_IXUSR;
             }
             if (p->capital_execute) {
-                /* TODO: let's add a comment here to describe why we do this */
+                /* If it is a directory then always turn off the user execute
+                 * bits. This is also how chmod u-X behaves in the case of a 
+                 * directory */
                 if (type == BAYER_TYPE_DIR) {
                     *mode &= ~S_IXUSR;
                 }
@@ -633,7 +728,7 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
         }
     }
 
-    if (p->all) {
+    if (p->other) {
         if (p->plus) {
             if (p->read) {
                 *mode |= S_IROTH;
@@ -643,6 +738,49 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
             }
             if (p->execute) {
                 *mode |= S_IXOTH;
+            }
+            if (p->capital_execute) {
+                /* o+X: enable other execute if user execute is set, or if item is directory */
+                if (*mode & S_IXUSR || type == BAYER_TYPE_DIR) {
+                    *mode |= S_IXOTH;
+                }
+            }
+        }
+        else {
+            if (p->read) {
+                *mode &= ~S_IROTH;
+            }
+            if (p->write) {
+                *mode &= ~S_IWOTH;
+            }
+            if (p->execute) {
+                *mode &= ~S_IXOTH;
+            }
+            /* o-X: always disable other execute */
+            if (p->capital_execute) {
+                *mode &= ~S_IXOTH;
+            }
+        }
+    }
+
+    /* this one (e.g. a+w) has to set ALL of the write bits for 
+     * other, group, and user. This is also how chmod behaves */
+    if (p->all) {
+        if (p->plus) {
+            if (p->read) {
+                *mode |= S_IROTH;
+                *mode |= S_IRGRP;
+                *mode |= S_IRUSR;
+            }
+            if (p->write) {
+                *mode |= S_IWOTH;
+                *mode |= S_IWGRP;
+                *mode |= S_IWUSR;
+            }
+            if (p->execute) {
+                *mode |= S_IXOTH;
+                *mode |= S_IXGRP;
+                *mode |= S_IXUSR;
             }
             /* if you get a+X this is imitating chmod where it turns on
              * all of the execute bits for u, g, and a if it is a directory
@@ -659,12 +797,18 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
         else {
             if (p->read) {
                 *mode &= ~S_IROTH;
+                *mode &= ~S_IRGRP;
+                *mode &= ~S_IRUSR;
             }
             if (p->write) {
                 *mode &= ~S_IWOTH;
+                *mode &= ~S_IWGRP;
+                *mode &= ~S_IWUSR;
             }
             if (p->execute) {
                 *mode &= ~S_IXOTH;
+                *mode &= ~S_IXGRP;
+                *mode &= ~S_IXUSR;
             }
             if (p->capital_execute) {
                 *mode &= ~S_IXOTH;
@@ -673,7 +817,6 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
             }
         }
     }
-
     return;
 }
 
@@ -815,10 +958,6 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
 
 static void flist_chmod(bayer_flist flist, const char* grname, struct perms* head)
 {
-    /* use a pointer to flist to point at regular flist or filtered flist
-     * if one is used */
-    bayer_flist* flist_ptr = &flist;
-
     /* lookup groupid if set, bail out if not */
     gid_t gid;
     if (grname != NULL) {
@@ -836,7 +975,7 @@ static void flist_chmod(bayer_flist flist, const char* grname, struct perms* hea
     /* split files into separate lists by directory depth */
     int levels, minlevel;
     bayer_flist* lists;
-    bayer_flist_array_by_depth(*flist_ptr, &levels, &minlevel, &lists);
+    bayer_flist_array_by_depth(flist, &levels, &minlevel, &lists);
 
     /* set bits on items starting at the deepest level, this is so we still get child items
      * in the case that we're disabling bits on the parent items */
@@ -883,7 +1022,7 @@ static void flist_chmod(bayer_flist flist, const char* grname, struct perms* hea
 
     /* report remove count, time, and rate */
     if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
-        uint64_t all_count = bayer_flist_global_size(*flist_ptr);
+        uint64_t all_count = bayer_flist_global_size(flist);
         double time_diff = end_dchmod - start_dchmod;
         double rate = 0.0;
         if (time_diff > 0.0) {
@@ -1093,9 +1232,12 @@ int main(int argc, char** argv)
 
     /* change group and permissions */
     flist_chmod(srclist, groupname, head);
-
-    /* free the filtered flist (if any) */
-    bayer_flist_free(&filtered_flist);
+   
+    /* free list if it was used */
+    if (filtered_flist != BAYER_FLIST_NULL){
+        /* free the filtered flist (if any) */
+        bayer_flist_free(&filtered_flist);
+    }
 
     /* free the file list */
     bayer_flist_free(&flist);
