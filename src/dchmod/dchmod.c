@@ -178,10 +178,6 @@ static int parse_rwx(const char* str, struct perms* p)
     p->execute = 0;
     p->capital_execute = 0;
 
-    /* TODO: does this catch an invalid character like Z? */
-
-    /* Using a do while loop seems to work ?. */
-
     /* set all of the r, w, and x flags if valid characters */
     do {
         if (str[0] == 'r') {
@@ -196,17 +192,16 @@ static int parse_rwx(const char* str, struct perms* p)
         else if (str[0] == 'X') {
             p->capital_execute = 1;
         }
+        else if (str[0] == '\0') {
+            break;
+        }        
         else {
+            /* found an invalid character so set rc=0 */
             rc = 0;
             break;
         }
         str++;
-    } while (str[0] == 'r' || str[0] == 'w' || str[0] == 'x' || str[0] == 'X');
-
-    /* check and make sure the last character is valid if it made it to the end of the string */
-    if (str[0] != '\0') {
-        rc = 0;
-    }
+    } while (1);
 
     return rc;
 }
@@ -347,7 +342,6 @@ static int parse_modebits(char* modestr, struct perms** p_head)
 
                 /* start parsing this 'token' of the input string */
                 rc = parse_uga(token, p);
-                printf("rc value in parse_modebits: %d\n", rc);
 
                 /* if the tail is not null then point the tail at the latest struct/token */
                 if (tail != NULL) {
