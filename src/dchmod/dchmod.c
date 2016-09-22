@@ -54,8 +54,8 @@ struct perms {
     long mode_octal;     /* records octal mode (converted to an integer) */
     int usr;             /* set to 1 if user (owner) bits should be set (e.g. u+r) */
     int group;           /* set to 1 if group bits should be set (e.g. g+r) */
-    int all;             /* set to 1 if all bits should be set (e.g. a+r) */
     int other;           /* set to 1 if other bits should be set (e.g. o+r) */
+    int all;             /* set to 1 if all bits should be set (e.g. a+r) */
     int plus;            /* set to 1 if mode has plus, set to 0 for minus */
     int read;            /* set to 1 if 'r' is given */
     int write;           /* set to 1 if 'w' is given */
@@ -142,7 +142,7 @@ static int parse_source(const char* str, struct perms* p)
     /* only allow one character at this point */
     if (strlen(str) == 1) {
         /* we've got one source character, now check that
-         * it's valid, source can be only one of (u, g, or a),
+         * it's valid, source can be only one of (u, g, or o),
          * keep a copy in p->source */
         if (str[0] == 'u') {
             p->source = 'u';
@@ -150,11 +150,11 @@ static int parse_source(const char* str, struct perms* p)
         else if (str[0] == 'g') {
             p->source = 'g';
         }
-        else if (str[0] == 'a') {
-            p->source = 'a';
+        else if (str[0] == 'o') {
+            p->source = 'o';
         }
         else {
-            /* source character was not u, g, or a */
+            /* source character was not u, g, or o */
             rc = 0;
         }
     }
@@ -178,8 +178,9 @@ static int parse_rwx(const char* str, struct perms* p)
     p->execute = 0;
     p->capital_execute = 0;
 
-    /* set all of the r, w, and x flags if valid characters */
+    /* set all of the r, w, x, and X flags if valid characters */
     do {
+        /* set flag based on current character */
         if (str[0] == 'r') {
             p->read = 1;
         }
@@ -200,13 +201,15 @@ static int parse_rwx(const char* str, struct perms* p)
             rc = 0;
             break;
         }
+
+        /* go to next character in string */
         str++;
     } while (1);
 
     return rc;
 }
 
-/* for a string like g-w, parse the +/- character and record
+/* for a string like g-w, parse the +/-/= character and record
  * what we found */
 static int parse_plusminus(const char* str, struct perms* p)
 {
@@ -252,12 +255,12 @@ static int parse_uga(const char* str, struct perms* p)
     int rc = 1;
 
     /* intialize our fields */
-    p->usr = 0;
+    p->usr   = 0;
     p->group = 0;
-    p->all = 0;
     p->other = 0;
+    p->all   = 0;
 
-    /* set the user, group, and all flags */
+    /* set the user, group, other, and all flags */
     do {
         if (str[0] == 'u') {
             p->usr = 1;
@@ -265,20 +268,21 @@ static int parse_uga(const char* str, struct perms* p)
         else if (str[0] == 'g') {
             p->group = 1;
         }
-        else if (str[0] == 'a') {
-            p->all = 1;
-        } 
         else if (str[0] == 'o') {
             p->other = 1;
         } 
+        else if (str[0] == 'a') {
+            p->all = 1;
+        } 
         else {
+            /* found an invalid character */
             rc = 0;
             break;
         }
-        ++str;
-    } while  (str[0] == 'u' || str[0] == 'g' || str[0] == 'a' || str[0] == 'o');
 
-    /* if the next input in the string is invalid plusminus will catch it */
+        /* go to next character */
+        ++str;
+    } while  (1);
 
     /* parse the remainder of the string */
     if (rc) {
@@ -385,8 +389,6 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms)
     /* extra flags to check if usr read and execute are being turned on */
     int usr_r = 0;
     int usr_x = 0;
-    int all_r = 0;
-    int all_x = 0; 
 
     if (head->octal) {
         /* in octal mode, se we can check bits directly,
@@ -407,48 +409,35 @@ static void check_usr_input_perms(struct perms* head, int* dir_perms)
             /* check if the execute and read are being turned on for each element of linked linked so
              * that if say someone does something like u+r,u+x (so dir_perms=1) or u+rwx,u-rx (dir_perms=0)
              * it will still give the correct result */
-            if ((p->usr && p->plus) && (p->read)) {
-                /* got something like u+r, turn read on */
-                usr_r = 1;
-            }
-            if  ((p->usr && (!p->plus)) && (p->read)) {
-                /* got something like u-r, turn read off */
-                usr_r = 0;
-            }
-            if ((p->usr && p->plus) && (p->execute || p->capital_execute)) {
-                /* got something like u+x or u+X, turn execute on */
-                usr_x = 1;
-            }
-            if ((p->usr && (! p->plus)) && (p->execute || p->capital_execute)) {
-                /* got something like u-x or u-X, turn execute off */
-                usr_x = 0;
+            if (p->usr || p->all) {
+                if (p->plus) {
+                    if (p->read) {
+                        /* got something like u+r or a+r, turn read on */
+                        usr_r = 1;
+                    }
+                    if (p->execute || p->capital_execute) {
+                        /* got something like u+x, u+X, a+x, or a+X, turn execute on */
+                        usr_x = 1;
+                    }
+                } else {
+                    if  (p->read) {
+                        /* got something like u-r or a-r, turn read off */
+                        usr_r = 0;
+                    }
+                    if (p->execute || p->capital_execute) {
+                        /* got something like u-x, u-X, a-x, or a-X, turn execute off */
+                        usr_x = 0;
+                    }
+                }
             }
 
-            /* now do the same for "all" bits because it can also turn on the user
-             * read & execute */
-            if ((p->all && p->plus) && (p->read)) {
-                /* got something like a+r, turn read on */
-                all_r = 1;
-            }
-            if  ((p->all && (!p->plus)) && (p->read)) {
-                /* got something like a-r, turn read off */
-                all_r = 0;
-            }
-            if ((p->all && p->plus) && (p->execute || p->capital_execute)) {
-                /* got something like a+x or a+X, turn execute on */
-                all_x = 1;
-            }
-            if ((p->all && (! p->plus)) && (p->execute || p->capital_execute)) {
-                /* got something like a-x or a-X, turn execute off */
-                all_x = 0;
-            }
             /* update pointer to next element of linked list */
             p = p->next;
         }
     }
 
     /* only set the dir_perms flag if both the user execute and user read flags are on */
-    if ((usr_r && usr_x) || (all_r && all_x)) {
+    if (usr_r && usr_x) {
         *dir_perms = 1;
     }
 
@@ -504,20 +493,6 @@ static void read_source_bits(const struct perms* p, mode_t mode, int* read, int*
         }
     }
 
-    /* got something like g=a, so all is is the source. Check
-     * all of the bits if "all" is the source */
-    if (p->source == 'a') {
-        if ((mode & S_IROTH) || (mode & S_IRGRP) || (mode & S_IRUSR)) {
-            *read = 1;
-        }
-        if ((mode & S_IWOTH) || (mode & S_IWGRP) || (mode & S_IWUSR)) {
-            *write = 1;
-        }
-        if ((mode & S_IXOTH) || (mode & S_IXGRP) || (mode & S_IXUSR)) {
-            *execute = 1;
-        }
-    }
-
     return;
 }
 
@@ -528,7 +503,7 @@ static void set_target_bits(const struct perms* p, int read, int write, int exec
      * the input string */
 
     /* got something like u=g, so user is the target */
-    if (p->usr) {
+    if (p->usr || p->all) {
         if (read) {
             *mode |= S_IRUSR;
         }
@@ -550,7 +525,7 @@ static void set_target_bits(const struct perms* p, int read, int write, int exec
     }
 
     /* got something like g=u, so group is the target */
-    if (p->group) {
+    if (p->group || p->all) {
         if (read) {
             *mode |= S_IRGRP;
         }
@@ -572,7 +547,7 @@ static void set_target_bits(const struct perms* p, int read, int write, int exec
     }
 
     /* got something like o=u, so other is the target */
-    if (p->other) {
+    if (p->other || p->all) {
         if (read) {
             *mode |= S_IROTH;
         }
@@ -593,39 +568,6 @@ static void set_target_bits(const struct perms* p, int read, int write, int exec
         }
     }
 
-    /* got something like a=u, so all is the target */
-    if (p->all) {
-        if (read) {
-            *mode |= S_IROTH;
-            *mode |= S_IRGRP;
-            *mode |= S_IRUSR;
-        }
-        else {
-            *mode &= ~S_IROTH;
-            *mode &= ~S_IRGRP;
-            *mode &= ~S_IRUSR;
-        }
-        if (write) {
-            *mode |= S_IWOTH;
-            *mode |= S_IWGRP;
-            *mode |= S_IWUSR;
-        }
-        else {
-            *mode &= ~S_IWOTH;
-            *mode &= ~S_IWGRP;
-            *mode &= ~S_IWUSR;
-        }
-        if (execute) {
-            *mode |= S_IXOTH;
-            *mode |= S_IXGRP;
-            *mode |= S_IXUSR;
-        }
-        else {
-            *mode &= ~S_IXOTH;
-            *mode &= ~S_IXGRP;
-            *mode &= ~S_IXUSR;
-        }
-    }
     return;
 }
 
@@ -636,7 +578,7 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
     /* set the bits based on flags set when parsing input string */
 
     /* this will handle things like u+r */
-    if (p->usr) {
+    if (p->usr || p->all) {
         if (p->plus) {
             if (p->read) {
                 *mode |= S_IRUSR;
@@ -687,7 +629,7 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
     * This is slightly different behavior then the +X, but it is intentional
     * and how chmod also works. */
 
-    if (p->group) {
+    if (p->group || p->all) {
         if (p->plus) {
             if (p->read) {
                 *mode |= S_IRGRP;
@@ -722,7 +664,7 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
         }
     }
 
-    if (p->other) {
+    if (p->other || p->all) {
         if (p->plus) {
             if (p->read) {
                 *mode |= S_IROTH;
@@ -757,60 +699,6 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
         }
     }
 
-    /* this one (e.g. a+w) has to set ALL of the write bits for 
-     * other, group, and user. This is also how chmod behaves */
-    if (p->all) {
-        if (p->plus) {
-            if (p->read) {
-                *mode |= S_IROTH;
-                *mode |= S_IRGRP;
-                *mode |= S_IRUSR;
-            }
-            if (p->write) {
-                *mode |= S_IWOTH;
-                *mode |= S_IWGRP;
-                *mode |= S_IWUSR;
-            }
-            if (p->execute) {
-                *mode |= S_IXOTH;
-                *mode |= S_IXGRP;
-                *mode |= S_IXUSR;
-            }
-            /* if you get a+X this is imitating chmod where it turns on
-             * all of the execute bits for u, g, and a if it is a directory
-             * and if it is a file it only does if the user execute bit is
-             * on */
-            if (p->capital_execute) {
-                if (*mode & S_IXUSR || type == BAYER_TYPE_DIR) {
-                    *mode |= S_IXOTH;
-                    *mode |= S_IXGRP;
-                    *mode |= S_IXUSR;
-                }
-            }
-        }
-        else {
-            if (p->read) {
-                *mode &= ~S_IROTH;
-                *mode &= ~S_IRGRP;
-                *mode &= ~S_IRUSR;
-            }
-            if (p->write) {
-                *mode &= ~S_IWOTH;
-                *mode &= ~S_IWGRP;
-                *mode &= ~S_IWUSR;
-            }
-            if (p->execute) {
-                *mode &= ~S_IXOTH;
-                *mode &= ~S_IXGRP;
-                *mode &= ~S_IXUSR;
-            }
-            if (p->capital_execute) {
-                *mode &= ~S_IXOTH;
-                *mode &= ~S_IXGRP;
-                *mode &= ~S_IXUSR;
-            }
-        }
-    }
     return;
 }
 
