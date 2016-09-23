@@ -285,9 +285,7 @@ static int parse_uga(const char* str, struct perms* p)
     } while  (1);
 
     /* parse the remainder of the string */
-    if (rc) {
-        rc = parse_plusminus(str, p);
-    }
+    rc = parse_plusminus(str, p);
 
     /* return whether parse succeeded */
     return rc;
