@@ -254,6 +254,10 @@ static int parse_uga(const char* str, struct perms* p)
     /* assume the parse will succeed */
     int rc = 1;
 
+    /* if no letter is given then assume "all" 
+     * is being set (e.g +rw would be a+rw) */
+    int assume_all = 1;
+
     /* intialize our fields */
     p->usr   = 0;
     p->group = 0;
@@ -264,25 +268,33 @@ static int parse_uga(const char* str, struct perms* p)
     do {
         if (str[0] == 'u') {
             p->usr = 1;
+            assume_all = 0;
         }
         else if (str[0] == 'g') {
             p->group = 1;
+            assume_all = 0;
         }
         else if (str[0] == 'o') {
             p->other = 1;
+            assume_all = 0;
         } 
         else if (str[0] == 'a') {
             p->all = 1;
         } 
         else {
             /* found an invalid character */
-            rc = 0;
             break;
         }
 
         /* go to next character */
         ++str;
     } while  (1);
+
+    /* if assume_all is set then no character
+     * was given use p->all */
+    if (assume_all) {
+        p->all = 1;
+    }
 
     /* parse the remainder of the string */
     rc = parse_plusminus(str, p);
