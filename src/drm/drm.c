@@ -55,12 +55,13 @@ static void print_usage(void)
     printf("Usage: drm [options] <path> ...\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -i, --input <file>     - read list from file\n");
+    printf("  -i, --input   <file>   - read list from file\n");
     printf("  -l, --lite             - walk file system without stat\n");
     printf("      --exclude <regex>  - exclude a list of files from command\n");
     printf("      --match   <regex>  - match a list of files from command\n");
     printf("  -n, --name             - exclude a list of files from command\n");
     printf("  -v, --verbose          - verbose output\n");
+    printf("      --dryrun           - print out list of files that would be deleted\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -86,6 +87,7 @@ int main(int argc, char** argv)
     int walk        = 0;
     int exclude     = 0;
     int name        = 0;
+    int dryrun      = 0;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -95,6 +97,7 @@ int main(int argc, char** argv)
         {"match",    1, 0, 'a'},
         {"name",     0, 0, 'n'},        
         {"help",     0, 0, 'h'},
+        {"dryrun",   0, 0, 'd'},
         {"verbose",  0, 0, 'v'},
         {0, 0, 0, 0}
     };
@@ -131,6 +134,9 @@ int main(int argc, char** argv)
             case 'h':
                 usage = 1;
                 break;
+            case 'd':
+                dryrun = 1;
+                break;            
             case 'v':
                 bayer_debug_level = BAYER_LOG_VERBOSE;
                 break;
@@ -214,8 +220,13 @@ int main(int argc, char** argv)
         srclist = filtered_flist;
     }
 
+    /* only actually delete files if the user wasn't doing a dry run */
+    if (dryrun == 0) {
     /* remove files */
-    bayer_flist_unlink(srclist);
+        bayer_flist_unlink(srclist);
+    } else {
+        print_files(srclist);
+    }
 
     /* free list if it was used */
     if (filtered_flist != BAYER_FLIST_NULL){
