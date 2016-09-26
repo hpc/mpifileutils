@@ -55,10 +55,13 @@ static void print_usage(void)
     printf("Usage: drm [options] <path> ...\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -i, --input <file>  - read list from file\n");
-    printf("  -l, --lite          - walk file system without stat\n");
-    printf("  -v, --verbose       - verbose output\n");
-    printf("  -h, --help          - print usage\n");
+    printf("  -i, --input <file>     - read list from file\n");
+    printf("  -l, --lite             - walk file system without stat\n");
+    printf("      --exclude <regex>  - exclude a list of files from command\n");
+    printf("      --match   <regex>  - match a list of files from command\n");
+    printf("  -n, --name             - exclude a list of files from command\n");
+    printf("  -v, --verbose          - verbose output\n");
+    printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
     return;
@@ -79,12 +82,18 @@ int main(int argc, char** argv)
 
     /* parse command line options */
     char* inputname = NULL;
-    int walk = 0;
+    char* regex_exp = NULL;
+    int walk        = 0;
+    int exclude     = 0;
+    int name        = 0;
 
     int option_index = 0;
     static struct option long_options[] = {
         {"input",    1, 0, 'i'},
         {"lite",     0, 0, 'l'},
+        {"exclude",  1, 0, 'e'},
+        {"match",    1, 0, 'a'},
+        {"name",     0, 0, 'n'},        
         {"help",     0, 0, 'h'},
         {"verbose",  0, 0, 'v'},
         {0, 0, 0, 0}
@@ -93,7 +102,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:lhv",
+                    argc, argv, "i:nlhv",
                     long_options, &option_index
                 );
 
@@ -107,6 +116,17 @@ int main(int argc, char** argv)
                 break;
             case 'l':
                 walk_stat = 0;
+                break;
+            case 'e':
+                regex_exp = BAYER_STRDUP(optarg);
+                exclude = 1;
+                break;
+            case 'a':
+                regex_exp = BAYER_STRDUP(optarg);
+                exclude = 0;
+                break;
+            case 'n':
+                name = 1;
                 break;
             case 'h':
                 usage = 1;
@@ -181,8 +201,27 @@ int main(int argc, char** argv)
         bayer_flist_read_cache(inputname, flist);
     }
 
+    /* assume we'll use the full list */
+    bayer_flist srclist = flist;
+
+    /* filter the list if needed */
+    bayer_flist filtered_flist = BAYER_FLIST_NULL;
+    if (regex_exp != NULL) {
+        /* filter the list based on regex */
+        filtered_flist = bayer_flist_filter_regex(flist, regex_exp, exclude, name);
+
+        /* update our source list to use the filtered list instead of the original */
+        srclist = filtered_flist;
+    }
+
     /* remove files */
-    bayer_flist_unlink(flist);
+    bayer_flist_unlink(srclist);
+
+    /* free list if it was used */
+    if (filtered_flist != BAYER_FLIST_NULL){
+        /* free the filtered flist (if any) */
+        bayer_flist_free(&filtered_flist);
+    }
 
     /* free the file list */
     bayer_flist_free(&flist);
