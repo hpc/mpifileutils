@@ -937,8 +937,8 @@ static void print_usage(void)
     printf("  -i, --input   <file>   - read list from file\n");
     printf("  -g, --group   <name>   - change group to specified group name\n");
     printf("  -m, --mode    <string> - change mode\n");
-    printf("  -e, --exclude <regex>  - exclude a list of files from command\n");
-    printf("  -a, --match   <regex>  - match a list of files from command\n");
+    printf("      --exclude <regex>  - exclude a list of files from command\n");
+    printf("      --match   <regex>  - match a list of files from command\n");
     printf("  -n, --name             - exclude a list of files from command\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -h, --help             - print usage\n");
