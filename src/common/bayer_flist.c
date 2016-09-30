@@ -3748,7 +3748,7 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* ar
 }
 
 /* print information about a file given the index and rank (used in print_files) */
-void print_file(bayer_flist flist, uint64_t idx, int rank)
+static void print_file(bayer_flist flist, uint64_t idx, int rank)
 {
     /* store types as strings for print_file */
     char type_str_unknown[] = "UNK";
@@ -3832,7 +3832,7 @@ void print_file(bayer_flist flist, uint64_t idx, int rank)
 }
 
 /* given a list of files print from the start to end of the list */
-void print_files(bayer_flist flist)
+void bayer_flist_print(bayer_flist flist)
 {
     /* number of items to print from start and end of list */
     uint64_t range = 10;

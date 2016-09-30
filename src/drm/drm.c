@@ -225,7 +225,7 @@ int main(int argc, char** argv)
     /* remove files */
         bayer_flist_unlink(srclist);
     } else {
-        print_files(srclist);
+        bayer_flist_print(srclist);
     }
 
     /* free list if it was used */

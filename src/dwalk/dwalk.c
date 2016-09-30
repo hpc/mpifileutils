@@ -377,7 +377,7 @@ int main(int argc, char** argv)
 
     /* print details for individual files */
     if (print) {
-        print_files(flist);
+        bayer_flist_print(flist);
     }
 
     /* print summary about all files */
