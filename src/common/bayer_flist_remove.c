@@ -641,7 +641,7 @@ void bayer_flist_unlink(bayer_flist flist)
         bayer_flist list = lists[level];
 
         uint64_t count = 0;
-//        remove_direct(list, &count);
+        //remove_direct(list, &count);
         remove_spread(list, &count);
 //        remove_map(list, &count);
 //        remove_sort(list, &count);

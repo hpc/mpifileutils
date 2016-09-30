@@ -224,6 +224,9 @@ void bayer_flist_unlink(bayer_flist flist);
  *   char fields[] = "size,-name"; */
 int bayer_flist_sort(const char* fields, bayer_flist* flist);
 
+/* given a list of files print from start and end of the list */
+void bayer_flist_print(bayer_flist flist);
+
 #endif /* BAYER_FLIST_H */
 
 /* enable C++ codes to include this header directly */
