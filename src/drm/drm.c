@@ -221,11 +221,13 @@ int main(int argc, char** argv)
     }
 
     /* only actually delete files if the user wasn't doing a dry run */
-    if (dryrun == 0) {
-    /* remove files */
-        bayer_flist_unlink(srclist);
-    } else {
+    if (dryrun) {
+        /* just print what we would delete without actually doing anything,
+         * this is useful if the user is trying to get a regex right */
         bayer_flist_print(srclist);
+    } else {
+        /* remove files */
+        bayer_flist_unlink(srclist);
     }
 
     /* free list if it was used */
