@@ -243,6 +243,9 @@ int main(int argc, char** argv)
     /* free memory allocated to hold params */
     bayer_free(&paths);
 
+    /* free the regex string if we have one */
+    bayer_free(&regex_exp);
+
     /* free the input file name */
     bayer_free(&inputname);
 
