@@ -433,6 +433,17 @@ void bayer_param_path_set_all(uint64_t num, const char** paths, bayer_param_path
         bayer_unpack_param(&ptr, &params[i]);
     }
 
+    /* Loop through the list of files &/or directories, and check the params 
+     * struct to see if all of them are valid file names. If one is not, let 
+     * the user know by printing a warning */
+    for (i = 0; i < num; i++) {
+        /* get pointer to param structure */
+        bayer_param_path* param = &p[i];
+        if (rank == 0 && param->path_stat_valid == 0) {
+            printf("\n \n Warning: %s does not exist \n \n", param->path); 
+        }
+    }
+
     /* free message buffers */
     bayer_free(&recvbuf);
     bayer_free(&sendbuf);
