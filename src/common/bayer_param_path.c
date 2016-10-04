@@ -440,7 +440,7 @@ void bayer_param_path_set_all(uint64_t num, const char** paths, bayer_param_path
         /* get pointer to param structure */
         bayer_param_path* param = &p[i];
         if (rank == 0 && param->path_stat_valid == 0) {
-            printf("\n \n Warning: %s does not exist \n \n", param->path); 
+            printf("\n Warning: %s does not exist \n", param->path); 
         }
     }
 
