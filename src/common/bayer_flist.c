@@ -3747,6 +3747,52 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* ar
     return newlist;
 }
 
+/* map function to evenly spread list among ranks, using block allocation */
+static int map_spread(bayer_flist flist, uint64_t idx, int ranks, void* args)
+{
+    /* compute global index of this item */
+    uint64_t offset = bayer_flist_global_offset(flist);
+    uint64_t global_idx = offset + idx;
+
+    /* get global size of the list */
+    uint64_t global_size = bayer_flist_global_size(flist);
+
+    /* get whole number of items on each rank */
+    uint64_t items_per_rank = global_size / ranks;
+
+    /* if global list size is not divisible by the number of ranks
+     * then we need to use the remainder */
+    uint64_t remainder = (global_size) - (items_per_rank * ranks);
+
+    /* If have a remainder, then we give one extra item to
+     * to each rank starting from rank 0.  Compute the number
+     * of items contained in this set of ranks.  There are
+     * remainder such ranks. */
+    int extra = remainder * (items_per_rank + 1);
+
+    /* break up into two cases: if you are adding +1 or not 
+     * calculate target rank */
+    int target_rank;
+    if (global_idx < extra) {
+       /* the item falls in the set of ranks that all have an extra item */
+       target_rank = global_idx / (items_per_rank + 1);
+    } else {
+       /* the item falls into the set of ranks beyond the set holding an extra item */
+       target_rank = remainder + (global_idx - extra) / items_per_rank;
+    }
+
+    return target_rank;
+}
+
+/* This takes in a list, spreads it out evenly, and then returns the newly created 
+ * list to the caller */
+bayer_flist bayer_flist_spread(bayer_flist flist)
+{
+    /* remap files to evenly distribute items to processes */
+    bayer_flist newlist = bayer_flist_remap(flist, map_spread, NULL);
+    return newlist;
+}
+
 /* print information about a file given the index and rank (used in print_files) */
 static void print_file(bayer_flist flist, uint64_t idx, int rank)
 {
