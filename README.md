@@ -1,5 +1,5 @@
 # mpiFileUtils
-MPI-based file utilities designed for scalability and performance.
+mpiFileUtils is a suite of MPI-based tools to manage large datasets, which may vary from large directory trees to large files. High-performance computing users often generate large datasets with parallel applications that run with many processes (millions in some cases). However those users are then stuck with single-process tools like cp and rm to manage their datasets. This suite provides MPI-based tools to handle typical jobs like copy, remove, and compare for such datasets, providing speedups of up to 20-30x.
 
  - [dchmod](doc/markdown/dchmod.1.md) - Change permissions and group access on files.
  - [dcmp](doc/markdown/dcmp.1.md) - Compare files.
