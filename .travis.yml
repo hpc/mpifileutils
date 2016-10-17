@@ -27,8 +27,10 @@ before_install:
  - ./configure && make && sudo make install
  - popd
  - sudo ldconfig
+ - ls -ltr /usr/local/lib/libdtcmp*
+ - nm /usr/local/lib/libdtcmp.so | grep DTCMP
 
-script: ./autogen.sh && ./configure && make && make test
+script: ./autogen.sh && ./configure --with-dtcmp=/usr/local && make && make test
 
 compiler:
   - clang
