@@ -2,7 +2,7 @@ language: c
 
 before_install:
  - sudo apt-get update -qq
- - sudo apt-get install -qq check libopenmpi16-dev openmpi16-bin check bc libattr1-dev python-pip
+ - sudo apt-get install -qq check libopenmpi-dev openmpi-bin check bc libattr1-dev python-pip
  - sudo pip install nose
  - git clone https://github.com/hpc/libcircle.git
  - pushd libcircle
