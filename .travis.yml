@@ -28,7 +28,11 @@ before_install:
  - popd
  - sudo ldconfig
 
-script: ./autogen.sh && ./configure && make && make test
+script:
+ - ./autogen.sh
+ - ./configure
+ - if [ $? -ne 0 ] ; then cat config.log; exit 1; fi
+ - make && make test
 
 compiler:
   - clang
