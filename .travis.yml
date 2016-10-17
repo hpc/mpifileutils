@@ -4,6 +4,8 @@ dist: trusty
 language: c
 
 before_install:
+ - test -n $CC  && unset CC
+ - test -n $CXX && unset CXX
  - sudo apt-get update -qq
  - sudo apt-cache search openmpi
  - sudo apt-get install -qq check libopenmpi-dev openmpi-bin check bc libattr1-dev python-pip
@@ -28,7 +30,8 @@ before_install:
  - popd
  - sudo ldconfig
 
-script: ./autogen.sh && export CC=mpicc && ./configure && make && make test
+#script: ./autogen.sh && export CC=mpicc && ./configure && make && make test
+script: ./autogen.sh && ./configure && make && make test
 
 compiler:
   - clang
