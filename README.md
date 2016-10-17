@@ -19,4 +19,4 @@ To enable experimental utilities, run configure with the enable experimental opt
  - [dtar](doc/markdown/dtar.1.md) - Create file tape archives (experimental).
 
 ## Build Status
-The current status of the fileutils master branch is [![Build Status](https://travis-ci.org/hpc/fileutils.png?branch=master)](https://travis-ci.org/hpc/fileutils).
+The current status of the fileutils master branch is [![Build Status](https://travis-ci.org/hpc/mpifileutils.png?branch=master)](https://travis-ci.org/hpc/mpifileutils).
