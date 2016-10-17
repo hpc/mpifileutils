@@ -30,9 +30,9 @@ before_install:
 
 script:
  - ./autogen.sh
- - ./configure
+ - export CC=mpicc && ./configure
  - if [ $? -ne 0 ] ; then cat config.log; exit 1; fi
- - make && make test
+ - export CC=mpicc && make && make test
 
 compiler:
   - clang
