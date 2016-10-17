@@ -20,6 +20,12 @@ before_install:
  - pushd dtcmp
  - ./autogen.sh && ./configure --with-lwgrp=/usr/local && make && sudo make install
  - popd
+ - libarchive=libarchive-3.1.2
+ - wget http://www.libarchive.org/downloads/${libarchive}.tar.gz
+ - tar zxvf ${libarchive}.tar.gz
+ - pushd ${libarchive}
+ - ./configure && make && sudo make install
+ - popd
  - sudo ldconfig
 
 script: ./autogen.sh && ./configure && make && make test
