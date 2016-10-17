@@ -28,11 +28,7 @@ before_install:
  - popd
  - sudo ldconfig
 
-script:
- - ./autogen.sh
- - export CC=mpicc && ./configure
- - if [ $? -ne 0 ] ; then cat config.log; exit 1; fi
- - export CC=mpicc && make && make test
+script: ./autogen.sh && export CC=mpicc && ./configure && make && make test
 
 compiler:
   - clang
