@@ -3,13 +3,14 @@ dist: trusty
 
 language: c
 
-# - sudo apt-get install -qq check libopenmpi-dev openmpi-bin check bc libattr1-dev python-pip
+# - sudo apt-get install -qq check mpich check bc libattr1-dev python-pip
 before_install:
  - test -n $CC  && unset CC
  - test -n $CXX && unset CXX
  - sudo apt-get update -qq
  - sudo apt-cache search openmpi
- - sudo apt-get install -qq check mpich check bc libattr1-dev python-pip
+ - sudo apt-cache search mpich
+ - sudo apt-get install -qq check libopenmpi-dev openmpi-bin check bc libattr1-dev python-pip
  - sudo pip install nose
  - git clone https://github.com/hpc/libcircle.git
  - pushd libcircle
@@ -31,8 +32,8 @@ before_install:
  - popd
  - sudo ldconfig
 
-#script: ./autogen.sh && export CC=mpicc && ./configure && make && make test
-script: ./autogen.sh && ./configure && make && make test
+script: ./autogen.sh && export CC=mpicc && ./configure && make && make test
+#script: ./autogen.sh && ./configure && make && make test
 
 compiler:
   - clang
