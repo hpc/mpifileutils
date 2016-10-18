@@ -46,6 +46,7 @@ configure
 Makefile.in
 */Makefile.in
 */*/Makefile.in
+*/*/*/Makefile.in
 
 # Vagrant/Ansible artifacts
 /devops/vagrant_ansible_inventory_*
