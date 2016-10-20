@@ -10,7 +10,7 @@ endif
 
 if HAVE_NOSETESTS
 test:
-	-(pushd $(top_srcdir)/test>/dev/null && nosetests ./nose && popd>/dev/null)
+	-(pushd $(top_srcdir)/test>/dev/null && ~/fileutils.git/venv/bin/nose2 -v && popd>/dev/null)
 else
 test:
 	@(echo "The nosetests command could not be found. Please install Nose with your")
