@@ -616,8 +616,7 @@ typedef struct copy_elem_struct {
   struct copy_elem_struct* next;
 } copy_elem;
 
-static void copy_files(bayer_flist list)
-{
+static copy_elem* identify_file_sections(bayer_flist list) {
     /* get our rank and number of ranks */
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -921,6 +920,9 @@ static void copy_files(bayer_flist list)
     /* waitall */
     MPI_Waitall(msgs, request, status);
 
+    copy_elem* head = NULL;
+    copy_elem* tail = NULL;
+
     /* iterate over all received data */
     const char* packptr = recvbuf;
     char* recvbuf_end = recvbuf + recvbuf_size;
@@ -935,57 +937,63 @@ static void copy_files(bayer_flist list)
         bayer_unpack_uint64(&packptr, &chunk_count);
         bayer_unpack_uint64(&packptr, &file_size);
 
-        /* get name of destination file */
-        char* dest_path = DCOPY_build_dest(name);
+        /* allocate memory for new struct and set next pointer to null */
+        copy_elem* p = malloc(sizeof(copy_elem));
+        p->next = NULL;
 
-        /* open file, read, write, close, fsync,
-         * if we have the last chunk, truncate file */
-        copy_file(name, dest_path, chunk_offset, chunk_count, file_size);
+        /* set the fields of the struct */
+        p->name = name;
+        p->chunk_offset = chunk_offset;
+        p->chunk_count = chunk_count;
+        p->file_size = file_size;
 
-        /* free the destination name */
-        bayer_free(&dest_path);
-    }
-
-    /* delete memory we allocated for each destination rank */
-    for (i = 0; i < send_ranks; i++) {
-        /* free each of our send buffers */
-        bayer_free(&sendbufs[i]);
-
-        /* delete elements from our list */
-        copy_elem* elem = heads[i];
-        while (elem != NULL) {
-            copy_elem* next = elem->next;
-            bayer_free(&elem);
-            elem = next;
+        /* if the tail is not null then point the tail at the latest struct */
+        if (tail != NULL) {
+            tail->next = p;
+        }
+        
+        /* if head is not pointing at anything then this struct is head of list */
+        if (head == NULL) {
+            head = p;
         }
 
+        /* have tail point at the current/last struct */
+        tail = p;
     }
 
-    bayer_free(&recvranklist);
+    return head;
+}
 
-    bayer_free(&recvbuf);
-    bayer_free(&sendbufs);
+static void copy_files(bayer_flist list)
+{
+    copy_elem* p = identify_file_sections(list);
 
-    bayer_free(&recv_counts);
-    bayer_free(&send_counts);
+    while (p != NULL) {
 
-    bayer_free(&status);
-    bayer_free(&request);
+        /* get name of destination file */
+        char* dest_path = DCOPY_build_dest(p->name);
 
-    /* delete structures for our list */
-    bayer_free(&bytes);
-    bayer_free(&counts);
-    bayer_free(&tails);
-    bayer_free(&heads);
+        /* call copy_file for each element of the copy_elem linked list of structs */
+        copy_file(p->name, dest_path, p->chunk_offset, p->chunk_count, p->file_size);
 
-    /* free our list of ranks */
-    bayer_free(&sendlist);
-    bayer_free(&recvlist);
+        /* free the dest name */
+        bayer_free(&dest_path);
 
-    /* wait for all procs to finish copying data */
-    MPI_Barrier(MPI_COMM_WORLD);
+        /* update pointer to next element */
+        p = p->next;
+    }
 
-    return;
+    copy_elem* tmp;
+    copy_elem* current;
+
+    /* free the linked list here ??? */
+    while (current != NULL) {
+        tmp = current;
+        bayer_free(&current);
+        current = tmp->next;
+    }
+
+    p = NULL;
 }
 
 /* iterate through list of files and set ownership, timestamps,
