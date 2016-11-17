@@ -547,6 +547,10 @@ static void dcmp_strmap_compare(bayer_flist src_list,
                                 bayer_flist dst_list,
                                 strmap* dst_map)
 {
+    /* create compare_lists */
+    bayer_flist src_compare_list = bayer_flist_subset(src_list);
+    bayer_flist dst_compare_list = bayer_flist_subset(dst_list);
+
     /* iterate over each item in source map */
     strmap_node* node;
     strmap_foreach(src_map, node) {
@@ -632,6 +636,9 @@ static void dcmp_strmap_compare(bayer_flist src_list,
             continue;
         }
 
+        bayer_flist_file_copy(src_list, src_index, src_compare_list);
+        bayer_flist_file_copy(dst_list, dst_index, dst_compare_list);
+
         /* the sizes are the same, now compare file contents */
         const char* src_name = bayer_flist_file_get_name(src_list, src_index);
         const char* dst_name = bayer_flist_file_get_name(dst_list, dst_index);
@@ -649,6 +656,28 @@ static void dcmp_strmap_compare(bayer_flist src_list,
         dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
         dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
     }
+        /* the sizes are the same, now compare file contents */
+        bayer_flist_summarize(dst_compare_list);
+        bayer_flist_summarize(src_compare_list);
+        /* get chunk size for copying files */
+        uint64_t chunk_size = 1024 * 1024;
+        bayer_file_chunk* src_p = bayer_file_chunk_list_alloc(src_compare_list, chunk_size);
+        bayer_file_chunk* dst_p = bayer_file_chunk_list_alloc(dst_compare_list, chunk_size);
+
+        // add new code to compare based on linked list of chunks here
+        while (src_p != NULL) {
+                int rc = dcmp_compare_data(src_p->name, dst_p->name, 1048576);
+                if (rc == 1) {
+                        // found a difference in file contents 
+                        printf("found a diffrence in the files\n"); 
+                } else {
+                        printf("the files are the same\n");
+                }
+                src_p = src_p->next;
+        }
+
+        bayer_file_chunk_list_free(&src_p);
+        bayer_file_chunk_list_free(&dst_p);
 }
 
 /* loop on the src map to check the results */
