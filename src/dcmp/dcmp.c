@@ -384,7 +384,7 @@ static strmap* dcmp_strmap_creat(bayer_flist list, const char* prefix)
 
 /* Return -1 when error, return 0 when equal, return 1 when diff */
 int _dcmp_compare_data(const char* src_name, const char* dst_name,
-    int src_fd, int dst_fd, off_t offset, size_t size, size_t buff_size)
+    int src_fd, int dst_fd, off_t offset, off_t size, size_t buff_size)
 {
     /* assume we'll find that files contents are the same */
     int rc = 0;
@@ -463,7 +463,7 @@ int _dcmp_compare_data(const char* src_name, const char* dst_name,
 
 /* Return -1 when error, return 0 when equal, return 1 when diff */
 int dcmp_compare_data(const char* src_name, const char* dst_name,
-    size_t buff_size)
+    off_t offset, off_t length, size_t buff_size)
 {
     /* open source file */
     int src_fd = bayer_open(src_name, O_RDONLY);
@@ -479,12 +479,12 @@ int dcmp_compare_data(const char* src_name, const char* dst_name,
     }
 
     /* hint that we'll read from file sequentially */
-    posix_fadvise(src_fd, 0, 0, POSIX_FADV_SEQUENTIAL);
-    posix_fadvise(dst_fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(src_fd, offset, length, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(dst_fd, offset, length, POSIX_FADV_SEQUENTIAL);
 
     /* compare file contents */
     int rc = _dcmp_compare_data(src_name, dst_name, src_fd, dst_fd,
-        0, 0, buff_size);
+        offset, length, buff_size);
 
     /* close files */
     bayer_close(dst_name, dst_fd);
@@ -636,13 +636,16 @@ static void dcmp_strmap_compare(bayer_flist src_list,
             continue;
         }
 
+        /* make a copy of the src and dest files where the data needs
+         * to be compared and store in src & dest compare lists */
         bayer_flist_file_copy(src_list, src_index, src_compare_list);
         bayer_flist_file_copy(dst_list, dst_index, dst_compare_list);
 
         /* the sizes are the same, now compare file contents */
         const char* src_name = bayer_flist_file_get_name(src_list, src_index);
         const char* dst_name = bayer_flist_file_get_name(dst_list, dst_index);
-        rc = dcmp_compare_data(src_name, dst_name, 1048576);
+ 
+        rc = dcmp_compare_data(src_name, dst_name, 0, 0, 1048576);
         if (rc == 1) {
             /* found a difference in file contents */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
@@ -652,32 +655,48 @@ static void dcmp_strmap_compare(bayer_flist src_list,
             BAYER_ABORT(-1, "Failed to compare file %s and %s errno=%d (%s)",
                 src_name, dst_name, errno, strerror(errno));
         }
-
+        
+        /* update to say contents of the files were found to be the same */
         dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
         dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
     }
-        /* the sizes are the same, now compare file contents */
-        bayer_flist_summarize(dst_compare_list);
-        bayer_flist_summarize(src_compare_list);
-        /* get chunk size for copying files */
-        uint64_t chunk_size = 1024 * 1024;
-        bayer_file_chunk* src_p = bayer_file_chunk_list_alloc(src_compare_list, chunk_size);
-        bayer_file_chunk* dst_p = bayer_file_chunk_list_alloc(dst_compare_list, chunk_size);
+    
+    bayer_flist_summarize(dst_compare_list);
+    bayer_flist_summarize(src_compare_list);
 
-        // add new code to compare based on linked list of chunks here
-        while (src_p != NULL) {
-                int rc = dcmp_compare_data(src_p->name, dst_p->name, 1048576);
-                if (rc == 1) {
-                        // found a difference in file contents 
-                        printf("found a diffrence in the files\n"); 
-                } else {
-                        printf("the files are the same\n");
-                }
-                src_p = src_p->next;
+    /* get chunk size for copying files (just hard-coded for now) */
+    uint64_t chunk_size = 1024 * 1024;
+
+    /* get the linked list of file chunks for the src and dest */
+    bayer_file_chunk* src_p = bayer_file_chunk_list_alloc(src_compare_list, chunk_size);
+    bayer_file_chunk* dst_p = bayer_file_chunk_list_alloc(dst_compare_list, chunk_size);
+
+    // add new code to compare based on linked list of chunks here
+    while (src_p != NULL) {
+
+        /* get offset into file in bytes */
+        off_t offset = src_p->chunk_offset * chunk_size;
+
+        /* get length of file in bytes */
+        off_t length = src_p->chunk_count * chunk_size;
+        
+        /* compare the contents of the files */
+        int rc = dcmp_compare_data(src_p->name, dst_p->name, offset, length, 1048576);
+        if (rc == 1) {
+                // found a difference in file contents 
+                printf("found a diffrence in the files\n"); 
+        } else {
+                printf("the files are the same\n");
         }
 
-        bayer_file_chunk_list_free(&src_p);
-        bayer_file_chunk_list_free(&dst_p);
+        /* update pointers for src and dest in linked list */
+        src_p = src_p->next;
+        dst_p = dst_p->next;
+    }
+
+    /* free the linked list of file chunks for src and dest */
+    bayer_file_chunk_list_free(&src_p);
+    bayer_file_chunk_list_free(&dst_p);
 }
 
 /* loop on the src map to check the results */
