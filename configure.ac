@@ -70,6 +70,9 @@ X_AC_DTCMP
 # Check for Lustre
 X_AC_LUSTRE
 
+# Check for libcrypto
+PKG_CHECK_MODULES([CRYPTO], [libcrypto], [INCLUDES="$INCLUDES $CRYPTO_CFLAGS"; LIBS="$LIBS $CRYPTO_LIBS"], [AC_MSG_ERROR(libcrypto not found.)])
+
 AC_CONFIG_FILES([Makefile                \
                  src/Makefile            \
                  src/common/Makefile     \
@@ -77,6 +80,7 @@ AC_CONFIG_FILES([Makefile                \
                  src/dcmp/Makefile       \
                  src/dcp/Makefile        \
                  src/dcp2/Makefile       \
+                 src/ddup/Makefile       \
                  src/dfilemaker/Makefile \
                  src/drm/Makefile        \
                  src/dwalk/Makefile      \
