@@ -447,8 +447,8 @@ static int create_files(int levels, int minlevel, bayer_flist* lists)
 static int copy_file(
     const char* src,
     const char* dest,
-    uint64_t chunk_offset,
-    uint64_t chunk_count,
+    off_t offset,
+    off_t length,
     uint64_t file_size)
 {
     /* open the input file */
@@ -470,15 +470,6 @@ static int copy_file(
     /* hint that we'll read from file sequentially */
 //    posix_fadvise(in_fd, offset, chunk_size, POSIX_FADV_SEQUENTIAL);
 
-    /* get chunk size for copying files */
-    size_t chunk_size = (size_t)DCOPY_user_opts.chunk_size;
-
-    uint64_t chunks = 0;
-    while (chunks < chunk_count) {
-
-    /* get offset into file */
-    off_t offset = (off_t) (chunk_size * (chunk_offset + chunks));
-
     /* seek to offset in source file */
     if(bayer_lseek(src, in_fd, offset, SEEK_SET) == (off_t)-1) {
         BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
@@ -499,10 +490,10 @@ static int copy_file(
 
     /* write data */
     size_t total_bytes = 0;
-    while(total_bytes <= chunk_size) {
+    while(total_bytes <= length) {
         /* determine number of bytes that we
          * can read = max(buf size, remaining chunk) */
-        size_t left_to_read = chunk_size - total_bytes;
+        size_t left_to_read = length - total_bytes;
         if(left_to_read > buf_size) {
             left_to_read = buf_size;
         }
@@ -561,10 +552,6 @@ static int copy_file(
     DCOPY_statistics.total_size += (int64_t) total_bytes;
     DCOPY_statistics.total_bytes_copied += (int64_t) total_bytes;
 
-    /* go to next chunk */
-    chunks++;
-    }
-
 #if 0
     /* force data to file system */
     if(total_bytes > 0) {
@@ -573,7 +560,7 @@ static int copy_file(
 #endif
 
     /* if we wrote the last chunk, truncate the file */
-    off_t last_written = (off_t) (chunk_size * (chunk_offset + chunk_count));
+    off_t last_written = offset + length;
     off_t file_size_offt = (off_t) file_size;
     if (last_written >= file_size_offt || file_size == 0) {
         if(truncate64(dest, file_size_offt) < 0) {
@@ -611,7 +598,7 @@ static void copy_files(bayer_flist list)
         char* dest_path = DCOPY_build_dest(p->name);
 
         /* call copy_file for each element of the copy_elem linked list of structs */
-        copy_file(p->name, dest_path, p->chunk_offset, p->chunk_count, p->file_size);
+        copy_file(p->name, dest_path, (off_t)p->offset, (off_t)p->length, p->file_size);
 
         /* free the dest name */
         bayer_free(&dest_path);

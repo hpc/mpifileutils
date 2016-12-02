@@ -35,6 +35,7 @@
 
 #include "bayer.h"
 #include "list.h"
+#include "dtcmp.h"
 
 /* globals to hold user-input paths */
 static bayer_param_path param1;
@@ -645,24 +646,26 @@ static void dcmp_strmap_compare(bayer_flist src_list,
         const char* src_name = bayer_flist_file_get_name(src_list, src_index);
         const char* dst_name = bayer_flist_file_get_name(dst_list, dst_index);
  
-        rc = dcmp_compare_data(src_name, dst_name, 0, 0, 1048576);
+       /* rc = dcmp_compare_data(src_name, dst_name, 0, 0, 1048576);
         if (rc == 1) {
-            /* found a difference in file contents */
+            // found a difference in file contents
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
             continue;
         } else if (rc < 0) {
             BAYER_ABORT(-1, "Failed to compare file %s and %s errno=%d (%s)",
                 src_name, dst_name, errno, strerror(errno));
-        }
+        }*/
         
-        /* update to say contents of the files were found to be the same */
+        // update to say contents of the files were found to be the same 
         dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
         dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
     }
     
     bayer_flist_summarize(dst_compare_list);
     bayer_flist_summarize(src_compare_list);
+
+    uint64_t max_name = bayer_flist_file_max_name(src_compare_list);
 
     /* get chunk size for copying files (just hard-coded for now) */
     uint64_t chunk_size = 1024 * 1024;
@@ -671,17 +674,46 @@ static void dcmp_strmap_compare(bayer_flist src_list,
     bayer_file_chunk* src_p = bayer_file_chunk_list_alloc(src_compare_list, chunk_size);
     bayer_file_chunk* dst_p = bayer_file_chunk_list_alloc(dst_compare_list, chunk_size);
 
+    int list_count = 0;
+    bayer_file_chunk* tmp = src_p;
+
+    while (tmp != NULL) {
+        list_count++;
+        tmp = tmp->next;
+    }
+
+    char* keys = (char*) BAYER_MALLOC(list_count * max_name);
+    int* vals = (int*) BAYER_MALLOC(list_count * sizeof(int));
+    int* ltr  = (int*) BAYER_MALLOC(list_count * sizeof(int));
+    int* rtl  = (int*) BAYER_MALLOC(list_count * sizeof(int)); 
+
+    int i = 0;
+    char* name_ptr = keys;
+
     // add new code to compare based on linked list of chunks here
     while (src_p != NULL) {
+         
+        /* get the chunk offset */
+        uint64_t chunk_offset = src_p->offset / chunk_size;
+
+        /* get the chunk_count */
+        uint64_t chunk_count = src_p->length / chunk_size;
 
         /* get offset into file in bytes */
-        off_t offset = src_p->chunk_offset * chunk_size;
+        off_t offset = chunk_offset * chunk_size;
+        printf("offset: %lu\n", offset);
 
         /* get length of file in bytes */
-        off_t length = src_p->chunk_count * chunk_size;
+        off_t length = chunk_count * chunk_size;
+        printf("length: %lu\n", length);
         
         /* compare the contents of the files */
         int rc = dcmp_compare_data(src_p->name, dst_p->name, offset, length, 1048576);
+        strncpy(keys, src_p->name, max_name);
+        vals[i] = rc;
+        ltr[i] = 0;
+        rtl[i] = 0;
+
         if (rc == 1) {
                 // found a difference in file contents 
                 printf("found a diffrence in the files\n"); 
@@ -689,10 +721,61 @@ static void dcmp_strmap_compare(bayer_flist src_list,
                 printf("the files are the same\n");
         }
 
+        name_ptr += max_name;
+        i++;
         /* update pointers for src and dest in linked list */
         src_p = src_p->next;
         dst_p = dst_p->next;
     }
+
+    MPI_Datatype keytype;
+    DTCMP_Op keyop;
+    DTCMP_Str_create_ascend((int)max_name, &keytype, &keyop);
+
+    DTCMP_Segmented_exscan(list_count, keys, keytype, vals, ltr, rtl, MPI_INT, keyop, DTCMP_FLAG_NONE, MPI_LOR, MPI_COMM_WORLD);
+
+    name_ptr = keys; 
+    for (i = 0; i < list_count; i++) {
+      ltr[i] |= vals[i];
+      printf("name: %s ltr: %d val: %d\n", name_ptr, ltr[i], vals[i]);
+      name_ptr += max_name;  
+    }
+
+    /* get number of ranks */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* allocate arrays for alltoall -- one for sending, and one for receiving */
+    int* send = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
+    int* recv = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
+
+    /* initialize send & receive arrays */
+    for (int i = 0; i < ranks; i++) {
+        send[i] = 0;
+        recv[i] = 0;
+    }
+
+    /* Iterate over the list of files. For each file a process needs to report on,
+     * we increment the counter correspoinding to the "owner" of the file. After
+     * going through all files, we then have a count of the number of files we 
+     * will report for each rank */
+    int count = 0;
+    while (src_p != NULL) {
+        if (src_p->offset + src_p->length >= src_p->file_size) {
+            count++;
+            send[rank] = count;
+        }
+    }
+
+    MPI_Type_free(&keytype);
+    DTCMP_Op_free(&keyop);
+    bayer_free(&keys);
+    bayer_free(&rtl);
+    bayer_free(&ltr);
+    bayer_free(&vals);
+    bayer_free(&send);
+    bayer_free(&recv);
 
     /* free the linked list of file chunks for src and dest */
     bayer_file_chunk_list_free(&src_p);
