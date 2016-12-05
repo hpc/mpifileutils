@@ -546,7 +546,7 @@ int dcmp_compare_metadata(bayer_flist src_list,
 static void dcmp_strmap_compare(bayer_flist src_list,
                                 strmap* src_map,
                                 bayer_flist dst_list,
-                                strmap* dst_map)
+                                strmap* dst_map, size_t strlen_prefix)
 {
     /* create compare_lists */
     bayer_flist src_compare_list = bayer_flist_subset(src_list);
@@ -646,21 +646,7 @@ static void dcmp_strmap_compare(bayer_flist src_list,
         const char* src_name = bayer_flist_file_get_name(src_list, src_index);
         const char* dst_name = bayer_flist_file_get_name(dst_list, dst_index);
  
-       /* rc = dcmp_compare_data(src_name, dst_name, 0, 0, 1048576);
-        if (rc == 1) {
-            // found a difference in file contents
-            dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
-            dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
-            continue;
-        } else if (rc < 0) {
-            BAYER_ABORT(-1, "Failed to compare file %s and %s errno=%d (%s)",
-                src_name, dst_name, errno, strerror(errno));
-        }*/
-        
-        // update to say contents of the files were found to be the same 
-        dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
-        dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
-    }
+          }
     
     bayer_flist_summarize(dst_compare_list);
     bayer_flist_summarize(src_compare_list);
@@ -714,15 +700,9 @@ static void dcmp_strmap_compare(bayer_flist src_list,
         ltr[i] = 0;
         rtl[i] = 0;
 
-        if (rc == 1) {
-                // found a difference in file contents 
-                printf("found a diffrence in the files\n"); 
-        } else {
-                printf("the files are the same\n");
-        }
-
         name_ptr += max_name;
         i++;
+
         /* update pointers for src and dest in linked list */
         src_p = src_p->next;
         dst_p = dst_p->next;
@@ -742,30 +722,92 @@ static void dcmp_strmap_compare(bayer_flist src_list,
     }
 
     /* get number of ranks */
-    int rank, ranks;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    int ranks;
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* allocate arrays for alltoall -- one for sending, and one for receiving */
-    int* send = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
-    int* recv = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
+    int* sendcounts = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
+    int* recvcounts = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
+    int* recvdisps  = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
+    int* senddisps  = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
 
     /* initialize send & receive arrays */
     for (int i = 0; i < ranks; i++) {
-        send[i] = 0;
-        recv[i] = 0;
+        sendcounts[i] = 0;
     }
+
+    size_t sendbytes = list_count * 2 * sizeof(uint64_t); 
+
+    /* allocate space for send buffer */
+    uint64_t* sendbuf = (uint64_t*) BAYER_MALLOC(sendbytes);
+
+    int disp = 0;
+    i = 0;
 
     /* Iterate over the list of files. For each file a process needs to report on,
      * we increment the counter correspoinding to the "owner" of the file. After
      * going through all files, we then have a count of the number of files we 
      * will report for each rank */
-    int count = 0;
     while (src_p != NULL) {
         if (src_p->offset + src_p->length >= src_p->file_size) {
-            count++;
-            send[rank] = count;
+
+            sendcounts[src_p->rank_of_owner] += 2;
+
+            sendbuf[disp] = src_p->index_of_owner;
+            sendbuf[disp + 1] = (uint64_t)ltr[i];
+
+            disp += 2;
         }
+        i++;
+    }
+
+    /* compute send buffer displacements */
+    senddisps[0] = 0;
+    for (i = 1; i < ranks; i++) {
+        senddisps[i] = senddisps[i - 1] + sendcounts[i - 1];
+    }
+
+    MPI_Alltoall(sendcounts, 1, MPI_INT, recvcounts, 1, MPI_INT, MPI_COMM_WORLD);
+
+    int recv_total = 0;
+    recvdisps[0] = 0;
+    for (int i = 0; i < ranks; i++) {
+        recv_total += recvcounts[i];
+        if (i > 0) {
+            recvdisps[i] = recvdisps[i - 1] + recvcounts[i - 1];
+        }
+    }
+
+    uint64_t* recvbuf = (uint64_t*) BAYER_MALLOC(recv_total * sizeof(uint64_t));
+
+    MPI_Alltoallv(
+        sendbuf, sendcounts, senddisps, MPI_UINT64_T,
+        recvbuf, recvcounts, recvdisps, MPI_UINT64_T, MPI_COMM_WORLD
+    );
+
+    disp = 0;
+    while (disp < recv_total) {
+
+        uint64_t idx = recvbuf[disp];
+        uint64_t flag = recvbuf[disp + 1];
+
+        char* name = bayer_flist_file_get_name(src_list, idx);
+
+        /* ignore prefix portion of path to use as key */
+        name += strlen_prefix;
+
+        if (flag != 0) {
+            printf("found a difference\n");
+            dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
+            dcmp_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
+        }
+
+        /* update to say contents of the files were found to be the same */
+        dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
+        dcmp_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_COMMON);
+
+        /* go to next id & flag */
+        disp += 2;
     }
 
     MPI_Type_free(&keytype);
@@ -774,8 +816,12 @@ static void dcmp_strmap_compare(bayer_flist src_list,
     bayer_free(&rtl);
     bayer_free(&ltr);
     bayer_free(&vals);
-    bayer_free(&send);
-    bayer_free(&recv);
+    bayer_free(&sendcounts);
+    bayer_free(&recvcounts);
+    bayer_free(&recvdisps);
+    bayer_free(&senddisps);
+    bayer_free(&recvbuf);
+    bayer_free(&sendbuf);
 
     /* free the linked list of file chunks for src and dest */
     bayer_file_chunk_list_free(&src_p);
@@ -1805,7 +1851,7 @@ int main(int argc, char **argv)
     strmap* map2 = dcmp_strmap_creat(flist4, path2);
 
     /* compare files in map1 with those in map2 */
-    dcmp_strmap_compare(flist3, map1, flist4, map2);
+    dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1));
 
     /* check the results are valid */
     if (options.debug) {
