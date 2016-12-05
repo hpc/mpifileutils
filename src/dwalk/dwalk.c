@@ -35,6 +35,9 @@
 #include <pwd.h> /* for getpwent */
 #include <grp.h> /* for getgrent */
 #include <errno.h>
+#include <assert.h>
+#include <inttypes.h>
+#include <string.h>
 
 #include "libcircle.h"
 #include "dtcmp.h"
@@ -147,19 +150,405 @@ static void print_summary(bayer_flist flist)
     return;
 }
 
+struct distribute_item {
+    uint64_t value;
+    uint64_t ranks;
+};
+
+#define MAX_DISTRIBUTE_SEPARATORS 128
+
+struct distribute_option {
+    int separator_number;
+    uint64_t separators[MAX_DISTRIBUTE_SEPARATORS];
+};
+
+/*
+ * Search the right position to insert the value
+ * If the value exists already, do nothing
+ * Otherwise, locate the right position, and move the array forward to
+ * save the value.
+ */
+static int distribute_item_add(struct distribute_item *items,
+                               uint64_t size, uint64_t *count,
+                               uint64_t value, uint64_t ranks)
+{
+    uint64_t low = 0;
+    uint64_t high;
+    uint64_t middle;
+    uint64_t pos;
+    uint64_t c;
+
+    c = *count;
+    if (size < c)
+        return -1;
+
+    if (c == 0) {
+        items[0].value = value;
+        items[0].ranks = ranks;
+        *count = 1;
+        return 0;
+    }
+
+    high = c - 1;
+    while (low < high)
+    {
+        middle = (high - low) / 2 + low;
+        if (items[middle].value == value)
+            return 0;
+        /* In the left half */
+        else if (items[middle].value < value)
+            low = middle + 1;
+        /* In the right half */
+        else
+            high = middle;
+    }
+    assert(low == high);
+    if (items[low].value == value)
+        return 0;
+
+    if (size < c + 1)
+        return -1;
+
+    if (items[low].value < value)
+        pos = low + 1;
+    else
+        pos = low;
+
+    if (pos < c)
+        memmove(&items[low + 1], &items[low], sizeof(*items) * (c - pos));
+
+    items[pos].value = value;
+    items[pos].ranks = ranks;
+    *count = c + 1;
+    return 0;
+}
+
+static int distribution_gather(struct distribute_option *option,
+                               struct distribute_item *items, uint64_t *count,
+                               uint64_t groups, int rank, int ranks)
+{
+    int *counts;
+    int allcount;
+    int i;
+    uint64_t j;
+    int disp = 0;
+    int mycount = (int)*count;
+    struct distribute_item *recvbuf = NULL;
+    int* disps = NULL;
+    MPI_Datatype item_type;
+    uint64_t number;
+
+    MPI_Type_contiguous(2, MPI_UINT64_T, &item_type);
+    MPI_Type_commit(&item_type);
+
+    /* Determine total number of children across all ranks */
+    MPI_Allreduce(&mycount, &allcount, 1, MPI_UINT64_T, MPI_SUM,
+                  MPI_COMM_WORLD);
+    if (rank == 0) {
+        recvbuf = BAYER_MALLOC((uint64_t)allcount * sizeof(*items));
+        counts = BAYER_MALLOC((uint64_t)ranks * sizeof(int));
+        disps = BAYER_MALLOC((uint64_t)ranks * sizeof(int));
+    }
+
+    /* Tell rank 0 where the data is coming from */
+    MPI_Gather(&mycount, 1, MPI_INT, counts, 1, MPI_INT, 0,
+               MPI_COMM_WORLD);
+
+    /* Compute displacements and total bytes */
+    if (rank == 0) {
+        for (i = 0; i < ranks; i++) {
+            disps[i] = disp;
+            disp += counts[i];
+        }
+    }
+
+    /* Gather data to rank 0 */
+    MPI_Gatherv(items, (int)mycount, item_type, recvbuf, counts, disps, item_type,
+                0, MPI_COMM_WORLD);
+
+    /* Summarize */
+    if (rank != 0) {
+        MPI_Type_free(&item_type);
+        return 0;
+    }
+
+    for (i = mycount; i < allcount; i++) {
+        distribute_item_add(items, groups, count, recvbuf[i].value,
+                            recvbuf[i].ranks);
+    }
+
+    assert(*count == groups);
+
+    /* Print results */
+    if (option->separator_number == 0) {
+        printf("Size\tNumber\n");
+        for (i = 0; i < (int)groups; i++) {
+            printf("%"PRIu64"\t%"PRIu64"\n",
+                   items[i].value, items[i].ranks);
+        }
+    } else {
+        printf("Range\tNumber\n");
+        j = 0;
+        for (i = 0; i <= option->separator_number; i++) {
+            printf("[");
+            if (i == 0)
+                printf("0");
+            else
+                printf("%"PRIu64, option->separators[i - 1] + 1);
+
+            printf("~");
+
+            if (i == option->separator_number) {
+                if (groups > 0 && j < groups) {
+                    assert(items[j].value == option->separators[i - 1] + 1);
+                    number = items[j].ranks;
+                    j++;
+                } else {
+                    number = 0;
+                }
+                printf("MAX]\t%"PRIu64"\n", number);
+            } else {
+                if (groups > 0 && j < groups &&
+                    items[j].value == option->separators[i]) {
+                    number = items[j].ranks;
+                    j++;
+                } else {
+                    number = 0;
+                }
+                printf("%"PRIu64"]\t%"PRIu64"\n",
+                       option->separators[i], number);
+            }
+        }
+    }
+    bayer_free(&disps);
+    bayer_free(&counts);
+    MPI_Type_free(&item_type);
+    return 0;
+}
+
+static uint64_t distribute_get_value(struct distribute_option *option,
+                                     bayer_flist flist, uint64_t idx)
+{
+    uint64_t file_size;
+    uint64_t separator = 0;
+    int i;
+
+    file_size = bayer_flist_file_get_size(flist, idx);
+    if (option->separator_number == 0)
+        return file_size;
+
+    for (i = 0; i < option->separator_number; i++) {
+        separator = option->separators[i];
+        if (file_size <= separator) {
+            return separator;
+        }
+    }
+    /* Return the biggest separator + 1 */
+    return separator + 1;
+}
+
+/* 1 for any kind of distribution field */
+#define DISTRIBUTE_KEY_SIZE 1
+static int print_flist_distribution(struct distribute_option *option,
+                                    bayer_flist* pflist,
+                                    int rank, int ranks)
+{
+    bayer_flist flist = *pflist;
+    MPI_Datatype key;
+    MPI_Datatype keysat;
+    uint64_t output_bytes;
+    uint64_t* group_id;
+    uint64_t* group_ranks;
+    uint64_t* group_rank;
+    uint64_t checking_files;
+    size_t list_bytes;
+    uint64_t* list;
+    uint64_t* ptr;
+    uint64_t i;
+    uint64_t index;
+    uint64_t groups;
+    struct distribute_item *items = NULL;
+    uint64_t item_count = 0;
+    uint64_t value;
+
+    MPI_Type_contiguous(DISTRIBUTE_KEY_SIZE, MPI_UINT64_T, &key);
+    MPI_Type_commit(&key);
+
+    /* KEY + 1 for index in the filst */
+    MPI_Type_contiguous(DISTRIBUTE_KEY_SIZE + 1, MPI_UINT64_T, &keysat);
+    MPI_Type_commit(&keysat);
+
+    checking_files = bayer_flist_size(flist);
+    output_bytes = checking_files * sizeof(uint64_t);
+    group_id = (uint64_t *) BAYER_MALLOC(output_bytes);
+    group_ranks = (uint64_t *) BAYER_MALLOC(output_bytes);
+    group_rank = (uint64_t *) BAYER_MALLOC(output_bytes);
+
+    list_bytes = checking_files * (DISTRIBUTE_KEY_SIZE + 1) * sizeof(uint64_t);
+    list = (uint64_t *) BAYER_MALLOC(list_bytes);
+
+    /* Initialize the list */
+    ptr = list;
+    for (i = 0; i < checking_files; i++) {
+        ptr[0] = distribute_get_value(option, flist, i);
+        ptr[DISTRIBUTE_KEY_SIZE] = i; /* Index in flist */
+        ptr += DISTRIBUTE_KEY_SIZE + 1;
+    }
+
+    /* Assign group ids and compute group sizes */
+    DTCMP_Rankv((int)checking_files, list, &groups, group_id,
+                group_ranks, group_rank, key, keysat, DTCMP_OP_UINT64T_ASCEND,
+                DTCMP_FLAG_NONE, MPI_COMM_WORLD);
+
+    if (groups > 0) {
+        items = (struct distribute_item *)BAYER_MALLOC(sizeof(*items) *
+                                                       groups);
+    }
+
+    group_rank = (uint64_t *) BAYER_MALLOC(groups);
+    for (i = 0; i < checking_files; i++) {
+        /* Get index into flist for this item */
+        index = *(list + i * (DISTRIBUTE_KEY_SIZE + 1) +
+                  DISTRIBUTE_KEY_SIZE);
+        value = distribute_get_value(option, flist, index);
+        distribute_item_add(items, groups, &item_count, value,
+                            group_ranks[i]);
+    }
+
+    distribution_gather(option, items, &item_count, groups, rank, ranks);
+
+    if (items)
+        bayer_free(&items);
+    bayer_free(&list);
+    bayer_free(&group_rank);
+    bayer_free(&group_ranks);
+    bayer_free(&group_id);
+    MPI_Type_free(&keysat);
+    MPI_Type_free(&key);
+    return 0;
+}
+
+/*
+ * Search the right position to insert the separator
+ * If the separator exists already, return failure
+ * Otherwise, locate the right position, and move the array forward to
+ * save the separator.
+ */
+static int distribute_separator_add(struct distribute_option *option,
+                                    uint64_t separator)
+{
+    int low = 0;
+    int high;
+    int middle;
+    int pos;
+    int count;
+
+    count = option->separator_number;
+    option->separator_number++;
+    if (option->separator_number > MAX_DISTRIBUTE_SEPARATORS) {
+        printf("Too many seperators");
+        return -1;
+    }
+    
+    if (count == 0) {
+        option->separators[0] = separator;
+        return 0;
+    }
+
+    high = count - 1;
+    while (low < high)
+    {
+        middle = (high - low) / 2 + low;
+        if (option->separators[middle] == separator)
+            return -1;
+        /* In the left half */
+        else if (option->separators[middle] < separator)
+            low = middle + 1;
+        /* In the right half */
+        else
+            high = middle;
+    }
+    assert(low == high);
+    if (option->separators[low] == separator)
+        return -1;
+
+    if (option->separators[low] < separator)
+        pos = low + 1;
+    else
+        pos = low;
+
+    if (pos < count)
+        memmove(&option->separators[low + 1], &option->separators[low],
+                sizeof(*option->separators) * (uint64_t)(count - pos));
+
+    option->separators[pos] = separator;
+    return 0;
+}
+
+static int distribution_parse(struct distribute_option *option,
+                              const char *string)
+{
+    char *ptr;
+    char *next;
+    unsigned long long separator;
+    char *str;
+    int status = 0;
+
+    if (strncmp(string, "size", strlen("size")) != 0)
+        return -1;
+
+    option->separator_number = 0;
+    if (strlen(string) == strlen("size"))
+        return 0;
+
+    if (string[strlen("size")] != ':')
+        return -1;
+
+    str = BAYER_STRDUP(string);
+    /* Parse separators */
+    ptr = str + strlen("size:");
+    next = ptr;
+    while (ptr && ptr < str + strlen(string)) {
+        next = strchr(ptr, ',');
+        if (next != NULL) {
+            *next = '\0';
+            next++;
+        }
+
+        if (bayer_abtoull(ptr, &separator) != BAYER_SUCCESS) {
+            printf("Invalid seperator \"%s\"\n", ptr);
+            status = -1;
+            goto out;
+        }
+
+        if (distribute_separator_add(option, separator)) {
+            printf("Duplicated seperator \"%llu\"\n", separator);
+            status = -1;
+            goto out;
+        }
+
+        ptr = next;
+    }
+
+out:
+    bayer_free(&str);
+    return status;
+}
+
 static void print_usage(void)
 {
     printf("\n");
     printf("Usage: dwalk [options] <path> ...\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -i, --input <file>  - read list from file\n");
-    printf("  -o, --output <file> - write processed list to file\n");
-    printf("  -l, --lite          - walk file system without stat\n");
-    printf("  -s, --sort <fields> - sort output by comma-delimited fields\n");
-    printf("  -p, --print         - print files to screen\n");
-    printf("  -v, --verbose       - verbose output\n");
-    printf("  -h, --help          - print usage\n");
+    printf("  -i, --input <file>                      - read list from file\n");
+    printf("  -o, --output <file>                     - write processed list to file\n");
+    printf("  -l, --lite                              - walk file system without stat\n");
+    printf("  -s, --sort <fields>                     - sort output by comma-delimited fields\n");
+    printf("  -d, --distribution <field>:<separators> - print distribution by field\n");
+    printf("  -p, --print                             - print files to screen\n");
+    printf("  -v, --verbose                           - verbose output\n");
+    printf("  -h, --help                              - print usage\n");
     printf("\n");
     printf("Fields: name,user,group,uid,gid,atime,mtime,ctime,size\n");
     printf("\n");
@@ -194,25 +583,28 @@ int main(int argc, char** argv)
     char* inputname  = NULL;
     char* outputname = NULL;
     char* sortfields = NULL;
+    char* distribution = NULL;
     int walk = 0;
     int print = 0;
+    struct distribute_option option;
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"input",    1, 0, 'i'},
-        {"output",   1, 0, 'o'},
-        {"lite",     0, 0, 'l'},
-        {"sort",     1, 0, 's'},
-        {"print",    0, 0, 'p'},
-        {"help",     0, 0, 'h'},
-        {"verbose",  0, 0, 'v'},
+        {"distribution", 1, 0, 'd'},
+        {"input",        1, 0, 'i'},
+        {"output",       1, 0, 'o'},
+        {"lite",         0, 0, 'l'},
+        {"sort",         1, 0, 's'},
+        {"print",        0, 0, 'p'},
+        {"help",         0, 0, 'h'},
+        {"verbose",      0, 0, 'v'},
         {0, 0, 0, 0}
     };
 
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:ls:phv",
+                    argc, argv, "d:i:o:ls:phv",
                     long_options, &option_index
                 );
 
@@ -221,6 +613,9 @@ int main(int argc, char** argv)
         }
 
         switch (c) {
+            case 'd':
+                distribution = BAYER_STRDUP(optarg);
+                break;
             case 'i':
                 inputname = BAYER_STRDUP(optarg);
                 break;
@@ -343,6 +738,23 @@ int main(int argc, char** argv)
         bayer_free(&sortfields_copy);
     }
 
+    if (distribution != NULL) {
+        if (distribution_parse(&option, distribution) != 0) {
+            if (rank == 0) {
+                printf("Invalid distribution argument: %s\n", distribution);
+                usage = 1;
+            }
+        } else if (rank == 0 && option.separator_number != 0) {
+            printf("Seperators: ");
+            for (i = 0; i < option.separator_number; i++) {
+                if (i != 0)
+                    printf(", ");
+                printf("%"PRIu64, option.separators[i]);
+            }
+            printf("\n");
+        }
+    }
+
     if (usage) {
         if (rank == 0) {
             print_usage();
@@ -382,6 +794,10 @@ int main(int argc, char** argv)
 
     /* print summary about all files */
     print_summary(flist);
+
+    if (distribution != NULL) {
+        print_flist_distribution(&option, &flist, rank, ranks);
+    }
 
     /* write data to cache file */
     if (outputname != NULL) {
