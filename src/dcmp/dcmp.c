@@ -50,6 +50,7 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("  -h, --help  - print usage\n");
+    printf("  -v, --verbose\n");
     printf("  -b, --base  - do base comparison\n");
     printf("  -o, --output field0=state0@field1=state1,field2=state2:file "
     	   "- write list to file\n");
@@ -545,6 +546,10 @@ int dcmp_compare_metadata(bayer_flist src_list,
 
 static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_map,
         bayer_flist dst_compare_list, strmap* dst_map, size_t strlen_prefix) {
+    
+    /* wait for all tasks and start timer */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double start_compare_data = MPI_Wtime();
 
     /* get the largest filename */
     uint64_t max_name = bayer_flist_file_max_name(src_compare_list);
@@ -720,6 +725,44 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
         disp += 2;
     }
 
+    /* local variables to count up total number of bytes read in compare list */
+    uint64_t idx;
+    uint64_t cmp_list_size = bayer_flist_size(src_compare_list);
+    uint64_t byte_count = 0;
+
+    /* get the total number of bytes read from the src & dst lists */
+    for (idx = 0; idx < cmp_list_size; idx++) {
+        uint64_t src_file_size = bayer_flist_file_get_size(src_compare_list, idx);
+        uint64_t dst_file_size = bayer_flist_file_get_size(dst_compare_list, idx);
+        byte_count += src_file_size + dst_file_size;
+    }
+
+    /* get total number of bytes across all processes */
+    uint64_t total;
+    MPI_Allreduce(&byte_count, &total, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* wait for all procs to finish before we start
+     * with files at next level */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double end_compare_data = MPI_Wtime();
+
+    /* report compared data count, time, and rate */
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
+        uint64_t all_count = bayer_flist_global_size(src_compare_list);
+        double time_diff = end_compare_data - start_compare_data;
+        double file_rate = 0.0;
+        double byte_rate = 0.0;
+        if (time_diff > 0.0) {
+            file_rate = ((double)all_count) / time_diff;
+            byte_rate = ((double)total) / time_diff;
+        }
+        printf("Compared data of %lu items in %f seconds (%f items/sec) and (%f bytes/sec) \n", 
+                all_count, time_diff, file_rate, byte_rate);
+        printf("Total bytes read: %d\n", total);
+    }
+
+
+
     /* free memory */
     MPI_Type_free(&keytype);
     DTCMP_Op_free(&keyop);
@@ -743,6 +786,10 @@ static void dcmp_strmap_compare(bayer_flist src_list,
                                 bayer_flist dst_list,
                                 strmap* dst_map, size_t strlen_prefix)
 {
+    /* wait for all tasks and start timer */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double start_compare = MPI_Wtime();
+
     /* create compare_lists */
     bayer_flist src_compare_list = bayer_flist_subset(src_list);
     bayer_flist dst_compare_list = bayer_flist_subset(dst_list);
@@ -836,21 +883,38 @@ static void dcmp_strmap_compare(bayer_flist src_list,
          * to be compared and store in src & dest compare lists */
         bayer_flist_file_copy(src_list, src_index, src_compare_list);
         bayer_flist_file_copy(dst_list, dst_index, dst_compare_list);
-
-        /* the sizes are the same, now compare file contents */
-        const char* src_name = bayer_flist_file_get_name(src_list, src_index);
-        const char* dst_name = bayer_flist_file_get_name(dst_list, dst_index);
- 
-          }
+    }
     
-    bayer_flist_summarize(dst_compare_list);
-    bayer_flist_summarize(src_compare_list);
+     bayer_flist_summarize(src_compare_list);
+     bayer_flist_summarize(dst_compare_list);
 
-    /* compare the contents of the files */
-    dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list, dst_map, strlen_prefix);
+    /* compare the contents of the files if we have anything in the compare list */
+    uint64_t global_size = bayer_flist_global_size(src_compare_list);
+    if (global_size > 0) {
+        dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list, dst_map, strlen_prefix);
+    }
 
-   bayer_flist_free(&dst_compare_list);
-   bayer_flist_free(&src_compare_list); 
+    /* wait for all procs to finish before we start
+    * with files at next level */
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    double end_compare = MPI_Wtime();
+
+    /* if the verbose option is set print the timing data */
+    /* report compare count, time, and rate */
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
+       uint64_t all_count = bayer_flist_global_size(src_list);
+       double time_diff = end_compare - start_compare;
+       double rate = 0.0;
+       if (time_diff > 0.0) {
+           rate = ((double)all_count) / time_diff;
+       }
+       printf("Compared %lu items in %f seconds (%f items/sec)\n", all_count, time_diff, rate);
+    }
+   
+    /* free the compare flists */
+    bayer_flist_free(&dst_compare_list);
+    bayer_flist_free(&src_compare_list); 
 }
 
 /* loop on the src map to check the results */
@@ -1798,6 +1862,7 @@ int main(int argc, char **argv)
             break;
         case 'v':
             options.verbose ++;
+            bayer_debug_level = BAYER_LOG_VERBOSE;
             break;
         case 'h':
         case '?':
