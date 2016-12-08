@@ -737,7 +737,6 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
 
         if (flag != 0) {
             /* update to say contents of the files were found to be different */
-            printf("found a difference\n");
             dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
         } else {
@@ -781,9 +780,20 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
             file_rate = ((double)all_count) / time_diff;
             byte_rate = ((double)total_bytes) / time_diff;
         }
-        printf("Compared data of %lu items in %f seconds (%f items/sec) and (%f bytes/sec) \n", 
-                all_count, time_diff, file_rate, byte_rate);
-        printf("Total bytes read: %lu\n", total_bytes);
+
+        /* convert size to units */
+        double size_tmp;
+        const char* size_units;
+        bayer_format_bytes(total_bytes, &size_tmp, &size_units);
+
+        /* convert bandwidth to units */
+        double total_bytes_tmp;
+        const char* rate_units;
+        bayer_format_bw(byte_rate, &total_bytes_tmp, &rate_units);
+
+        printf("Compared data of %lu items in %f seconds (%f items/sec) and (%.3lf %s ) \n", 
+                all_count, time_diff, file_rate, total_bytes_tmp, rate_units);
+        printf("Total bytes read: %.3lf %s\n", size_tmp, size_units);
     }
 
     /* free memory */
