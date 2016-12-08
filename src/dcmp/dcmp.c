@@ -733,13 +733,15 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
     /* get the total number of bytes read from the src & dst lists */
     for (idx = 0; idx < cmp_list_size; idx++) {
         uint64_t src_file_size = bayer_flist_file_get_size(src_compare_list, idx);
-        uint64_t dst_file_size = bayer_flist_file_get_size(dst_compare_list, idx);
-        byte_count += src_file_size + dst_file_size;
+
+        byte_count += src_file_size;
     }
 
     /* get total number of bytes across all processes */
-    uint64_t total;
-    MPI_Allreduce(&byte_count, &total, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    uint64_t total_src;
+    MPI_Allreduce(&byte_count, &total_src, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    uint64_t total_bytes = total_src * 2;
+    printf("total bytes: %lu\n", total_bytes);
 
     /* wait for all procs to finish before we start
      * with files at next level */
@@ -754,14 +756,12 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
         double byte_rate = 0.0;
         if (time_diff > 0.0) {
             file_rate = ((double)all_count) / time_diff;
-            byte_rate = ((double)total) / time_diff;
+            byte_rate = ((double)total_bytes) / time_diff;
         }
         printf("Compared data of %lu items in %f seconds (%f items/sec) and (%f bytes/sec) \n", 
                 all_count, time_diff, file_rate, byte_rate);
-        printf("Total bytes read: %d\n", total);
+        printf("Total bytes read: %lu\n", total_bytes);
     }
-
-
 
     /* free memory */
     MPI_Type_free(&keytype);
