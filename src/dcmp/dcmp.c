@@ -561,11 +561,12 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
     bayer_file_chunk* src_head = bayer_file_chunk_list_alloc(src_compare_list, chunk_size);
     bayer_file_chunk* dst_head = bayer_file_chunk_list_alloc(dst_compare_list, chunk_size);
 
+    /* get pointers to the src & dst head */
     bayer_file_chunk* src_p = src_head;
     bayer_file_chunk* dst_p = dst_head;
 
+    /* get a count of how many items are the compare list */
     int list_count = 0;
-
     while (src_p != NULL) {
         list_count++;
         src_p = src_p->next;
@@ -584,9 +585,13 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
     int* ltr  = (int*) BAYER_MALLOC(list_count * sizeof(int));
     int* rtl  = (int*) BAYER_MALLOC(list_count * sizeof(int)); 
 
+    /* i is used to initialize the ltr and rtl arrays in the loop
+     * below */
     int i = 0;
+    /* pointer to the filename */
     char* name_ptr = keys;
 
+    /* reset src & dst pointers to the head of the lists */
     src_p = src_head;
     dst_p = dst_head;
 
@@ -595,11 +600,9 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
          
         /* get offset into file in bytes */
         off_t offset = src_p->offset;
-        printf("%s offset: %lu\n", src_p->name, offset);
 
         /* get length of file in bytes */
         off_t length = src_p->length;
-        printf("%s length: %lu\n", src_p->name, length);
         
         /* compare the contents of the files */
         int rc = dcmp_compare_data(src_p->name, dst_p->name, offset, length, 1048576);
@@ -612,6 +615,8 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
 
         /* move to the start of the next filename */
         name_ptr += max_name;
+
+        /* increment i to the next index for ltr and rtl */
         i++;
 
         /* update pointers for src and dest in linked list */
@@ -619,16 +624,17 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
         dst_p = dst_p->next;
     }
 
+    /* setup to use scan */
     MPI_Datatype keytype;
     DTCMP_Op keyop;
     DTCMP_Str_create_ascend((int)max_name, &keytype, &keyop);
 
     DTCMP_Segmented_exscan(list_count, keys, keytype, vals, ltr, rtl, MPI_INT, keyop, DTCMP_FLAG_NONE, MPI_LOR, MPI_COMM_WORLD);
 
+    /* pass ltr values through to the end of the file */
     name_ptr = keys; 
     for (i = 0; i < list_count; i++) {
       ltr[i] |= vals[i];
-      printf("name: %s ltr: %d val: %d\n", name_ptr, ltr[i], vals[i]);
       name_ptr += max_name;  
     }
      
@@ -647,14 +653,18 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
         sendcounts[i] = 0;
     }
 
+    /* amount of bytes we are sending (it is doubled because we are 
+     * sending the index & the flag) */
     size_t sendbytes = list_count * 2 * sizeof(uint64_t); 
 
     /* allocate space for send buffer */
     uint64_t* sendbuf = (uint64_t*) BAYER_MALLOC(sendbytes);
 
+    /* keep track of where in buffer & array we are */
     int disp = 0;
     i = 0;
 
+    /* reset pointer to head of compare list */
     src_p = src_head;
 
     /* Iterate over the list of files. For each file a process needs to report on,
@@ -664,13 +674,19 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
     while (src_p != NULL) {
         if (src_p->offset + src_p->length >= src_p->file_size) {
 
+            /* get a count of items that will be sent
+             * to the rank owner */
             sendcounts[src_p->rank_of_owner] += 2;
 
+            /* record index and ltr value in send buffer */
             sendbuf[disp] = src_p->index_of_owner;
             sendbuf[disp + 1] = (uint64_t)ltr[i];
-
+            
+            /* advance to next value in buffer*/
             disp += 2;
         }
+
+        /* advance in struct list and ltr array */
         src_p = src_p->next;
         i++;
     }
@@ -681,8 +697,10 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
         senddisps[i] = senddisps[i - 1] + sendcounts[i - 1];
     }
 
+    /* alltoall to let every process know a count of how much it will be receiving */
     MPI_Alltoall(sendcounts, 1, MPI_INT, recvcounts, 1, MPI_INT, MPI_COMM_WORLD);
 
+    /* calculate displacements for recv buffer for alltoallv */
     int recv_total = 0;
     recvdisps[0] = 0;
     for (int i = 0; i < ranks; i++) {
@@ -692,19 +710,26 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
         }
     }
 
+    /* allocate buffer to recv bytes into based on recvounts */
     uint64_t* recvbuf = (uint64_t*) BAYER_MALLOC(recv_total * sizeof(uint64_t));
 
+    /* send the bytes to the correct rank that owns the file */
     MPI_Alltoallv(
         sendbuf, sendcounts, senddisps, MPI_UINT64_T,
         recvbuf, recvcounts, recvdisps, MPI_UINT64_T, MPI_COMM_WORLD
     );
 
+    /* keep track of where we are in unpacking */
     disp = 0;
+
+    /* unpack contents of recv buffer  & store results in strmap */
     while (disp < recv_total) {
 
+        /* local store of idx & flag values for each file */
         uint64_t idx = recvbuf[disp];
         uint64_t flag = recvbuf[disp + 1];
 
+        /* lookup name of file based on id to send to strmap updata call */
         char* name = bayer_flist_file_get_name(src_compare_list, idx);
 
         /* ignore prefix portion of path to use as key */
@@ -733,7 +758,6 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
     /* get the total number of bytes read from the src & dst lists */
     for (idx = 0; idx < cmp_list_size; idx++) {
         uint64_t src_file_size = bayer_flist_file_get_size(src_compare_list, idx);
-
         byte_count += src_file_size;
     }
 
@@ -741,7 +765,6 @@ static void dcmp_strmap_compare_data(bayer_flist src_compare_list, strmap* src_m
     uint64_t total_src;
     MPI_Allreduce(&byte_count, &total_src, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
     uint64_t total_bytes = total_src * 2;
-    printf("total bytes: %lu\n", total_bytes);
 
     /* wait for all procs to finish before we start
      * with files at next level */
@@ -894,10 +917,8 @@ static void dcmp_strmap_compare(bayer_flist src_list,
         dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list, dst_map, strlen_prefix);
     }
 
-    /* wait for all procs to finish before we start
-    * with files at next level */
+    /* wait for all procs to finish before stopping timer */
     MPI_Barrier(MPI_COMM_WORLD);
-
     double end_compare = MPI_Wtime();
 
     /* if the verbose option is set print the timing data */
