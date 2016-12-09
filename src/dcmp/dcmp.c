@@ -635,7 +635,7 @@ static void dcmp_strmap_compare_data(
         int rc = dcmp_compare_data(src_p->name, dst_p->name, offset, length, 1048576);
 
         /* now record results of compare_data for sending to segmented scan */
-        strncpy(keys, src_p->name, max_name);
+        strncpy(name_ptr, src_p->name, max_name);
         vals[i] = rc;
 
         /* initialize our output values (have to do this because of exscan) */
