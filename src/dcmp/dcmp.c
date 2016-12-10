@@ -565,6 +565,9 @@ int dcmp_compare_metadata(
     return diff;
 }
 
+/* given a list of source/destination files to compare, spread file
+ * spread file sections to processes to compare in parallel, fill
+ * in comparison results in source and dest string maps */
 static void dcmp_strmap_compare_data(
     bayer_flist src_compare_list,
     strmap* src_map,
@@ -579,11 +582,6 @@ static void dcmp_strmap_compare_data(
     /* get the largest filename */
     uint64_t max_name = bayer_flist_file_max_name(src_compare_list);
 
-    /* bail out if max_name is empty */
-    if (max_name == 0) {
-        return;
-    }
-
     /* get chunk size for copying files (just hard-coded for now) */
     uint64_t chunk_size = 1024 * 1024;
 
@@ -591,20 +589,20 @@ static void dcmp_strmap_compare_data(
     bayer_file_chunk* src_head = bayer_file_chunk_list_alloc(src_compare_list, chunk_size);
     bayer_file_chunk* dst_head = bayer_file_chunk_list_alloc(dst_compare_list, chunk_size);
 
-    /* get pointers to march through linked lists */
-    bayer_file_chunk* src_p;
-    bayer_file_chunk* dst_p;
-
     /* get a count of how many items are the compare list and total
      * number of bytes we'll read */
     int list_count = 0;
     uint64_t byte_count = 0;
-    src_p = src_head;
+    bayer_file_chunk* src_p = src_head;
     while (src_p != NULL) {
         list_count++;
         byte_count += (uint64_t) src_p->length * 2;
         src_p = src_p->next;
     }
+
+    /* get total number of bytes across all processes */
+    uint64_t total_bytes;
+    MPI_Allreduce(&byte_count, &total_bytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* keys are the filename, so only bytes that belong to 
      * the same file will be compared via a flag in the segmented scan */
@@ -623,7 +621,7 @@ static void dcmp_strmap_compare_data(
     int i = 0;
     char* name_ptr = keys;
     src_p = src_head;
-    dst_p = dst_head;
+    bayer_file_chunk* dst_p = dst_head;
     while (src_p != NULL) {
         /* get offset into file that we should compare (bytes) */
         off_t offset = src_p->offset;
@@ -651,7 +649,7 @@ static void dcmp_strmap_compare_data(
         dst_p = dst_p->next;
     }
 
-    /* create type and comparison operation for file names */
+    /* create type and comparison operation for file names for the segmented scan */
     MPI_Datatype keytype;
     DTCMP_Op keyop;
     DTCMP_Str_create_ascend((int)max_name, &keytype, &keyop);
@@ -677,17 +675,15 @@ static void dcmp_strmap_compare_data(
     int* recvdisps  = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
     int* senddisps  = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
 
-    /* initialize send & receive arrays */
+    /* allocate space for send buffer, we'll send an index value and comparison
+     * flag, both as uint64_t */
+    size_t sendbytes = list_count * 2 * sizeof(uint64_t); 
+    uint64_t* sendbuf = (uint64_t*) BAYER_MALLOC(sendbytes);
+
+    /* initialize sendcounts array */
     for (int i = 0; i < ranks; i++) {
         sendcounts[i] = 0;
     }
-
-    /* amount of bytes we are sending (it is doubled because we are 
-     * sending the index & the flag) */
-    size_t sendbytes = list_count * 2 * sizeof(uint64_t); 
-
-    /* allocate space for send buffer */
-    uint64_t* sendbuf = (uint64_t*) BAYER_MALLOC(sendbytes);
 
     /* Iterate over the list of files. For each file a process needs to report on,
      * we increment the counter correspoinding to the "owner" of the file. After
@@ -699,13 +695,15 @@ static void dcmp_strmap_compare_data(
     while (src_p != NULL) {
         /* if we checked the last byte of the file, we need to send scan result to owner */
         if (src_p->offset + src_p->length >= src_p->file_size) {
-            /* get a count of items that will be sent
-             * to the rank owner */
-            sendcounts[src_p->rank_of_owner] += 2;
+            /* increment count of items that will be sent to owner */
+            int owner = (int) src_p->rank_of_owner;
+            sendcounts[owner] += 2;
 
-            /* record index and ltr value in send buffer */
-            sendbuf[disp    ] = src_p->index_of_owner;
-            sendbuf[disp + 1] = (uint64_t)ltr[i];
+            /* copy index and flag value to send buffer */
+            uint64_t file_index = src_p->index_of_owner;
+            uint64_t flag       = (uint64_t) ltr[i];
+            sendbuf[disp    ] = file_index;
+            sendbuf[disp + 1] = flag;
             
             /* advance to next value in buffer*/
             disp += 2;
@@ -725,7 +723,7 @@ static void dcmp_strmap_compare_data(
     /* alltoall to let every process know a count of how much it will be receiving */
     MPI_Alltoall(sendcounts, 1, MPI_INT, recvcounts, 1, MPI_INT, MPI_COMM_WORLD);
 
-    /* calculate displacements for recv buffer for alltoallv */
+    /* calculate total incoming bytes and displacements for alltoallv */
     int recv_total = recvcounts[0];
     recvdisps[0] = 0;
     for (i = 1; i < ranks; i++) {
@@ -769,10 +767,6 @@ static void dcmp_strmap_compare_data(
         /* go to next id & flag */
         disp += 2;
     }
-
-    /* get total number of bytes across all processes */
-    uint64_t total_bytes;
-    MPI_Allreduce(&byte_count, &total_bytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* wait for all procs to finish before stopping the timer */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -1020,13 +1014,11 @@ static void dcmp_strmap_check_src(strmap* src_map,
 
             /* get state of src and dest */
             dcmp_state src_state;
-            ret = dcmp_strmap_item_state(src_map, key, field,
-                &src_state);
+            ret = dcmp_strmap_item_state(src_map, key, field, &src_state);
             assert(ret == 0);
 
             dcmp_state dst_state;
-            ret = dcmp_strmap_item_state(dst_map, key, field,
-                &dst_state);
+            ret = dcmp_strmap_item_state(dst_map, key, field, &dst_state);
             if (only_src) {
                 assert(ret);
             } else {
@@ -1041,12 +1033,12 @@ static void dcmp_strmap_check_src(strmap* src_map,
                 assert(src_state == dst_state);
                 /* all states are either common, differ or skiped */
                 if (dcmp_option_need_compare(field)) {
-                    assert(src_state == DCMPS_COMMON ||
-                        src_state == DCMPS_DIFFER);
+                    assert(src_state == DCMPS_COMMON || src_state == DCMPS_DIFFER);
                 } else {
                     // XXXX
-                    if (src_state != DCMPS_INIT)
+                    if (src_state != DCMPS_INIT) {
                         printf("XXX %s wrong state %s\n", dcmp_field_to_string(field, 1), dcmp_state_to_string(src_state, 1));
+                    }
                     assert(src_state == DCMPS_INIT);
                 }
             }
