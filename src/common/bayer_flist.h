@@ -251,10 +251,6 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
 /* free the linked list allocated with bayer_file_chunk_list_alloc */
 void bayer_file_chunk_list_free(bayer_file_chunk** phead);
 
- #endif /* BAYER_FLIST_H */
- 
- /* enable C++ codes to include this header directly */
-
 #endif /* BAYER_FLIST_H */
 
 /* enable C++ codes to include this header directly */
