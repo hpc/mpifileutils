@@ -15,6 +15,7 @@ noinst_HEADERS = \
 
 libfileutils_common_a_SOURCES = \
     bayer_flist.c \
+    bayer_flist_chunk.c \
     bayer_flist_io.c \
     bayer_flist_remove.c \
     bayer_flist_sort.c \

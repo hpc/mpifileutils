@@ -231,6 +231,30 @@ int bayer_flist_sort(const char* fields, bayer_flist* flist);
 /* given a list of files print from start and end of the list */
 void bayer_flist_print(bayer_flist flist);
 
+/* TODO: integrate this into the file list proper, or otherwise move it to another file */
+/* used to create a linked list of copy_elem's */
+typedef struct bayer_file_chunk_struct {
+  const char* name; /* file name */
+  uint64_t offset;
+  uint64_t length;
+  uint64_t file_size;
+  uint64_t rank_of_owner;
+  uint64_t index_of_owner;
+  struct copy_elem_struct* next;
+} bayer_file_chunk;
+
+/* given a file list and a chunk size, split files at chunk boundaries and evenly
+ * spread chunks to processes, returns a linked list of file sections each process
+ * is responsbile for */
+bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_size);
+
+/* free the linked list allocated with bayer_file_chunk_list_alloc */
+void bayer_file_chunk_list_free(bayer_file_chunk** phead);
+
+ #endif /* BAYER_FLIST_H */
+ 
+ /* enable C++ codes to include this header directly */
+
 #endif /* BAYER_FLIST_H */
 
 /* enable C++ codes to include this header directly */
