@@ -29,6 +29,7 @@
 #include <libgen.h>
 #include <errno.h>
 #include <dtcmp.h>
+#include <inttypes.h>
 
 /* for bool type, true/false macros */
 #include <stdbool.h>
@@ -565,6 +566,34 @@ int dcmp_compare_metadata(
     return diff;
 }
 
+/* use Allreduce to get the total number of bytes read if
+ * data was compared */
+static uint64_t get_total_bytes_read(bayer_flist src_compare_list) {
+
+    /* get counter for flist id & byte_count */
+    uint64_t idx;
+    uint64_t byte_count = 0;
+
+    /* get size of flist */
+    uint64_t size = bayer_flist_size(src_compare_list);
+
+    /* count up the number of bytes in src list
+     * multiply by two in order to include number
+     * of bytes read in dst list as well */
+    for (idx = 0; idx < size; idx++) {
+        byte_count += bayer_flist_file_get_size(src_compare_list, idx) * 2;
+    }
+
+    /* buffer for total byte count for Allreduce */
+    uint64_t total_bytes_read;
+
+    /* get total number of bytes across all processes */
+    MPI_Allreduce(&byte_count, &total_bytes_read, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    
+    /* return the toal number of bytes */
+    return total_bytes_read;
+}
+
 /* given a list of source/destination files to compare, spread file
  * spread file sections to processes to compare in parallel, fill
  * in comparison results in source and dest string maps */
@@ -575,10 +604,6 @@ static void dcmp_strmap_compare_data(
     strmap* dst_map,
     size_t strlen_prefix)
 {
-    /* wait for all tasks and start timer */
-    MPI_Barrier(MPI_COMM_WORLD);
-    double start_compare_data = MPI_Wtime();
-
     /* get the largest filename */
     uint64_t max_name = bayer_flist_file_max_name(src_compare_list);
 
@@ -592,17 +617,11 @@ static void dcmp_strmap_compare_data(
     /* get a count of how many items are the compare list and total
      * number of bytes we'll read */
     int list_count = 0;
-    uint64_t byte_count = 0;
     bayer_file_chunk* src_p = src_head;
     while (src_p != NULL) {
         list_count++;
-        byte_count += (uint64_t) src_p->length * 2;
         src_p = src_p->next;
     }
-
-    /* get total number of bytes across all processes */
-    uint64_t total_bytes;
-    MPI_Allreduce(&byte_count, &total_bytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* keys are the filename, so only bytes that belong to 
      * the same file will be compared via a flag in the segmented scan */
@@ -660,7 +679,7 @@ static void dcmp_strmap_compare_data(
       /* turn segmented exscan into scan by or'ing in our input */
       ltr[i] |= vals[i];
     }
-     
+    
     /* we're done with the MPI type and operation, free them */
     MPI_Type_free(&keytype);
     DTCMP_Op_free(&keyop);
@@ -702,10 +721,10 @@ static void dcmp_strmap_compare_data(
             /* copy index and flag value to send buffer */
             uint64_t file_index = src_p->index_of_owner;
             uint64_t flag       = (uint64_t) ltr[i];
-            sendbuf[disp    ] = file_index;
-            sendbuf[disp + 1] = flag;
+            sendbuf[disp    ]   = file_index;
+            sendbuf[disp + 1]   = flag;
             
-            /* advance to next value in buffer*/
+            /* advance to next value in buffer */
             disp += 2;
         }
 
@@ -766,36 +785,6 @@ static void dcmp_strmap_compare_data(
 
         /* go to next id & flag */
         disp += 2;
-    }
-
-    /* wait for all procs to finish before stopping the timer */
-    MPI_Barrier(MPI_COMM_WORLD);
-    double end_compare_data = MPI_Wtime();
-
-    /* report compared data count, time, and rate */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
-        uint64_t all_count = bayer_flist_global_size(src_compare_list);
-        double time_diff = end_compare_data - start_compare_data;
-        double file_rate = 0.0;
-        double byte_rate = 0.0;
-        if (time_diff > 0.0) {
-            file_rate = ((double)all_count) / time_diff;
-            byte_rate = ((double)total_bytes) / time_diff;
-        }
-
-        /* convert size to units */
-        double size_tmp;
-        const char* size_units;
-        bayer_format_bytes(total_bytes, &size_tmp, &size_units);
-
-        /* convert bandwidth to units */
-        double total_bytes_tmp;
-        const char* rate_units;
-        bayer_format_bw(byte_rate, &total_bytes_tmp, &rate_units);
-
-        printf("Compared data of %lu items in %f seconds (%f items/sec) and (%.3lf %s ) \n", 
-                all_count, time_diff, file_rate, total_bytes_tmp, rate_units);
-        printf("Total bytes read: %.3lf %s\n", size_tmp, size_units);
     }
 
     /* free memory */
@@ -931,31 +920,83 @@ static void dcmp_strmap_compare(bayer_flist src_list,
     bayer_flist_summarize(dst_compare_list);
 
     /* compare the contents of the files if we have anything in the compare list */
-    uint64_t global_size = bayer_flist_global_size(src_compare_list);
-    if (global_size > 0) {
+    uint64_t cmp_global_size = bayer_flist_global_size(src_compare_list);
+    if (cmp_global_size > 0) {
         dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list, dst_map, strlen_prefix);
     }
-
-    /* free the compare flists */
-    bayer_flist_free(&dst_compare_list);
-    bayer_flist_free(&src_compare_list); 
 
     /* wait for all procs to finish before stopping timer */
     MPI_Barrier(MPI_COMM_WORLD);
     double end_compare = MPI_Wtime();
+   
+    /* initalize total_bytes_read to zero */
+    uint64_t total_bytes_read = 0;
 
-    /* if the verbose option is set print the timing data */
-    /* report compare count, time, and rate */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
-       uint64_t all_count = bayer_flist_global_size(src_list);
-       double time_diff = end_compare - start_compare;
-       double rate = 0.0;
-       if (time_diff > 0.0) {
-           rate = ((double)all_count) / time_diff;
-       }
-       printf("Compared %lu items in %f seconds (%f items/sec)\n", all_count, time_diff, rate);
+    /* get total bytes read (if any) */
+    if (cmp_global_size > 0) {
+        total_bytes_read = get_total_bytes_read(src_compare_list);
     }
 
+    /* if the verbose option is set print the timing data
+        report compare count, time, and rate */
+    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
+       /* find out how many files were compared */
+       uint64_t all_count = bayer_flist_global_size(src_list);
+
+       /* get the amount of time the compare function took */
+       double time_diff = end_compare - start_compare;
+
+       /* calculate byte and file rate */
+       double file_rate = 0.0;
+       double byte_rate = 0.0;
+       if (time_diff > 0.0) {
+           file_rate = ((double)all_count) / time_diff;
+           byte_rate = ((double)total_bytes_read) / time_diff;
+       }
+
+       /* convert uint64 to strings for printing to user */
+       char starttime_str[256];
+       char endtime_str[256];
+       snprintf(&starttime_str, sizeof(starttime_str), "%f", start_compare);
+       snprintf(&endtime_str, sizeof(endtime_str), "%f", end_compare);
+
+       /* convert time to time_t */
+       time_t start_rawtime = start_compare;
+       time_t end_rawtime   = end_compare;
+       
+       /* format start & end time string */
+       struct tm* localstart = localtime(&start_rawtime);
+       struct tm* localend = localtime(&end_rawtime);
+       strftime(starttime_str, 256, "%b-%d-%Y, %H:%M:%S", localstart);
+       strftime(endtime_str, 256, "%b-%d-%Y, %H:%M:%S", localend);
+
+       /* convert size to units */
+       double size_tmp;
+       const char* size_units;
+       bayer_format_bytes(total_bytes_read, &size_tmp, &size_units);
+
+       /* convert bandwidth to units */
+       double total_bytes_tmp;
+       const char* rate_units;
+       bayer_format_bw(byte_rate, &total_bytes_tmp, &rate_units);
+
+       BAYER_LOG(BAYER_LOG_INFO, "Started: %s", starttime_str);
+       BAYER_LOG(BAYER_LOG_INFO, "Completed: %s", endtime_str);
+       BAYER_LOG(BAYER_LOG_INFO, "Seconds: %.3lf", time_diff);
+       BAYER_LOG(BAYER_LOG_INFO, "  Files: %" PRId64, all_count);
+       BAYER_LOG(BAYER_LOG_INFO, "Bytes read: %.3lf %s (%" PRId64 " bytes)",
+            size_tmp, size_units, total_bytes_read);
+       BAYER_LOG(BAYER_LOG_INFO, "Byte Rate: %.3lf %s " \
+            "(%.3" PRId64 " bytes in %.3lf seconds)", \
+            total_bytes_tmp, rate_units, total_bytes_read, time_diff); 
+       BAYER_LOG(BAYER_LOG_INFO, "File Rate: %lu " \
+            "items in %f seconds (%f items/sec)", \
+            all_count, time_diff, file_rate);     
+    }
+    
+    /* free the compare flists */
+    bayer_flist_free(&dst_compare_list);
+    bayer_flist_free(&src_compare_list); 
     return;
 }
 
