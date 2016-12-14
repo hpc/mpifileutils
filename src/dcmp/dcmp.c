@@ -37,7 +37,6 @@
 
 #include "bayer.h"
 #include "list.h"
-#include "dtcmp.h"
 
 /* globals to hold user-input paths */
 static bayer_param_path param1;
