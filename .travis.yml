@@ -24,7 +24,7 @@ before_install:
  - wget https://github.com/hpc/dtcmp/releases/download/v1.0.3/${dtcmp}.tar.gz
  - tar zxvf ${dtcmp}.tar.gz
  - pushd ${dtcmp}
- - ./autogen.sh && ./configure --with-lwgrp=/usr/local && make && sudo make install
+ - ./configure --with-lwgrp=/usr/local && make && sudo make install
  - popd
  - libarchive=libarchive-3.1.2
  - wget http://www.libarchive.org/downloads/${libarchive}.tar.gz
