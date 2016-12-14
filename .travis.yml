@@ -20,7 +20,9 @@ before_install:
  - pushd lwgrp
  - ./autogen.sh && ./configure && make && sudo make install
  - popd
- - git clone https://github.com/hpc/dtcmp.git
+ - dtcmp=dtcmp-1.0.3
+ - wget https://github.com/hpc/dtcmp/releases/download/v1.0.3/${dtcmp}.tar.gz
+ - tar zxvf ${dtcmp}.tar.gz
  - pushd dtcmp
  - ./autogen.sh && ./configure --with-lwgrp=/usr/local && make && sudo make install
  - popd
