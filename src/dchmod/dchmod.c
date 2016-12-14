@@ -39,7 +39,6 @@
 #include <libgen.h> /* dirname */
 
 #include "libcircle.h"
-#include "dtcmp.h"
 #include "bayer.h"
 
 /* whether to do directory walk with stat of every ite */

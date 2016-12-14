@@ -47,6 +47,7 @@ extern "C" {
 #include "bayer_flist.h"
 #include "bayer_param_path.h"
 #include "strmap.h"
+#include "dtcmp.h"
 
 #endif /* BAYER_H */
 
