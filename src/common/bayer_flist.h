@@ -212,7 +212,7 @@ size_t bayer_flist_distribute_map(
 /* given an input list and a map function pointer, call map function
  * for each item in list, identify new rank to send item to and then
  * exchange items among ranks and return new output list */
-bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* args);
+bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, const void* args);
 
 /* takes a list, spreads it out evenly, and then returns the newly created list 
 * to the caller */
@@ -240,7 +240,7 @@ typedef struct bayer_file_chunk_struct {
   uint64_t file_size;
   uint64_t rank_of_owner;
   uint64_t index_of_owner;
-  struct copy_elem_struct* next;
+  struct bayer_file_chunk_struct* next;
 } bayer_file_chunk;
 
 /* given a file list and a chunk size, split files at chunk boundaries and evenly

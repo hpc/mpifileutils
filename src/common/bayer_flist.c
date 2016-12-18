@@ -1029,7 +1029,7 @@ size_t bayer_flist_distribute_map(bayer_flist list, char** buffer,
 /* given an input list and a map function pointer, call map function
  * for each item in list, identify new rank to send item to and then
  * exchange items among ranks and return new output list */
-bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, void* args)
+bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, const void* args)
 {
     uint64_t idx;
 

@@ -120,6 +120,55 @@ uint64_t dcmp_field_depend[] = {
     [DCMPF_CONTENT] = DCMPF_CONTENT_DEPEND,
 };
 
+struct dcmp_expression {
+    dcmp_field field;              /* the concerned field */
+    dcmp_state state;              /* expected state of the field */
+    struct list_head linkage;      /* linkage to struct dcmp_conjunction */
+};
+
+struct dcmp_conjunction {
+    struct list_head linkage;      /* linkage to struct dcmp_disjunction */
+    struct list_head expressions; /* list of logical conjunction */
+};
+
+struct dcmp_disjunction {
+    struct list_head linkage;      /* linkage to struct dcmp_output */
+    struct list_head conjunctions; /* list of logical conjunction */
+};
+
+struct dcmp_output {
+    char* file_name;               /* output file name */
+    struct list_head linkage;      /* linkage to struct dcmp_options */
+    struct dcmp_disjunction *disjunction; /* logical disjunction rules */
+};
+
+struct dcmp_options {
+    struct list_head outputs;      /* list of outputs */
+    int verbose;
+    int base;                      /* whether to do base check */
+    int debug;                     /* check result after get result */
+    int need_compare[DCMPF_MAX];   /* fields that need to be compared  */
+};
+
+struct dcmp_options options = {
+    .outputs      = LIST_HEAD_INIT(options.outputs),
+    .verbose      = 0,
+    .base         = 0,
+    .debug        = 0,
+    .need_compare = {0,}
+};
+
+/* From tail to head */
+const char *dcmp_default_outputs[] = {
+    "EXIST=COMMON@CONTENT=DIFFER",
+    "EXIST=COMMON@CONTENT=COMMON",
+    "EXIST=COMMON@TYPE=DIFFER",
+    "EXIST=COMMON@TYPE=COMMON",
+    "EXIST=DIFFER",
+    "EXIST=COMMON",
+    NULL,
+};
+
 static const char* dcmp_field_to_string(dcmp_field field, int simple)
 {
     assert(field < DCMPF_MAX);
@@ -270,7 +319,7 @@ static int dcmp_state_from_string(const char* string, dcmp_state *state)
 static void dcmp_strmap_item_init(
     strmap* map,
     const char *key,
-    uint64_t index)
+    uint64_t item_index)
 {
     /* Should be long enough for 64 bit number and DCMPF_MAX */
     char val[21 + DCMPF_MAX];
@@ -278,7 +327,7 @@ static void dcmp_strmap_item_init(
 
     /* encode the index */
     int len = snprintf(val, sizeof(val), "%llu",
-                       (unsigned long long) index);
+                       (unsigned long long) item_index);
 
     /* encode the state (state characters and trailing NUL) */
     assert((size_t)len + DCMPF_MAX + 1 <= (sizeof(val)));
@@ -321,7 +370,7 @@ static void dcmp_strmap_item_update(
 static int dcmp_strmap_item_index(
     strmap* map,
     const char *key,
-    uint64_t *index)
+    uint64_t *item_index)
 {
     /* Should be long enough for 64 bit number and DCMPF_MAX */
     char new_val[21 + DCMPF_MAX];
@@ -336,7 +385,7 @@ static int dcmp_strmap_item_index(
     assert(strlen(val) + 1 <= sizeof(new_val));
     strcpy(new_val, val);
     new_val[strlen(new_val) - DCMPF_MAX] = '\0';
-    *index = strtoull(new_val, NULL, 0);
+    *item_index = strtoull(new_val, NULL, 0);
 
     return 0;
 }
@@ -355,7 +404,7 @@ static int dcmp_strmap_item_state(
 
     /* extract state */
     assert(strlen(val) > DCMPF_MAX);
-    assert(field >= 0 && field < DCMPF_MAX);
+    assert(field < DCMPF_MAX);
     size_t position = strlen(val) - DCMPF_MAX;
     *state = val[position + field];
 
@@ -374,20 +423,20 @@ static strmap* dcmp_strmap_creat(bayer_flist list, const char* prefix)
     size_t prefix_len = strlen(prefix);
 
     /* iterate over each item in the file list */
-    uint64_t index = 0;
+    uint64_t i = 0;
     uint64_t count = bayer_flist_size(list);
-    while (index < count) {
+    while (i < count) {
         /* get full path of file name */
-        const char* name = bayer_flist_file_get_name(list, index);
+        const char* name = bayer_flist_file_get_name(list, i);
 
         /* ignore prefix portion of path */
         name += prefix_len;
 
         /* create entry for this file */
-        dcmp_strmap_item_init(map, name, index);
+        dcmp_strmap_item_init(map, name, i);
 
         /* go to next item in list */
-        index++;
+        i++;
     }
 
     return map;
@@ -396,13 +445,13 @@ static strmap* dcmp_strmap_creat(bayer_flist list, const char* prefix)
 /* Seeks to specified offset in source and destination files, reads in
  * size bytes from each file, compares result.  Return -1 on read error,
  * 0 when equal, 1 when there is a difference */
-int _dcmp_compare_data(
+static int _dcmp_compare_data(
     const char* src_name,
     const char* dst_name,
     int src_fd,
     int dst_fd,
     off_t offset,
-    off_t size,
+    size_t size,
     size_t buff_size)
 {
     /* assume we'll find that file contents are the same */
@@ -437,9 +486,9 @@ int _dcmp_compare_data(
         }
 
         /* read data from source and destination */
-        ssize_t src_read = bayer_read(src_name, src_fd, src_buf,
+        ssize_t src_read = bayer_read(src_name, src_fd, (ssize_t*)src_buf,
              left_to_read);
-        ssize_t dst_read = bayer_read(dst_name, dst_fd, dest_buf,
+        ssize_t dst_read = bayer_read(dst_name, dst_fd, (ssize_t*)dest_buf,
              left_to_read);
 
         /* check for read errors */
@@ -463,14 +512,14 @@ int _dcmp_compare_data(
         }
 
         /* check that buffers are the same */
-        if (memcmp(src_buf, dest_buf, src_read) != 0) {
+        if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
             /* memory contents are different */
             rc = 1;
             break;
         }
 
         /* add bytes to our total */
-        total_bytes += src_read;
+        total_bytes += (long unsigned int)src_read;
     }
 
     /* free buffers */
@@ -481,11 +530,11 @@ int _dcmp_compare_data(
 }
 
 /* Return -1 when error, return 0 when equal, return 1 when diff */
-int dcmp_compare_data(
+static int dcmp_compare_data(
     const char* src_name,
     const char* dst_name,
     off_t offset,
-    off_t length,
+    size_t length,
     size_t buff_size)
 {
     /* open source file */
@@ -502,8 +551,8 @@ int dcmp_compare_data(
     }
 
     /* hint that we'll read from file sequentially */
-    posix_fadvise(src_fd, offset, length, POSIX_FADV_SEQUENTIAL);
-    posix_fadvise(dst_fd, offset, length, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(src_fd, offset, (off_t)length, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(dst_fd, offset, (off_t)length, POSIX_FADV_SEQUENTIAL);
 
     /* compare file contents */
     int rc = _dcmp_compare_data(src_name, dst_name, src_fd, dst_fd,
@@ -531,8 +580,13 @@ do {                                                                         \
     }                                                                        \
 } while(0)
 
+static int dcmp_option_need_compare(dcmp_field field)
+{
+    return options.need_compare[field];
+}
+
 /* Return -1 when error, return 0 when equal, return > 0 when diff */
-int dcmp_compare_metadata(
+static int dcmp_compare_metadata(
     bayer_flist src_list,
     strmap* src_map,
     uint64_t src_index,
@@ -615,7 +669,7 @@ static void dcmp_strmap_compare_data(
 
     /* get a count of how many items are the compare list and total
      * number of bytes we'll read */
-    int list_count = 0;
+    uint64_t list_count = 0;
     bayer_file_chunk* src_p = src_head;
     while (src_p != NULL) {
         list_count++;
@@ -636,19 +690,19 @@ static void dcmp_strmap_compare_data(
     int* rtl  = (int*) BAYER_MALLOC(list_count * sizeof(int)); 
 
     /* compare bytes for each file section and set flag based on what we find */
-    int i = 0;
+    uint64_t i = 0;
     char* name_ptr = keys;
     src_p = src_head;
     bayer_file_chunk* dst_p = dst_head;
     while (src_p != NULL) {
         /* get offset into file that we should compare (bytes) */
-        off_t offset = src_p->offset;
+        off_t offset = (off_t)src_p->offset;
 
         /* get length of section that we should compare (bytes) */
-        off_t length = src_p->length;
+        off_t length = (off_t)src_p->length;
         
         /* compare the contents of the files */
-        int rc = dcmp_compare_data(src_p->name, dst_p->name, offset, length, 1048576);
+        int rc = dcmp_compare_data(src_p->name, dst_p->name, offset, (size_t)length, 1048576);
 
         /* now record results of compare_data for sending to segmented scan */
         strncpy(name_ptr, src_p->name, max_name);
@@ -673,7 +727,7 @@ static void dcmp_strmap_compare_data(
     DTCMP_Str_create_ascend((int)max_name, &keytype, &keyop);
 
     /* execute segmented scan of comparison flags across file names */
-    DTCMP_Segmented_exscan(list_count, keys, keytype, vals, ltr, rtl, MPI_INT, keyop, DTCMP_FLAG_NONE, MPI_LOR, MPI_COMM_WORLD);
+    DTCMP_Segmented_exscan((int)list_count, keys, keytype, vals, ltr, rtl, MPI_INT, keyop, DTCMP_FLAG_NONE, MPI_LOR, MPI_COMM_WORLD);
     for (i = 0; i < list_count; i++) {
       /* turn segmented exscan into scan by or'ing in our input */
       ltr[i] |= vals[i];
@@ -699,8 +753,8 @@ static void dcmp_strmap_compare_data(
     uint64_t* sendbuf = (uint64_t*) BAYER_MALLOC(sendbytes);
 
     /* initialize sendcounts array */
-    for (int i = 0; i < ranks; i++) {
-        sendcounts[i] = 0;
+    for (int idx = 0; idx < (int)ranks; idx++) {
+        sendcounts[idx] = 0;
     }
 
     /* Iterate over the list of files. For each file a process needs to report on,
@@ -734,7 +788,7 @@ static void dcmp_strmap_compare_data(
 
     /* compute send buffer displacements */
     senddisps[0] = 0;
-    for (i = 1; i < ranks; i++) {
+    for (i = 1; i < (uint64_t)ranks; i++) {
         senddisps[i] = senddisps[i - 1] + sendcounts[i - 1];
     }
 
@@ -744,13 +798,13 @@ static void dcmp_strmap_compare_data(
     /* calculate total incoming bytes and displacements for alltoallv */
     int recv_total = recvcounts[0];
     recvdisps[0] = 0;
-    for (i = 1; i < ranks; i++) {
+    for (i = 1; i < (uint64_t)ranks; i++) {
         recv_total += recvcounts[i];
         recvdisps[i] = recvdisps[i - 1] + recvcounts[i - 1];
     }
 
     /* allocate buffer to recv bytes into based on recvounts */
-    uint64_t* recvbuf = (uint64_t*) BAYER_MALLOC(recv_total * sizeof(uint64_t));
+    uint64_t* recvbuf = (uint64_t*) BAYER_MALLOC((uint64_t)recv_total * sizeof(uint64_t));
 
     /* send the bytes to the correct rank that owns the file */
     MPI_Alltoallv(
@@ -758,7 +812,7 @@ static void dcmp_strmap_compare_data(
         recvbuf, recvcounts, recvdisps, MPI_UINT64_T, MPI_COMM_WORLD
     );
 
-    /* unpack contents of recv buffer  & store results in strmap */
+    /* unpack contents of recv buffer & store results in strmap */
     disp = 0;
     while (disp < recv_total) {
         /* local store of idx & flag values for each file */
@@ -766,7 +820,7 @@ static void dcmp_strmap_compare_data(
         uint64_t flag = recvbuf[disp + 1];
 
         /* lookup name of file based on id to send to strmap updata call */
-        char* name = bayer_flist_file_get_name(src_compare_list, idx);
+        const char* name = bayer_flist_file_get_name(src_compare_list, idx);
 
         /* ignore prefix portion of path to use as key */
         name += strlen_prefix;
@@ -819,7 +873,7 @@ static void dcmp_strmap_compare(bayer_flist src_list,
     bayer_flist dst_compare_list = bayer_flist_subset(dst_list);
 
     /* iterate over each item in source map */
-    strmap_node* node;
+    const strmap_node* node;
     strmap_foreach(src_map, node) {
         /* get file name */
         const char* key = strmap_node_key(node);
@@ -956,18 +1010,26 @@ static void dcmp_strmap_compare(bayer_flist src_list,
        /* convert uint64 to strings for printing to user */
        char starttime_str[256];
        char endtime_str[256];
-       snprintf(&starttime_str, sizeof(starttime_str), "%f", start_compare);
-       snprintf(&endtime_str, sizeof(endtime_str), "%f", end_compare);
+
+       /* snprintf takes in a char* restrict type as a first argument
+        * so convert to this type before passing it to avoid the 
+        * compiler warning */
+       snprintf(starttime_str, 256, "%f", start_compare);
+       snprintf(endtime_str, 256, "%f", end_compare);
 
        /* convert time to time_t */
-       time_t start_rawtime = start_compare;
-       time_t end_rawtime   = end_compare;
-       
-       /* format start & end time string */
+       time_t start_rawtime = (time_t)start_compare;
+       time_t end_rawtime   = (time_t)end_compare;
+
+       /* format start & end time string I made copies of the localstart
+        * & localend because the next call to localtime was overriding
+        * the second call */
        struct tm* localstart = localtime(&start_rawtime);
+       struct tm cp_localstart = *localstart;
        struct tm* localend = localtime(&end_rawtime);
-       strftime(starttime_str, 256, "%b-%d-%Y, %H:%M:%S", localstart);
-       strftime(endtime_str, 256, "%b-%d-%Y, %H:%M:%S", localend);
+       struct tm cp_localend = *localend;
+       strftime(starttime_str, 256, "%b-%d-%Y, %H:%M:%S", &cp_localstart);
+       strftime(endtime_str, 256, "%b-%d-%Y, %H:%M:%S", &cp_localend);
 
        /* convert size to units */
        double size_tmp;
@@ -1005,7 +1067,7 @@ static void dcmp_strmap_check_src(strmap* src_map,
 {
     assert(dcmp_option_need_compare(DCMPF_EXIST));
     /* iterate over each item in source map */
-    strmap_node* node;
+    const strmap_node* node;
     strmap_foreach(src_map, node) {
         /* get file name */
         const char* key = strmap_node_key(node);
@@ -1093,7 +1155,7 @@ static void dcmp_strmap_check_dst(strmap* src_map,
     assert(dcmp_option_need_compare(DCMPF_EXIST));
 
     /* iterate over each item in dest map */
-    strmap_node* node;
+    const strmap_node* node;
     strmap_foreach(dst_map, node) {
         /* get file name */
         const char* key = strmap_node_key(node);
@@ -1197,7 +1259,7 @@ static void dcmp_strmap_check(
 
 static int dcmp_map_fn(
     bayer_flist flist,
-    uint64_t index,
+    uint64_t idx,
     int ranks,
     void *args)
 {
@@ -1207,7 +1269,7 @@ static int dcmp_map_fn(
     size_t prefix_len = strlen(prefix);
 
     /* get name of item */
-    const char* name = bayer_flist_file_get_name(flist, index);
+    const char* name = bayer_flist_file_get_name(flist, idx);
 
     /* identify a rank responsible for this item */
     const char* ptr = name + prefix_len;
@@ -1217,56 +1279,7 @@ static int dcmp_map_fn(
     return rank;
 }
 
-struct dcmp_expression {
-    dcmp_field field;              /* the concerned field */
-    dcmp_state state;              /* expected state of the field */
-    struct list_head linkage;      /* linkage to struct dcmp_conjunction */
-};
-
-struct dcmp_conjunction {
-    struct list_head linkage;      /* linkage to struct dcmp_disjunction */
-    struct list_head expressions; /* list of logical conjunction */
-};
-
-struct dcmp_disjunction {
-    struct list_head linkage;      /* linkage to struct dcmp_output */
-    struct list_head conjunctions; /* list of logical conjunction */
-};
-
-struct dcmp_output {
-    char* file_name;               /* output file name */
-    struct list_head linkage;      /* linkage to struct dcmp_options */
-    struct dcmp_disjunction *disjunction; /* logical disjunction rules */
-};
-
-struct dcmp_options {
-    struct list_head outputs;      /* list of outputs */
-    int verbose;
-    int base;                      /* whether to do base check */
-    int debug;                     /* check result after get result */
-    int need_compare[DCMPF_MAX];   /* fields that need to be compared  */
-};
-
-struct dcmp_options options = {
-    .outputs      = LIST_HEAD_INIT(options.outputs),
-    .verbose      = 0,
-    .base         = 0,
-    .debug        = 0,
-    .need_compare = {0,}
-};
-
-/* From tail to head */
-const char *dcmp_default_outputs[] = {
-    "EXIST=COMMON@CONTENT=DIFFER",
-    "EXIST=COMMON@CONTENT=COMMON",
-    "EXIST=COMMON@TYPE=DIFFER",
-    "EXIST=COMMON@TYPE=COMMON",
-    "EXIST=DIFFER",
-    "EXIST=COMMON",
-    NULL,
-};
-
-static struct dcmp_expression* dcmp_expression_alloc()
+static struct dcmp_expression* dcmp_expression_alloc(void)
 {
     struct dcmp_expression *expression;
 
@@ -1310,6 +1323,10 @@ static void dcmp_expression_print(
             case DCMPS_DIFFER:
                 printf("exist only in one directory");
                 break;
+            /* To avoid compiler warnings be exhaustive 
+             * and include all possible expression states */
+            case DCMPS_INIT: //fall through
+            case  DCMPS_MAX: //fall through
             default:
                 assert(0);
             }
@@ -1386,7 +1403,7 @@ static int dcmp_expression_match(
     return 0;
 }
 
-static struct dcmp_conjunction* dcmp_conjunction_alloc()
+static struct dcmp_conjunction* dcmp_conjunction_alloc(void)
 {
     struct dcmp_conjunction *conjunction;
 
@@ -1469,7 +1486,7 @@ static int dcmp_conjunction_match(
     return 1;
 }
 
-static struct dcmp_disjunction* dcmp_disjunction_alloc()
+static struct dcmp_disjunction* dcmp_disjunction_alloc(void)
 {
     struct dcmp_disjunction *disjunction;
 
@@ -1551,7 +1568,7 @@ static int dcmp_disjunction_match(
     return 0;
 }
 
-static struct dcmp_output* dcmp_output_alloc()
+static struct dcmp_output* dcmp_output_alloc(void)
 {
     struct dcmp_output* output;
 
@@ -1582,7 +1599,7 @@ static void dcmp_output_free(struct dcmp_output* output)
     bayer_free(&output);
 }
 
-static void dcmp_option_fini()
+static void dcmp_option_fini(void)
 {
     struct dcmp_output* output;
     struct dcmp_output* n;
@@ -1610,17 +1627,12 @@ static void dcmp_option_add_output(struct dcmp_output *output, int add_at_head)
 static void dcmp_option_add_comparison(dcmp_field field)
 {
     uint64_t depend = dcmp_field_depend[field];
-    int i;
+    uint64_t i;
     for (i = 0; i < DCMPF_MAX; i++) {
-        if ((depend & (1 << i)) != 0) {
+        if ((depend & ((uint64_t)1 << i)) != (uint64_t)0) {
             options.need_compare[i] = 1;
         }
     }
-}
-
-int dcmp_option_need_compare(dcmp_field field)
-{
-    return options.need_compare[field];
 }
 
 static int dcmp_output_flist_match(
@@ -1630,7 +1642,7 @@ static int dcmp_output_flist_match(
     bayer_flist new_flist,
     uint64_t *number)
 {
-    strmap_node* node;
+    const strmap_node* node;
 
     *number = 0;
     /* iterate over each item in map */
@@ -1639,13 +1651,13 @@ static int dcmp_output_flist_match(
         const char* key = strmap_node_key(node);
 
         /* get index of file */
-        uint64_t index;
-        int ret = dcmp_strmap_item_index(map, key, &index);
+        uint64_t idx;
+        int ret = dcmp_strmap_item_index(map, key, &idx);
         assert(ret == 0);
 
         if (dcmp_disjunction_match(output->disjunction, map, key)) {
             (*number)++;
-            bayer_flist_file_copy(flist, index, new_flist);
+            bayer_flist_file_copy(flist, idx, new_flist);
         }
     }
     return 0;
@@ -1694,7 +1706,7 @@ static int dcmp_output_write(
         printf(DCMP_OUTPUT_PREFIX);
         dcmp_disjunction_print(output->disjunction, 0,
                                strlen(DCMP_OUTPUT_PREFIX));
-        printf(", number: %llu/%llu",
+        printf(", number: %lu/%lu",
                src_matched_total,
                dst_matched_total);
         if (output->file_name != NULL) {
@@ -2035,8 +2047,8 @@ int main(int argc, char **argv)
     bayer_flist_walk_path(path2, 1, 0, flist2);
 
     /* map files to ranks based on portion following prefix directory */
-    bayer_flist flist3 = bayer_flist_remap(flist1, dcmp_map_fn, (void*)path1);
-    bayer_flist flist4 = bayer_flist_remap(flist2, dcmp_map_fn, (void*)path2);
+    bayer_flist flist3 = bayer_flist_remap(flist1, dcmp_map_fn, (const void*)path1);
+    bayer_flist flist4 = bayer_flist_remap(flist2, dcmp_map_fn, (const void*)path2);
 
     /* map each file name to its index and its comparison state */
     strmap* map1 = dcmp_strmap_creat(flist3, path1);
