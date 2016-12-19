@@ -19,7 +19,7 @@ before_install:
  - ./configure --enable-tests && make && make check && sudo make install
  - popd
  - lwgrp=lwgrp-1.0.2
- - wget https://github.com/hpc/lwgrp/releases/download/v1.0.2/${lwgrp}.tar.gz
+ - wget https://github.com/LLNL/lwgrp/releases/tag/v1.0.2/${lwgrp}.tar.gz 
  - pushd ${lwgrp}
  - ./configure && make && sudo make install
  - popd
