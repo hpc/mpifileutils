@@ -11,7 +11,7 @@ before_install:
  - sudo apt-cache search openmpi
  - sudo apt-cache search mpich
  - sudo apt-get install -qq check libopenmpi-dev openmpi-bin check bc libattr1-dev python-pip
- - sudo pip install nose2
+ - sudo pip install nose
  - libcircle=libcircle-0.2.1-rc.1
  - wget https://github.com/adammoody/libcircle/releases/download/v0.2.1-rc.1/${libcircle}.tar.gz
  - tar -zxf ${libcircle}.tar.gz
