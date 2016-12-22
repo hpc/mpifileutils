@@ -23,9 +23,16 @@ MAINTAINERCLEANFILES = \
 	ltconfig ltmain.sh missing mkinstalldirs        \
 	stamp-h.in
 
+BUILD_DIRS = BUILD BUILDROOT RPMS SOURCES SPECS SRPMS
+
+$(BUILD_DIRS):
+	rm -rf $@
+	mkdir $@
+
 distclean-local:
 	-(cd $(top_srcdir) && rm -rf autom4te*.cache autoscan.*)
 	-(cd $(top_srcdir) && rm -rf $(PACKAGE)-*)
+	-(cd $(top_srcdir) && rm -rf $(BUILD_DIRS))
 
 mrproper: distclean-local clean
 	-(cd $(top_srcdir) && rm -rf autom4te.cache config.h config.log)
@@ -40,5 +47,10 @@ mrproper: distclean-local clean
 	-find $(top_srcdir)/ -name "Makefile.in" -exec rm {} \;
 	-find $(top_srcdir)/ -name ".dirstamp" -exec rm {} \;
 	-find $(top_srcdir) -depth -name ".deps" -exec rm -rf {} \;
+
+
+rpm: dist ${BUILD_DIRS}
+	mv $(distdir).tar.gz SOURCES
+	rpmbuild -ba --define="_topdir `pwd`" mpifileutils.spec
 
 .PHONY: test
