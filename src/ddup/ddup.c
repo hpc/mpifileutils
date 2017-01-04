@@ -103,7 +103,7 @@ static int read_data(const char* fname, char* chunk_buf, uint64_t chunk_id,
     }
 
     /* seek to the correct offset */
-    if (bayer_lseek(fname, fd, offset, SEEK_SET) == (off_t) - 1) {
+    if (bayer_lseek(fname, fd, (off_t)offset, SEEK_SET) == (off_t) - 1) {
         status = -1;
         goto out;
     }
@@ -111,23 +111,28 @@ static int read_data(const char* fname, char* chunk_buf, uint64_t chunk_id,
     /* read data from file */
     ssize_t read_size = bayer_read(fname, fd, chunk_buf, chunk_size);
     if (read_size < 0) {
+        /* read failed */
         status = -1;
         goto out;
     }
 
-    /* check that we read all bytes we'd expect to read */
-    if (file_size >= chunk_id * chunk_size) {
-        if ((uint64_t)read_size != chunk_size) {
-            /* File size has been changed */
-            status = -1;
-            goto out;
+    /* compute number of bytes we expect to read */
+    ssize_t expect_size = (ssize_t) chunk_size;
+    if (chunk_id * chunk_size > file_size) {
+        if (offset >= file_size) {
+          /* have gone past the end of the file, expect to read 0 */
+          expect_size = 0;
+        } else {
+          /* read partial chunk */
+          expect_size = (ssize_t) (file_size - offset);
         }
-    } else {
-        if ((uint64_t)read_size != file_size - offset) {
-            /* File size has been changed */
-            status = -1;
-            goto out;
-        }
+    }
+
+    /* check that we read all bytes we expected */
+    if (read_size != expect_size) {
+        /* File size has been changed */
+        status = -1;
+        goto out;
     }
 
     /* return number of bytes read */
@@ -156,14 +161,11 @@ int main(int argc, char** argv)
 {
     uint64_t i;
     int status;
-    uint64_t index;
     uint64_t file_size;
 
     uint64_t chunk_size = DDUP_CHUNK_SIZE;
 
     SHA256_CTX* ctx_ptr;
-    char digest_string[SHA256_DIGEST_LENGTH * 2 + 1];
-    unsigned char digest[SHA256_DIGEST_LENGTH];
 
     MPI_Init(NULL, NULL);
     bayer_init();
@@ -183,7 +185,8 @@ int main(int argc, char** argv)
     int c;
     int option_index = 0;
     while ((c = getopt_long(argc, argv, "d:", \
-                            long_options, &option_index)) != -1) {
+                            long_options, &option_index)) != -1)
+    {
         switch (c) {
             case 'd':
                 if (strncmp(optarg, "fatal", 5) == 0) {
@@ -231,14 +234,12 @@ int main(int argc, char** argv)
                                   "`info'.", optarg);
                 }
         }
-        break;
     }
 
     /* check that user gave us a directory */
     if (argv[optind] == NULL) {
         if (rank == 0) {
-            BAYER_LOG(BAYER_LOG_ERR,
-                      "You must specify a directory path");
+            BAYER_LOG(BAYER_LOG_ERR, "You must specify a directory path");
         }
         MPI_Barrier(MPI_COMM_WORLD);
         status = -1;
@@ -253,7 +254,7 @@ int main(int argc, char** argv)
     MPI_Datatype keysat;
     mpi_type_init(&key, &keysat);
 
-    /* create comparison operation */
+    /* create DTCMP comparison operation */
     DTCMP_Op cmp;
     mtcmp_cmp_init(&cmp);
 
@@ -265,6 +266,8 @@ int main(int argc, char** argv)
 
     /* Walk the path(s) to build the flist */
     bayer_flist_walk_path(dir, 1, 0, flist);
+
+    /* TODO: spread list among procs? */
 
     /* get local number of items in flist */
     uint64_t checking_files = bayer_flist_size(flist);
@@ -284,7 +287,7 @@ int main(int argc, char** argv)
     uint64_t* ptr = list;
     uint64_t new_checking_files = 0;
     for (i = 0; i < checking_files; i++) {
-        /* check that we have a regular file */
+        /* check that item is a regular file */
         mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, i);
         if (! S_ISREG(mode)) {
             continue;
@@ -293,7 +296,7 @@ int main(int argc, char** argv)
         /* get the file size */
         file_size = bayer_flist_file_get_size(flist, i);
         if (file_size == 0) {
-            /* Files with size zero is not interesting at all */
+            /* Files with size zero are not interesting at all */
             continue;
         }
 
@@ -315,7 +318,7 @@ int main(int argc, char** argv)
         ptr += DDUP_KEY_SIZE + 1;
     }
 
-    /* keep track of current list size */
+    /* reduce our list count based on any files filtered out above */
     checking_files = new_checking_files;
 
     /* allocate arrays to hold result from DTCMP_Rankv call to
@@ -339,13 +342,13 @@ int main(int argc, char** argv)
         ptr = list;
         for (i = 0; i < checking_files; i++) {
             /* get the flist index for this item */
-            index = ptr[DDUP_KEY_SIZE];
+            uint64_t idx = ptr[DDUP_KEY_SIZE];
 
             /* look up file name */
-            const char* fname = bayer_flist_file_get_name(flist, index);
+            const char* fname = bayer_flist_file_get_name(flist, idx);
 
             /* look up file size */
-            file_size = bayer_flist_file_get_size(flist, index);
+            file_size = bayer_flist_file_get_size(flist, idx);
 
             /* read a chunk of data from the file into chunk_buf */
             uint64_t data_size;
@@ -359,7 +362,7 @@ int main(int argc, char** argv)
             }
 
             /* update the SHA256 context for this file */
-            ctx_ptr = &file_items[index].ctx;
+            ctx_ptr = &file_items[idx].ctx;
             SHA256_Update(ctx_ptr, chunk_buf, data_size);
 
             /*
@@ -383,20 +386,26 @@ int main(int argc, char** argv)
             key, keysat, cmp, DTCMP_FLAG_NONE, MPI_COMM_WORLD
         );
 
+        /* any files assigned to a group of size 1 is unique,
+         * any files in groups sizes > 1 for which we've read
+         * all bytes are the same, and filter all other files
+         * into a new list for another iteration */
         new_checking_files = 0;
         ptr = list;
         uint64_t* new_ptr = new_list;
         for (i = 0; i < checking_files; i++) {
             /* Get index into flist for this item */
-            index = ptr[DDUP_KEY_SIZE];
+            uint64_t idx = ptr[DDUP_KEY_SIZE];
 
             /* look up file name */
-            const char* fname = bayer_flist_file_get_name(flist, index);
+            const char* fname = bayer_flist_file_get_name(flist, idx);
 
             /* look up file size */
-            file_size = bayer_flist_file_get_size(flist, index);
+            file_size = bayer_flist_file_get_size(flist, idx);
 
-            ctx_ptr = &file_items[index].ctx;
+            /* get a pointer to the SHA256 context for this file */
+            ctx_ptr = &file_items[idx].ctx;
+
             if (group_ranks[i] == 1) {
                 /*
                  * Only one file in this group,
@@ -410,7 +419,10 @@ int main(int argc, char** argv)
                  * duplicate with other files that also have
                  * matching group_id[i]
                  */
+                unsigned char digest[SHA256_DIGEST_LENGTH];
                 SHA256_Final(digest, ctx_ptr);
+
+                char digest_string[SHA256_DIGEST_LENGTH * 2 + 1];
                 dump_sha256_digest(digest_string, digest);
                 printf("%s %s\n", fname, digest_string);
             } else {
@@ -418,11 +430,15 @@ int main(int argc, char** argv)
                  * but still have bytes left to read, so keep
                  * this file
                  */
-                /* use new group ID to segregate files */
+
+                /* use new group ID to segregate files,
+                 * this id will be unique for all files of the
+                 * same size and having the same hash up to
+                 * this point */
                 new_ptr[0] = group_id[i];
 
-                /* Copy over flist index */
-                new_ptr[DDUP_KEY_SIZE] = index;
+                /* Copy over flist index into new list entry */
+                new_ptr[DDUP_KEY_SIZE] = idx;
 
                 /* got one more in the new list */
                 new_checking_files++;
@@ -432,7 +448,7 @@ int main(int argc, char** argv)
 
                 BAYER_LOG(BAYER_LOG_DBG, "checking file "
                           "\"%s\" for chunk index %d of size %"
-                          PRIu64"\n", fname, chunk_id,
+                          PRIu64"\n", fname, (int)chunk_id,
                           chunk_size);
             }
 
@@ -440,7 +456,7 @@ int main(int argc, char** argv)
             ptr += DDUP_KEY_SIZE + 1;
         }
 
-        /* Swap list buffers */
+        /* Swap lists */
         uint64_t* tmp_list;
         tmp_list = list;
         list     = new_list;
@@ -471,5 +487,6 @@ int main(int argc, char** argv)
 out:
     bayer_finalize();
     MPI_Finalize();
+
     return status;
 }
