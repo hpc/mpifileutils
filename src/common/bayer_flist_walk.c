@@ -993,16 +993,12 @@ void bayer_flist_stat(
 
     /* get user data if needed */
     if (file_list->have_users == 0) {
-        get_users(&file_list->users);
-        create_map(&file_list->users, file_list->user_id2name);
-        file_list->have_users = 1;
+        bayer_flist_usrgrp_get_users(flist);
     }
 
     /* get groups data if needed */
     if (file_list->have_groups == 0) {
-        get_groups(&file_list->groups);
-        create_map(&file_list->groups, file_list->group_id2name);
-        file_list->have_groups = 1;
+        bayer_flist_usrgrp_get_groups(flist);
     }
 
     /* step through each item in input list and stat it */
@@ -1029,5 +1025,5 @@ void bayer_flist_stat(
     }
 
     /* compute global summary */
-    list_compute_summary(file_list);
+    bayer_flist_summarize(flist);
 }
