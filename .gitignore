@@ -33,9 +33,11 @@ autotools
 # Autotool artifacts
 /autom4te.cache
 Makefile
-/config.h
-/config.log
-/config.status
+config.h.in~
+config.h.in
+config.h
+config.log
+config.status
 /stamp-h1
 
 aclocal.m4
