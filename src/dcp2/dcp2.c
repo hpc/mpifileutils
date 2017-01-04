@@ -381,20 +381,6 @@ static int create_file(bayer_flist list, uint64_t idx)
 
     /* Truncate destination files when sparse file is enabled */
     if (DCOPY_user_opts.sparse) {
-        /* get name of item to be copied */
-        const char* name = bayer_flist_file_get_name(list, idx);
-
-        /* get name of destination file */
-        char* dest_path = DCOPY_build_dest(name);
-
-        /* No need to copy it */
-        if (dest_path == NULL) {
-            /* item was not contained within a source path,
-             * so we couldn't compute its destination name,
-             * so skip it */
-            continue;
-        }
-
         /* truncate destination file to 0 bytes */
         struct stat st;
         int status = bayer_lstat(dest_path, &st);
@@ -413,9 +399,6 @@ static int create_file(bayer_flist list, uint64_t idx)
             BAYER_LOG(BAYER_LOG_ERR, "bayer_lstat() file: %s (errno=%d %s)",
                       dest_path, errno, strerror(errno));
         }
-
-        /* free the destination path */
-        bayer_free(&dest_path);
 
         if (status) {
             /* do we need to abort here? */
