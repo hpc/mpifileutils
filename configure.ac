@@ -71,7 +71,8 @@ X_AC_DTCMP
 X_AC_LUSTRE
 
 # Check for libcrypto
-PKG_CHECK_MODULES([CRYPTO], [libcrypto], [INCLUDES="$INCLUDES $CRYPTO_CFLAGS"; LIBS="$LIBS $CRYPTO_LIBS"], [AC_MSG_ERROR(libcrypto not found.)])
+#PKG_CHECK_MODULES([CRYPTO], [libcrypto], [INCLUDES="$INCLUDES $CRYPTO_CFLAGS"; LIBS="$LIBS $CRYPTO_LIBS"], [AC_MSG_ERROR(libcrypto not found.)])
+AC_SEARCH_LIBS([SHA256_Init], [crypto], [], [AC_MSG_ERROR([could not find libcrypto])], [])
 
 AC_CONFIG_FILES([Makefile                \
                  src/Makefile            \
