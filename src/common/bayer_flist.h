@@ -108,6 +108,7 @@ void bayer_flist_stat(
     bayer_flist flist,
     bayer_flist_skip_fn skip_fn,
     void *skip_args
+);
 
 /* read file list from file */
 void bayer_flist_read_cache(
