@@ -6,13 +6,15 @@ dfilemaker - distributed random file generation program
 
 # SYNOPSIS
 
-dfilemaker [options] path
+**dfilemaker [OPTION] PATH...**
 
 # DESCRIPTION
 dfilemaker is a tool for generating files and file trees which contain files
 suitable for testing.
 
 # OPTIONS
+
+**NOTE: I cannot find these options in the code. I am not sure that they actually exist? Unless there is another version of the code somewhere?**
 
 -d, \--depth=*min*-*max*
 :   Specify the depth of the filesystem tree to generate. The depth will be
@@ -54,6 +56,7 @@ suitable for testing.
 
 # SEE ALSO
 
+`dchmod` (1).
 `dcmp` (1).
 `dcp` (1).
 `dfilemaker` (1).
