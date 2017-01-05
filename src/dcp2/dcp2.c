@@ -186,6 +186,7 @@ static int create_directory(bayer_flist list, uint64_t idx)
     if(rc != 0) {
         BAYER_LOG(BAYER_LOG_ERR, "Failed to create directory `%s' (errno=%d %s)", \
             dest_path, errno, strerror(errno));
+        bayer_free(&dest_path);
         return -1;
     }
 
@@ -1218,6 +1219,7 @@ int main(int argc, \
 
                 DCOPY_exit(EXIT_SUCCESS);
                 break;
+
             case 'i':
                 DCOPY_user_opts.input_file = BAYER_STRDUP(optarg);
                 if(DCOPY_global_rank == 0) {
@@ -1305,6 +1307,7 @@ int main(int argc, \
         /* walk paths and fill in file list */
         DCOPY_walk_paths(flist);
     } else {
+        /* otherwise, read list of files from input, but then stat each one */
         bayer_flist input_flist = bayer_flist_new();
         bayer_flist_read_cache(DCOPY_user_opts.input_file, input_flist);
         bayer_flist_stat(input_flist, flist, DCOPY_input_flist_skip, NULL);

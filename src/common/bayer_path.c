@@ -1346,10 +1346,10 @@ bayer_path_result bayer_path_cmp(const bayer_path* src, const bayer_path* dst)
      * check to see if one is contained within the other */
     if (result == BAYER_PATH_EQUAL) {
         if (src_elem == NULL && dst_elem != NULL) {
-            /* src is contained within dst */
+            /* dst is contained within source */
             result = BAYER_PATH_DEST_CHILD;
         } else if (src_elem != NULL && dst_elem == NULL) {
-            /* dst is contained within source */
+            /* src is contained within dst */
             result = BAYER_PATH_SRC_CHILD;
         }
     }

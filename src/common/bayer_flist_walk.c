@@ -982,13 +982,9 @@ void bayer_flist_stat(
   bayer_flist_skip_fn skip_fn,
   void *skip_args)
 {
-    uint64_t idx;
-    struct stat st;
-    int status;
-    const char* name;
     flist_t* file_list = (flist_t*)flist;
 
-    /* we will stat all items in output list */
+    /* we will stat all items in output list, so set detail to 1 */
     file_list->detail = 1;
 
     /* get user data if needed */
@@ -1002,9 +998,11 @@ void bayer_flist_stat(
     }
 
     /* step through each item in input list and stat it */
-    for (idx = 0; idx < bayer_flist_size(input_flist); idx++) {
+    uint64_t idx;
+    uint64_t size = bayer_flist_size(input_flist);
+    for (idx = 0; idx < size; idx++) {
         /* get name of item */
-        name = bayer_flist_file_get_name(input_flist, idx);
+        const char* name = bayer_flist_file_get_name(input_flist, idx);
 
         /* check whether we should skip this item */
         if (skip_fn != NULL && skip_fn(name, skip_args)) {
@@ -1014,7 +1012,8 @@ void bayer_flist_stat(
         }
 
         /* stat the item */
-        status = bayer_lstat(name, &st);
+        struct stat st;
+        int status = bayer_lstat(name, &st);
         if (status != 0) {
             BAYER_LOG(BAYER_LOG_ERR, "bayer_lstat(): %d", status);
             continue;
