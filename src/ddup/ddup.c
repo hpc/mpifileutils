@@ -411,7 +411,7 @@ int main(int argc, char** argv)
                  * Only one file in this group,
                  * bayer_flist_file_name(flist, idx) is unique
                  */
-            } else if (file_size < (chunk_id * chunk_size)) {
+            } else if (file_size <= (chunk_id * chunk_size)) {
                 /*
                  * We've run out of bytes to checksum, and we
                  * still have a group size > 1
