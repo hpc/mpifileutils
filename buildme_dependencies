@@ -26,10 +26,10 @@ set -x
 
 OPT="-g -O0"
 
-installdir=`pwd`/install
-
 mkdir -p deps
 cd deps
+
+installdir=`pwd`/install
 
 # specify versions of software
 # (may need to update some other lines further below)
@@ -37,6 +37,7 @@ libcircle=libcircle-0.2.1-rc.1
 lwgrp=lwgrp-1.0.2
 dtcmp=dtcmp-1.0.3
 libarchive=libarchive-3.1.2
+cunit=CUnit-2.1-2
 
 # fetch dependencies
 if [ ! -f ${libcircle}.tar.gz ] ; then
@@ -50,6 +51,9 @@ if [ ! -f ${dtcmp}.tar.gz ] ; then
 fi
 if [ ! -f ${libarchive}.tar.gz ] ; then 
   wget http://www.libarchive.org/downloads/${libarchive}.tar.gz
+fi
+if [ ! -f ${cunit}-src.tar.bz2 ] ; then 
+  wget https://sourceforge.net/projects/cunit/files/CUnit/2.1-2/${cunit}-src.tar.bz2
 fi
 
 # build dependencies
@@ -109,6 +113,20 @@ pushd ${libarchive}
   make install
   if [ $? -ne 0 ]; then
     echo "failed to configure, build, or install libarchive"
+    exit 1
+  fi
+popd
+
+rm -rf ${cunit} 
+tar xvfj ${cunit}-src.tar.bz2
+pushd ${cunit}
+  export CFLAGS=${OPT}
+  ./configure \
+    --prefix=${installdir} && \
+  make && \
+  make install
+  if [ $? -ne 0 ]; then
+    echo "failed to configure, build, or install cunit"
     exit 1
   fi
 popd
