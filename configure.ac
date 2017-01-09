@@ -85,6 +85,7 @@ AC_CONFIG_FILES([Makefile                \
                  src/dfilemaker/Makefile \
                  src/drm/Makefile        \
                  src/dwalk/Makefile      \
+                 src/unit_tests/Makefile \
 ])
 #                 doc/Makefile            \
 #                 doc/html/Makefile       \

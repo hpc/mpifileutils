@@ -13,8 +13,8 @@ test:
 	-(pushd $(top_srcdir)/test>/dev/null && ~/fileutils.git/venv/bin/nose2 -v && popd>/dev/null)
 else
 test:
-	@(echo "The nosetests command could not be found. Please install Nose with your")
-	@(echo "package manager or 'pip install nose', then rerun the configure script.")
+	@(echo "The nosetests command could not be found. Please install Nose2 with your")
+	@(echo "package manager or 'pip install nose2', then rerun the configure script.")
 	@false;
 endif
 
