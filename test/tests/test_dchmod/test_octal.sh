@@ -15,13 +15,13 @@ mkdir -p ~/tmp0/tmp1/tmp2
 
 #get directory where dchmod command is, set default to home directory if nothing passed in
 if [ "$#" -eq 0 ]; then
-        DCHMOD=~/fileutils.git/install/bin/dchmod
+        DCHMOD=~/fileutils.git/install/bin/
 else 
         DCHMOD=$1
 fi
 
 #turn on permissions, then check all of the files/directories are set 
-$DCHMOD -v -m $OCTAL ~/tmp0
+$DCHMOD/dchmod -v -m $OCTAL ~/tmp0
 
 EXPECTED_RESULT=$OCTAL
 
