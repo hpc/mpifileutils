@@ -36,6 +36,13 @@ before_install:
  - pushd ${libarchive}
  - ./configure && make && sudo make install
  - popd
+ - cunit=CUnit-2.1-2
+ - wget https://sourceforge.net/projects/cunit/files/CUnit/2.1-2/${cunit}-src.tar.bz2 
+ - tar xvfj ${cunit}-src.tar.gz
+ - pushd ${cunit}
+ - make && sudo make install
+ - popd
+
  - sudo ldconfig
 
 script: ./autogen.sh && export CC=mpicc && ./configure && make && make test
@@ -47,6 +54,5 @@ compiler:
 
 notifications:
   email:
-    - fileutils-dev@googlegroups.com
     - sikich1@llnl.gov
     - moody20@llnl.gov
