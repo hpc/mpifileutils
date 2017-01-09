@@ -38,7 +38,7 @@ before_install:
  - popd
  - cunit=CUnit-2.1-2
  - wget https://sourceforge.net/projects/cunit/files/CUnit/2.1-2/${cunit}-src.tar.bz2 
- - tar xvfj ${cunit}-src.tar.gz
+ - tar xvfj ${cunit}-src.tar.bz2
  - pushd ${cunit}
  - make && sudo make install
  - popd
