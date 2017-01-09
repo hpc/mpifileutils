@@ -1,4 +1,4 @@
-AUTOMAKE_OPTIONS = foreign
+#include <CUnit/CUnit.h>AUTOMAKE_OPTIONS = foreign
 ACLOCAL_AMFLAGS = -I m4
 
 #SUBDIRS = src doc
