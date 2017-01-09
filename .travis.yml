@@ -40,7 +40,7 @@ before_install:
  - wget https://sourceforge.net/projects/cunit/files/CUnit/2.1-2/${cunit}-src.tar.bz2 
  - tar xvfj ${cunit}-src.tar.bz2
  - pushd ${cunit}
- - make && sudo make install
+ - ./configure && make && sudo make install
  - popd
 
  - sudo ldconfig
