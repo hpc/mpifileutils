@@ -37,7 +37,6 @@ extern "C" {
 /****************************************
  * Define types
  ***************************************/
-
 /* TODO: these types may be encoded in files */
 typedef enum bayer_filetypes_e {
     BAYER_TYPE_NULL    = 0,
