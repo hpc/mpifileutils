@@ -3,7 +3,15 @@
 #include <math.h>
 #include <CUnit/CUnit.h>
 #include <CUnit/Basic.h>
+int init_test_suite1(void);
 
+int clean_test_suite1(void);
+
+int is_odd (int x);
+
+void test_is_odd (void);
+
+int setup_test_suite1(void);
 //#include "test_suite1.h"
 int init_test_suite1(void)
 {
