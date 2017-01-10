@@ -718,7 +718,7 @@ static int copy_file_fiemap(
 
     struct fiemap *fiemap = (struct fiemap*)malloc(sizeof(struct fiemap));
     if (fiemap == NULL) {
-        BAYER_LOG(BAYER_LOG_ERR, "Out of memory allocating fiemap\n");
+        BAYER_LOG(BAYER_LOG_ERR, "Out of memory allocating fiemap");
         goto fail_normal_copy;
     }
     memset(fiemap, 0, sizeof(struct fiemap));
@@ -735,7 +735,7 @@ static int copy_file_fiemap(
     }
 
     if (ioctl(in_fd, FS_IOC_FIEMAP, fiemap) < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "fiemap ioctl() failed for src %s\n", src);
+        BAYER_LOG(BAYER_LOG_ERR, "fiemap ioctl() failed for src %s errno=%d %s", src, errno, strerror(errno));
         goto fail_normal_copy;
     }
 
@@ -744,7 +744,7 @@ static int copy_file_fiemap(
     if ((fiemap = (struct fiemap*)realloc(fiemap,sizeof(struct fiemap) +
                                   extents_size)) == NULL)
     {
-        BAYER_LOG(BAYER_LOG_ERR, "Out of memory reallocating fiemap\n");
+        BAYER_LOG(BAYER_LOG_ERR, "Out of memory reallocating fiemap");
         goto fail_normal_copy;
     }
 
@@ -753,7 +753,7 @@ static int copy_file_fiemap(
     fiemap->fm_mapped_extents = 0;
 
     if (ioctl(in_fd, FS_IOC_FIEMAP, fiemap) < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "fiemap ioctl() failed for src %s\n", src);
+        BAYER_LOG(BAYER_LOG_ERR, "fiemap ioctl() failed for src %s errno=%d %s", src, errno, strerror(errno));
         goto fail_normal_copy;
     }
 
@@ -803,6 +803,8 @@ static int copy_file_fiemap(
         ext_start = fiemap->fm_extents[i].fe_logical;
         ext_len = fiemap->fm_extents[i].fe_length;
         ext_hole_size = ext_start - (last_ext_start + last_ext_len);
+
+        //printf("HOLE SIZE: %zu" PRId32, ext_hole_size);
 
         if (ext_hole_size) {
             if (bayer_lseek(src, in_fd, (off_t)ext_start, SEEK_SET) < 0) {
