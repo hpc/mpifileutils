@@ -54,5 +54,5 @@ compiler:
 
 notifications:
   email:
-    - sikich1@llnl.gov
-    - moody20@llnl.gov
+    #- sikich1@llnl.gov
+    #- moody20@llnl.gov
