@@ -70,16 +70,16 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
                        off_t offset)
 {
     /* seek to offset in source file */
-    if(bayer_lseek(op->operand, in_fd, offset, SEEK_SET) == (off_t)-1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
+    if(mfu_lseek(op->operand, in_fd, offset, SEEK_SET) == (off_t)-1) {
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
             op->operand, errno, strerror(errno));
         /* Handle operation requeue in parent function. */
         return -1;
     }
 
     /* seek to offset in destination file */
-    if(bayer_lseek(op->dest_full_path, out_fd, offset, SEEK_SET) == (off_t)-1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+    if(mfu_lseek(op->dest_full_path, out_fd, offset, SEEK_SET) == (off_t)-1) {
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
             op->dest_full_path, errno, strerror(errno));
         /* Handle operation requeue in parent function. */
         return -1;
@@ -100,7 +100,7 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
         }
 
         /* read data from source file */
-        ssize_t num_of_bytes_read = bayer_read(op->operand, in_fd, buf, left_to_read);
+        ssize_t num_of_bytes_read = mfu_read(op->operand, in_fd, buf, left_to_read);
 
         /* check for EOF */
         if(!num_of_bytes_read) {
@@ -127,12 +127,12 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
         }
 
         /* write data to destination file */
-        ssize_t num_of_bytes_written = bayer_write(op->dest_full_path, out_fd, buf,
+        ssize_t num_of_bytes_written = mfu_write(op->dest_full_path, out_fd, buf,
                                      bytes_to_write);
 
         /* check that we wrote the same number of bytes that we read */
         if(num_of_bytes_written < 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
                 op->operand, op->dest_full_path, errno, strerror(errno));
             /* Handle operation requeue in parent function. */
             return -1;
@@ -140,7 +140,7 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
 
         /* check that we wrote the same number of bytes that we read */
         if((size_t)num_of_bytes_written != bytes_to_write) {
-            BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s'",
+            MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s'",
                 op->operand, op->dest_full_path);
             /* Handle operation requeue in parent function. */
             return -1;
@@ -154,14 +154,14 @@ static int DCOPY_perform_copy(DCOPY_operation_t* op,
 #if 0
     /* force data to file system */
     if(total_bytes > 0) {
-        bayer_fsync(op->dest_full_path, out_fd);
+        mfu_fsync(op->dest_full_path, out_fd);
     }
 #endif
 
     /* Increment the global counter. */
     DCOPY_statistics.total_bytes_copied += (int64_t) total_bytes;
 
-    BAYER_LOG(BAYER_LOG_DBG, "Wrote `%zu' bytes at segment `%" PRId64 \
+    MFU_LOG(MFU_LOG_DBG, "Wrote `%zu' bytes at segment `%" PRId64 \
         "', offset `%" PRId64 "' (`%" PRId64 "' total)",
         total_bytes, op->chunk, (int64_t)DCOPY_user_opts.chunk_size * op->chunk,
         DCOPY_statistics.total_bytes_copied);
@@ -176,7 +176,7 @@ void DCOPY_do_copy(DCOPY_operation_t* op,
     /* open the input file */
     int in_fd = DCOPY_open_file(op->operand, 1, &DCOPY_src_cache);
     if(in_fd < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to open input file `%s' errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to open input file `%s' errno=%d %s",
             op->operand, errno, strerror(errno));
 
         DCOPY_retry_failed_operation(COPY, handle, op);
@@ -196,13 +196,13 @@ void DCOPY_do_copy(DCOPY_operation_t* op,
         /* If the force option is specified, try to unlink the destination and
          * reopen before doing the optional requeue. */
         if(DCOPY_user_opts.force) {
-            bayer_unlink(op->dest_full_path);
+            mfu_unlink(op->dest_full_path);
             out_fd = DCOPY_open_file(op->dest_full_path, 0, &DCOPY_dst_cache);
         }
 
         /* requeue operation */
         if(out_fd < 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to open output file `%s' errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Failed to open output file `%s' errno=%d %s",
                 op->dest_full_path, errno, strerror(errno));
 
             DCOPY_retry_failed_operation(COPY, handle, op);

@@ -28,8 +28,8 @@ must be run through your shell for the environment setup to be correct
     module load ompi
 
     cd /tmp/work/fwang2
-    git clone ssh://git@github.com/hpc/bayer
-    cd bayer/dtar
+    git clone ssh://git@github.com/hpc/mfu
+    cd mfu/dtar
     ./buildme_dependencies
     source env.sh
     mkdir build

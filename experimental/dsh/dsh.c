@@ -45,7 +45,7 @@
 
 #include "libcircle.h"
 #include "dtcmp.h"
-#include "bayer.h"
+#include "mfu.h"
 
 // getpwent getgrent to read user and group entries
 
@@ -85,20 +85,20 @@ static int my_strcmp_rev(const void* a, const void* b)
     return strcmp((const char*)b, (const char*)a);
 }
 
-static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
+static int sort_files_readdir(const char* sortfields, mfu_flist* pflist)
 {
     /* get list from caller */
-    bayer_flist flist = *pflist;
+    mfu_flist flist = *pflist;
 
     /* create a new list as subset of original list */
-    bayer_flist flist2 = bayer_flist_subset(flist);
+    mfu_flist flist2 = mfu_flist_subset(flist);
 
-    uint64_t incount = bayer_flist_size(flist);
-    uint64_t chars   = bayer_flist_file_max_name(flist);
+    uint64_t incount = mfu_flist_size(flist);
+    uint64_t chars   = mfu_flist_file_max_name(flist);
 
     /* create datatype for packed file list element */
     MPI_Datatype dt_sat;
-    size_t bytes = bayer_flist_file_pack_size(flist);
+    size_t bytes = mfu_flist_file_pack_size(flist);
     MPI_Type_contiguous((int)bytes, MPI_BYTE, &dt_sat);
 
     /* get our rank and the size of comm_world */
@@ -114,13 +114,13 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
     /* build comparison op for filenames */
     DTCMP_Op op_filepath;
     if (DTCMP_Op_create(dt_filepath, my_strcmp, &op_filepath) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for filepath");
+        MFU_ABORT(1, "Failed to create sorting operation for filepath");
     }
 
     /* build comparison op for filenames */
     DTCMP_Op op_filepath_rev;
     if (DTCMP_Op_create(dt_filepath, my_strcmp_rev, &op_filepath_rev) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create reverse sorting operation for filepath");
+        MFU_ABORT(1, "Failed to create reverse sorting operation for filepath");
     }
 
     /* TODO: process sort fields */
@@ -135,7 +135,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
         ops[nfields]     = DTCMP_OP_NULL;
     }
     nfields = 0;
-    char* sortfields_copy = BAYER_STRDUP(sortfields);
+    char* sortfields_copy = MFU_STRDUP(sortfields);
     char* token = strtok(sortfields_copy, ",");
     while (token != NULL) {
         int valid = 1;
@@ -167,18 +167,18 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
         }
         token = strtok(NULL, ",");
     }
-    bayer_free(&sortfields_copy);
+    mfu_free(&sortfields_copy);
 
     /* build key type */
     MPI_Datatype dt_key;
     if (DTCMP_Type_create_series(nfields, types, &dt_key) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create type for key");
+        MFU_ABORT(1, "Failed to create type for key");
     }
 
     /* create sort op */
     DTCMP_Op op_key;
     if (DTCMP_Op_create_series(nfields, ops, &op_key) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for key");
+        MFU_ABORT(1, "Failed to create sorting operation for key");
     }
 
     /* build keysat type */
@@ -186,7 +186,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
     keysat_types[0] = dt_key;
     keysat_types[1] = dt_sat;
     if (DTCMP_Type_create_series(2, keysat_types, &dt_keysat) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create type for keysat");
+        MFU_ABORT(1, "Failed to create type for keysat");
     }
 
     /* get extent of key type */
@@ -203,7 +203,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
 
     /* compute size of sort element and allocate buffer */
     size_t sortbufsize = (size_t)keysat_extent * incount;
-    void* sortbuf = BAYER_MALLOC(sortbufsize);
+    void* sortbuf = MFU_MALLOC(sortbufsize);
 
     /* copy data into sort elements */
     uint64_t idx = 0;
@@ -213,14 +213,14 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
         int i;
         for (i = 0; i < nfields; i++) {
             if (fields[i] == FILENAME) {
-                const char* name = bayer_flist_file_get_name(flist, idx);
+                const char* name = mfu_flist_file_get_name(flist, idx);
                 strcpy(sortptr, name);
             }
             sortptr += lengths[i];
         }
 
         /* pack file element */
-        sortptr += bayer_flist_file_pack(sortptr, flist, idx);
+        sortptr += mfu_flist_file_pack(sortptr, flist, idx);
 
         idx++;
     }
@@ -235,7 +235,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
                       MPI_COMM_WORLD, &handle
                   );
     if (sort_rc != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to sort data");
+        MFU_ABORT(1, "Failed to sort data");
     }
 
     /* step through sorted data filenames */
@@ -243,12 +243,12 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
     sortptr = (char*) outsortbuf;
     while (idx < (uint64_t)outsortcount) {
         sortptr += key_extent;
-        sortptr += bayer_flist_file_unpack(sortptr, flist2);
+        sortptr += mfu_flist_file_unpack(sortptr, flist2);
         idx++;
     }
 
     /* build summary of new list */
-    bayer_flist_summarize(flist2);
+    mfu_flist_summarize(flist2);
 
     /* free memory */
     DTCMP_Free(&handle);
@@ -264,14 +264,14 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
     MPI_Type_free(&dt_filepath);
 
     /* free input buffer holding sort elements */
-    bayer_free(&sortbuf);
+    mfu_free(&sortbuf);
 
     /* free the satellite type */
     MPI_Type_free(&dt_sat);
 
     /* return new list and free old one */
     *pflist = flist2;
-    bayer_flist_free(&flist);
+    mfu_flist_free(&flist);
 
     return 0;
 }
@@ -286,75 +286,75 @@ static uint32_t gettime(void)
     return t;
 }
 
-static void filter_files(bayer_flist* pflist)
+static void filter_files(mfu_flist* pflist)
 {
-    bayer_flist flist = *pflist;
+    mfu_flist flist = *pflist;
 
     // for each file, if (now - atime) > 60d and (now - ctime) > 60d, add to list
-    bayer_flist eligible = bayer_flist_subset(flist);
+    mfu_flist eligible = mfu_flist_subset(flist);
 
     static uint32_t limit = 60 * 24 * 3600; /* 60 days */
     uint32_t now = gettime();
     uint64_t idx = 0;
-    uint64_t files = bayer_flist_size(flist);
+    uint64_t files = mfu_flist_size(flist);
     while (idx < files) {
-        bayer_filetype type = bayer_flist_file_get_type(flist, idx);
-        if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_LINK) {
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+        if (type == MFU_TYPE_FILE || type == MFU_TYPE_LINK) {
             /* we only purge files and links */
-            uint32_t acc = (uint32_t) bayer_flist_file_get_atime(flist, idx);
-            uint32_t cre = (uint32_t) bayer_flist_file_get_ctime(flist, idx);
+            uint32_t acc = (uint32_t) mfu_flist_file_get_atime(flist, idx);
+            uint32_t cre = (uint32_t) mfu_flist_file_get_ctime(flist, idx);
             if ((now - acc) > limit && (now - cre) > limit) {
                 /* only purge items that have not been
                  * accessed or changed in past limit seconds */
-                bayer_flist_file_copy(flist, idx, eligible);
+                mfu_flist_file_copy(flist, idx, eligible);
             }
         }
         idx++;
     }
 
-    bayer_flist_summarize(eligible);
+    mfu_flist_summarize(eligible);
 
-    bayer_flist_free(&flist);
+    mfu_flist_free(&flist);
     *pflist = eligible;
     return;
 }
 
 /* pick out all files that are contained within a given directory,
  * we include the directory itself if the inclusive flag is set */
-static void filter_files_path(bayer_flist flist, bayer_path* path, int inclusive, bayer_flist* out_eligible, bayer_flist* out_leftover)
+static void filter_files_path(mfu_flist flist, mfu_path* path, int inclusive, mfu_flist* out_eligible, mfu_flist* out_leftover)
 {
     /* the files that satisfy the filter are copied to eligible,
      * while others are copied to leftover */
-    bayer_flist eligible = bayer_flist_subset(flist);
-    bayer_flist leftover = bayer_flist_subset(flist);
+    mfu_flist eligible = mfu_flist_subset(flist);
+    mfu_flist leftover = mfu_flist_subset(flist);
 
     /* get the parent directory in string form to compare during
      * inclusive checks */
-    const char* path_str = bayer_path_strdup(path);
+    const char* path_str = mfu_path_strdup(path);
 
     uint64_t idx = 0;
-    uint64_t files = bayer_flist_size(flist);
+    uint64_t files = mfu_flist_size(flist);
     while (idx < files) {
-        const char* filename = bayer_flist_file_get_name(flist, idx);
-        bayer_path* fpath = bayer_path_from_str(filename);
+        const char* filename = mfu_flist_file_get_name(flist, idx);
+        mfu_path* fpath = mfu_path_from_str(filename);
 
-        if (bayer_path_cmp(path, fpath) == BAYER_PATH_DEST_CHILD) {
-            bayer_flist_file_copy(flist, idx, eligible);
+        if (mfu_path_cmp(path, fpath) == MFU_PATH_DEST_CHILD) {
+            mfu_flist_file_copy(flist, idx, eligible);
         } else if (inclusive && strcmp(path_str, filename) == 0) {
             /* also include path itself if inclusive flag is set */
-            bayer_flist_file_copy(flist, idx, eligible);
+            mfu_flist_file_copy(flist, idx, eligible);
         } else {
             /* this file does not match the filter */
-            bayer_flist_file_copy(flist, idx, leftover);
+            mfu_flist_file_copy(flist, idx, leftover);
         }
 
-        bayer_path_delete(&fpath);
+        mfu_path_delete(&fpath);
         idx++;
     }
-    bayer_free(&path_str);
+    mfu_free(&path_str);
 
-    bayer_flist_summarize(eligible);
-    bayer_flist_summarize(leftover);
+    mfu_flist_summarize(eligible);
+    mfu_flist_summarize(leftover);
 
     *out_eligible = eligible;
     *out_leftover = leftover;
@@ -362,15 +362,15 @@ static void filter_files_path(bayer_flist flist, bayer_path* path, int inclusive
     return;
 }
 
-static void sum_child(bayer_flist flist, uint64_t idx, uint64_t* vals)
+static void sum_child(mfu_flist flist, uint64_t idx, uint64_t* vals)
 {
     /* increase our item count by one */
     vals[0] += 1;
 
     /* if item is a file, add its size */
-    bayer_filetype type = bayer_flist_file_get_type(flist, idx);
-//    if (type == BAYER_TYPE_FILE) {
-        uint64_t size = bayer_flist_file_get_size(flist, idx);
+    mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+//    if (type == MFU_TYPE_FILE) {
+        uint64_t size = mfu_flist_file_get_size(flist, idx);
         vals[1] += size;
 //    }
 
@@ -387,7 +387,7 @@ static uint64_t* decode_addr(const char* str)
 }
 
 /* gather data from procs to rank 0 */
-static void print_sums(bayer_path* origpath, uint64_t count, uint64_t allmax, uint64_t maxcount, uint64_t sum_bytes, uint64_t sum_count, MPI_Datatype dt, void* buf)
+static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint64_t maxcount, uint64_t sum_bytes, uint64_t sum_count, MPI_Datatype dt, void* buf)
 {
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -417,9 +417,9 @@ static void print_sums(bayer_path* origpath, uint64_t count, uint64_t allmax, ui
     int* counts = NULL;
     int* disps = NULL;
     if (rank == 0) {
-        recvbuf = BAYER_MALLOC(bufsize);
-        counts = (int*) BAYER_MALLOC(ranks * sizeof(int));
-        disps = (int*) BAYER_MALLOC(ranks * sizeof(int));
+        recvbuf = MFU_MALLOC(bufsize);
+        counts = (int*) MFU_MALLOC(ranks * sizeof(int));
+        disps = (int*) MFU_MALLOC(ranks * sizeof(int));
     }
 
     int mycount = (int) count;
@@ -455,15 +455,15 @@ static void print_sums(bayer_path* origpath, uint64_t count, uint64_t allmax, ui
     if (rank == 0) {
         double agg_size_tmp;
         const char* agg_size_units;
-        bayer_format_bytes(allsum_bytes, &agg_size_tmp, &agg_size_units);
+        mfu_format_bytes(allsum_bytes, &agg_size_tmp, &agg_size_units);
     
         /* print header info */
-        char* origpath_str = bayer_path_strdup(origpath);
+        char* origpath_str = mfu_path_strdup(origpath);
         printf("--------------------------\n");
         printf("    Bytes %*s Path\n", digits, "Items");
         printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) allsum_count, origpath_str);
         printf("--------------------------\n");
-        bayer_free(&origpath_str);
+        mfu_free(&origpath_str);
 
         uint64_t i;
         char* ptr = (char*) recvbuf;
@@ -479,16 +479,16 @@ static void print_sums(bayer_path* origpath, uint64_t count, uint64_t allmax, ui
     
             double agg_size_tmp;
             const char* agg_size_units;
-            bayer_format_bytes(bytes, &agg_size_tmp, &agg_size_units);
+            mfu_format_bytes(bytes, &agg_size_tmp, &agg_size_units);
     
             printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) count, name);
         }
         fflush(stdout);
     }
 
-    bayer_free(&disps);
-    bayer_free(&counts);
-    bayer_free(&recvbuf);
+    mfu_free(&disps);
+    mfu_free(&counts);
+    mfu_free(&recvbuf);
 
     return;
 }
@@ -496,7 +496,7 @@ static void print_sums(bayer_path* origpath, uint64_t count, uint64_t allmax, ui
 /* here we sort all items by child name, execute scans to sum data
  * for a given name, and then finally resort and print values based
  * on those sums */
-static void sort_scan_sort(bayer_path* origpath, uint64_t allmax, uint64_t numchildren, strmap* children)
+static void sort_scan_sort(mfu_path* origpath, uint64_t allmax, uint64_t numchildren, strmap* children)
 {
     /* get our rank */
     int rank;
@@ -520,7 +520,7 @@ static void sort_scan_sort(bayer_path* origpath, uint64_t allmax, uint64_t numch
     /* allocate memory for sort */
     size_t itemsize = allmax + 4 * sizeof(uint64_t);
     size_t bufsize = numchildren * itemsize;
-    void* buf = BAYER_MALLOC(bufsize);
+    void* buf = MFU_MALLOC(bufsize);
 
     /* copy items into buffer */
     uint64_t idx = 0;
@@ -557,12 +557,12 @@ static void sort_scan_sort(bayer_path* origpath, uint64_t allmax, uint64_t numch
     }
 
     /* sort data by child name, attach item and byte counts as satellite data */
-    void* sortedbuf = BAYER_MALLOC(bufsize);
+    void* sortedbuf = MFU_MALLOC(bufsize);
     DTCMP_Sortv(
         buf, sortedbuf, numchildren,
         key, keysat, cmp, DTCMP_FLAG_NONE, MPI_COMM_WORLD
     );
-    bayer_free(&buf);
+    mfu_free(&buf);
     buf = sortedbuf;
     sortedbuf = NULL;
 
@@ -570,16 +570,16 @@ static void sort_scan_sort(bayer_path* origpath, uint64_t allmax, uint64_t numch
 
     /* prepare arrays for segmented scan operations */
     size_t strbuf_size = numchildren * allmax;
-    void* strbuf = BAYER_MALLOC(strbuf_size);
-    uint64_t* rankval  = (uint64_t*) BAYER_MALLOC(numchildren * sizeof(uint64_t));
-    uint64_t* rankltr  = (uint64_t*) BAYER_MALLOC(numchildren * sizeof(uint64_t));
-    uint64_t* rankrtl  = (uint64_t*) BAYER_MALLOC(numchildren * sizeof(uint64_t));
-    uint64_t* countval = (uint64_t*) BAYER_MALLOC(numchildren * sizeof(uint64_t));
-    uint64_t* countltr = (uint64_t*) BAYER_MALLOC(numchildren * sizeof(uint64_t));
-    uint64_t* countrtl = (uint64_t*) BAYER_MALLOC(numchildren * sizeof(uint64_t));
-    uint64_t* bytesval = (uint64_t*) BAYER_MALLOC(numchildren * sizeof(uint64_t));
-    uint64_t* bytesltr = (uint64_t*) BAYER_MALLOC(numchildren * sizeof(uint64_t));
-    uint64_t* bytesrtl = (uint64_t*) BAYER_MALLOC(numchildren * sizeof(uint64_t));
+    void* strbuf = MFU_MALLOC(strbuf_size);
+    uint64_t* rankval  = (uint64_t*) MFU_MALLOC(numchildren * sizeof(uint64_t));
+    uint64_t* rankltr  = (uint64_t*) MFU_MALLOC(numchildren * sizeof(uint64_t));
+    uint64_t* rankrtl  = (uint64_t*) MFU_MALLOC(numchildren * sizeof(uint64_t));
+    uint64_t* countval = (uint64_t*) MFU_MALLOC(numchildren * sizeof(uint64_t));
+    uint64_t* countltr = (uint64_t*) MFU_MALLOC(numchildren * sizeof(uint64_t));
+    uint64_t* countrtl = (uint64_t*) MFU_MALLOC(numchildren * sizeof(uint64_t));
+    uint64_t* bytesval = (uint64_t*) MFU_MALLOC(numchildren * sizeof(uint64_t));
+    uint64_t* bytesltr = (uint64_t*) MFU_MALLOC(numchildren * sizeof(uint64_t));
+    uint64_t* bytesrtl = (uint64_t*) MFU_MALLOC(numchildren * sizeof(uint64_t));
     char* ptrdst = (char*) strbuf;
     char* ptrsrc = (char*) buf;
     uint64_t i;
@@ -621,8 +621,8 @@ static void sort_scan_sort(bayer_path* origpath, uint64_t allmax, uint64_t numch
 
     /* total counts and bytes for each item */
     uint64_t report_count = 0;
-    uint64_t* counttot = (uint64_t*) BAYER_MALLOC(numchildren * sizeof(uint64_t));
-    uint64_t* bytestot = (uint64_t*) BAYER_MALLOC(numchildren * sizeof(uint64_t));
+    uint64_t* counttot = (uint64_t*) MFU_MALLOC(numchildren * sizeof(uint64_t));
+    uint64_t* bytestot = (uint64_t*) MFU_MALLOC(numchildren * sizeof(uint64_t));
     for (i = 0; i < numchildren; i++) {
         counttot[i] = countval[i] + countltr[i] + countrtl[i];
         bytestot[i] = bytesval[i] + bytesltr[i] + bytesrtl[i];
@@ -649,7 +649,7 @@ static void sort_scan_sort(bayer_path* origpath, uint64_t allmax, uint64_t numch
     /* to report data, sort by size, then name, include item count */
     size_t report_size = 2 * sizeof(uint64_t) + allmax;
     size_t reportbuf_size = report_count * report_size;
-    void* reportbuf = BAYER_MALLOC(reportbuf_size);
+    void* reportbuf = MFU_MALLOC(reportbuf_size);
 
     /* prepare buffer for sorting, and remember max count */
     uint64_t sum_bytes = 0;
@@ -677,7 +677,7 @@ static void sort_scan_sort(bayer_path* origpath, uint64_t allmax, uint64_t numch
     }
 
     /* sort data */
-    void* sorted_reportbuf = BAYER_MALLOC(reportbuf_size);
+    void* sorted_reportbuf = MFU_MALLOC(reportbuf_size);
     DTCMP_Sortv(
         reportbuf, sorted_reportbuf, report_count,
         report_key, report_keysat, report_cmp, DTCMP_FLAG_NONE, MPI_COMM_WORLD
@@ -686,31 +686,31 @@ static void sort_scan_sort(bayer_path* origpath, uint64_t allmax, uint64_t numch
     /* print sorted data */
     print_sums(origpath, report_count, allmax, maxcount, sum_bytes, sum_count, report_keysat, sorted_reportbuf);
 
-    bayer_free(&sorted_reportbuf);
-    bayer_free(&reportbuf);
+    mfu_free(&sorted_reportbuf);
+    mfu_free(&reportbuf);
 
     DTCMP_Op_free(&report_cmp);
     MPI_Type_free(&report_keysat);
     MPI_Type_free(&report_key);
 
     /* free counts */
-    bayer_free(&counttot);
-    bayer_free(&bytestot);
+    mfu_free(&counttot);
+    mfu_free(&bytestot);
 
     /* free memory */
-    bayer_free(&bytesrtl);
-    bayer_free(&bytesltr);
-    bayer_free(&bytesval);
-    bayer_free(&countrtl);
-    bayer_free(&countltr);
-    bayer_free(&countval);
-    bayer_free(&rankrtl);
-    bayer_free(&rankltr);
-    bayer_free(&rankval);
-    bayer_free(&strbuf);
+    mfu_free(&bytesrtl);
+    mfu_free(&bytesltr);
+    mfu_free(&bytesval);
+    mfu_free(&countrtl);
+    mfu_free(&countltr);
+    mfu_free(&countval);
+    mfu_free(&rankrtl);
+    mfu_free(&rankltr);
+    mfu_free(&rankval);
+    mfu_free(&strbuf);
 
     /* free memory */
-    bayer_free(&buf);
+    mfu_free(&buf);
     DTCMP_Op_free(&cmp);
     MPI_Type_free(&key);
 
@@ -719,13 +719,13 @@ static void sort_scan_sort(bayer_path* origpath, uint64_t allmax, uint64_t numch
 
 /* given a list of files and a path, compute number of items and
  * bytes of each child item in path */
-static void summarize_children(bayer_flist flist, bayer_path* path)
+static void summarize_children(mfu_flist flist, mfu_path* path)
 {
     /* get our rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    int path_comps = bayer_path_components(path);
+    int path_comps = mfu_path_components(path);
 
     /* map child name to data structure (encodes address of struct as string) */
     strmap* children = strmap_new();
@@ -734,15 +734,15 @@ static void summarize_children(bayer_flist flist, bayer_path* path)
     uint64_t numchildren = 0;
     uint64_t maxname = 0;
     uint64_t idx = 0;
-    uint64_t files = bayer_flist_size(flist);
+    uint64_t files = mfu_flist_size(flist);
     while (idx < files) {
         /* get full path to item and create path object */
-        const char* filename = bayer_flist_file_get_name(flist, idx);
-        bayer_path* fpath = bayer_path_from_str(filename);
+        const char* filename = mfu_flist_file_get_name(flist, idx);
+        mfu_path* fpath = mfu_path_from_str(filename);
                
         /* identify child under parent to which this item belongs */
-        bayer_path* childname = bayer_path_sub(fpath, path_comps, 1);
-        const char* childname_str = bayer_path_strdup(childname);
+        mfu_path* childname = mfu_path_sub(fpath, path_comps, 1);
+        const char* childname_str = mfu_path_strdup(childname);
 
         /* keep track of largest childname we see */
         size_t len = strlen(childname_str) + 1;
@@ -757,7 +757,7 @@ static void summarize_children(bayer_flist flist, bayer_path* path)
             numchildren++;
 
             /* allocate and initialize structure for tracking info on this child */
-            uint64_t* vals = BAYER_MALLOC(2 * sizeof(uint64_t));
+            uint64_t* vals = MFU_MALLOC(2 * sizeof(uint64_t));
             vals[0] = 0;
             vals[1] = 0;
 
@@ -777,9 +777,9 @@ static void summarize_children(bayer_flist flist, bayer_path* path)
         }
 
         /* free objects we created */
-        bayer_free(&childname_str);
-        bayer_path_delete(&childname);
-        bayer_path_delete(&fpath);
+        mfu_free(&childname_str);
+        mfu_path_delete(&childname);
+        mfu_path_delete(&fpath);
 
         /* process next item */
         idx++;
@@ -802,7 +802,7 @@ static void summarize_children(bayer_flist flist, bayer_path* path)
     {
         const char* val = strmap_node_value(elem);
         uint64_t* vals = decode_addr(val);
-        bayer_free(&vals);
+        mfu_free(&vals);
     }
 
     /* delete the string map */
@@ -811,22 +811,22 @@ static void summarize_children(bayer_flist flist, bayer_path* path)
     return;
 }
 
-static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
+static int sort_files_stat(const char* sortfields, mfu_flist* pflist)
 {
     /* get list from caller */
-    bayer_flist flist = *pflist;
+    mfu_flist flist = *pflist;
 
     /* create a new list as subset of original list */
-    bayer_flist flist2 = bayer_flist_subset(flist);
+    mfu_flist flist2 = mfu_flist_subset(flist);
 
-    uint64_t incount     = bayer_flist_size(flist);
-    uint64_t chars       = bayer_flist_file_max_name(flist);
-    uint64_t chars_user  = bayer_flist_user_max_name(flist);
-    uint64_t chars_group = bayer_flist_group_max_name(flist);
+    uint64_t incount     = mfu_flist_size(flist);
+    uint64_t chars       = mfu_flist_file_max_name(flist);
+    uint64_t chars_user  = mfu_flist_user_max_name(flist);
+    uint64_t chars_group = mfu_flist_group_max_name(flist);
 
     /* create datatype for packed file list element */
     MPI_Datatype dt_sat;
-    size_t bytes = bayer_flist_file_pack_size(flist);
+    size_t bytes = mfu_flist_file_pack_size(flist);
     MPI_Type_contiguous((int)bytes, MPI_BYTE, &dt_sat);
 
     /* get our rank and the size of comm_world */
@@ -846,25 +846,25 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
     /* build comparison op for filenames */
     DTCMP_Op op_filepath, op_user, op_group;
     if (DTCMP_Op_create(dt_filepath, my_strcmp, &op_filepath) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for filepath");
+        MFU_ABORT(1, "Failed to create sorting operation for filepath");
     }
     if (DTCMP_Op_create(dt_user, my_strcmp, &op_user) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for username");
+        MFU_ABORT(1, "Failed to create sorting operation for username");
     }
     if (DTCMP_Op_create(dt_group, my_strcmp, &op_group) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for groupname");
+        MFU_ABORT(1, "Failed to create sorting operation for groupname");
     }
 
     /* build comparison op for filenames */
     DTCMP_Op op_filepath_rev, op_user_rev, op_group_rev;
     if (DTCMP_Op_create(dt_filepath, my_strcmp_rev, &op_filepath_rev) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create reverse sorting operation for groupname");
+        MFU_ABORT(1, "Failed to create reverse sorting operation for groupname");
     }
     if (DTCMP_Op_create(dt_user, my_strcmp_rev, &op_user_rev) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create reverse sorting operation for groupname");
+        MFU_ABORT(1, "Failed to create reverse sorting operation for groupname");
     }
     if (DTCMP_Op_create(dt_group, my_strcmp_rev, &op_group_rev) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create reverse sorting operation for groupname");
+        MFU_ABORT(1, "Failed to create reverse sorting operation for groupname");
     }
 
     /* TODO: process sort fields */
@@ -879,7 +879,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
         ops[nfields]     = DTCMP_OP_NULL;
     }
     nfields = 0;
-    char* sortfields_copy = BAYER_STRDUP(sortfields);
+    char* sortfields_copy = MFU_STRDUP(sortfields);
     char* token = strtok(sortfields_copy, ",");
     while (token != NULL) {
         int valid = 1;
@@ -1007,18 +1007,18 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
         }
         token = strtok(NULL, ",");
     }
-    bayer_free(&sortfields_copy);
+    mfu_free(&sortfields_copy);
 
     /* build key type */
     MPI_Datatype dt_key;
     if (DTCMP_Type_create_series(nfields, types, &dt_key) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create key type");
+        MFU_ABORT(1, "Failed to create key type");
     }
 
     /* create op to sort by access time, then filename */
     DTCMP_Op op_key;
     if (DTCMP_Op_create_series(nfields, ops, &op_key) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for key");
+        MFU_ABORT(1, "Failed to create sorting operation for key");
     }
 
     /* build keysat type */
@@ -1026,7 +1026,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
     keysat_types[0] = dt_key;
     keysat_types[1] = dt_sat;
     if (DTCMP_Type_create_series(2, keysat_types, &dt_keysat) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create keysat type");
+        MFU_ABORT(1, "Failed to create keysat type");
     }
 
     /* get extent of key type */
@@ -1043,7 +1043,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
 
     /* compute size of sort element and allocate buffer */
     size_t sortbufsize = (size_t)keysat_extent * incount;
-    void* sortbuf = BAYER_MALLOC(sortbufsize);
+    void* sortbuf = MFU_MALLOC(sortbufsize);
 
     /* copy data into sort elements */
     uint64_t idx = 0;
@@ -1053,39 +1053,39 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
         int i;
         for (i = 0; i < nfields; i++) {
             if (fields[i] == FILENAME) {
-                const char* name = bayer_flist_file_get_name(flist, idx);
+                const char* name = mfu_flist_file_get_name(flist, idx);
                 strcpy(sortptr, name);
             }
             else if (fields[i] == USERNAME) {
-                const char* name = bayer_flist_file_get_username(flist, idx);
+                const char* name = mfu_flist_file_get_username(flist, idx);
                 strcpy(sortptr, name);
             }
             else if (fields[i] == GROUPNAME) {
-                const char* name = bayer_flist_file_get_groupname(flist, idx);
+                const char* name = mfu_flist_file_get_groupname(flist, idx);
                 strcpy(sortptr, name);
             }
             else if (fields[i] == USERID) {
-                uint32_t val32 = (uint32_t) bayer_flist_file_get_uid(flist, idx);
+                uint32_t val32 = (uint32_t) mfu_flist_file_get_uid(flist, idx);
                 memcpy(sortptr, &val32, 4);
             }
             else if (fields[i] == GROUPID) {
-                uint32_t val32 = (uint32_t) bayer_flist_file_get_gid(flist, idx);
+                uint32_t val32 = (uint32_t) mfu_flist_file_get_gid(flist, idx);
                 memcpy(sortptr, &val32, 4);
             }
             else if (fields[i] == ATIME) {
-                uint32_t val32 = (uint32_t) bayer_flist_file_get_atime(flist, idx);
+                uint32_t val32 = (uint32_t) mfu_flist_file_get_atime(flist, idx);
                 memcpy(sortptr, &val32, 4);
             }
             else if (fields[i] == MTIME) {
-                uint32_t val32 = (uint32_t) bayer_flist_file_get_mtime(flist, idx);
+                uint32_t val32 = (uint32_t) mfu_flist_file_get_mtime(flist, idx);
                 memcpy(sortptr, &val32, 4);
             }
             else if (fields[i] == CTIME) {
-                uint32_t val32 = (uint32_t) bayer_flist_file_get_ctime(flist, idx);
+                uint32_t val32 = (uint32_t) mfu_flist_file_get_ctime(flist, idx);
                 memcpy(sortptr, &val32, 4);
             }
             else if (fields[i] == FILESIZE) {
-                uint64_t val64 = bayer_flist_file_get_size(flist, idx);
+                uint64_t val64 = mfu_flist_file_get_size(flist, idx);
                 memcpy(sortptr, &val64, 8);
             }
 
@@ -1093,7 +1093,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
         }
 
         /* pack file element */
-        sortptr += bayer_flist_file_pack(sortptr, flist, idx);
+        sortptr += mfu_flist_file_pack(sortptr, flist, idx);
 
         idx++;
     }
@@ -1108,7 +1108,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
                       MPI_COMM_WORLD, &handle
                   );
     if (sort_rc != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to sort data");
+        MFU_ABORT(1, "Failed to sort data");
     }
 
     /* step through sorted data filenames */
@@ -1116,12 +1116,12 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
     sortptr = (char*) outsortbuf;
     while (idx < (uint64_t)outsortcount) {
         sortptr += key_extent;
-        sortptr += bayer_flist_file_unpack(sortptr, flist2);
+        sortptr += mfu_flist_file_unpack(sortptr, flist2);
         idx++;
     }
 
     /* build summary of new list */
-    bayer_flist_summarize(flist2);
+    mfu_flist_summarize(flist2);
 
     /* free memory */
     DTCMP_Free(&handle);
@@ -1143,19 +1143,19 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
     MPI_Type_free(&dt_filepath);
 
     /* free input buffer holding sort elements */
-    bayer_free(&sortbuf);
+    mfu_free(&sortbuf);
 
     /* free the satellite type */
     MPI_Type_free(&dt_sat);
 
     /* return new list and free old one */
     *pflist = flist2;
-    bayer_flist_free(&flist);
+    mfu_flist_free(&flist);
 
     return 0;
 }
 
-static void print_summary(bayer_flist flist)
+static void print_summary(mfu_flist flist)
 {
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -1164,11 +1164,11 @@ static void print_summary(bayer_flist flist)
 
     /* step through and print data */
     uint64_t idx = 0;
-    uint64_t max = bayer_flist_size(flist);
+    uint64_t max = mfu_flist_size(flist);
     while (idx < max) {
-        if (bayer_flist_have_detail(flist)) {
+        if (mfu_flist_have_detail(flist)) {
             /* get mode */
-            mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, idx);
+            mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
 
             /* set file type */
             if (S_ISDIR(mode)) {
@@ -1185,20 +1185,20 @@ static void print_summary(bayer_flist flist)
                 total_unknown++;
             }
 
-            uint64_t size = bayer_flist_file_get_size(flist, idx);
+            uint64_t size = mfu_flist_file_get_size(flist, idx);
             total_bytes += size;
         }
         else {
             /* get type */
-            bayer_filetype type = bayer_flist_file_get_type(flist, idx);
+            mfu_filetype type = mfu_flist_file_get_type(flist, idx);
 
-            if (type == BAYER_TYPE_DIR) {
+            if (type == MFU_TYPE_DIR) {
                 total_dirs++;
             }
-            else if (type == BAYER_TYPE_FILE) {
+            else if (type == MFU_TYPE_FILE) {
                 total_files++;
             }
-            else if (type == BAYER_TYPE_LINK) {
+            else if (type == MFU_TYPE_LINK) {
                 total_links++;
             }
             else {
@@ -1213,7 +1213,7 @@ static void print_summary(bayer_flist flist)
 
     /* get total directories, files, links, and bytes */
     uint64_t all_dirs, all_files, all_links, all_unknown, all_bytes;
-    uint64_t all_count = bayer_flist_global_size(flist);
+    uint64_t all_count = mfu_flist_global_size(flist);
     MPI_Allreduce(&total_dirs,    &all_dirs,    1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(&total_files,   &all_files,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(&total_links,   &all_links,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
@@ -1228,10 +1228,10 @@ static void print_summary(bayer_flist flist)
         printf("  Links: %llu\n", (unsigned long long) all_links);
         /* printf("  Unknown: %lu\n", (unsigned long long) all_unknown); */
 
-        if (bayer_flist_have_detail(flist)) {
+        if (mfu_flist_have_detail(flist)) {
             double agg_size_tmp;
             const char* agg_size_units;
-            bayer_format_bytes(all_bytes, &agg_size_tmp, &agg_size_units);
+            mfu_format_bytes(all_bytes, &agg_size_tmp, &agg_size_units);
 
             uint64_t size_per_file = 0.0;
             if (all_files > 0) {
@@ -1239,7 +1239,7 @@ static void print_summary(bayer_flist flist)
             }
             double size_per_file_tmp;
             const char* size_per_file_units;
-            bayer_format_bytes(size_per_file, &size_per_file_tmp, &size_per_file_units);
+            mfu_format_bytes(size_per_file, &size_per_file_tmp, &size_per_file_units);
 
             printf("Data: %.3lf %s (%.3lf %s per file)\n", agg_size_tmp, agg_size_units, size_per_file_tmp, size_per_file_units);
         }
@@ -1334,23 +1334,23 @@ static char type_str_dir[]     = "DIR";
 static char type_str_file[]    = "REG";
 static char type_str_link[]    = "LNK";
 
-static void print_file(bayer_flist flist, uint64_t idx, int rank)
+static void print_file(mfu_flist flist, uint64_t idx, int rank)
 {
     /* get filename */
-    const char* file = bayer_flist_file_get_name(flist, idx);
+    const char* file = mfu_flist_file_get_name(flist, idx);
 
-    if (bayer_flist_have_detail(flist)) {
+    if (mfu_flist_have_detail(flist)) {
         /* get mode */
-        mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, idx);
+        mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
 
-        uint32_t uid = (uint32_t) bayer_flist_file_get_uid(flist, idx);
-        uint32_t gid = (uint32_t) bayer_flist_file_get_gid(flist, idx);
-        uint64_t acc = bayer_flist_file_get_atime(flist, idx);
-        uint64_t mod = bayer_flist_file_get_mtime(flist, idx);
-        uint64_t cre = bayer_flist_file_get_ctime(flist, idx);
-        uint64_t size = bayer_flist_file_get_size(flist, idx);
-        const char* username  = bayer_flist_file_get_username(flist, idx);
-        const char* groupname = bayer_flist_file_get_groupname(flist, idx);
+        uint32_t uid = (uint32_t) mfu_flist_file_get_uid(flist, idx);
+        uint32_t gid = (uint32_t) mfu_flist_file_get_gid(flist, idx);
+        uint64_t acc = mfu_flist_file_get_atime(flist, idx);
+        uint64_t mod = mfu_flist_file_get_mtime(flist, idx);
+        uint64_t cre = mfu_flist_file_get_ctime(flist, idx);
+        uint64_t size = mfu_flist_file_get_size(flist, idx);
+        const char* username  = mfu_flist_file_get_username(flist, idx);
+        const char* groupname = mfu_flist_file_get_groupname(flist, idx);
 
         char access_s[30];
         char modify_s[30];
@@ -1383,15 +1383,15 @@ static void print_file(bayer_flist flist, uint64_t idx, int rank)
     }
     else {
         /* get type */
-        bayer_filetype type = bayer_flist_file_get_type(flist, idx);
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
         char* type_str = type_str_unknown;
-        if (type == BAYER_TYPE_DIR) {
+        if (type == MFU_TYPE_DIR) {
             type_str = type_str_dir;
         }
-        else if (type == BAYER_TYPE_FILE) {
+        else if (type == MFU_TYPE_FILE) {
             type_str = type_str_file;
         }
-        else if (type == BAYER_TYPE_LINK) {
+        else if (type == MFU_TYPE_LINK) {
             type_str = type_str_link;
         }
 
@@ -1401,16 +1401,16 @@ static void print_file(bayer_flist flist, uint64_t idx, int rank)
     }
 }
 
-static void print_files(bayer_flist flist, bayer_path* path)
+static void print_files(mfu_flist flist, mfu_path* path)
 {
     /* number of items to print from start and end of list */
     uint64_t range = 10;
 
     /* allocate send and receive buffers */
-    size_t pack_size = bayer_flist_file_pack_size(flist);
+    size_t pack_size = mfu_flist_file_pack_size(flist);
     size_t bufsize = 2 * range * pack_size;
-    void* sendbuf = BAYER_MALLOC(bufsize);
-    void* recvbuf = BAYER_MALLOC(bufsize);
+    void* sendbuf = MFU_MALLOC(bufsize);
+    void* recvbuf = MFU_MALLOC(bufsize);
 
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -1419,9 +1419,9 @@ static void print_files(bayer_flist flist, bayer_path* path)
 
     /* identify the number of items we have, the total number,
      * and our offset in the global list */
-    uint64_t count  = bayer_flist_size(flist);
-    uint64_t total  = bayer_flist_global_size(flist);
-    uint64_t offset = bayer_flist_global_offset(flist);
+    uint64_t count  = mfu_flist_size(flist);
+    uint64_t total  = mfu_flist_global_size(flist);
+    uint64_t offset = mfu_flist_global_offset(flist);
 
     /* count the number of items we'll send */
     int num = 0;
@@ -1435,8 +1435,8 @@ static void print_files(bayer_flist flist, bayer_path* path)
     }
 
     /* allocate arrays to store counts and displacements */
-    int* counts = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
-    int* disps  = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
+    int* counts = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
+    int* disps  = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
 
     /* tell rank 0 where the data is coming from */
     int bytes = num * (int)pack_size;
@@ -1448,7 +1448,7 @@ static void print_files(bayer_flist flist, bayer_path* path)
     while (idx < count) {
         uint64_t global = offset + idx;
         if (global < range || (total - global) <= range) {
-            ptr += bayer_flist_file_pack(ptr, flist, idx);
+            ptr += mfu_flist_file_pack(ptr, flist, idx);
         }
         idx++;
     }
@@ -1469,26 +1469,26 @@ static void print_files(bayer_flist flist, bayer_path* path)
     MPI_Gatherv(sendbuf, bytes, MPI_BYTE, recvbuf, counts, disps, MPI_BYTE, 0, MPI_COMM_WORLD);
 
     /* create temporary list to unpack items into */
-    bayer_flist tmplist = bayer_flist_subset(flist);
+    mfu_flist tmplist = mfu_flist_subset(flist);
 
     /* unpack items into new list */
     if (rank == 0) {
         ptr = (char*) recvbuf;
         char* end = ptr + recvbytes;
         while (ptr < end) {
-            bayer_flist_file_unpack(ptr, tmplist);
+            mfu_flist_file_unpack(ptr, tmplist);
             ptr += pack_size;
         }
     }
 
     /* summarize list */
-    bayer_flist_summarize(tmplist);
+    mfu_flist_summarize(tmplist);
 
     /* print files */
     if (rank == 0) {
         printf("\n");
         uint64_t tmpidx = 0;
-        uint64_t tmpsize = bayer_flist_size(tmplist);
+        uint64_t tmpsize = mfu_flist_size(tmplist);
         while (tmpidx < tmpsize) {
             print_file(tmplist, tmpidx, rank);
             tmpidx++;
@@ -1500,13 +1500,13 @@ static void print_files(bayer_flist flist, bayer_path* path)
     }
 
     /* free our temporary list */
-    bayer_flist_free(&tmplist);
+    mfu_flist_free(&tmplist);
 
     /* free memory */
-    bayer_free(&disps);
-    bayer_free(&counts);
-    bayer_free(&sendbuf);
-    bayer_free(&recvbuf);
+    mfu_free(&disps);
+    mfu_free(&counts);
+    mfu_free(&sendbuf);
+    mfu_free(&recvbuf);
 
     return;
 }
@@ -1522,7 +1522,7 @@ static int invalid_sortfields(char* sortfields)
     if (sortfields != NULL) {
         int maxfields;
         int nfields = 0;
-        char* sortfields_copy = BAYER_STRDUP(sortfields);
+        char* sortfields_copy = MFU_STRDUP(sortfields);
         if (walk_stat) {
             maxfields = 7;
             char* token = strtok(sortfields_copy, ",");
@@ -1575,7 +1575,7 @@ static int invalid_sortfields(char* sortfields)
             printf("Exceeded maximum number of sort fields: %d\n", maxfields);
             invalid = 1;
         }
-        bayer_free(&sortfields_copy);
+        mfu_free(&sortfields_copy);
     }
 
     return invalid;
@@ -1647,10 +1647,10 @@ int main(int argc, char** argv)
 
         switch (c) {
             case 'i':
-                inputname = BAYER_STRDUP(optarg);
+                inputname = MFU_STRDUP(optarg);
                 break;
             case 'o':
-                outputname = BAYER_STRDUP(optarg);
+                outputname = MFU_STRDUP(optarg);
                 break;
             case 'l':
                 walk_stat = 0;
@@ -1673,7 +1673,7 @@ int main(int argc, char** argv)
 
     /* paths to walk come after the options */
     int numpaths = 0;
-    bayer_param_path* paths = NULL;
+    mfu_param_path* paths = NULL;
     if (optind < argc) {
         /* got a path to walk */
         walk = 1;
@@ -1682,12 +1682,12 @@ int main(int argc, char** argv)
         numpaths = argc - optind;
 
         /* allocate space for each path */
-        paths = (bayer_param_path*) BAYER_MALLOC((size_t)numpaths * sizeof(bayer_param_path));
+        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
         /* process each path */
         for (i = 0; i < numpaths; i++) {
             const char* path = argv[optind];
-            bayer_param_path_set(path, &paths[i]);
+            mfu_param_path_set(path, &paths[i]);
             optind++;
         }
 
@@ -1722,7 +1722,7 @@ int main(int argc, char** argv)
     uint64_t walk_start, walk_end;
 
     /* create an empty file list */
-    bayer_flist flist = bayer_flist_new();
+    mfu_flist flist = mfu_flist_new();
 
     if (walk) {
         time_t walk_start_t = time(NULL);
@@ -1749,7 +1749,7 @@ int main(int argc, char** argv)
             }
 
             /* walk file tree and record stat data for each file */
-            bayer_flist_walk_path(target, flist, walk_stat, dir_perms);
+            mfu_flist_walk_path(target, flist, walk_stat, dir_perms);
         }
         double end_walk = MPI_Wtime();
 
@@ -1760,7 +1760,7 @@ int main(int argc, char** argv)
         walk_end = (uint64_t) walk_end_t;
 
         /* get total file count */
-        all_count = bayer_flist_global_size(flist);
+        all_count = mfu_flist_global_size(flist);
 
         /* report walk count, time, and rate */
         if (verbose && rank == 0) {
@@ -1777,11 +1777,11 @@ int main(int argc, char** argv)
     else {
         /* read data from cache file */
         double start_read = MPI_Wtime();
-        bayer_flist_read_cache(inputname, flist);
+        mfu_flist_read_cache(inputname, flist);
         double end_read = MPI_Wtime();
 
         /* get total file count */
-        all_count = bayer_flist_global_size(flist);
+        all_count = mfu_flist_global_size(flist);
 
         /* report read count, time, and rate */
         if (verbose && rank == 0) {
@@ -1797,8 +1797,8 @@ int main(int argc, char** argv)
     }
 
     /* start process from the root directory */
-    bayer_path* path = bayer_path_from_str("/");
-    bayer_path_reduce(path);
+    mfu_path* path = mfu_path_from_str("/");
+    mfu_path_reduce(path);
 
     /* start command loop */
     while (1) {
@@ -1810,11 +1810,11 @@ int main(int argc, char** argv)
         /* print prompt */
 //        char* input = NULL;
         if (rank == 0) {
-            char* path_str = bayer_path_strdup(path);
+            char* path_str = mfu_path_strdup(path);
             printf("%s >>:\n", path_str);
             fflush(stdout);
 //            input = readline(NULL);
-            bayer_free(&path_str);
+            mfu_free(&path_str);
         }
 
         /* read command */
@@ -1857,26 +1857,26 @@ int main(int argc, char** argv)
         } else if (strncmp(line, "pwd", 3) == 0) {
             /* just print the current directory */
             if (rank == 0) {
-                char* path_str = bayer_path_strdup(path);
+                char* path_str = mfu_path_strdup(path);
                 printf("%s\n", path_str);
                 fflush(stdout);
-                bayer_free(&path_str);
+                mfu_free(&path_str);
             }
         } else if (strncmp(line, "cd", 2) == 0) {
             char subpath[1024];
             int scan_rc = sscanf(line, "cd %s\n", subpath);
             if (scan_rc == 1) {
-                bayer_path* subp = bayer_path_from_str(subpath);
-                if (bayer_path_is_absolute(subp)) {
+                mfu_path* subp = mfu_path_from_str(subpath);
+                if (mfu_path_is_absolute(subp)) {
                     /* we got an absolute path, reset our current path */
-                    bayer_path_delete(&path);
-                    path = bayer_path_from_str(subpath);
+                    mfu_path_delete(&path);
+                    path = mfu_path_from_str(subpath);
                 } else {
                     /* got a relative path, tack it on to existing path */
-                    bayer_path_append(path, subp);
+                    mfu_path_append(path, subp);
                 }
-                bayer_path_delete(&subp);
-                bayer_path_reduce(path);
+                mfu_path_delete(&subp);
+                mfu_path_reduce(path);
             } else if (rank == 0) {
                 printf("Invalid 'cd' command\n");
                 fflush(stdout);
@@ -1891,10 +1891,10 @@ int main(int argc, char** argv)
             char ls_args[1024];
             int scan_rc = sscanf(line, "ls %s\n", ls_args);
             if (scan_rc == 1) {
-                sortfields = BAYER_STRDUP(ls_args);
+                sortfields = MFU_STRDUP(ls_args);
                 if (invalid_sortfields(sortfields)) {
                     /* disable printing and sorting */
-                    bayer_free(&sortfields);
+                    mfu_free(&sortfields);
                     print = 0;
 
                     /* print error message */
@@ -1911,33 +1911,33 @@ int main(int argc, char** argv)
             int scan_rc = sscanf(line, "rm %s\n", subpath);
             if (scan_rc == 1) {
                 /* determine path to remove */
-                bayer_path* remove_path = NULL;
-                bayer_path* subp = bayer_path_from_str(subpath);
-                if (bayer_path_is_absolute(subp)) {
+                mfu_path* remove_path = NULL;
+                mfu_path* subp = mfu_path_from_str(subpath);
+                if (mfu_path_is_absolute(subp)) {
                     /* we got an absolute path, reset our current path */
-                    remove_path = bayer_path_from_str(subpath);
+                    remove_path = mfu_path_from_str(subpath);
                 } else {
                     /* got a relative path, tack it on to existing path */
-                    remove_path = bayer_path_dup(path);
-                    bayer_path_append(remove_path, subp);
+                    remove_path = mfu_path_dup(path);
+                    mfu_path_append(remove_path, subp);
                 }
-                bayer_path_reduce(remove_path);
+                mfu_path_reduce(remove_path);
 
                 /* filter files by path and remove them, include the path (directory)
                  * as an item to be removed */
                 int inclusive = 1;
-                bayer_flist filtered, leftover;
+                mfu_flist filtered, leftover;
                 filter_files_path(flist, remove_path, inclusive, &filtered, &leftover);
-                bayer_flist_unlink(filtered);
-                bayer_flist_free(&filtered);
+                mfu_flist_unlink(filtered);
+                mfu_flist_free(&filtered);
 
                 /* to update our list after removing files above, set flist
                  * to just the remaining set of files */
-                bayer_flist_free(&flist);
+                mfu_flist_free(&flist);
                 flist = leftover;
 
-                bayer_path_delete(&subp);
-                bayer_path_delete(&remove_path);
+                mfu_path_delete(&subp);
+                mfu_path_delete(&remove_path);
             } else if (rank == 0) {
                 printf("Invalid 'rm' command\n");
                 fflush(stdout);
@@ -1955,44 +1955,44 @@ int main(int argc, char** argv)
             /* filter files by path, exclude the path itself from the list,
              * just list its contents */
             int inclusive = 0;
-            bayer_flist filtered, leftover;
+            mfu_flist filtered, leftover;
             filter_files_path(flist, path, inclusive, &filtered, &leftover);
 
             summarize_children(filtered, path);
 
             /* free the list */
-            bayer_flist_free(&filtered);
-            bayer_flist_free(&leftover);
+            mfu_flist_free(&filtered);
+            mfu_flist_free(&leftover);
         }
 
-        bayer_free(&sortfields);
+        mfu_free(&sortfields);
     }
 
     /* free our path */
-    bayer_path_delete(&path);
+    mfu_path_delete(&path);
 
 #if 0
     /* write data to cache file */
     if (outputname != NULL) {
-        bayer_flist_write_cache(outputname, flist);
+        mfu_flist_write_cache(outputname, flist);
     }
 #endif
 
     /* free users, groups, and files objects */
-    bayer_flist_free(&flist);
+    mfu_flist_free(&flist);
 
     /* free memory allocated for options */
-    bayer_free(&outputname);
-    bayer_free(&inputname);
+    mfu_free(&outputname);
+    mfu_free(&inputname);
 
     /* shut down the sorting library */
     DTCMP_Finalize();
 
     /* free the path parameters */
     for (i = 0; i < numpaths; i++) {
-        bayer_param_path_free(&paths[i]);
+        mfu_param_path_free(&paths[i]);
     }
-    bayer_free(&paths);
+    mfu_free(&paths);
 
     /* shut down MPI */
     MPI_Finalize();

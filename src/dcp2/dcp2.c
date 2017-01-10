@@ -18,8 +18,8 @@
  * Please also read the LICENSE file.
 */
 
-#include "bayer_flist.h"
-#include "bayer_flist.c"
+#include "mfu_flist.h"
+#include "mfu_flist.c"
 
 #include "dcp.h"
 
@@ -90,9 +90,9 @@ static void DCOPY_reduce_fini(const void* buf, size_t size)
     uint64_t agg_copied = (uint64_t) a[5];
     double agg_copied_tmp;
     const char* agg_copied_units;
-    bayer_format_bytes(agg_copied, &agg_copied_tmp, &agg_copied_units);
+    mfu_format_bytes(agg_copied, &agg_copied_tmp, &agg_copied_units);
 
-    BAYER_LOG(BAYER_LOG_INFO,
+    MFU_LOG(MFU_LOG_INFO,
         "Items created %" PRId64 ", Data copied %.3lf %s ...",
         a[0], agg_copied_tmp, agg_copied_units);
 //        "Items %" PRId64 ", Dirs %" PRId64 ", Files %" PRId64 ", Links %" PRId64 ", Bytes %.3lf %s",
@@ -136,24 +136,24 @@ static void DCOPY_epilogue(void)
         /* convert size to units */
         double agg_size_tmp;
         const char* agg_size_units;
-        bayer_format_bytes((uint64_t)agg_size, &agg_size_tmp, &agg_size_units);
+        mfu_format_bytes((uint64_t)agg_size, &agg_size_tmp, &agg_size_units);
 
         /* convert bandwidth to units */
         double agg_rate_tmp;
         const char* agg_rate_units;
-        bayer_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
+        mfu_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
 
-        BAYER_LOG(BAYER_LOG_INFO, "Started: %s", starttime_str);
-        BAYER_LOG(BAYER_LOG_INFO, "Completed: %s", endtime_str);
-        BAYER_LOG(BAYER_LOG_INFO, "Seconds: %.3lf", rel_time);
-        BAYER_LOG(BAYER_LOG_INFO, "Items: %" PRId64, agg_items);
-        BAYER_LOG(BAYER_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
-        BAYER_LOG(BAYER_LOG_INFO, "  Files: %" PRId64, agg_files);
-        BAYER_LOG(BAYER_LOG_INFO, "  Links: %" PRId64, agg_links);
-        BAYER_LOG(BAYER_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
+        MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
+        MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
+        MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
+        MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
+        MFU_LOG(MFU_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
+        MFU_LOG(MFU_LOG_INFO, "  Files: %" PRId64, agg_files);
+        MFU_LOG(MFU_LOG_INFO, "  Links: %" PRId64, agg_links);
+        MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
             agg_size_tmp, agg_size_units, agg_size);
 
-        BAYER_LOG(BAYER_LOG_INFO, "Rate: %.3lf %s " \
+        MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
             "(%.3" PRId64 " bytes in %.3lf seconds)", \
             agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
     }
@@ -162,16 +162,16 @@ static void DCOPY_epilogue(void)
     DCOPY_free_path_args();
 
     /* free file I/O buffer */
-    bayer_free(&DCOPY_user_opts.block_buf2);
-    bayer_free(&DCOPY_user_opts.block_buf1);
+    mfu_free(&DCOPY_user_opts.block_buf2);
+    mfu_free(&DCOPY_user_opts.block_buf1);
 
     return;
 }
 
-static int create_directory(bayer_flist list, uint64_t idx)
+static int create_directory(mfu_flist list, uint64_t idx)
 {
     /* get name of directory */
-    const char* name = bayer_flist_file_get_name(list, idx);
+    const char* name = mfu_flist_file_get_name(list, idx);
 
     /* get destination name */
     char* dest_path = DCOPY_build_dest(name);
@@ -182,12 +182,12 @@ static int create_directory(bayer_flist list, uint64_t idx)
     }
 
    /* create the destination directory */
-    BAYER_LOG(BAYER_LOG_DBG, "Creating directory `%s'", dest_path);
-    int rc = bayer_mkdir(dest_path, DCOPY_DEF_PERMS_DIR);
+    MFU_LOG(MFU_LOG_DBG, "Creating directory `%s'", dest_path);
+    int rc = mfu_mkdir(dest_path, DCOPY_DEF_PERMS_DIR);
     if(rc != 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to create directory `%s' (errno=%d %s)", \
+        MFU_LOG(MFU_LOG_ERR, "Failed to create directory `%s' (errno=%d %s)", \
             dest_path, errno, strerror(errno));
-        bayer_free(&dest_path);
+        mfu_free(&dest_path);
         return -1;
     }
 
@@ -203,7 +203,7 @@ static int create_directory(bayer_flist list, uint64_t idx)
     DCOPY_statistics.total_dirs++;
 
     /* free the directory name */
-    bayer_free(&dest_path);
+    mfu_free(&dest_path);
 
     return 0;
 }
@@ -211,15 +211,15 @@ static int create_directory(bayer_flist list, uint64_t idx)
 /* create directories, we work from shallowest level to the deepest
  * with a barrier in between levels, so that we don't try to create
  * a child directory until the parent exists */
-static int create_directories(int levels, int minlevel, bayer_flist* lists)
+static int create_directories(int levels, int minlevel, mfu_flist* lists)
 {
     int rc = 0;
 
-    int verbose = (bayer_debug_level <= BAYER_LOG_INFO);
+    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
 
     /* indicate to user what phase we're in */
     if (DCOPY_global_rank == 0) {
-        BAYER_LOG(BAYER_LOG_INFO, "Creating directories.");
+        MFU_LOG(MFU_LOG_INFO, "Creating directories.");
     }
 
     /* get our rank and number of ranks in job */
@@ -234,16 +234,16 @@ static int create_directories(int levels, int minlevel, bayer_flist* lists)
         double start = MPI_Wtime();
 
         /* get list of items for this level */
-        bayer_flist list = lists[level];
+        mfu_flist list = lists[level];
 
         /* create each directory we have at this level */
         uint64_t idx;
-        uint64_t size = bayer_flist_size(list);
+        uint64_t size = mfu_flist_size(list);
         uint64_t count = 0;
         for (idx = 0; idx < size; idx++) {
             /* check whether we have a directory */
-            bayer_filetype type = bayer_flist_file_get_type(list, idx);
-            if (type == BAYER_TYPE_DIR) {
+            mfu_filetype type = mfu_flist_file_get_type(list, idx);
+            if (type == MFU_TYPE_DIR) {
                 /* create the directory */
                 int tmp_rc = create_directory(list, idx);
                 if (tmp_rc != 0) {
@@ -284,10 +284,10 @@ static int create_directories(int levels, int minlevel, bayer_flist* lists)
     return rc;
 }
 
-static int create_link(bayer_flist list, uint64_t idx)
+static int create_link(mfu_flist list, uint64_t idx)
 {
     /* get source name */
-    const char* src_path = bayer_flist_file_get_name(list, idx);
+    const char* src_path = mfu_flist_file_get_name(list, idx);
 
     /* get destination name */
     const char* dest_path = DCOPY_build_dest(src_path);
@@ -299,13 +299,13 @@ static int create_link(bayer_flist list, uint64_t idx)
 
     /* read link target */
     char path[PATH_MAX + 1];
-    ssize_t rc = bayer_readlink(src_path, path, sizeof(path) - 1);
+    ssize_t rc = mfu_readlink(src_path, path, sizeof(path) - 1);
 
     if(rc < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to read link `%s' readlink() errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() errno=%d %s",
             src_path, errno, strerror(errno)
         );
-        bayer_free(&dest_path);
+        mfu_free(&dest_path);
         return -1;
     }
 
@@ -313,13 +313,13 @@ static int create_link(bayer_flist list, uint64_t idx)
     path[rc] = '\0';
 
     /* create new link */
-    int symrc = bayer_symlink(path, dest_path);
+    int symrc = mfu_symlink(path, dest_path);
 
     if(symrc < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to create link `%s' symlink() errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to create link `%s' symlink() errno=%d %s",
             dest_path, errno, strerror(errno)
         );
-        bayer_free(&dest_path);
+        mfu_free(&dest_path);
         return -1;
     }
 
@@ -333,7 +333,7 @@ static int create_link(bayer_flist list, uint64_t idx)
     }
 
     /* free destination path */
-    bayer_free(&dest_path);
+    mfu_free(&dest_path);
 
     /* increment our directory count by one */
     DCOPY_statistics.total_links++;
@@ -341,10 +341,10 @@ static int create_link(bayer_flist list, uint64_t idx)
     return 0;
 }
 
-static int create_file(bayer_flist list, uint64_t idx)
+static int create_file(mfu_flist list, uint64_t idx)
 {
     /* get source name */
-    const char* src_path = bayer_flist_file_get_name(list, idx);
+    const char* src_path = mfu_flist_file_get_name(list, idx);
 
     /* get destination name */
     const char* dest_path = DCOPY_build_dest(src_path);
@@ -362,14 +362,14 @@ static int create_file(bayer_flist list, uint64_t idx)
     * see makedev() to create valid dev */
     dev_t dev;
     memset(&dev, 0, sizeof(dev_t));
-    int mknod_rc = bayer_mknod(dest_path, DCOPY_DEF_PERMS_FILE | S_IFREG, dev);
+    int mknod_rc = mfu_mknod(dest_path, DCOPY_DEF_PERMS_FILE | S_IFREG, dev);
 
     if(mknod_rc < 0) {
         if(errno == EEXIST) {
             /* TODO: should we unlink and mknod again in this case? */
         }
 
-        BAYER_LOG(BAYER_LOG_ERR, "File `%s' mknod() errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() errno=%d %s",
             dest_path, errno, strerror(errno)
         );
     }
@@ -387,12 +387,12 @@ static int create_file(bayer_flist list, uint64_t idx)
     if (DCOPY_user_opts.sparse) {
         /* truncate destination file to 0 bytes */
         struct stat st;
-        int status = bayer_lstat(dest_path, &st);
+        int status = mfu_lstat(dest_path, &st);
         if (status == 0) {
             /* destination exists, truncate it to 0 bytes */
             status = truncate64(dest_path, 0);
             if (status) {
-                BAYER_LOG(BAYER_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
+                MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
                           dest_path, errno, strerror(errno));
             }
         } else if (errno == -ENOENT) {
@@ -400,7 +400,7 @@ static int create_file(bayer_flist list, uint64_t idx)
             status = 0;
         } else {
             /* had an error stating destination file */
-            BAYER_LOG(BAYER_LOG_ERR, "bayer_lstat() file: %s (errno=%d %s)",
+            MFU_LOG(MFU_LOG_ERR, "mfu_lstat() file: %s (errno=%d %s)",
                       dest_path, errno, strerror(errno));
         }
 
@@ -411,7 +411,7 @@ static int create_file(bayer_flist list, uint64_t idx)
     }
 
     /* free destination path */
-    bayer_free(&dest_path);
+    mfu_free(&dest_path);
 
     /* increment our file count by one */
     DCOPY_statistics.total_files++;
@@ -419,15 +419,15 @@ static int create_file(bayer_flist list, uint64_t idx)
     return 0;
 }
 
-static int create_files(int levels, int minlevel, bayer_flist* lists)
+static int create_files(int levels, int minlevel, mfu_flist* lists)
 {
     int rc = 0;
 
-    int verbose = (bayer_debug_level <= BAYER_LOG_INFO);
+    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
 
     /* indicate to user what phase we're in */
     if (DCOPY_global_rank == 0) {
-        BAYER_LOG(BAYER_LOG_INFO, "Creating files.");
+        MFU_LOG(MFU_LOG_INFO, "Creating files.");
     }
 
     /* get our rank and number of ranks in job */
@@ -443,22 +443,22 @@ static int create_files(int levels, int minlevel, bayer_flist* lists)
         double start = MPI_Wtime();
 
         /* get list of items for this level */
-        bayer_flist list = lists[level];
+        mfu_flist list = lists[level];
 
         /* iterate over items and set write bit on directories if needed */
         uint64_t idx;
-        uint64_t size = bayer_flist_size(list);
+        uint64_t size = mfu_flist_size(list);
         uint64_t count = 0;
         for (idx = 0; idx < size; idx++) {
             /* get type of item */
-            bayer_filetype type = bayer_flist_file_get_type(list, idx);
+            mfu_filetype type = mfu_flist_file_get_type(list, idx);
 
             /* process files and links */
-            if (type == BAYER_TYPE_FILE) {
+            if (type == MFU_TYPE_FILE) {
                 /* TODO: skip file if it's not readable */
                 create_file(list, idx);
                 count++;
-            } else if (type == BAYER_TYPE_LINK) {
+            } else if (type == MFU_TYPE_LINK) {
                 create_link(list, idx);
                 count++;
             }
@@ -515,7 +515,7 @@ static int is_eof(const char* file, int fd)
     /* read one byte from fd to determine whether this is EOF.
      * This is not efficient, but it is the only reliable way */
     char buf[1];
-    ssize_t num_of_bytes_read = bayer_read(file, fd, buf, 1);
+    ssize_t num_of_bytes_read = mfu_read(file, fd, buf, 1);
 
     /* return if we detect EOF */
     if(! num_of_bytes_read) {
@@ -523,8 +523,8 @@ static int is_eof(const char* file, int fd)
     }
 
     /* otherwise, we're not at EOF yet, seek back one byte */
-    if(bayer_lseek(file, fd, -1, SEEK_CUR) == (off_t)-1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in path `%s' errno=%d %s",
+    if(mfu_lseek(file, fd, -1, SEEK_CUR) == (off_t)-1) {
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in path `%s' errno=%d %s",
                   file, errno, strerror(errno));
         return -1;
     }
@@ -544,15 +544,15 @@ static int copy_file_normal(
 //    posix_fadvise(in_fd, offset, chunk_size, POSIX_FADV_SEQUENTIAL);
 
     /* seek to offset in source file */
-    if(bayer_lseek(src, in_fd, offset, SEEK_SET) == (off_t)-1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
+    if(mfu_lseek(src, in_fd, offset, SEEK_SET) == (off_t)-1) {
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
             src, errno, strerror(errno));
         return -1;
     }
 
     /* seek to offset in destination file */
-    if(bayer_lseek(dest, out_fd, offset, SEEK_SET) == (off_t)-1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+    if(mfu_lseek(dest, out_fd, offset, SEEK_SET) == (off_t)-1) {
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
             dest, errno, strerror(errno));
         return -1;
     }
@@ -572,7 +572,7 @@ static int copy_file_normal(
         }
 
         /* read data from source file */
-        ssize_t num_of_bytes_read = bayer_read(src, in_fd, buf, left_to_read);
+        ssize_t num_of_bytes_read = mfu_read(src, in_fd, buf, left_to_read);
 
         /* check for EOF */
         if(! num_of_bytes_read) {
@@ -619,38 +619,38 @@ static int copy_file_normal(
              * ahead without writing anything */
             if (end_of_file) {
                 /* seek to last byte position in file */
-                if(bayer_lseek(dest, out_fd, bytes_to_write - 1, SEEK_CUR) == (off_t)-1) {
-                    BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+                if(mfu_lseek(dest, out_fd, bytes_to_write - 1, SEEK_CUR) == (off_t)-1) {
+                    MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
                         dest, errno, strerror(errno));
                     return -1;
                 }
 
                 /* write out a single byte */
-                bayer_write(dest, out_fd, buf, 1);
+                mfu_write(dest, out_fd, buf, 1);
             } else {
                 /* this section of the destination file is all 0,
                  * seek past this section */
-                if(bayer_lseek(dest, out_fd, bytes_to_write, SEEK_CUR) == (off_t)-1) {
-                    BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+                if(mfu_lseek(dest, out_fd, bytes_to_write, SEEK_CUR) == (off_t)-1) {
+                    MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
                         dest, errno, strerror(errno));
                     return -1;
                 }
             }
         } else {
             /* write bytes to destination file */
-            num_of_bytes_written = bayer_write(dest, out_fd, buf, bytes_to_write);
+            num_of_bytes_written = mfu_write(dest, out_fd, buf, bytes_to_write);
         }
 
         /* check for an error */
         if(num_of_bytes_written < 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
                 src, dest, errno, strerror(errno));
             return -1;
         }
 
         /* check that we wrote the same number of bytes that we read */
         if((size_t)num_of_bytes_written != bytes_to_write) {
-            BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s'",
+            MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s'",
                 src, dest);
             return -1;
         }
@@ -667,7 +667,7 @@ static int copy_file_normal(
 #if 0
     /* force data to file system */
     if(total_bytes > 0) {
-        bayer_fsync(dest, out_fd);
+        mfu_fsync(dest, out_fd);
     }
 #endif
 
@@ -687,7 +687,7 @@ static int copy_file_normal(
         * from the out_fd.
         */
         if(ftruncate(out_fd, file_size_offt) < 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
+            MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
                 dest, errno, strerror(errno));
             return -1;
        }
@@ -718,7 +718,7 @@ static int copy_file_fiemap(
 
     struct fiemap *fiemap = (struct fiemap*)malloc(sizeof(struct fiemap));
     if (fiemap == NULL) {
-        BAYER_LOG(BAYER_LOG_ERR, "Out of memory allocating fiemap\n");
+        MFU_LOG(MFU_LOG_ERR, "Out of memory allocating fiemap\n");
         goto fail_normal_copy;
     }
     memset(fiemap, 0, sizeof(struct fiemap));
@@ -735,7 +735,7 @@ static int copy_file_fiemap(
     }
 
     if (ioctl(in_fd, FS_IOC_FIEMAP, fiemap) < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "fiemap ioctl() failed for src %s\n", src);
+        MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src %s\n", src);
         goto fail_normal_copy;
     }
 
@@ -744,7 +744,7 @@ static int copy_file_fiemap(
     if ((fiemap = (struct fiemap*)realloc(fiemap,sizeof(struct fiemap) +
                                   extents_size)) == NULL)
     {
-        BAYER_LOG(BAYER_LOG_ERR, "Out of memory reallocating fiemap\n");
+        MFU_LOG(MFU_LOG_ERR, "Out of memory reallocating fiemap\n");
         goto fail_normal_copy;
     }
 
@@ -753,7 +753,7 @@ static int copy_file_fiemap(
     fiemap->fm_mapped_extents = 0;
 
     if (ioctl(in_fd, FS_IOC_FIEMAP, fiemap) < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "fiemap ioctl() failed for src %s\n", src);
+        MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src %s\n", src);
         goto fail_normal_copy;
     }
 
@@ -778,15 +778,15 @@ static int copy_file_fiemap(
     *normal_copy_required = false;
 
     /* seek to offset in source file */
-    if (bayer_lseek(src, in_fd, (off_t)last_ext_start, SEEK_SET) < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
+    if (mfu_lseek(src, in_fd, (off_t)last_ext_start, SEEK_SET) < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
             src, errno, strerror(errno));
         goto fail;
     }
 
     /* seek to offset in destination file */
-    if (bayer_lseek(dest, out_fd, (off_t)last_ext_start, SEEK_SET) < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+    if (mfu_lseek(dest, out_fd, (off_t)last_ext_start, SEEK_SET) < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
             dest, errno, strerror(errno));
         goto fail;
     }
@@ -805,13 +805,13 @@ static int copy_file_fiemap(
         ext_hole_size = ext_start - (last_ext_start + last_ext_len);
 
         if (ext_hole_size) {
-            if (bayer_lseek(src, in_fd, (off_t)ext_start, SEEK_SET) < 0) {
-                BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
+            if (mfu_lseek(src, in_fd, (off_t)ext_start, SEEK_SET) < 0) {
+                MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
                     src, errno, strerror(errno));
                 goto fail;
             }
-            if (bayer_lseek(dest, out_fd, (off_t)ext_hole_size, SEEK_CUR) < 0) {
-                BAYER_LOG(BAYER_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+            if (mfu_lseek(dest, out_fd, (off_t)ext_hole_size, SEEK_CUR) < 0) {
+                MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
                     dest, errno, strerror(errno));
                 goto fail;
             }
@@ -821,20 +821,20 @@ static int copy_file_fiemap(
         last_ext_len = ext_len;
 
         while (ext_len) {
-            ssize_t num_read = bayer_read(src, in_fd, buf, MIN(ext_len, buf_size));
+            ssize_t num_read = mfu_read(src, in_fd, buf, MIN(ext_len, buf_size));
 
             if (!num_read)
                 break;
 
-            ssize_t num_written = bayer_write(dest, out_fd, buf, (size_t)num_read);
+            ssize_t num_written = mfu_write(dest, out_fd, buf, (size_t)num_read);
 
             if (num_written < 0) {
-                BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
+                MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
                           src, dest, errno, strerror(errno));
                 goto fail;
             }
             if (num_written != num_read) {
-                BAYER_LOG(BAYER_LOG_ERR, "Write error when copying from `%s' to `%s'",
+                MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s'",
                     src, dest);
                 goto fail;
             }
@@ -853,7 +853,7 @@ static int copy_file_fiemap(
         * from the out_fd.
         */
         if (ftruncate(out_fd, file_size_offt) < 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
+            MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
                 dest, errno, strerror(errno));
             goto fail;
        }
@@ -888,7 +888,7 @@ static int copy_file(
     /* open the input file */
     int in_fd = DCOPY_open_file(src, 1, &DCOPY_src_cache);
     if (in_fd < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to open input file `%s' errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to open input file `%s' errno=%d %s",
             src, errno, strerror(errno));
         return -1;
     }
@@ -896,7 +896,7 @@ static int copy_file(
     /* open the output file */
     int out_fd = DCOPY_open_file(dest, 0, &DCOPY_dst_cache);
     if (out_fd < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to open output file `%s' errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to open output file `%s' errno=%d %s",
             dest, errno, strerror(errno));
         return -1;
     }
@@ -915,11 +915,11 @@ static int copy_file(
 /* After receiving all incoming chunks, process open and write their chunks 
  * to the files. The process which writes the last chunk to each file also 
  * truncates the file to correct size.  A 0-byte file still has one chunk. */
-static void copy_files(bayer_flist list)
+static void copy_files(mfu_flist list)
 {
     /* indicate which phase we're in to user */
     if (DCOPY_global_rank == 0) {
-        BAYER_LOG(BAYER_LOG_INFO, "Copying data.");
+        MFU_LOG(MFU_LOG_INFO, "Copying data.");
     }
 
     /* get chunk size for copying files */
@@ -927,7 +927,7 @@ static void copy_files(bayer_flist list)
 
     /* split file list into a linked list of file sections,
      * this evenly spreads the file sections across processes */
-    bayer_file_chunk* p = bayer_file_chunk_list_alloc(list, chunk_size);
+    mfu_file_chunk* p = mfu_file_chunk_list_alloc(list, chunk_size);
 
     /* loop over and copy data for each file section we're responsible for */
     while (p != NULL) {
@@ -943,28 +943,28 @@ static void copy_files(bayer_flist list)
         copy_file(p->name, dest_path, (off_t)p->offset, (off_t)p->length, p->file_size);
 
         /* free the dest name */
-        bayer_free(&dest_path);
+        mfu_free(&dest_path);
 
         /* update pointer to next element */
         p = p->next;
     }
 
     /* free the linked list */
-    bayer_file_chunk_list_free(&p);
+    mfu_file_chunk_list_free(&p);
 }
 
 /* iterate through list of files and set ownership, timestamps,
  * and permissions starting from deepest level and working upwards,
  * we go in this direction in case updating a file updates its
  * parent directory */
-static void DCOPY_set_metadata(int levels, int minlevel, bayer_flist* lists)
+static void DCOPY_set_metadata(int levels, int minlevel, mfu_flist* lists)
 {
     if (DCOPY_global_rank == 0) {
         if(DCOPY_user_opts.preserve) {
-            BAYER_LOG(BAYER_LOG_INFO, "Setting ownership, permissions, and timestamps.");
+            MFU_LOG(MFU_LOG_INFO, "Setting ownership, permissions, and timestamps.");
         }
         else {
-            BAYER_LOG(BAYER_LOG_INFO, "Fixing permissions.");
+            MFU_LOG(MFU_LOG_INFO, "Fixing permissions.");
         }
     }
 
@@ -972,26 +972,26 @@ static void DCOPY_set_metadata(int levels, int minlevel, bayer_flist* lists)
     int level;
     for (level = levels-1; level >= 0; level--) {
         /* get list at this level */
-        bayer_flist list = lists[level];
+        mfu_flist list = lists[level];
 
         /* cycle through our list of items and set timestamps
          * for each one at this level */
         uint64_t idx;
-        uint64_t size = bayer_flist_size(list);
+        uint64_t size = mfu_flist_size(list);
         for (idx = 0; idx < size; idx++) {
             /* get type of item */
-            bayer_filetype type = bayer_flist_file_get_type(list, idx);
+            mfu_filetype type = mfu_flist_file_get_type(list, idx);
 
             /* we've already set these properties for links,
              * so we can skip those here */
-            if (type == BAYER_TYPE_LINK) {
+            if (type == MFU_TYPE_LINK) {
                 continue;
             }
 
             /* TODO: skip file if it's not readable */
 
             /* get destination name of item */
-            const char* name = bayer_flist_file_get_name(list, idx);
+            const char* name = mfu_flist_file_get_name(list, idx);
             char* dest = DCOPY_build_dest(name);
 
             /* No need to copy it */
@@ -1011,7 +1011,7 @@ static void DCOPY_set_metadata(int levels, int minlevel, bayer_flist* lists)
             }
 
             /* free destination item */
-            bayer_free(&dest);
+            mfu_free(&dest);
         }
         
         /* wait for all procs to finish before we start
@@ -1072,7 +1072,7 @@ int main(int argc, \
     int option_index = 0;
 
     MPI_Init(&argc, &argv);
-    bayer_init();
+    mfu_init();
 
     MPI_Comm_rank(MPI_COMM_WORLD, &DCOPY_global_rank);
 
@@ -1104,7 +1104,7 @@ int main(int argc, \
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
-    bayer_debug_level = BAYER_LOG_INFO;
+    mfu_debug_level = MFU_LOG_INFO;
 
     /* By default, don't unlink destination files if an open() fails. */
     DCOPY_user_opts.force = false;
@@ -1148,52 +1148,52 @@ int main(int argc, \
             case 'd':
                 if(strncmp(optarg, "fatal", 5) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_FATAL;
-                    bayer_debug_level = BAYER_LOG_FATAL;
+                    mfu_debug_level = MFU_LOG_FATAL;
 
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level set to: fatal");
+                        MFU_LOG(MFU_LOG_INFO, "Debug level set to: fatal");
                     }
 
                 }
                 else if(strncmp(optarg, "err", 3) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_ERR;
-                    bayer_debug_level = BAYER_LOG_ERR;
+                    mfu_debug_level = MFU_LOG_ERR;
 
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level set to: errors");
+                        MFU_LOG(MFU_LOG_INFO, "Debug level set to: errors");
                     }
 
                 }
                 else if(strncmp(optarg, "warn", 4) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_WARN;
-                    bayer_debug_level = BAYER_LOG_WARN;
+                    mfu_debug_level = MFU_LOG_WARN;
 
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level set to: warnings");
+                        MFU_LOG(MFU_LOG_INFO, "Debug level set to: warnings");
                     }
 
                 }
                 else if(strncmp(optarg, "info", 4) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_WARN; /* we back off a level on CIRCLE verbosity */
-                    bayer_debug_level = BAYER_LOG_INFO;
+                    mfu_debug_level = MFU_LOG_INFO;
 
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level set to: info");
+                        MFU_LOG(MFU_LOG_INFO, "Debug level set to: info");
                     }
 
                 }
                 else if(strncmp(optarg, "dbg", 3) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_DBG;
-                    bayer_debug_level = BAYER_LOG_DBG;
+                    mfu_debug_level = MFU_LOG_DBG;
 
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level set to: debug");
+                        MFU_LOG(MFU_LOG_INFO, "Debug level set to: debug");
                     }
 
                 }
                 else {
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level `%s' not recognized. " \
+                        MFU_LOG(MFU_LOG_INFO, "Debug level `%s' not recognized. " \
                             "Defaulting to `info'.", optarg);
                     }
                 }
@@ -1204,7 +1204,7 @@ int main(int argc, \
                 DCOPY_user_opts.force = true;
 
                 if(DCOPY_global_rank == 0) {
-                    BAYER_LOG(BAYER_LOG_INFO, "Deleting destination on errors.");
+                    MFU_LOG(MFU_LOG_INFO, "Deleting destination on errors.");
                 }
 
                 break;
@@ -1214,7 +1214,7 @@ int main(int argc, \
                 DCOPY_user_opts.grouplock_id = atoi(optarg);
 
                 if(DCOPY_global_rank == 0) {
-                    BAYER_LOG(BAYER_LOG_INFO, "groulock ID: %d.",
+                    MFU_LOG(MFU_LOG_INFO, "groulock ID: %d.",
                         DCOPY_user_opts.grouplock_id);
                 }
 
@@ -1230,9 +1230,9 @@ int main(int argc, \
                 break;
 
             case 'i':
-                DCOPY_user_opts.input_file = BAYER_STRDUP(optarg);
+                DCOPY_user_opts.input_file = MFU_STRDUP(optarg);
                 if(DCOPY_global_rank == 0) {
-                    BAYER_LOG(BAYER_LOG_INFO, "Using input list.");
+                    MFU_LOG(MFU_LOG_INFO, "Using input list.");
                 }
                 break;
 
@@ -1240,7 +1240,7 @@ int main(int argc, \
                 DCOPY_user_opts.preserve = true;
 
                 if(DCOPY_global_rank == 0) {
-                    BAYER_LOG(BAYER_LOG_INFO, "Preserving file attributes.");
+                    MFU_LOG(MFU_LOG_INFO, "Preserving file attributes.");
                 }
 
                 break;
@@ -1249,7 +1249,7 @@ int main(int argc, \
                 DCOPY_user_opts.synchronous = true;
 
                 if(DCOPY_global_rank == 0) {
-                    BAYER_LOG(BAYER_LOG_INFO, "Using synchronous read/write (O_DIRECT)");
+                    MFU_LOG(MFU_LOG_INFO, "Using synchronous read/write (O_DIRECT)");
                 }
 
                 break;
@@ -1258,7 +1258,7 @@ int main(int argc, \
                 DCOPY_user_opts.sparse = true;
 
                 if(DCOPY_global_rank == 0) {
-                    BAYER_LOG(BAYER_LOG_INFO, "Using sparse file");
+                    MFU_LOG(MFU_LOG_INFO, "Using sparse file");
                 }
 
                 break;
@@ -1301,9 +1301,9 @@ int main(int argc, \
 
     /* allocate buffer to read/write files, aligned on 1MB boundaraies */
     size_t alignment = 1024*1024;
-    DCOPY_user_opts.block_buf1 = (char*) BAYER_MEMALIGN(
+    DCOPY_user_opts.block_buf1 = (char*) MFU_MEMALIGN(
         DCOPY_user_opts.block_size, alignment);
-    DCOPY_user_opts.block_buf2 = (char*) BAYER_MEMALIGN(
+    DCOPY_user_opts.block_buf2 = (char*) MFU_MEMALIGN(
         DCOPY_user_opts.block_size, alignment);
 
     /* Grab a relative and actual start time for the epilogue. */
@@ -1311,23 +1311,23 @@ int main(int argc, \
     DCOPY_statistics.wtime_started = MPI_Wtime();
 
     /* create an empty file list */
-    bayer_flist flist = bayer_flist_new();
+    mfu_flist flist = mfu_flist_new();
     if (DCOPY_user_opts.input_file == NULL) {
         /* walk paths and fill in file list */
         DCOPY_walk_paths(flist);
     } else {
         /* otherwise, read list of files from input, but then stat each one */
-        bayer_flist input_flist = bayer_flist_new();
-        bayer_flist_read_cache(DCOPY_user_opts.input_file, input_flist);
-        bayer_flist_stat(input_flist, flist, DCOPY_input_flist_skip, NULL);
-        bayer_flist_free(&input_flist);
+        mfu_flist input_flist = mfu_flist_new();
+        mfu_flist_read_cache(DCOPY_user_opts.input_file, input_flist);
+        mfu_flist_stat(input_flist, flist, DCOPY_input_flist_skip, NULL);
+        mfu_flist_free(&input_flist);
     }
 
     /* split items in file list into sublists depending on their
      * directory depth */
     int levels, minlevel;
-    bayer_flist* lists;
-    bayer_flist_array_by_depth(flist, &levels, &minlevel, &lists);
+    mfu_flist* lists;
+    mfu_flist_array_by_depth(flist, &levels, &minlevel, &lists);
 
     /* TODO: filter out files that are bigger than 0 bytes if we can't read them */
 
@@ -1348,10 +1348,10 @@ int main(int argc, \
     DCOPY_set_metadata(levels, minlevel, lists);
 
     /* free our lists of levels */
-    bayer_flist_array_free(levels, &lists);
+    mfu_flist_array_free(levels, &lists);
 
     /* free our file lists */
-    bayer_flist_free(&flist);
+    mfu_flist_free(&flist);
 
     /* Determine the actual and relative end time for the epilogue. */
     DCOPY_statistics.wtime_ended = MPI_Wtime();
@@ -1359,7 +1359,7 @@ int main(int argc, \
 
     /* force updates to disk */
     if (DCOPY_global_rank == 0) {
-        BAYER_LOG(BAYER_LOG_INFO, "Syncing updates to disk.");
+        MFU_LOG(MFU_LOG_INFO, "Syncing updates to disk.");
     }
     sync();
 

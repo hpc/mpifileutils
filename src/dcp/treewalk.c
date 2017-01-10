@@ -80,10 +80,10 @@ static void DCOPY_stat_process_link(DCOPY_operation_t* op,
 
     /* read link and terminate string with NUL character */
     char path[PATH_MAX + 1];
-    ssize_t rc = bayer_readlink(src_path, path, sizeof(path) - 1);
+    ssize_t rc = mfu_readlink(src_path, path, sizeof(path) - 1);
 
     if(rc < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to read link `%s' readlink() errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() errno=%d %s",
             src_path, errno, strerror(errno)
            );
         return;
@@ -93,10 +93,10 @@ static void DCOPY_stat_process_link(DCOPY_operation_t* op,
     path[rc] = '\0';
 
     /* create new link */
-    int symrc = bayer_symlink(path, dest_path);
+    int symrc = mfu_symlink(path, dest_path);
 
     if(symrc < 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to create link `%s' symlink() errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to create link `%s' symlink() errno=%d %s",
             dest_path, errno, strerror(errno)
            );
         return;
@@ -130,7 +130,7 @@ static void DCOPY_stat_process_file(DCOPY_operation_t* op,
     /* compute number of chunks */
     int64_t num_chunks = file_size / (int64_t)DCOPY_user_opts.chunk_size;
 
-    BAYER_LOG(BAYER_LOG_DBG, "File `%s' size is `%" PRId64 \
+    MFU_LOG(MFU_LOG_DBG, "File `%s' size is `%" PRId64 \
         "' with chunks `%" PRId64 "' (total `%" PRId64 "')", \
         op->operand, file_size, num_chunks, \
         num_chunks * (int64_t)DCOPY_user_opts.chunk_size);
@@ -145,14 +145,14 @@ static void DCOPY_stat_process_file(DCOPY_operation_t* op,
     * see makedev() to create valid dev */
     dev_t dev;
     memset(&dev, 0, sizeof(dev_t));
-    int mknod_rc = bayer_mknod(dest_path, DCOPY_DEF_PERMS_FILE | S_IFREG, dev);
+    int mknod_rc = mfu_mknod(dest_path, DCOPY_DEF_PERMS_FILE | S_IFREG, dev);
 
     if(mknod_rc < 0) {
         if(errno == EEXIST) {
             /* TODO: should we unlink and mknod again in this case? */
         }
 
-        BAYER_LOG(BAYER_LOG_DBG, "File `%s' mknod() errno=%d %s",
+        MFU_LOG(MFU_LOG_DBG, "File `%s' mknod() errno=%d %s",
             dest_path, errno, strerror(errno)
            );
     }
@@ -201,10 +201,10 @@ static void DCOPY_stat_process_dir(DCOPY_operation_t* op,
     const char* dest_path = op->dest_full_path;
 
     /* first, create the destination directory */
-    BAYER_LOG(BAYER_LOG_DBG, "Creating directory `%s'", dest_path);
-    int rc = bayer_mkdir(dest_path, DCOPY_DEF_PERMS_DIR);
+    MFU_LOG(MFU_LOG_DBG, "Creating directory `%s'", dest_path);
+    int rc = mfu_mkdir(dest_path, DCOPY_DEF_PERMS_DIR);
     if(rc != 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to create directory `%s' (errno=%d %s)", \
+        MFU_LOG(MFU_LOG_ERR, "Failed to create directory `%s' (errno=%d %s)", \
             dest_path, errno, strerror(errno));
         return;
     }
@@ -215,11 +215,11 @@ static void DCOPY_stat_process_dir(DCOPY_operation_t* op,
     }
 
     /* iterate through source directory and add items to queue */
-    DIR* curr_dir = bayer_opendir(op->operand);
+    DIR* curr_dir = mfu_opendir(op->operand);
 
     if(curr_dir == NULL) {
         /* failed to open directory */
-        BAYER_LOG(BAYER_LOG_ERR, "Unable to open dir `%s' errno=%d %s", \
+        MFU_LOG(MFU_LOG_ERR, "Unable to open dir `%s' errno=%d %s", \
             op->operand, errno, strerror(errno));
 
         DCOPY_retry_failed_operation(TREEWALK, handle, op);
@@ -227,7 +227,7 @@ static void DCOPY_stat_process_dir(DCOPY_operation_t* op,
     }
     else {
         struct dirent* curr_ent;
-        while((curr_ent = bayer_readdir(curr_dir)) != NULL) {
+        while((curr_ent = mfu_readdir(curr_dir)) != NULL) {
             char* curr_dir_name = curr_ent->d_name;
 
             /* We don't care about . or .. */
@@ -237,7 +237,7 @@ static void DCOPY_stat_process_dir(DCOPY_operation_t* op,
                 char newop_path[PATH_MAX];
                 sprintf(newop_path, "%s/%s", op->operand, curr_dir_name);
 
-                BAYER_LOG(BAYER_LOG_DBG, "Stat operation is enqueueing `%s'", newop_path);
+                MFU_LOG(MFU_LOG_DBG, "Stat operation is enqueueing `%s'", newop_path);
 
                 /* Distributed recursion here. */
                 char* newop = DCOPY_encode_operation(TREEWALK, 0, newop_path, \
@@ -249,7 +249,7 @@ static void DCOPY_stat_process_dir(DCOPY_operation_t* op,
         }
     }
 
-    bayer_closedir(curr_dir);
+    mfu_closedir(curr_dir);
 
     return;
 }
@@ -265,10 +265,10 @@ void DCOPY_do_treewalk(DCOPY_operation_t* op,
     const char* path = op->operand;
 
     /* stat the item */
-    if(bayer_lstat64(path, &statbuf) < 0) {
+    if(mfu_lstat64(path, &statbuf) < 0) {
         /* this may happen while trying to stat whose parent directory
          * does not have execute bit set */
-        BAYER_LOG(BAYER_LOG_WARN, "stat failed, skipping file `%s' errno=%d %s", path, errno, strerror(errno));
+        MFU_LOG(MFU_LOG_WARN, "stat failed, skipping file `%s' errno=%d %s", path, errno, strerror(errno));
         //DCOPY_retry_failed_operation(TREEWALK, handle, op);
         return;
     }
@@ -282,15 +282,15 @@ void DCOPY_do_treewalk(DCOPY_operation_t* op,
        ! S_ISLNK(mode))
     {
         if (S_ISCHR(mode)) {
-          BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISCHR at `%s'", path);
+          MFU_LOG(MFU_LOG_ERR, "Encountered an unsupported file type S_ISCHR at `%s'", path);
         } else if (S_ISBLK(mode)) {
-          BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISBLK at `%s'", path);
+          MFU_LOG(MFU_LOG_ERR, "Encountered an unsupported file type S_ISBLK at `%s'", path);
         } else if (S_ISFIFO(mode)) {
-          BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISFIFO at `%s'", path);
+          MFU_LOG(MFU_LOG_ERR, "Encountered an unsupported file type S_ISFIFO at `%s'", path);
         } else if (S_ISSOCK(mode)) {
-          BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type S_ISSOCK at `%s'", path);
+          MFU_LOG(MFU_LOG_ERR, "Encountered an unsupported file type S_ISSOCK at `%s'", path);
         } else {
-          BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type mode=%x at `%s'", mode, path);
+          MFU_LOG(MFU_LOG_ERR, "Encountered an unsupported file type mode=%x at `%s'", mode, path);
         }
         return;
     }
@@ -300,21 +300,21 @@ void DCOPY_do_treewalk(DCOPY_operation_t* op,
      * lists once and then do all checks by hand */
 
     /* skip files that aren't readable */
-    if(S_ISREG(mode) && bayer_access(path, R_OK) < 0) {
-        BAYER_LOG(BAYER_LOG_WARN, "Skipping unreadable file `%s' errno=%d %s", path, errno, strerror(errno));
+    if(S_ISREG(mode) && mfu_access(path, R_OK) < 0) {
+        MFU_LOG(MFU_LOG_WARN, "Skipping unreadable file `%s' errno=%d %s", path, errno, strerror(errno));
         return;
     }
 
     /* skip directories that aren't readable */
-    if(S_ISDIR(mode) && bayer_access(path, R_OK) < 0) {
-        BAYER_LOG(BAYER_LOG_WARN, "Skipping unreadable directory `%s' errno=%d %s", path, errno, strerror(errno));
+    if(S_ISDIR(mode) && mfu_access(path, R_OK) < 0) {
+        MFU_LOG(MFU_LOG_WARN, "Skipping unreadable directory `%s' errno=%d %s", path, errno, strerror(errno));
         return;
     }
 
     /* create new element to record file path and stat info */
-    DCOPY_stat_elem_t* elem = (DCOPY_stat_elem_t*) BAYER_MALLOC(sizeof(DCOPY_stat_elem_t));
-    elem->file = BAYER_STRDUP(op->dest_full_path);
-    elem->sb = (struct stat64*) BAYER_MALLOC(sizeof(struct stat64));
+    DCOPY_stat_elem_t* elem = (DCOPY_stat_elem_t*) MFU_MALLOC(sizeof(DCOPY_stat_elem_t));
+    elem->file = MFU_STRDUP(op->dest_full_path);
+    elem->sb = (struct stat64*) MFU_MALLOC(sizeof(struct stat64));
     elem->depth = compute_depth(op->dest_full_path);
     memcpy(elem->sb, &statbuf, sizeof(struct stat64));
     elem->next = NULL;
@@ -330,19 +330,19 @@ void DCOPY_do_treewalk(DCOPY_operation_t* op,
 
     /* handle item depending on its type */
     if(S_ISDIR(mode)) {
-        /* BAYER_LOG(BAYER_LOG_DBG, "Stat operation found a directory at `%s'", path); */
+        /* MFU_LOG(MFU_LOG_DBG, "Stat operation found a directory at `%s'", path); */
         DCOPY_stat_process_dir(op, &statbuf, handle);
     }
     else if(S_ISREG(mode)) {
-        /* BAYER_LOG(BAYER_LOG_DBG, "Stat operation found a file at `%s'", path); */
+        /* MFU_LOG(MFU_LOG_DBG, "Stat operation found a file at `%s'", path); */
         DCOPY_stat_process_file(op, &statbuf, handle);
     }
     else if(S_ISLNK(mode)) {
-        /* BAYER_LOG(BAYER_LOG_DBG, "Stat operation found a link at `%s'", path); */
+        /* MFU_LOG(MFU_LOG_DBG, "Stat operation found a link at `%s'", path); */
         DCOPY_stat_process_link(op, &statbuf, handle);
     }
     else {
-        BAYER_LOG(BAYER_LOG_ERR, "Encountered an unsupported file type mode=%x at `%s'", mode, path);
+        MFU_LOG(MFU_LOG_ERR, "Encountered an unsupported file type mode=%x at `%s'", mode, path);
         DCOPY_retry_failed_operation(TREEWALK, handle, op);
         return;
     }

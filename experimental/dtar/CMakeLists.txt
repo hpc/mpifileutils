@@ -15,4 +15,4 @@ link_libraries(${ARCHIVE_LDFLAGS})
 set(dtar_src_files common.c handle_args.c dtar.c)
 
 add_executable(dtar ${dtar_src_files})
-target_link_libraries(dtar ${MPI_LIBRARIES} bayer circle)
+target_link_libraries(dtar ${MPI_LIBRARIES} mfu circle)

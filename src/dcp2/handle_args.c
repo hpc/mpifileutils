@@ -27,7 +27,7 @@
 
 #include "handle_args.h"
 #include "dcp.h"
-#include "bayer.h"
+#include "mfu.h"
 
 #include <errno.h>
 #include <libgen.h>
@@ -42,8 +42,8 @@
 DCOPY_options_t DCOPY_user_opts;
 
 static int num_src_params;
-static bayer_param_path* src_params;
-static bayer_param_path  dest_param;
+static mfu_param_path* src_params;
+static mfu_param_path  dest_param;
 
 /**
  * Determine if the destination path is a file or directory.
@@ -95,21 +95,21 @@ static void DCOPY_check_paths(void)
         int num_readable = 0;
         for(i = 0; i < num_src_params; i++) {
             char* path = src_params[i].path;
-            if(bayer_access(path, R_OK) == 0) {
+            if(mfu_access(path, R_OK) == 0) {
                 num_readable++;
             }
             else {
                 /* found a source path that we can't read, not fatal,
                  * but print an error to notify user */
                 char* orig = src_params[i].orig;
-                BAYER_LOG(BAYER_LOG_ERR, "Could not read `%s' errno=%d %s",
+                MFU_LOG(MFU_LOG_ERR, "Could not read `%s' errno=%d %s",
                     orig, errno, strerror(errno));
             }
         }
 
         /* verify that we have at least one source path */
         if(num_readable < 1) {
-            BAYER_LOG(BAYER_LOG_ERR, "At least one valid source must be specified");
+            MFU_LOG(MFU_LOG_ERR, "At least one valid source must be specified");
             valid = 0;
             goto bcast;
         }
@@ -156,7 +156,7 @@ static void DCOPY_check_paths(void)
                     }
                     else {
                         /* unsupported type */
-                        BAYER_LOG(BAYER_LOG_ERR, "Unsupported filetype `%s' --> `%s'",
+                        MFU_LOG(MFU_LOG_ERR, "Unsupported filetype `%s' --> `%s'",
                             dest_param.orig, dest_param.target);
                         valid = 0;
                         goto bcast;
@@ -165,7 +165,7 @@ static void DCOPY_check_paths(void)
                 else {
                     /* dest is a link, but its target does not exist,
                      * consider this an error */
-                    BAYER_LOG(BAYER_LOG_ERR, "Destination is broken symlink `%s'",
+                    MFU_LOG(MFU_LOG_ERR, "Destination is broken symlink `%s'",
                         dest_param.orig);
                     valid = 0;
                     goto bcast;
@@ -173,15 +173,15 @@ static void DCOPY_check_paths(void)
             }
             else {
                 /* unsupported type */
-                BAYER_LOG(BAYER_LOG_ERR, "Unsupported filetype `%s'",
+                MFU_LOG(MFU_LOG_ERR, "Unsupported filetype `%s'",
                     dest_param.orig);
                 valid = 0;
                 goto bcast;
             }
 
             /* check that dest is writable */
-            if(bayer_access(dest_param.path, W_OK) < 0) {
-                BAYER_LOG(BAYER_LOG_ERR, "Destination is not writable `%s'",
+            if(mfu_access(dest_param.path, W_OK) < 0) {
+                MFU_LOG(MFU_LOG_ERR, "Destination is not writable `%s'",
                     dest_param.path);
                 valid = 0;
                 goto bcast;
@@ -192,20 +192,20 @@ static void DCOPY_check_paths(void)
              * check that its parent is writable */
 
             /* compute parent path */
-            bayer_path* parent = bayer_path_from_str(dest_param.path);
-            bayer_path_dirname(parent);
-            char* parent_str = bayer_path_strdup(parent);
-            bayer_path_delete(&parent);
+            mfu_path* parent = mfu_path_from_str(dest_param.path);
+            mfu_path_dirname(parent);
+            char* parent_str = mfu_path_strdup(parent);
+            mfu_path_delete(&parent);
 
             /* check that parent is writable */
-            if(bayer_access(parent_str, W_OK) < 0) {
-                BAYER_LOG(BAYER_LOG_ERR, "Destination parent directory is not writable `%s'",
+            if(mfu_access(parent_str, W_OK) < 0) {
+                MFU_LOG(MFU_LOG_ERR, "Destination parent directory is not writable `%s'",
                     parent_str);
                 valid = 0;
-                bayer_free(&parent_str);
+                mfu_free(&parent_str);
                 goto bcast;
             }
-            bayer_free(&parent_str);
+            mfu_free(&parent_str);
         }
 
         /* determine whether caller *requires* copy into dir */
@@ -223,7 +223,7 @@ static void DCOPY_check_paths(void)
         if(dest_required_to_be_dir &&
            (!dest_exists || (!dest_is_dir && !dest_is_link_to_dir)))
         {
-            BAYER_LOG(BAYER_LOG_ERR, "Destination is not a directory `%s'",
+            MFU_LOG(MFU_LOG_ERR, "Destination is not a directory `%s'",
                 dest_param.orig);
             valid = 0;
             goto bcast;
@@ -244,7 +244,7 @@ bcast:
     /* exit job if we found a problem */
     if(! valid) {
         if(DCOPY_global_rank == 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Exiting run");
+            MFU_LOG(MFU_LOG_ERR, "Exiting run");
         }
         MPI_Barrier(MPI_COMM_WORLD);
         DCOPY_exit(EXIT_FAILURE);
@@ -270,7 +270,7 @@ void DCOPY_parse_path_args(char** argv, \
     if(argv == NULL || num_args < 2) {
         if(DCOPY_global_rank == 0) {
             DCOPY_print_usage();
-            BAYER_LOG(BAYER_LOG_ERR, "You must specify a source and destination path");
+            MFU_LOG(MFU_LOG_ERR, "You must specify a source and destination path");
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
@@ -282,29 +282,29 @@ void DCOPY_parse_path_args(char** argv, \
     num_src_params = last_arg_index - optind_local;
 
     /* allocate space to record info about each source */
-    size_t src_params_bytes = ((size_t) num_src_params) * sizeof(bayer_param_path);
-    src_params = (bayer_param_path*) BAYER_MALLOC(src_params_bytes);
+    size_t src_params_bytes = ((size_t) num_src_params) * sizeof(mfu_param_path);
+    src_params = (mfu_param_path*) MFU_MALLOC(src_params_bytes);
 
     /* record standardized paths and stat info for each source */
     int opt_index;
     for(opt_index = optind_local; opt_index < last_arg_index; opt_index++) {
         char* path = argv[opt_index];
         int idx = opt_index - optind_local;
-        bayer_param_path_set(path, &src_params[idx]);
+        mfu_param_path_set(path, &src_params[idx]);
     }
 
     /* standardize destination path */
     const char* dstpath = argv[last_arg_index];
-    bayer_param_path_set(dstpath, &dest_param);
+    mfu_param_path_set(dstpath, &dest_param);
 
     /* copy the destination path to user opts structure */
-    DCOPY_user_opts.dest_path = BAYER_STRDUP(dest_param.path);
+    DCOPY_user_opts.dest_path = MFU_STRDUP(dest_param.path);
 
     /* check that source and destinations are ok */
     DCOPY_check_paths();
 }
 
-void DCOPY_walk_paths(bayer_flist flist)
+void DCOPY_walk_paths(mfu_flist flist)
 {
     int i;
     for (i = 0; i < num_src_params; i++) {
@@ -312,13 +312,13 @@ void DCOPY_walk_paths(bayer_flist flist)
         const char* target = src_params[i].path;
 
         if (DCOPY_global_rank == 0) {
-            BAYER_LOG(BAYER_LOG_INFO, "Walking %s", target);
+            MFU_LOG(MFU_LOG_INFO, "Walking %s", target);
         }
 
         /* walk file tree and record stat data for each item */
         int walk_stat = 1;
         int dir_perm = 0;
-        bayer_flist_walk_path(target, walk_stat, dir_perm, flist);
+        mfu_flist_walk_path(target, walk_stat, dir_perm, flist);
     }
 }
 
@@ -351,16 +351,16 @@ char* DCOPY_build_dest(const char* name)
     }
 
     /* create path of item */
-    bayer_path* item = bayer_path_from_str(name);
+    mfu_path* item = mfu_path_from_str(name);
 
     /* get source directory */
-    bayer_path* src = bayer_path_from_str(src_params[i].path);
+    mfu_path* src = mfu_path_from_str(src_params[i].path);
 
     /* get number of components in item */
-    int item_components = bayer_path_components(item);
+    int item_components = mfu_path_components(item);
 
     /* get number of components in source path */
-    int src_components = bayer_path_components(src);
+    int src_components = mfu_path_components(src);
 
     /* if copying into directory, keep last component,
      * otherwise cut all components listed in source path */
@@ -373,17 +373,17 @@ char* DCOPY_build_dest(const char* name)
     int keep = item_components - cut;
 
     /* chop prefix from item */
-    bayer_path_slice(item, cut, keep);
+    mfu_path_slice(item, cut, keep);
 
     /* prepend destination path */
-    bayer_path_prepend_str(item, dest_param.path);
+    mfu_path_prepend_str(item, dest_param.path);
 
     /* convert to a NUL-terminated string */
-    char* dest = bayer_path_strdup(item);
+    char* dest = mfu_path_strdup(item);
 
     /* free our temporary paths */
-    bayer_path_delete(&src);
-    bayer_path_delete(&item);
+    mfu_path_delete(&src);
+    mfu_path_delete(&item);
 
     return dest;
 }
@@ -392,46 +392,46 @@ char* DCOPY_build_dest(const char* name)
 void DCOPY_free_path_args(void)
 {
     /* free memory associated with destination path */
-    bayer_param_path_free(&dest_param);
+    mfu_param_path_free(&dest_param);
 
     /* free memory associated with source paths */
     int i;
     for(i = 0; i < num_src_params; i++) {
-        bayer_param_path_free(&src_params[i]);
+        mfu_param_path_free(&src_params[i]);
     }
     num_src_params = 0;
-    bayer_free(&src_params);
+    mfu_free(&src_params);
 }
 
 int DCOPY_input_flist_skip(const char* name, void* args)
 {
-    /* create bayer_path from name */
-    bayer_path* path = bayer_path_from_str(name);
+    /* create mfu_path from name */
+    mfu_path* path = mfu_path_from_str(name);
 
     /* iterate over each source path */
     int i;
     for (i = 0; i < num_src_params; i++) {
-        /* create bayer_path of source path */
+        /* create mfu_path of source path */
         char* src_name = src_params[i].path;
-        const char* src_path = bayer_path_from_str(src_name);
+        const char* src_path = mfu_path_from_str(src_name);
 
         /* check whether path is contained within or equal to
          * source path and if so, we need to copy this file */
-        bayer_path_result result = bayer_path_cmp(path, src_path);
-        if (result == BAYER_PATH_SRC_CHILD || result == BAYER_PATH_EQUAL) {
-               BAYER_LOG(BAYER_LOG_INFO, "Need to copy %s because of %s.",
+        mfu_path_result result = mfu_path_cmp(path, src_path);
+        if (result == MFU_PATH_SRC_CHILD || result == MFU_PATH_EQUAL) {
+               MFU_LOG(MFU_LOG_INFO, "Need to copy %s because of %s.",
                    name, src_name);
-            bayer_path_delete(&src_path);
-            bayer_path_delete(&path);
+            mfu_path_delete(&src_path);
+            mfu_path_delete(&path);
             return 0;
         }
-        bayer_path_delete(&src_path);
+        mfu_path_delete(&src_path);
     }
 
     /* the path in name is not a child of any source paths,
      * so skip this file */
-    BAYER_LOG(BAYER_LOG_INFO, "Skip %s.", name);
-    bayer_path_delete(&path);
+    MFU_LOG(MFU_LOG_INFO, "Skip %s.", name);
+    mfu_path_delete(&path);
     return 1;
 }
 

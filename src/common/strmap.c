@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 #include "strmap.h"
-#include "bayer.h"
+#include "mfu.h"
 
 #define STRMAP_FAILURE (1)
 
@@ -25,7 +25,7 @@ Allocate and delete map objects
 /* allocates a new tree and initializes it as a single element */
 static strmap_node* strmap_node_new(const char* key, const char* value)
 {
-    strmap_node* node = (strmap_node*) BAYER_MALLOC(sizeof(strmap_node));
+    strmap_node* node = (strmap_node*) MFU_MALLOC(sizeof(strmap_node));
     if (node != NULL) {
         node->key       = NULL;
         node->key_len   = 0;
@@ -37,21 +37,21 @@ static strmap_node* strmap_node_new(const char* key, const char* value)
         node->right     = NULL;
 
         if (key != NULL) {
-            node->key = BAYER_STRDUP(key);
+            node->key = MFU_STRDUP(key);
             node->key_len = strlen(key) + 1;
         }
         if (value != NULL) {
-            node->value = BAYER_STRDUP(value);
+            node->value = MFU_STRDUP(value);
             node->value_len = strlen(value) + 1;
         }
         if (node->key == NULL || node->value == NULL) {
             /* error */
-            //BAYER_ERR("Failed to allocate key or value");
+            //MFU_ERR("Failed to allocate key or value");
         }
     }
     else {
         /* error */
-        //BAYER_ERR("Failed to allocate AVL node");
+        //MFU_ERR("Failed to allocate AVL node");
     }
     return node;
 }
@@ -69,13 +69,13 @@ static int strmap_node_delete(strmap_node* node)
         node->right = NULL;
 
         /* delete value */
-        bayer_free(&node->value);
+        mfu_free(&node->value);
 
         /* delete key */
-        bayer_free(&node->key);
+        mfu_free(&node->key);
 
         /* finally delete the node */
-        bayer_free(&node);
+        mfu_free(&node);
     }
     return STRMAP_SUCCESS;
 }
@@ -83,7 +83,7 @@ static int strmap_node_delete(strmap_node* node)
 /* allocates a new tree and initializes it as a single element */
 strmap* strmap_new()
 {
-    strmap* tree = (strmap*) BAYER_MALLOC(sizeof(strmap));
+    strmap* tree = (strmap*) MFU_MALLOC(sizeof(strmap));
     tree->root = NULL;
     tree->len = 0;
     tree->size = 0;
@@ -111,7 +111,7 @@ void strmap_delete(strmap** ptree)
             strmap_node_delete(tree->root);
             tree->root = NULL;
         }
-        bayer_free(&tree);
+        mfu_free(&tree);
         *ptree = NULL;
     }
     return;
@@ -637,12 +637,12 @@ int strmap_set(strmap* tree, const char* key, const char* value)
         else {
             /* key already exists, free the current value and reset it */
             tree->len -= node->value_len;
-            bayer_free(&node->value);
+            mfu_free(&node->value);
             node->value_len = 0;
 
             /* copy in the new value */
             if (value != NULL) {
-                node->value = BAYER_STRDUP(value);
+                node->value = MFU_STRDUP(value);
                 node->value_len = strlen(value) + 1;
             }
             tree->len += node->value_len;
@@ -670,7 +670,7 @@ int strmap_setf(strmap* map, const char* format, ...)
 
     /* allocate and print the string */
     if (size > 0) {
-        str = (char*) BAYER_MALLOC((size_t)size);
+        str = (char*) MFU_MALLOC((size_t)size);
 
         va_start(args, format);
         vsnprintf(str, (size_t)size, format, args);
@@ -688,7 +688,7 @@ int strmap_setf(strmap* map, const char* format, ...)
             rc = strmap_set(map, key, val);
         }
 
-        bayer_free(&str);
+        mfu_free(&str);
         return rc;
     }
 
@@ -730,7 +730,7 @@ const char* strmap_getf(strmap* map, const char* format, ...)
 
     /* allocate and print the string */
     if (size > 0) {
-        str = (char*) BAYER_MALLOC((size_t)size);
+        str = (char*) MFU_MALLOC((size_t)size);
 
         va_start(args, format);
         vsnprintf(str, (size_t)size, format, args);
@@ -740,7 +740,7 @@ const char* strmap_getf(strmap* map, const char* format, ...)
         const char* val;
         val = strmap_get(map, str);
 
-        bayer_free(&str);
+        mfu_free(&str);
         return val;
     }
 
@@ -856,7 +856,7 @@ int strmap_unsetf(strmap* map, const char* format, ...)
 
     /* allocate and print the string */
     if (size > 0) {
-        str = (char*) BAYER_MALLOC((size_t)size);
+        str = (char*) MFU_MALLOC((size_t)size);
 
         va_start(args, format);
         vsnprintf(str, (size_t)size, format, args);
@@ -866,7 +866,7 @@ int strmap_unsetf(strmap* map, const char* format, ...)
         int rc;
         rc = strmap_unset(map, str);
 
-        bayer_free(&str);
+        mfu_free(&str);
         return rc;
     }
 
@@ -890,7 +890,7 @@ size_t strmap_pack(void* buf, const strmap* tree)
 
     /* TODO: convert size to network order */
     uint64_t size = (uint64_t) strmap_pack_size(tree);
-    ptr += bayer_pack_uint64(ptr, size);
+    ptr += mfu_pack_uint64(ptr, size);
 
     /* TODO: be sure we don't write past end of buffer */
     /* copy key/value pairs */
@@ -917,7 +917,7 @@ size_t strmap_unpack(const void* buf, strmap* tree)
 
     /* TODO: convert size to network order */
     uint64_t size;
-    ptr += bayer_unpack_uint64(ptr, &size);
+    ptr += mfu_unpack_uint64(ptr, &size);
 
     /* TODO: be sure we don't try to read past size bytes */
     char* end = (char*)buf + size;

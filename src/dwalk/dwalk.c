@@ -41,8 +41,8 @@
 
 #include "libcircle.h"
 #include "dtcmp.h"
-#include "bayer.h"
-#include "bayer_flist.h"
+#include "mfu.h"
+#include "mfu_flist.h"
 
 // getpwent getgrent to read user and group entries
 
@@ -57,7 +57,7 @@ uint64_t total_links   = 0;
 uint64_t total_unknown = 0;
 uint64_t total_bytes   = 0;
 
-static void print_summary(bayer_flist flist)
+static void print_summary(mfu_flist flist)
 {
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -66,11 +66,11 @@ static void print_summary(bayer_flist flist)
 
     /* step through and print data */
     uint64_t idx = 0;
-    uint64_t max = bayer_flist_size(flist);
+    uint64_t max = mfu_flist_size(flist);
     while (idx < max) {
-        if (bayer_flist_have_detail(flist)) {
+        if (mfu_flist_have_detail(flist)) {
             /* get mode */
-            mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, idx);
+            mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
 
             /* set file type */
             if (S_ISDIR(mode)) {
@@ -87,20 +87,20 @@ static void print_summary(bayer_flist flist)
                 total_unknown++;
             }
 
-            uint64_t size = bayer_flist_file_get_size(flist, idx);
+            uint64_t size = mfu_flist_file_get_size(flist, idx);
             total_bytes += size;
         }
         else {
             /* get type */
-            bayer_filetype type = bayer_flist_file_get_type(flist, idx);
+            mfu_filetype type = mfu_flist_file_get_type(flist, idx);
 
-            if (type == BAYER_TYPE_DIR) {
+            if (type == MFU_TYPE_DIR) {
                 total_dirs++;
             }
-            else if (type == BAYER_TYPE_FILE) {
+            else if (type == MFU_TYPE_FILE) {
                 total_files++;
             }
-            else if (type == BAYER_TYPE_LINK) {
+            else if (type == MFU_TYPE_LINK) {
                 total_links++;
             }
             else {
@@ -115,7 +115,7 @@ static void print_summary(bayer_flist flist)
 
     /* get total directories, files, links, and bytes */
     uint64_t all_dirs, all_files, all_links, all_unknown, all_bytes;
-    uint64_t all_count = bayer_flist_global_size(flist);
+    uint64_t all_count = mfu_flist_global_size(flist);
     MPI_Allreduce(&total_dirs,    &all_dirs,    1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(&total_files,   &all_files,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(&total_links,   &all_links,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
@@ -123,17 +123,17 @@ static void print_summary(bayer_flist flist)
     MPI_Allreduce(&total_bytes,   &all_bytes,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* convert total size to units */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && rank == 0) {
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && rank == 0) {
         printf("Items: %llu\n", (unsigned long long) all_count);
         printf("  Directories: %llu\n", (unsigned long long) all_dirs);
         printf("  Files: %llu\n", (unsigned long long) all_files);
         printf("  Links: %llu\n", (unsigned long long) all_links);
         /* printf("  Unknown: %lu\n", (unsigned long long) all_unknown); */
 
-        if (bayer_flist_have_detail(flist)) {
+        if (mfu_flist_have_detail(flist)) {
             double agg_size_tmp;
             const char* agg_size_units;
-            bayer_format_bytes(all_bytes, &agg_size_tmp, &agg_size_units);
+            mfu_format_bytes(all_bytes, &agg_size_tmp, &agg_size_units);
 
             uint64_t size_per_file = 0.0;
             if (all_files > 0) {
@@ -141,7 +141,7 @@ static void print_summary(bayer_flist flist)
             }
             double size_per_file_tmp;
             const char* size_per_file_units;
-            bayer_format_bytes(size_per_file, &size_per_file_tmp, &size_per_file_units);
+            mfu_format_bytes(size_per_file, &size_per_file_tmp, &size_per_file_units);
 
             printf("Data: %.3lf %s (%.3lf %s per file)\n", agg_size_tmp, agg_size_units, size_per_file_tmp, size_per_file_units);
         }
@@ -245,9 +245,9 @@ static int distribution_gather(struct distribute_option *option,
     MPI_Allreduce(&mycount, &allcount, 1, MPI_UINT64_T, MPI_SUM,
                   MPI_COMM_WORLD);
     if (rank == 0) {
-        recvbuf = BAYER_MALLOC((uint64_t)allcount * sizeof(*items));
-        counts = BAYER_MALLOC((uint64_t)ranks * sizeof(int));
-        disps = BAYER_MALLOC((uint64_t)ranks * sizeof(int));
+        recvbuf = MFU_MALLOC((uint64_t)allcount * sizeof(*items));
+        counts = MFU_MALLOC((uint64_t)ranks * sizeof(int));
+        disps = MFU_MALLOC((uint64_t)ranks * sizeof(int));
     }
 
     /* Tell rank 0 where the data is coming from */
@@ -320,20 +320,20 @@ static int distribution_gather(struct distribute_option *option,
             }
         }
     }
-    bayer_free(&disps);
-    bayer_free(&counts);
+    mfu_free(&disps);
+    mfu_free(&counts);
     MPI_Type_free(&item_type);
     return 0;
 }
 
 static uint64_t distribute_get_value(struct distribute_option *option,
-                                     bayer_flist flist, uint64_t idx)
+                                     mfu_flist flist, uint64_t idx)
 {
     uint64_t file_size;
     uint64_t separator = 0;
     int i;
 
-    file_size = bayer_flist_file_get_size(flist, idx);
+    file_size = mfu_flist_file_get_size(flist, idx);
     if (option->separator_number == 0)
         return file_size;
 
@@ -350,10 +350,10 @@ static uint64_t distribute_get_value(struct distribute_option *option,
 /* 1 for any kind of distribution field */
 #define DISTRIBUTE_KEY_SIZE 1
 static int print_flist_distribution(struct distribute_option *option,
-                                    bayer_flist* pflist,
+                                    mfu_flist* pflist,
                                     int rank, int ranks)
 {
-    bayer_flist flist = *pflist;
+    mfu_flist flist = *pflist;
     MPI_Datatype key;
     MPI_Datatype keysat;
     uint64_t output_bytes;
@@ -378,14 +378,14 @@ static int print_flist_distribution(struct distribute_option *option,
     MPI_Type_contiguous(DISTRIBUTE_KEY_SIZE + 1, MPI_UINT64_T, &keysat);
     MPI_Type_commit(&keysat);
 
-    checking_files = bayer_flist_size(flist);
+    checking_files = mfu_flist_size(flist);
     output_bytes = checking_files * sizeof(uint64_t);
-    group_id = (uint64_t *) BAYER_MALLOC(output_bytes);
-    group_ranks = (uint64_t *) BAYER_MALLOC(output_bytes);
-    group_rank = (uint64_t *) BAYER_MALLOC(output_bytes);
+    group_id = (uint64_t *) MFU_MALLOC(output_bytes);
+    group_ranks = (uint64_t *) MFU_MALLOC(output_bytes);
+    group_rank = (uint64_t *) MFU_MALLOC(output_bytes);
 
     list_bytes = checking_files * (DISTRIBUTE_KEY_SIZE + 1) * sizeof(uint64_t);
-    list = (uint64_t *) BAYER_MALLOC(list_bytes);
+    list = (uint64_t *) MFU_MALLOC(list_bytes);
 
     /* Initialize the list */
     ptr = list;
@@ -401,11 +401,11 @@ static int print_flist_distribution(struct distribute_option *option,
                 DTCMP_FLAG_NONE, MPI_COMM_WORLD);
 
     if (groups > 0) {
-        items = (struct distribute_item *)BAYER_MALLOC(sizeof(*items) *
+        items = (struct distribute_item *)MFU_MALLOC(sizeof(*items) *
                                                        groups);
     }
 
-    group_rank = (uint64_t *) BAYER_MALLOC(groups);
+    group_rank = (uint64_t *) MFU_MALLOC(groups);
     for (i = 0; i < checking_files; i++) {
         /* Get index into flist for this item */
         index = *(list + i * (DISTRIBUTE_KEY_SIZE + 1) +
@@ -418,11 +418,11 @@ static int print_flist_distribution(struct distribute_option *option,
     distribution_gather(option, items, &item_count, groups, rank, ranks);
 
     if (items)
-        bayer_free(&items);
-    bayer_free(&list);
-    bayer_free(&group_rank);
-    bayer_free(&group_ranks);
-    bayer_free(&group_id);
+        mfu_free(&items);
+    mfu_free(&list);
+    mfu_free(&group_rank);
+    mfu_free(&group_ranks);
+    mfu_free(&group_id);
     MPI_Type_free(&keysat);
     MPI_Type_free(&key);
     return 0;
@@ -504,7 +504,7 @@ static int distribution_parse(struct distribute_option *option,
     if (string[strlen("size")] != ':')
         return -1;
 
-    str = BAYER_STRDUP(string);
+    str = MFU_STRDUP(string);
     /* Parse separators */
     ptr = str + strlen("size:");
     next = ptr;
@@ -515,7 +515,7 @@ static int distribution_parse(struct distribute_option *option,
             next++;
         }
 
-        if (bayer_abtoull(ptr, &separator) != BAYER_SUCCESS) {
+        if (mfu_abtoull(ptr, &separator) != MFU_SUCCESS) {
             printf("Invalid seperator \"%s\"\n", ptr);
             status = -1;
             goto out;
@@ -531,7 +531,7 @@ static int distribution_parse(struct distribute_option *option,
     }
 
 out:
-    bayer_free(&str);
+    mfu_free(&str);
     return status;
 }
 
@@ -562,7 +562,7 @@ int main(int argc, char** argv)
 
     /* initialize MPI */
     MPI_Init(&argc, &argv);
-    bayer_init();
+    mfu_init();
 
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -614,19 +614,19 @@ int main(int argc, char** argv)
 
         switch (c) {
             case 'd':
-                distribution = BAYER_STRDUP(optarg);
+                distribution = MFU_STRDUP(optarg);
                 break;
             case 'i':
-                inputname = BAYER_STRDUP(optarg);
+                inputname = MFU_STRDUP(optarg);
                 break;
             case 'o':
-                outputname = BAYER_STRDUP(optarg);
+                outputname = MFU_STRDUP(optarg);
                 break;
             case 'l':
                 walk_stat = 0;
                 break;
             case 's':
-                sortfields = BAYER_STRDUP(optarg);
+                sortfields = MFU_STRDUP(optarg);
                 break;
             case 'p':
                 print = 1;
@@ -635,7 +635,7 @@ int main(int argc, char** argv)
                 usage = 1;
                 break;
             case 'v':
-                bayer_debug_level = BAYER_LOG_VERBOSE;
+                mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
             case '?':
                 usage = 1;
@@ -649,7 +649,7 @@ int main(int argc, char** argv)
 
     /* paths to walk come after the options */
     int numpaths = 0;
-    bayer_param_path* paths = NULL;
+    mfu_param_path* paths = NULL;
     if (optind < argc) {
         /* got a path to walk */
         walk = 1;
@@ -658,11 +658,11 @@ int main(int argc, char** argv)
         numpaths = argc - optind;
 
         /* allocate space for each path */
-        paths = (bayer_param_path*) BAYER_MALLOC((size_t)numpaths * sizeof(bayer_param_path));
+        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
         /* process each path */
         char** p = &argv[optind];
-        bayer_param_path_set_all((uint64_t)numpaths, (const char**)p, paths);
+        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths);
         optind += numpaths;
 
         /* don't allow user to specify input file with walk */
@@ -682,7 +682,7 @@ int main(int argc, char** argv)
     if (sortfields != NULL) {
         int maxfields;
         int nfields = 0;
-        char* sortfields_copy = BAYER_STRDUP(sortfields);
+        char* sortfields_copy = MFU_STRDUP(sortfields);
         if (walk_stat) {
             maxfields = 7;
             char* token = strtok(sortfields_copy, ",");
@@ -735,7 +735,7 @@ int main(int argc, char** argv)
             printf("Exceeded maximum number of sort fields: %d\n", maxfields);
             usage = 1;
         }
-        bayer_free(&sortfields_copy);
+        mfu_free(&sortfields_copy);
     }
 
     if (distribution != NULL) {
@@ -767,15 +767,15 @@ int main(int argc, char** argv)
     // if (sizeof(st_uid) > uint64_t) error(); etc...
 
     /* create an empty file list */
-    bayer_flist flist = bayer_flist_new();
+    mfu_flist flist = mfu_flist_new();
 
     if (walk) {
         /* walk list of input paths */
-        bayer_param_path_walk(numpaths, paths, walk_stat, flist, dir_perm);
+        mfu_param_path_walk(numpaths, paths, walk_stat, flist, dir_perm);
     }
     else {
         /* read data from cache file */
-        bayer_flist_read_cache(inputname, flist);
+        mfu_flist_read_cache(inputname, flist);
     }
 
     /* TODO: filter files */
@@ -784,12 +784,12 @@ int main(int argc, char** argv)
     /* sort files */
     if (sortfields != NULL) {
         /* TODO: don't sort unless all_count > 0 */
-        bayer_flist_sort(sortfields, &flist);
+        mfu_flist_sort(sortfields, &flist);
     }
 
     /* print details for individual files */
     if (print) {
-        bayer_flist_print(flist);
+        mfu_flist_print(flist);
     }
 
     /* print summary about all files */
@@ -801,25 +801,25 @@ int main(int argc, char** argv)
 
     /* write data to cache file */
     if (outputname != NULL) {
-        bayer_flist_write_cache(outputname, flist);
+        mfu_flist_write_cache(outputname, flist);
     }
 
     /* free users, groups, and files objects */
-    bayer_flist_free(&flist);
+    mfu_flist_free(&flist);
 
     /* free memory allocated for options */
-    bayer_free(&sortfields);
-    bayer_free(&outputname);
-    bayer_free(&inputname);
+    mfu_free(&sortfields);
+    mfu_free(&outputname);
+    mfu_free(&inputname);
 
     /* free the path parameters */
-    bayer_param_path_free_all(numpaths, paths);
+    mfu_param_path_free_all(numpaths, paths);
 
     /* free memory allocated to hold params */
-    bayer_free(&paths);
+    mfu_free(&paths);
 
     /* shut down MPI */
-    bayer_finalize();
+    mfu_finalize();
     MPI_Finalize();
 
     return 0;
