@@ -26,10 +26,10 @@ set -x
 
 OPT="-g -O0"
 
+installdir=`pwd`/install
+
 mkdir -p deps
 cd deps
-
-installdir=`pwd`/install
 
 # specify versions of software
 # (may need to update some other lines further below)
