@@ -7,7 +7,7 @@ noinst_HEADERS = \
     common.h \
     compare.h \
     copy.h \
-    dcp.h \
+    dcp1.h \
     handle_args.h \
     treewalk.h
 

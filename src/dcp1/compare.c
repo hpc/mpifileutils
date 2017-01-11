@@ -21,7 +21,7 @@
 */
 
 #include "compare.h"
-#include "dcp.h"
+#include "dcp1.h"
 
 #include <errno.h>
 #include <fcntl.h>

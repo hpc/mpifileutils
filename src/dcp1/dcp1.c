@@ -20,7 +20,7 @@
  * Please also read the LICENSE file.
 */
 
-#include "dcp.h"
+#include "dcp1.h"
 
 #include "handle_args.h"
 #include "treewalk.h"

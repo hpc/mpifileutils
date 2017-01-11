@@ -29,7 +29,7 @@
 
 #include "handle_args.h"
 #include "treewalk.h"
-#include "dcp.h"
+#include "dcp1.h"
 #include "mfu.h"
 
 #include <errno.h>
