@@ -46,7 +46,6 @@ compiler:
   - gcc
 
 notifications:
-  email:
-    - fileutils-dev@googlegroups.com
-    - sikich1@llnl.gov
-    - moody20@llnl.gov
+  email: false
+    #- sikich1@llnl.gov
+    #- moody20@llnl.gov
