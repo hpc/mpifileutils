@@ -56,8 +56,8 @@
 
 #include "libcircle.h"
 #include "dtcmp.h"
-#include "bayer.h"
-#include "bayer_flist_internal.h"
+#include "mfu.h"
+#include "mfu_flist_internal.h"
 #include "strmap.h"
 
 /****************************************
@@ -76,7 +76,7 @@ static void buft_init(buf_t* items)
 static void buft_copy(buf_t* src, buf_t* dst)
 {
     dst->bufsize = src->bufsize;
-    dst->buf = BAYER_MALLOC(dst->bufsize);
+    dst->buf = MFU_MALLOC(dst->bufsize);
     memcpy(dst->buf, src->buf, dst->bufsize);
 
     dst->count = src->count;
@@ -92,7 +92,7 @@ static void buft_copy(buf_t* src, buf_t* dst)
 
 static void buft_free(buf_t* items)
 {
-    bayer_free(&items->buf);
+    mfu_free(&items->buf);
     items->bufsize = 0;
 
     if (items->dt != MPI_DATATYPE_NULL) {
@@ -106,7 +106,7 @@ static void buft_free(buf_t* items)
 }
 
 /* build a name-to-id map and an id-to-name map */
-void bayer_flist_usrgrp_create_map(const buf_t* items, strmap* id2name)
+void mfu_flist_usrgrp_create_map(const buf_t* items, strmap* id2name)
 {
     uint64_t i;
     const char* ptr = (const char*)items->buf;
@@ -115,7 +115,7 @@ void bayer_flist_usrgrp_create_map(const buf_t* items, strmap* id2name)
         ptr += items->chars;
 
         uint64_t id;
-        bayer_unpack_uint64(&ptr, &id);
+        mfu_unpack_uint64(&ptr, &id);
 
         /* convert id number to string */
         char id_str[20];
@@ -138,7 +138,7 @@ void bayer_flist_usrgrp_create_map(const buf_t* items, strmap* id2name)
 
 /* given an id, lookup its corresponding name, returns id converted
  * to a string if no matching name is found */
-const char* bayer_flist_usrgrp_get_name_from_id(strmap* id2name, uint64_t id)
+const char* mfu_flist_usrgrp_get_name_from_id(strmap* id2name, uint64_t id)
 {
     /* convert id number to string representation */
     char id_str[20];
@@ -172,7 +172,7 @@ const char* bayer_flist_usrgrp_get_name_from_id(strmap* id2name, uint64_t id)
 
 /* create a type consisting of chars number of characters
  * immediately followed by a uint32_t */
-void bayer_flist_usrgrp_create_stridtype(int chars, MPI_Datatype* dt)
+void mfu_flist_usrgrp_create_stridtype(int chars, MPI_Datatype* dt)
 {
     /* build type for string */
     MPI_Datatype dt_str;
@@ -207,7 +207,7 @@ static void strid_insert(
 {
     /* allocate and fill in new element */
     strid_t* elem = (strid_t*) malloc(sizeof(strid_t));
-    elem->name = BAYER_STRDUP(name);
+    elem->name = MFU_STRDUP(name);
     elem->id   = id;
     elem->next = NULL;
 
@@ -249,7 +249,7 @@ static void strid_serialize(strid_t* head, int chars, void* buf)
         strcpy(ptr, name);
         ptr += chars;
 
-        bayer_pack_uint64(&ptr, id);
+        mfu_pack_uint64(&ptr, id);
 
         current = current->next;
     }
@@ -263,8 +263,8 @@ static void strid_delete(strid_t** head, strid_t** tail, int* count)
     strid_t* current = *head;
     while (current != NULL) {
         strid_t* next = current->next;
-        bayer_free(&current->name);
-        bayer_free(&current);
+        mfu_free(&current->name);
+        mfu_free(&current);
         current = next;
     }
 
@@ -277,7 +277,7 @@ static void strid_delete(strid_t** head, strid_t** tail, int* count)
 }
 
 /* read user array from file system using getpwent() */
-void bayer_flist_usrgrp_get_users(flist_t* flist)
+void mfu_flist_usrgrp_get_users(flist_t* flist)
 {
     /* get pointer to users buf_t */
     buf_t* items = &flist->users;
@@ -343,7 +343,7 @@ retry:
 
     /* create datatype to represent a username/id pair */
     MPI_Datatype dt;
-    bayer_flist_usrgrp_create_stridtype(chars, &dt);
+    mfu_flist_usrgrp_create_stridtype(chars, &dt);
 
     /* get extent of type */
     MPI_Aint lb, extent;
@@ -351,7 +351,7 @@ retry:
 
     /* allocate an array to hold all user names and ids */
     size_t bufsize = (size_t)count * (size_t)extent;
-    char* buf = (char*) BAYER_MALLOC(bufsize);
+    char* buf = (char*) MFU_MALLOC(bufsize);
 
     /* copy items from list into array */
     if (rank == 0) {
@@ -374,14 +374,14 @@ retry:
     }
 
     /* create map of user id to user name */
-    bayer_flist_usrgrp_create_map(items, flist->user_id2name);
+    mfu_flist_usrgrp_create_map(items, flist->user_id2name);
     flist->have_users = 1;
 
     return;
 }
 
 /* read group array from file system using getgrent() */
-void bayer_flist_usrgrp_get_groups(flist_t* flist)
+void mfu_flist_usrgrp_get_groups(flist_t* flist)
 {
     /* get pointer to users buf_t */
     buf_t* items = &flist->groups;
@@ -444,7 +444,7 @@ retry:
 
     /* create datatype to represent a username/id pair */
     MPI_Datatype dt;
-    bayer_flist_usrgrp_create_stridtype(chars, &dt);
+    mfu_flist_usrgrp_create_stridtype(chars, &dt);
 
     /* get extent of type */
     MPI_Aint lb, extent;
@@ -452,7 +452,7 @@ retry:
 
     /* allocate an array to hold all user names and ids */
     size_t bufsize = (size_t)count * (size_t)extent;
-    char* buf = (char*) BAYER_MALLOC(bufsize);
+    char* buf = (char*) MFU_MALLOC(bufsize);
 
     /* copy items from list into array */
     if (rank == 0) {
@@ -475,14 +475,14 @@ retry:
     }
 
     /* create map of user id to user name */
-    bayer_flist_usrgrp_create_map(items, flist->group_id2name);
+    mfu_flist_usrgrp_create_map(items, flist->group_id2name);
     flist->have_groups = 1;
 
     return;
 }
 
 /* initialize structures for user and group names and id-to-name maps */
-void bayer_flist_usrgrp_init(flist_t* flist)
+void mfu_flist_usrgrp_init(flist_t* flist)
 {
     /* initialize user, group, and file buffers */
     buft_init(&flist->users);
@@ -498,7 +498,7 @@ void bayer_flist_usrgrp_init(flist_t* flist)
 }
 
 /* free user and group structures */
-void bayer_flist_usrgrp_free(flist_t* flist)
+void mfu_flist_usrgrp_free(flist_t* flist)
 {
     buft_free(&flist->users);
     buft_free(&flist->groups);
@@ -510,7 +510,7 @@ void bayer_flist_usrgrp_free(flist_t* flist)
 }
 
 /* copy user and group structures from srclist to flist */
-void bayer_flist_usrgrp_copy(flist_t* srclist, flist_t* flist)
+void mfu_flist_usrgrp_copy(flist_t* srclist, flist_t* flist)
 {
     buft_copy(&srclist->users, &flist->users);
     buft_copy(&srclist->groups, &flist->groups);

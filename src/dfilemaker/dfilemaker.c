@@ -27,7 +27,7 @@
 #include <fcntl.h>
 #include "mpi.h"
 
-#include "bayer.h"
+#include "mfu.h"
 
 static void print_usage(void)
 {
@@ -44,7 +44,7 @@ int main(int argc, char* argv[])
 {
   /* init our environment */
   MPI_Init(&argc, &argv);
-  bayer_init();
+  mfu_init();
 
   /* get our rank and the number of ranks in the job */
   int rank, ranks;
@@ -66,7 +66,7 @@ int main(int argc, char* argv[])
 
     /* read file size */
     const char* size_str = argv[2];
-    if (bayer_abtoull(size_str, &size_ull) != BAYER_SUCCESS) {
+    if (mfu_abtoull(size_str, &size_ull) != MFU_SUCCESS) {
       /* just have rank 0 print the error */
       if (rank == 0) {
         printf("Could not interpret argument as file size: %s\n", size_str);
@@ -82,7 +82,7 @@ int main(int argc, char* argv[])
     if (rank == 0) {
       print_usage();
     }
-    bayer_finalize();
+    mfu_finalize();
     MPI_Finalize();
     return 1;
   }
@@ -117,7 +117,7 @@ int main(int argc, char* argv[])
 
   /* allocate a buffer */
   size_t bufsize = 1024*1024;
-  void* buf = BAYER_MALLOC(bufsize);
+  void* buf = MFU_MALLOC(bufsize);
 
   /* loop over each file we need to create */
   int i;
@@ -133,7 +133,7 @@ int main(int argc, char* argv[])
     sprintf(file, "file_%d.dat", idx);
 
     /* create the file and open it for writing */
-    int fd = bayer_open(file, O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
+    int fd = mfu_open(file, O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
     if (fd != -1) {
       /* we opened the file, now start writing */
       size_t written = 0;
@@ -147,7 +147,7 @@ int main(int argc, char* argv[])
           }
 
           /* write data to file */
-          ssize_t n = bayer_write(file, fd, ptr, left);
+          ssize_t n = mfu_write(file, fd, ptr, left);
           if (n == -1) {
             printf("Failed to write to file: rank=%d file=%s errno=%d (%s)\n", rank, file, errno, strerror(errno));
             rc = 1;
@@ -159,8 +159,8 @@ int main(int argc, char* argv[])
       }
 
       /* sync output to disk and close the file */
-      bayer_fsync(file, fd);
-      bayer_close(file, fd);
+      mfu_fsync(file, fd);
+      mfu_close(file, fd);
     } else {
       /* failed to open the file */
       printf("Failed to open file: rank=%d file=%s errno=%d (%s)\n", rank, file, errno, strerror(errno));
@@ -169,10 +169,10 @@ int main(int argc, char* argv[])
   }
 
   /* free the buffer */
-  bayer_free(&buf);
+  mfu_free(&buf);
 
   /* shut down */
-  bayer_finalize();
+  mfu_finalize();
   MPI_Finalize();
 
   return rc;

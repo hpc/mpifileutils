@@ -54,31 +54,31 @@
 
 #include "libcircle.h"
 #include "dtcmp.h"
-#include "bayer.h"
-#include "bayer_flist_internal.h"
+#include "mfu.h"
+#include "mfu_flist_internal.h"
 #include "strmap.h"
 
 /****************************************
  * Functions on types
  ***************************************/
 
-/* given a mode_t from stat, return the corresponding BAYER filetype */
-bayer_filetype bayer_flist_mode_to_filetype(mode_t mode)
+/* given a mode_t from stat, return the corresponding MFU filetype */
+mfu_filetype mfu_flist_mode_to_filetype(mode_t mode)
 {
     /* set file type */
-    bayer_filetype type;
+    mfu_filetype type;
     if (S_ISDIR(mode)) {
-        type = BAYER_TYPE_DIR;
+        type = MFU_TYPE_DIR;
     }
     else if (S_ISREG(mode)) {
-        type = BAYER_TYPE_FILE;
+        type = MFU_TYPE_FILE;
     }
     else if (S_ISLNK(mode)) {
-        type = BAYER_TYPE_LINK;
+        type = MFU_TYPE_LINK;
     }
     else {
         /* unknown file type */
-        type = BAYER_TYPE_UNKNOWN;
+        type = MFU_TYPE_UNKNOWN;
     }
     return type;
 }
@@ -86,7 +86,7 @@ bayer_filetype bayer_flist_mode_to_filetype(mode_t mode)
 /* given path, return level within directory tree,
  * counts '/' characters assuming path is standardized
  * and absolute */
-int bayer_flist_compute_depth(const char* path)
+int mfu_flist_compute_depth(const char* path)
 {
     const char* c;
     int depth = 0;
@@ -119,10 +119,10 @@ static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_
     char* ptr = start;
 
     /* copy in detail flag */
-    bayer_pack_uint32(&ptr, (uint32_t) detail);
+    mfu_pack_uint32(&ptr, (uint32_t) detail);
 
     /* copy in length of file name field */
-    bayer_pack_uint32(&ptr, (uint32_t) chars);
+    mfu_pack_uint32(&ptr, (uint32_t) chars);
 
     /* copy in file name */
     char* file = elem->file;
@@ -131,20 +131,20 @@ static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_
 
     if (detail) {
         /* copy in fields */
-        bayer_pack_uint64(&ptr, elem->mode);
-        bayer_pack_uint64(&ptr, elem->uid);
-        bayer_pack_uint64(&ptr, elem->gid);
-        bayer_pack_uint64(&ptr, elem->atime);
-        bayer_pack_uint64(&ptr, elem->atime_nsec);
-        bayer_pack_uint64(&ptr, elem->mtime);
-        bayer_pack_uint64(&ptr, elem->mtime_nsec);
-        bayer_pack_uint64(&ptr, elem->ctime);
-        bayer_pack_uint64(&ptr, elem->ctime_nsec);
-        bayer_pack_uint64(&ptr, elem->size);
+        mfu_pack_uint64(&ptr, elem->mode);
+        mfu_pack_uint64(&ptr, elem->uid);
+        mfu_pack_uint64(&ptr, elem->gid);
+        mfu_pack_uint64(&ptr, elem->atime);
+        mfu_pack_uint64(&ptr, elem->atime_nsec);
+        mfu_pack_uint64(&ptr, elem->mtime);
+        mfu_pack_uint64(&ptr, elem->mtime_nsec);
+        mfu_pack_uint64(&ptr, elem->ctime);
+        mfu_pack_uint64(&ptr, elem->ctime_nsec);
+        mfu_pack_uint64(&ptr, elem->size);
     }
     else {
         /* just have the file type */
-        bayer_pack_uint32(&ptr, elem->type);
+        mfu_pack_uint32(&ptr, elem->type);
     }
 
     size_t bytes = (size_t)(ptr - start);
@@ -160,45 +160,45 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
 
     /* extract detail field */
     uint32_t detail;
-    bayer_unpack_uint32(&ptr, &detail);
+    mfu_unpack_uint32(&ptr, &detail);
 
     /* extract length of file name field */
     uint32_t chars;
-    bayer_unpack_uint32(&ptr, &chars);
+    mfu_unpack_uint32(&ptr, &chars);
 
     /* get name and advance pointer */
     const char* file = ptr;
     ptr += chars;
 
     /* copy path */
-    elem->file = BAYER_STRDUP(file);
+    elem->file = MFU_STRDUP(file);
 
     /* set depth */
-    elem->depth = bayer_flist_compute_depth(file);
+    elem->depth = mfu_flist_compute_depth(file);
 
     elem->detail = (int) detail;
 
     if (detail) {
         /* extract fields */
-        bayer_unpack_uint64(&ptr, &elem->mode);
-        bayer_unpack_uint64(&ptr, &elem->uid);
-        bayer_unpack_uint64(&ptr, &elem->gid);
-        bayer_unpack_uint64(&ptr, &elem->atime);
-        bayer_unpack_uint64(&ptr, &elem->atime_nsec);
-        bayer_unpack_uint64(&ptr, &elem->mtime);
-        bayer_unpack_uint64(&ptr, &elem->mtime_nsec);
-        bayer_unpack_uint64(&ptr, &elem->ctime);
-        bayer_unpack_uint64(&ptr, &elem->ctime_nsec);
-        bayer_unpack_uint64(&ptr, &elem->size);
+        mfu_unpack_uint64(&ptr, &elem->mode);
+        mfu_unpack_uint64(&ptr, &elem->uid);
+        mfu_unpack_uint64(&ptr, &elem->gid);
+        mfu_unpack_uint64(&ptr, &elem->atime);
+        mfu_unpack_uint64(&ptr, &elem->atime_nsec);
+        mfu_unpack_uint64(&ptr, &elem->mtime);
+        mfu_unpack_uint64(&ptr, &elem->mtime_nsec);
+        mfu_unpack_uint64(&ptr, &elem->ctime);
+        mfu_unpack_uint64(&ptr, &elem->ctime_nsec);
+        mfu_unpack_uint64(&ptr, &elem->size);
 
         /* use mode to set file type */
-        elem->type = bayer_flist_mode_to_filetype((mode_t)elem->mode);
+        elem->type = mfu_flist_mode_to_filetype((mode_t)elem->mode);
     }
     else {
         /* only have type */
         uint32_t type;
-        bayer_unpack_uint32(&ptr, &type);
-        elem->type = (bayer_filetype) type;
+        mfu_unpack_uint32(&ptr, &type);
+        elem->type = (mfu_filetype) type;
     }
 
     size_t bytes = (size_t)(ptr - start);
@@ -206,7 +206,7 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
 }
 
 /* append element to tail of linked list */
-void bayer_flist_insert_elem(flist_t* flist, elem_t* elem)
+void mfu_flist_insert_elem(flist_t* flist, elem_t* elem)
 {
     /* set head if this is the first item */
     if (flist->list_head == NULL) {
@@ -227,7 +227,7 @@ void bayer_flist_insert_elem(flist_t* flist, elem_t* elem)
     flist->list_count++;
 
     /* delete the index if we have one, it's out of date */
-    bayer_free(&flist->list_index);
+    mfu_free(&flist->list_index);
 
     return;
 }
@@ -236,10 +236,10 @@ void bayer_flist_insert_elem(flist_t* flist, elem_t* elem)
 static void list_insert_copy(flist_t* flist, elem_t* src)
 {
     /* create new element */
-    elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
+    elem_t* elem = (elem_t*) MFU_MALLOC(sizeof(elem_t));
 
     /* copy values from source */
-    elem->file       = BAYER_STRDUP(src->file);
+    elem->file       = MFU_STRDUP(src->file);
     elem->depth      = src->depth;
     elem->type       = src->type;
     elem->detail     = src->detail;
@@ -255,7 +255,7 @@ static void list_insert_copy(flist_t* flist, elem_t* src)
     elem->size       = src->size;
 
     /* append element to tail of linked list */
-    bayer_flist_insert_elem(flist, elem);
+    mfu_flist_insert_elem(flist, elem);
 
     return;
 }
@@ -266,8 +266,8 @@ static void list_delete(flist_t* flist)
     elem_t* current = flist->list_head;
     while (current != NULL) {
         elem_t* next = current->next;
-        bayer_free(&current->file);
-        bayer_free(&current);
+        mfu_free(&current->file);
+        mfu_free(&current);
         current = next;
     }
     flist->list_count = 0;
@@ -275,7 +275,7 @@ static void list_delete(flist_t* flist)
     flist->list_tail  = NULL;
 
     /* delete the cached index */
-    bayer_free(&flist->list_index);
+    mfu_free(&flist->list_index);
 
     return;
 }
@@ -290,7 +290,7 @@ static elem_t* list_get_elem(flist_t* flist, uint64_t idx)
     if (flist->list_index == NULL) {
         /* allocate array to record pointer to each element */
         size_t index_size = max * sizeof(elem_t*);
-        flist->list_index = (elem_t**) BAYER_MALLOC(index_size);
+        flist->list_index = (elem_t**) MFU_MALLOC(index_size);
 
         /* get pointer to each element */
         uint64_t i = 0;
@@ -404,15 +404,15 @@ static void list_compute_summary(flist_t* flist)
  * File list user API
  ***************************************/
 
-/* create object that BAYER_FLIST_NULL points to */
+/* create object that MFU_FLIST_NULL points to */
 static flist_t flist_null;
-bayer_flist BAYER_FLIST_NULL = &flist_null;
+mfu_flist MFU_FLIST_NULL = &flist_null;
 
 /* allocate and initialize a new file list object */
-bayer_flist bayer_flist_new()
+mfu_flist mfu_flist_new()
 {
     /* allocate memory for file list, cast it to handle, initialize and return */
-    flist_t* flist = (flist_t*) BAYER_MALLOC(sizeof(flist_t));
+    flist_t* flist = (flist_t*) MFU_MALLOC(sizeof(flist_t));
 
     flist->detail = 0;
     flist->total_files = 0;
@@ -424,14 +424,14 @@ bayer_flist bayer_flist_new()
     flist->list_index = NULL;
 
     /* initialize user and group structures */
-    bayer_flist_usrgrp_init(flist);
+    mfu_flist_usrgrp_init(flist);
 
-    bayer_flist bflist = (bayer_flist) flist;
+    mfu_flist bflist = (mfu_flist) flist;
     return bflist;
 }
 
 /* free resouces in file list */
-void bayer_flist_free(bayer_flist* pbflist)
+void mfu_flist_free(mfu_flist* pbflist)
 {
     /* convert handle to flist_t */
     flist_t* flist = *(flist_t**)pbflist;
@@ -440,12 +440,12 @@ void bayer_flist_free(bayer_flist* pbflist)
     list_delete(flist);
 
     /* free user and group structures */
-    bayer_flist_usrgrp_free(flist);
+    mfu_flist_usrgrp_free(flist);
 
-    bayer_free(&flist);
+    mfu_free(&flist);
 
     /* set caller's pointer to NULL */
-    *pbflist = BAYER_FLIST_NULL;
+    *pbflist = MFU_FLIST_NULL;
 
     return;
 }
@@ -453,11 +453,11 @@ void bayer_flist_free(bayer_flist* pbflist)
 /* given an input list, split items into separate lists depending
  * on their depth, returns number of levels, minimum depth, and
  * array of lists as output */
-void bayer_flist_array_by_depth(
-    bayer_flist srclist,
+void mfu_flist_array_by_depth(
+    mfu_flist srclist,
     int* outlevels,
     int* outmin,
-    bayer_flist** outlists)
+    mfu_flist** outlists)
 {
     /* check that our pointers are valid */
     if (outlevels == NULL || outmin == NULL || outlists == NULL) {
@@ -470,38 +470,38 @@ void bayer_flist_array_by_depth(
     *outlists  = NULL;
 
     /* get total file count */
-    uint64_t total = bayer_flist_global_size(srclist);
+    uint64_t total = mfu_flist_global_size(srclist);
     if (total == 0) {
         return;
     }
 
     /* get min and max depths, determine number of levels,
      * allocate array of lists */
-    int min = bayer_flist_min_depth(srclist);
-    int max = bayer_flist_max_depth(srclist);
+    int min = mfu_flist_min_depth(srclist);
+    int max = mfu_flist_max_depth(srclist);
     int levels = max - min + 1;
-    bayer_flist* lists = (bayer_flist*) BAYER_MALLOC((size_t)levels * sizeof(bayer_flist));
+    mfu_flist* lists = (mfu_flist*) MFU_MALLOC((size_t)levels * sizeof(mfu_flist));
 
     /* create a list for each level */
     int i;
     for (i = 0; i < levels; i++) {
-        lists[i] = bayer_flist_subset(srclist);
+        lists[i] = mfu_flist_subset(srclist);
     }
 
     /* copy each item from source list to its corresponding level */
     uint64_t idx = 0;
-    uint64_t size = bayer_flist_size(srclist);
+    uint64_t size = mfu_flist_size(srclist);
     while (idx < size) {
-        int depth = bayer_flist_file_get_depth(srclist, idx);
+        int depth = mfu_flist_file_get_depth(srclist, idx);
         int depth_index = depth - min;
-        bayer_flist dstlist = lists[depth_index];
-        bayer_flist_file_copy(srclist, idx, dstlist);
+        mfu_flist dstlist = lists[depth_index];
+        mfu_flist_file_copy(srclist, idx, dstlist);
         idx++;
     }
 
     /* summarize each list */
     for (i = 0; i < levels; i++) {
-        bayer_flist_summarize(lists[i]);
+        mfu_flist_summarize(lists[i]);
     }
 
     /* set return parameters */
@@ -513,8 +513,8 @@ void bayer_flist_array_by_depth(
 }
 
 /* frees array of lists created in call to
- * bayer_flist_split_by_depth */
-void bayer_flist_array_free(int levels, bayer_flist** outlists)
+ * mfu_flist_split_by_depth */
+void mfu_flist_array_free(int levels, mfu_flist** outlists)
 {
     /* check that our pointer is valid */
     if (outlists == NULL) {
@@ -523,18 +523,18 @@ void bayer_flist_array_free(int levels, bayer_flist** outlists)
 
     /* free each list */
     int i;
-    bayer_flist* lists = *outlists;
+    mfu_flist* lists = *outlists;
     for (i = 0; i < levels; i++) {
-        bayer_flist_free(&lists[i]);
+        mfu_flist_free(&lists[i]);
     }
 
     /* free the array of lists and set caller's pointer to NULL */
-    bayer_free(outlists);
+    mfu_free(outlists);
     return;
 }
 
 /* return number of files across all procs */
-uint64_t bayer_flist_global_size(bayer_flist bflist)
+uint64_t mfu_flist_global_size(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     uint64_t val = flist->total_files;
@@ -543,7 +543,7 @@ uint64_t bayer_flist_global_size(bayer_flist bflist)
 
 /* returns the global index of first item on this rank,
  * when placing items in rank order */
-uint64_t bayer_flist_global_offset(bayer_flist bflist)
+uint64_t mfu_flist_global_offset(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     uint64_t val = flist->offset;
@@ -551,7 +551,7 @@ uint64_t bayer_flist_global_offset(bayer_flist bflist)
 }
 
 /* return number of files in local list */
-uint64_t bayer_flist_size(bayer_flist bflist)
+uint64_t mfu_flist_size(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     uint64_t val = flist->list_count;
@@ -559,7 +559,7 @@ uint64_t bayer_flist_size(bayer_flist bflist)
 }
 
 /* return number of users */
-uint64_t bayer_flist_user_count(bayer_flist bflist)
+uint64_t mfu_flist_user_count(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     uint64_t val = flist->total_users;
@@ -567,7 +567,7 @@ uint64_t bayer_flist_user_count(bayer_flist bflist)
 }
 
 /* return number of groups */
-uint64_t bayer_flist_group_count(bayer_flist bflist)
+uint64_t mfu_flist_group_count(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     uint64_t val = flist->total_groups;
@@ -575,7 +575,7 @@ uint64_t bayer_flist_group_count(bayer_flist bflist)
 }
 
 /* return maximum length of file names */
-uint64_t bayer_flist_file_max_name(bayer_flist bflist)
+uint64_t mfu_flist_file_max_name(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     uint64_t val = flist->max_file_name;
@@ -583,7 +583,7 @@ uint64_t bayer_flist_file_max_name(bayer_flist bflist)
 }
 
 /* return maximum length of user names */
-uint64_t bayer_flist_user_max_name(bayer_flist bflist)
+uint64_t mfu_flist_user_max_name(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     uint64_t val = flist->max_user_name;
@@ -591,7 +591,7 @@ uint64_t bayer_flist_user_max_name(bayer_flist bflist)
 }
 
 /* return maximum length of group names */
-uint64_t bayer_flist_group_max_name(bayer_flist bflist)
+uint64_t mfu_flist_group_max_name(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     uint64_t val = flist->max_group_name;
@@ -599,7 +599,7 @@ uint64_t bayer_flist_group_max_name(bayer_flist bflist)
 }
 
 /* return min depth */
-int bayer_flist_min_depth(bayer_flist bflist)
+int mfu_flist_min_depth(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     int val = flist->min_depth;
@@ -607,21 +607,21 @@ int bayer_flist_min_depth(bayer_flist bflist)
 }
 
 /* return max depth */
-int bayer_flist_max_depth(bayer_flist bflist)
+int mfu_flist_max_depth(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     int val = flist->max_depth;
     return val;
 }
 
-int bayer_flist_have_detail(bayer_flist bflist)
+int mfu_flist_have_detail(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     int val = flist->detail;
     return val;
 }
 
-const char* bayer_flist_file_get_name(bayer_flist bflist, uint64_t idx)
+const char* mfu_flist_file_get_name(mfu_flist bflist, uint64_t idx)
 {
     const char* name = NULL;
     flist_t* flist = (flist_t*) bflist;
@@ -632,7 +632,7 @@ const char* bayer_flist_file_get_name(bayer_flist bflist, uint64_t idx)
     return name;
 }
 
-int bayer_flist_file_get_depth(bayer_flist bflist, uint64_t idx)
+int mfu_flist_file_get_depth(mfu_flist bflist, uint64_t idx)
 {
     int depth = -1;
     flist_t* flist = (flist_t*) bflist;
@@ -643,9 +643,9 @@ int bayer_flist_file_get_depth(bayer_flist bflist, uint64_t idx)
     return depth;
 }
 
-bayer_filetype bayer_flist_file_get_type(bayer_flist bflist, uint64_t idx)
+mfu_filetype mfu_flist_file_get_type(mfu_flist bflist, uint64_t idx)
 {
-    bayer_filetype type = BAYER_TYPE_NULL;
+    mfu_filetype type = MFU_TYPE_NULL;
     flist_t* flist = (flist_t*) bflist;
     elem_t* elem = list_get_elem(flist, idx);
     if (elem != NULL) {
@@ -654,7 +654,7 @@ bayer_filetype bayer_flist_file_get_type(bayer_flist bflist, uint64_t idx)
     return type;
 }
 
-uint64_t bayer_flist_file_get_mode(bayer_flist bflist, uint64_t idx)
+uint64_t mfu_flist_file_get_mode(mfu_flist bflist, uint64_t idx)
 {
     uint64_t mode = 0;
     flist_t* flist = (flist_t*) bflist;
@@ -665,7 +665,7 @@ uint64_t bayer_flist_file_get_mode(bayer_flist bflist, uint64_t idx)
     return mode;
 }
 
-uint64_t bayer_flist_file_get_uid(bayer_flist bflist, uint64_t idx)
+uint64_t mfu_flist_file_get_uid(mfu_flist bflist, uint64_t idx)
 {
     uint64_t ret = (uint64_t) - 1;
     flist_t* flist = (flist_t*) bflist;
@@ -676,7 +676,7 @@ uint64_t bayer_flist_file_get_uid(bayer_flist bflist, uint64_t idx)
     return ret;
 }
 
-uint64_t bayer_flist_file_get_gid(bayer_flist bflist, uint64_t idx)
+uint64_t mfu_flist_file_get_gid(mfu_flist bflist, uint64_t idx)
 {
     uint64_t ret = (uint64_t) - 1;
     flist_t* flist = (flist_t*) bflist;
@@ -687,7 +687,7 @@ uint64_t bayer_flist_file_get_gid(bayer_flist bflist, uint64_t idx)
     return ret;
 }
 
-uint64_t bayer_flist_file_get_atime(bayer_flist bflist, uint64_t idx)
+uint64_t mfu_flist_file_get_atime(mfu_flist bflist, uint64_t idx)
 {
     uint64_t ret = (uint64_t) - 1;
     flist_t* flist = (flist_t*) bflist;
@@ -698,7 +698,7 @@ uint64_t bayer_flist_file_get_atime(bayer_flist bflist, uint64_t idx)
     return ret;
 }
 
-uint64_t bayer_flist_file_get_atime_nsec(bayer_flist bflist, uint64_t idx)
+uint64_t mfu_flist_file_get_atime_nsec(mfu_flist bflist, uint64_t idx)
 {
     uint64_t ret = (uint64_t) - 1;
     flist_t* flist = (flist_t*) bflist;
@@ -709,7 +709,7 @@ uint64_t bayer_flist_file_get_atime_nsec(bayer_flist bflist, uint64_t idx)
     return ret;
 }
 
-uint64_t bayer_flist_file_get_mtime(bayer_flist bflist, uint64_t idx)
+uint64_t mfu_flist_file_get_mtime(mfu_flist bflist, uint64_t idx)
 {
     uint64_t ret = (uint64_t) - 1;
     flist_t* flist = (flist_t*) bflist;
@@ -720,7 +720,7 @@ uint64_t bayer_flist_file_get_mtime(bayer_flist bflist, uint64_t idx)
     return ret;
 }
 
-uint64_t bayer_flist_file_get_mtime_nsec(bayer_flist bflist, uint64_t idx)
+uint64_t mfu_flist_file_get_mtime_nsec(mfu_flist bflist, uint64_t idx)
 {
     uint64_t ret = (uint64_t) - 1;
     flist_t* flist = (flist_t*) bflist;
@@ -731,7 +731,7 @@ uint64_t bayer_flist_file_get_mtime_nsec(bayer_flist bflist, uint64_t idx)
     return ret;
 }
 
-uint64_t bayer_flist_file_get_ctime(bayer_flist bflist, uint64_t idx)
+uint64_t mfu_flist_file_get_ctime(mfu_flist bflist, uint64_t idx)
 {
     uint64_t ret = (uint64_t) - 1;
     flist_t* flist = (flist_t*) bflist;
@@ -742,7 +742,7 @@ uint64_t bayer_flist_file_get_ctime(bayer_flist bflist, uint64_t idx)
     return ret;
 }
 
-uint64_t bayer_flist_file_get_ctime_nsec(bayer_flist bflist, uint64_t idx)
+uint64_t mfu_flist_file_get_ctime_nsec(mfu_flist bflist, uint64_t idx)
 {
     uint64_t ret = (uint64_t) - 1;
     flist_t* flist = (flist_t*) bflist;
@@ -753,7 +753,7 @@ uint64_t bayer_flist_file_get_ctime_nsec(bayer_flist bflist, uint64_t idx)
     return ret;
 }
 
-uint64_t bayer_flist_file_get_size(bayer_flist bflist, uint64_t idx)
+uint64_t mfu_flist_file_get_size(mfu_flist bflist, uint64_t idx)
 {
     uint64_t ret = (uint64_t) - 1;
     flist_t* flist = (flist_t*) bflist;
@@ -764,32 +764,32 @@ uint64_t bayer_flist_file_get_size(bayer_flist bflist, uint64_t idx)
     return ret;
 }
 
-const char* bayer_flist_file_get_username(bayer_flist bflist, uint64_t idx)
+const char* mfu_flist_file_get_username(mfu_flist bflist, uint64_t idx)
 {
     const char* ret = NULL;
     flist_t* flist = (flist_t*) bflist;
     if (flist->detail) {
-        uint64_t id = bayer_flist_file_get_uid(bflist, idx);
-        ret = bayer_flist_usrgrp_get_name_from_id(flist->user_id2name, id);
+        uint64_t id = mfu_flist_file_get_uid(bflist, idx);
+        ret = mfu_flist_usrgrp_get_name_from_id(flist->user_id2name, id);
     }
     return ret;
 }
 
-const char* bayer_flist_file_get_groupname(bayer_flist bflist, uint64_t idx)
+const char* mfu_flist_file_get_groupname(mfu_flist bflist, uint64_t idx)
 {
     const char* ret = NULL;
     flist_t* flist = (flist_t*) bflist;
     if (flist->detail) {
-        uint64_t id = bayer_flist_file_get_gid(bflist, idx);
-        ret = bayer_flist_usrgrp_get_name_from_id(flist->group_id2name, id);
+        uint64_t id = mfu_flist_file_get_gid(bflist, idx);
+        ret = mfu_flist_usrgrp_get_name_from_id(flist->group_id2name, id);
     }
     return ret;
 }
 
-bayer_flist bayer_flist_subset(bayer_flist src)
+mfu_flist mfu_flist_subset(mfu_flist src)
 {
     /* allocate a new file list */
-    bayer_flist bflist = bayer_flist_new();
+    mfu_flist bflist = mfu_flist_new();
 
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
@@ -798,7 +798,7 @@ bayer_flist bayer_flist_subset(bayer_flist src)
     /* copy user and groups if we have them */
     flist->detail = srclist->detail;
     if (srclist->detail) {
-        bayer_flist_usrgrp_copy(srclist, flist);
+        mfu_flist_usrgrp_copy(srclist, flist);
     }
 
     return bflist;
@@ -807,10 +807,10 @@ bayer_flist bayer_flist_subset(bayer_flist src)
 /* given an input flist, return a newly allocated flist consisting of 
  * a filtered set by finding all items that match/don't match a given
  * regular expression */
-bayer_flist bayer_flist_filter_regex(bayer_flist flist, const char* regex_exp, int exclude, int name)
+mfu_flist mfu_flist_filter_regex(mfu_flist flist, const char* regex_exp, int exclude, int name)
 {
     /* create our list to return */
-    bayer_flist dest = bayer_flist_subset(flist);
+    mfu_flist dest = mfu_flist_subset(flist);
 
     /* check if user passed in an expression, if so then filter the list */
     if (regex_exp != NULL) {
@@ -818,21 +818,21 @@ bayer_flist bayer_flist_filter_regex(bayer_flist flist, const char* regex_exp, i
         regex_t regex;
         int regex_return = regcomp(&regex, regex_exp, 0);
         if (regex_return) {
-            BAYER_ABORT(-1, "Could not compile regex: `%s' rc=%d\n", regex_exp, regex_return);
+            MFU_ABORT(-1, "Could not compile regex: `%s' rc=%d\n", regex_exp, regex_return);
         }
 
         /* copy the things that don't or do (based on input) match the regex into a
          * filtered list */
         uint64_t idx = 0;
-        uint64_t size = bayer_flist_size(flist);
+        uint64_t size = mfu_flist_size(flist);
         while (idx < size) {
             /* get full path of item */
-            const char* file_name = bayer_flist_file_get_name(flist, idx);
+            const char* file_name = mfu_flist_file_get_name(flist, idx);
 
             /* get basename of item (exclude the path) */
-            bayer_path* pathname = bayer_path_from_str(file_name);
-            bayer_path_basename(pathname);
-            char* base = bayer_path_strdup(pathname);
+            mfu_path* pathname = mfu_path_from_str(file_name);
+            mfu_path_basename(pathname);
+            char* base = mfu_path_strdup(pathname);
 
             /* execute regex on item, either against the basename or
              * the full path depending on name flag */
@@ -850,33 +850,33 @@ bayer_flist bayer_flist_filter_regex(bayer_flist flist, const char* regex_exp, i
                 /* user wants to exclude items that match, so copy everything that
                  * does not match */
                 if (regex_return == REG_NOMATCH) {
-                    bayer_flist_file_copy(flist, idx, dest);
+                    mfu_flist_file_copy(flist, idx, dest);
                 }
             }
             else {
                 /* user wants to copy over any matching items */
                 if (regex_return == 0) {
-                    bayer_flist_file_copy(flist, idx, dest);
+                    mfu_flist_file_copy(flist, idx, dest);
                 }
             }
 
             /* free the basename */
-            bayer_free(&base);
-            bayer_path_delete(&pathname);
+            mfu_free(&base);
+            mfu_path_delete(&pathname);
 
             /* get next item in our list */
             idx++;
         }
 
         /* summarize the filtered list */
-        bayer_flist_summarize(dest);
+        mfu_flist_summarize(dest);
     }
 
     /* return the filtered list */
     return dest;
 }
 
-void bayer_flist_file_copy(bayer_flist bsrc, uint64_t idx, bayer_flist bdst)
+void mfu_flist_file_copy(mfu_flist bsrc, uint64_t idx, mfu_flist bdst)
 {
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bsrc;
@@ -888,14 +888,14 @@ void bayer_flist_file_copy(bayer_flist bsrc, uint64_t idx, bayer_flist bdst)
     return;
 }
 
-size_t bayer_flist_file_pack_size(bayer_flist bflist)
+size_t mfu_flist_file_pack_size(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
     size_t size = list_elem_pack2_size(flist->detail, flist->max_file_name, NULL);
     return size;
 }
 
-size_t bayer_flist_file_pack(void* buf, bayer_flist bflist, uint64_t idx)
+size_t mfu_flist_file_pack(void* buf, mfu_flist bflist, uint64_t idx)
 {
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
@@ -907,22 +907,22 @@ size_t bayer_flist_file_pack(void* buf, bayer_flist bflist, uint64_t idx)
     return 0;
 }
 
-size_t bayer_flist_file_unpack(const void* buf, bayer_flist bflist)
+size_t mfu_flist_file_unpack(const void* buf, mfu_flist bflist)
 {
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
-    elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
+    elem_t* elem = (elem_t*) MFU_MALLOC(sizeof(elem_t));
     size_t size = list_elem_unpack2(buf, elem);
-    bayer_flist_insert_elem(flist, elem);
+    mfu_flist_insert_elem(flist, elem);
     return size;
 }
 
-int bayer_flist_summarize(bayer_flist bflist)
+int mfu_flist_summarize(mfu_flist bflist)
 {
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
     list_compute_summary(flist);
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /*****************************
@@ -932,9 +932,9 @@ int bayer_flist_summarize(bayer_flist bflist)
 /* for given depth, hash directory name and map to processes to
  * test whether having all files in same directory on one process
  * matters */
-size_t bayer_flist_distribute_map(bayer_flist list, char** buffer,
-                                  bayer_flist_name_encode_fn encode,
-                                  bayer_flist_map_fn map, void* args)
+size_t mfu_flist_distribute_map(mfu_flist list, char** buffer,
+                                  mfu_flist_name_encode_fn encode,
+                                  mfu_flist_map_fn map, void* args)
 {
     uint64_t idx;
 
@@ -944,11 +944,11 @@ size_t bayer_flist_distribute_map(bayer_flist list, char** buffer,
 
     /* allocate arrays for alltoall */
     size_t bufsize = (size_t)ranks * sizeof(int);
-    int* sendsizes  = (int*) BAYER_MALLOC(bufsize);
-    int* senddisps  = (int*) BAYER_MALLOC(bufsize);
-    int* sendoffset = (int*) BAYER_MALLOC(bufsize);
-    int* recvsizes  = (int*) BAYER_MALLOC(bufsize);
-    int* recvdisps  = (int*) BAYER_MALLOC(bufsize);
+    int* sendsizes  = (int*) MFU_MALLOC(bufsize);
+    int* senddisps  = (int*) MFU_MALLOC(bufsize);
+    int* sendoffset = (int*) MFU_MALLOC(bufsize);
+    int* recvsizes  = (int*) MFU_MALLOC(bufsize);
+    int* recvdisps  = (int*) MFU_MALLOC(bufsize);
 
     /* initialize sendsizes and offsets */
     int i;
@@ -959,7 +959,7 @@ size_t bayer_flist_distribute_map(bayer_flist list, char** buffer,
 
     /* compute number of bytes we'll send to each rank */
     size_t sendbytes = 0;
-    uint64_t size = bayer_flist_size(list);
+    uint64_t size = mfu_flist_size(list);
     for (idx = 0; idx < size; idx++) {
         int dest = map(list, idx, ranks, args);
 
@@ -977,7 +977,7 @@ size_t bayer_flist_distribute_map(bayer_flist list, char** buffer,
     }
 
     /* allocate space */
-    char* sendbuf = (char*) BAYER_MALLOC(sendbytes);
+    char* sendbuf = (char*) MFU_MALLOC(sendbytes);
 
     /* copy data into buffer */
     for (idx = 0; idx < size; idx++) {
@@ -1006,7 +1006,7 @@ size_t bayer_flist_distribute_map(bayer_flist list, char** buffer,
     }
 
     /* allocate recvbuf */
-    char* recvbuf = (char*) BAYER_MALLOC(recvbytes);
+    char* recvbuf = (char*) MFU_MALLOC(recvbytes);
 
     /* alltoallv to send data */
     MPI_Alltoallv(
@@ -1015,12 +1015,12 @@ size_t bayer_flist_distribute_map(bayer_flist list, char** buffer,
     );
 
     /* free memory */
-    bayer_free(&recvdisps);
-    bayer_free(&recvsizes);
-    bayer_free(&sendbuf);
-    bayer_free(&sendoffset);
-    bayer_free(&senddisps);
-    bayer_free(&sendsizes);
+    mfu_free(&recvdisps);
+    mfu_free(&recvsizes);
+    mfu_free(&sendbuf);
+    mfu_free(&sendoffset);
+    mfu_free(&senddisps);
+    mfu_free(&sendsizes);
 
     *buffer = recvbuf;
     return recvbytes;
@@ -1029,13 +1029,13 @@ size_t bayer_flist_distribute_map(bayer_flist list, char** buffer,
 /* given an input list and a map function pointer, call map function
  * for each item in list, identify new rank to send item to and then
  * exchange items among ranks and return new output list */
-bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, const void* args)
+mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args)
 {
     uint64_t idx;
 
     /* create new list as subset (actually will be a remapping of
      * input list */
-    bayer_flist newlist = bayer_flist_subset(list);
+    mfu_flist newlist = mfu_flist_subset(list);
 
     /* get our rank and number of ranks in job */
     int ranks;
@@ -1043,11 +1043,11 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, const vo
 
     /* allocate arrays for alltoall */
     size_t bufsize = (size_t)ranks * sizeof(int);
-    int* sendsizes  = (int*) BAYER_MALLOC(bufsize);
-    int* senddisps  = (int*) BAYER_MALLOC(bufsize);
-    int* sendoffset = (int*) BAYER_MALLOC(bufsize);
-    int* recvsizes  = (int*) BAYER_MALLOC(bufsize);
-    int* recvdisps  = (int*) BAYER_MALLOC(bufsize);
+    int* sendsizes  = (int*) MFU_MALLOC(bufsize);
+    int* senddisps  = (int*) MFU_MALLOC(bufsize);
+    int* sendoffset = (int*) MFU_MALLOC(bufsize);
+    int* recvsizes  = (int*) MFU_MALLOC(bufsize);
+    int* recvdisps  = (int*) MFU_MALLOC(bufsize);
 
     /* initialize sendsizes and offsets */
     int i;
@@ -1057,10 +1057,10 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, const vo
     }
 
     /* get number of elements in our local list */
-    uint64_t size = bayer_flist_size(list);
+    uint64_t size = mfu_flist_size(list);
 
     /* allocate space to record file-to-rank mapping */
-    int* file2rank = (int*) BAYER_MALLOC(size * sizeof(int));
+    int* file2rank = (int*) MFU_MALLOC(size * sizeof(int));
 
     /* call map function for each item to identify its new rank,
      * and compute number of bytes we'll send to each rank */
@@ -1075,7 +1075,7 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, const vo
 
         /* TODO: check that pack size doesn't overflow int */
         /* total number of bytes we'll send to each rank and the total overall */
-        size_t count = bayer_flist_file_pack_size(list);
+        size_t count = mfu_flist_file_pack_size(list);
         sendsizes[dest] += (int) count;
         sendbytes += count;
     }
@@ -1087,7 +1087,7 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, const vo
     }
 
     /* allocate space for send buffer */
-    char* sendbuf = (char*) BAYER_MALLOC(sendbytes);
+    char* sendbuf = (char*) MFU_MALLOC(sendbytes);
 
     /* copy data into send buffer */
     for (idx = 0; idx < size; idx++) {
@@ -1096,7 +1096,7 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, const vo
 
         /* get pointer into send buffer and pack item */
         char* ptr = sendbuf + senddisps[dest] + sendoffset[dest];
-        size_t count = bayer_flist_file_pack(ptr, list, idx);
+        size_t count = mfu_flist_file_pack(ptr, list, idx);
 
         /* TODO: check that pack size doesn't overflow int */
         /* bump up the offset for this rank */
@@ -1117,7 +1117,7 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, const vo
     }
 
     /* allocate recvbuf */
-    char* recvbuf = (char*) BAYER_MALLOC(recvbytes);
+    char* recvbuf = (char*) MFU_MALLOC(recvbytes);
 
     /* alltoallv to send data */
     MPI_Alltoallv(
@@ -1129,34 +1129,34 @@ bayer_flist bayer_flist_remap(bayer_flist list, bayer_flist_map_fn map, const vo
     char* ptr = recvbuf;
     char* recvend = recvbuf + recvbytes;
     while (ptr < recvend) {
-        size_t count = bayer_flist_file_unpack(ptr, newlist);
+        size_t count = mfu_flist_file_unpack(ptr, newlist);
         ptr += count;
     }
-    bayer_flist_summarize(newlist);
+    mfu_flist_summarize(newlist);
 
     /* free memory */
-    bayer_free(&file2rank);
-    bayer_free(&recvbuf);
-    bayer_free(&recvdisps);
-    bayer_free(&recvsizes);
-    bayer_free(&sendbuf);
-    bayer_free(&sendoffset);
-    bayer_free(&senddisps);
-    bayer_free(&sendsizes);
+    mfu_free(&file2rank);
+    mfu_free(&recvbuf);
+    mfu_free(&recvdisps);
+    mfu_free(&recvsizes);
+    mfu_free(&sendbuf);
+    mfu_free(&sendoffset);
+    mfu_free(&senddisps);
+    mfu_free(&sendsizes);
 
     /* return list to caller */
     return newlist;
 }
 
 /* map function to evenly spread list among ranks, using block allocation */
-static int map_spread(bayer_flist flist, uint64_t idx, int ranks, void* args)
+static int map_spread(mfu_flist flist, uint64_t idx, int ranks, void* args)
 {
     /* compute global index of this item */
-    uint64_t offset = bayer_flist_global_offset(flist);
+    uint64_t offset = mfu_flist_global_offset(flist);
     uint64_t global_idx = offset + idx;
 
     /* get global size of the list */
-    uint64_t global_size = bayer_flist_global_size(flist);
+    uint64_t global_size = mfu_flist_global_size(flist);
 
     /* get whole number of items on each rank */
     uint64_t items_per_rank = global_size / (uint64_t)ranks;
@@ -1187,15 +1187,15 @@ static int map_spread(bayer_flist flist, uint64_t idx, int ranks, void* args)
 
 /* This takes in a list, spreads it out evenly, and then returns the newly created 
  * list to the caller */
-bayer_flist bayer_flist_spread(bayer_flist flist)
+mfu_flist mfu_flist_spread(mfu_flist flist)
 {
     /* remap files to evenly distribute items to processes */
-    bayer_flist newlist = bayer_flist_remap(flist, map_spread, NULL);
+    mfu_flist newlist = mfu_flist_remap(flist, map_spread, NULL);
     return newlist;
 }
 
 /* print information about a file given the index and rank (used in print_files) */
-static void print_file(bayer_flist flist, uint64_t idx)
+static void print_file(mfu_flist flist, uint64_t idx)
 {
     /* store types as strings for print_file */
     char type_str_unknown[] = "UNK";
@@ -1204,20 +1204,20 @@ static void print_file(bayer_flist flist, uint64_t idx)
     char type_str_link[]    = "LNK";
 
     /* get filename */
-    const char* file = bayer_flist_file_get_name(flist, idx);
+    const char* file = mfu_flist_file_get_name(flist, idx);
 
-    if (bayer_flist_have_detail(flist)) {
+    if (mfu_flist_have_detail(flist)) {
         /* get mode */
-        mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, idx);
+        mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
 
-        //uint32_t uid = (uint32_t) bayer_flist_file_get_uid(flist, idx);
-        //uint32_t gid = (uint32_t) bayer_flist_file_get_gid(flist, idx);
-        uint64_t acc = bayer_flist_file_get_atime(flist, idx);
-        uint64_t mod = bayer_flist_file_get_mtime(flist, idx);
-        uint64_t cre = bayer_flist_file_get_ctime(flist, idx);
-        uint64_t size = bayer_flist_file_get_size(flist, idx);
-        const char* username  = bayer_flist_file_get_username(flist, idx);
-        const char* groupname = bayer_flist_file_get_groupname(flist, idx);
+        //uint32_t uid = (uint32_t) mfu_flist_file_get_uid(flist, idx);
+        //uint32_t gid = (uint32_t) mfu_flist_file_get_gid(flist, idx);
+        uint64_t acc = mfu_flist_file_get_atime(flist, idx);
+        uint64_t mod = mfu_flist_file_get_mtime(flist, idx);
+        uint64_t cre = mfu_flist_file_get_ctime(flist, idx);
+        uint64_t size = mfu_flist_file_get_size(flist, idx);
+        const char* username  = mfu_flist_file_get_username(flist, idx);
+        const char* groupname = mfu_flist_file_get_groupname(flist, idx);
 
         char access_s[30];
         char modify_s[30];
@@ -1237,11 +1237,11 @@ static void print_file(bayer_flist flist, uint64_t idx)
         }
 
         char mode_format[11];
-        bayer_format_mode(mode, mode_format);
+        mfu_format_mode(mode, mode_format);
 
         double size_tmp;
         const char* size_units;
-        bayer_format_bytes(size, &size_tmp, &size_units);
+        mfu_format_bytes(size, &size_tmp, &size_units);
 
         printf("%s %s %s %7.3f %2s %s %s\n",
                mode_format, username, groupname,
@@ -1260,15 +1260,15 @@ static void print_file(bayer_flist flist, uint64_t idx)
     }
     else {
         /* get type */
-        bayer_filetype type = bayer_flist_file_get_type(flist, idx);
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
         char* type_str = type_str_unknown;
-        if (type == BAYER_TYPE_DIR) {
+        if (type == MFU_TYPE_DIR) {
             type_str = type_str_dir;
         }
-        else if (type == BAYER_TYPE_FILE) {
+        else if (type == MFU_TYPE_FILE) {
             type_str = type_str_file;
         }
-        else if (type == BAYER_TYPE_LINK) {
+        else if (type == MFU_TYPE_LINK) {
             type_str = type_str_link;
         }
 
@@ -1279,16 +1279,16 @@ static void print_file(bayer_flist flist, uint64_t idx)
 }
 
 /* given a list of files print from the start to end of the list */
-void bayer_flist_print(bayer_flist flist)
+void mfu_flist_print(mfu_flist flist)
 {
     /* number of items to print from start and end of list */
     uint64_t range = 10;
 
     /* allocate send and receive buffers */
-    size_t pack_size = bayer_flist_file_pack_size(flist);
+    size_t pack_size = mfu_flist_file_pack_size(flist);
     size_t bufsize = 2 * range * pack_size;
-    void* sendbuf = BAYER_MALLOC(bufsize);
-    void* recvbuf = BAYER_MALLOC(bufsize);
+    void* sendbuf = MFU_MALLOC(bufsize);
+    void* recvbuf = MFU_MALLOC(bufsize);
 
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -1297,9 +1297,9 @@ void bayer_flist_print(bayer_flist flist)
 
     /* identify the number of items we have, the total number,
      * and our offset in the global list */
-    uint64_t count  = bayer_flist_size(flist);
-    uint64_t total  = bayer_flist_global_size(flist);
-    uint64_t offset = bayer_flist_global_offset(flist);
+    uint64_t count  = mfu_flist_size(flist);
+    uint64_t total  = mfu_flist_global_size(flist);
+    uint64_t offset = mfu_flist_global_offset(flist);
 
     /* count the number of items we'll send */
     int num = 0;
@@ -1313,8 +1313,8 @@ void bayer_flist_print(bayer_flist flist)
     }
 
     /* allocate arrays to store counts and displacements */
-    int* counts = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
-    int* disps  = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
+    int* counts = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
+    int* disps  = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
 
     /* tell rank 0 where the data is coming from */
     int bytes = num * (int)pack_size;
@@ -1326,7 +1326,7 @@ void bayer_flist_print(bayer_flist flist)
     while (idx < count) {
         uint64_t global = offset + idx;
         if (global < range || (total - global) <= range) {
-            ptr += bayer_flist_file_pack(ptr, flist, idx);
+            ptr += mfu_flist_file_pack(ptr, flist, idx);
         }
         idx++;
     }
@@ -1347,26 +1347,26 @@ void bayer_flist_print(bayer_flist flist)
     MPI_Gatherv(sendbuf, bytes, MPI_BYTE, recvbuf, counts, disps, MPI_BYTE, 0, MPI_COMM_WORLD);
 
     /* create temporary list to unpack items into */
-    bayer_flist tmplist = bayer_flist_subset(flist);
+    mfu_flist tmplist = mfu_flist_subset(flist);
 
     /* unpack items into new list */
     if (rank == 0) {
         ptr = (char*) recvbuf;
         char* end = ptr + recvbytes;
         while (ptr < end) {
-            bayer_flist_file_unpack(ptr, tmplist);
+            mfu_flist_file_unpack(ptr, tmplist);
             ptr += pack_size;
         }
     }
 
     /* summarize list */
-    bayer_flist_summarize(tmplist);
+    mfu_flist_summarize(tmplist);
 
     /* print files */
     if (rank == 0) {
         printf("\n");
         uint64_t tmpidx = 0;
-        uint64_t tmpsize = bayer_flist_size(tmplist);
+        uint64_t tmpsize = mfu_flist_size(tmplist);
         while (tmpidx < tmpsize) {
             print_file(tmplist, tmpidx);
             tmpidx++;
@@ -1379,13 +1379,13 @@ void bayer_flist_print(bayer_flist flist)
     }
 
     /* free our temporary list */
-    bayer_flist_free(&tmplist);
+    mfu_flist_free(&tmplist);
 
     /* free memory */
-    bayer_free(&disps);
-    bayer_free(&counts);
-    bayer_free(&sendbuf);
-    bayer_free(&recvbuf);
+    mfu_free(&disps);
+    mfu_free(&counts);
+    mfu_free(&sendbuf);
+    mfu_free(&recvbuf);
 
     return;
 }

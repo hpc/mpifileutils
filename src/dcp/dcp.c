@@ -82,7 +82,7 @@ static void DCOPY_process_objects(CIRCLE_handle* handle)
     DCOPY_operation_t* opt = DCOPY_decode_operation(op);
 
     /*
-        BAYER_LOG(BAYER_LOG_DBG, "Performing operation `%s' on operand `%s' (`%d' remain on local queue).", \
+        MFU_LOG(MFU_LOG_DBG, "Performing operation `%s' on operand `%s' (`%d' remain on local queue).", \
             DCOPY_op_string_table[opt->code], opt->operand, handle->local_queue_size());
     */
 
@@ -100,10 +100,10 @@ static void DCOPY_set_metadata(void)
 
     if (DCOPY_global_rank == 0) {
         if(DCOPY_user_opts.preserve) {
-            BAYER_LOG(BAYER_LOG_INFO, "Setting ownership, permissions, and timestamps.");
+            MFU_LOG(MFU_LOG_INFO, "Setting ownership, permissions, and timestamps.");
         }
         else {
-            BAYER_LOG(BAYER_LOG_INFO, "Fixing permissions.");
+            MFU_LOG(MFU_LOG_INFO, "Fixing permissions.");
         }
     }
 
@@ -190,9 +190,9 @@ static void DCOPY_reduce_fini(const void* buf, size_t size)
     uint64_t agg_copied = (uint64_t) a[5];
     double agg_copied_tmp;
     const char* agg_copied_units;
-    bayer_format_bytes(agg_copied, &agg_copied_tmp, &agg_copied_units);
+    mfu_format_bytes(agg_copied, &agg_copied_tmp, &agg_copied_units);
 
-    BAYER_LOG(BAYER_LOG_INFO,
+    MFU_LOG(MFU_LOG_INFO,
         "Items created %" PRId64 ", Data copied %.3lf %s ...",
         a[0], agg_copied_tmp, agg_copied_units);
 //        "Items %" PRId64 ", Dirs %" PRId64 ", Files %" PRId64 ", Links %" PRId64 ", Bytes %.3lf %s",
@@ -235,24 +235,24 @@ static void DCOPY_epilogue(void)
         /* convert size to units */
         double agg_size_tmp;
         const char* agg_size_units;
-        bayer_format_bytes((uint64_t)agg_size, &agg_size_tmp, &agg_size_units);
+        mfu_format_bytes((uint64_t)agg_size, &agg_size_tmp, &agg_size_units);
 
         /* convert bandwidth to units */
         double agg_rate_tmp;
         const char* agg_rate_units;
-        bayer_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
+        mfu_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
 
-        BAYER_LOG(BAYER_LOG_INFO, "Started: %s", starttime_str);
-        BAYER_LOG(BAYER_LOG_INFO, "Completed: %s", endtime_str);
-        BAYER_LOG(BAYER_LOG_INFO, "Seconds: %.3lf", rel_time);
-        BAYER_LOG(BAYER_LOG_INFO, "Items: %" PRId64, agg_items);
-        BAYER_LOG(BAYER_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
-        BAYER_LOG(BAYER_LOG_INFO, "  Files: %" PRId64, agg_files);
-        BAYER_LOG(BAYER_LOG_INFO, "  Links: %" PRId64, agg_links);
-        BAYER_LOG(BAYER_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
+        MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
+        MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
+        MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
+        MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
+        MFU_LOG(MFU_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
+        MFU_LOG(MFU_LOG_INFO, "  Files: %" PRId64, agg_files);
+        MFU_LOG(MFU_LOG_INFO, "  Links: %" PRId64, agg_links);
+        MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
             agg_size_tmp, agg_size_units, agg_size);
 
-        BAYER_LOG(BAYER_LOG_INFO, "Rate: %.3lf %s " \
+        MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
             "(%.3" PRId64 " bytes in %.3lf seconds)", \
             agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
     }
@@ -261,8 +261,8 @@ static void DCOPY_epilogue(void)
     DCOPY_free_path_args();
 
     /* free file I/O buffer */
-    bayer_free(&DCOPY_user_opts.block_buf2);
-    bayer_free(&DCOPY_user_opts.block_buf1);
+    mfu_free(&DCOPY_user_opts.block_buf2);
+    mfu_free(&DCOPY_user_opts.block_buf1);
 
     return;
 }
@@ -314,7 +314,7 @@ int main(int argc, \
     int option_index = 0;
 
     MPI_Init(&argc, &argv);
-    bayer_init();
+    mfu_init();
 
     /* Initialize our processing library and related callbacks. */
     /* This is a bit of chicken-and-egg problem, because we'd like
@@ -348,7 +348,7 @@ int main(int argc, \
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
-    bayer_debug_level = BAYER_LOG_INFO;
+    mfu_debug_level = MFU_LOG_INFO;
 
     /* By default, don't unlink destination files if an open() fails. */
     DCOPY_user_opts.force = false;
@@ -385,7 +385,7 @@ int main(int argc, \
                 DCOPY_user_opts.compare = true;
 
                 if(DCOPY_global_rank == 0) {
-                    BAYER_LOG(BAYER_LOG_INFO, "Compare source and destination " \
+                    MFU_LOG(MFU_LOG_INFO, "Compare source and destination " \
             "after copy to detect corruption.");
                 }
 
@@ -395,52 +395,52 @@ int main(int argc, \
 
                 if(strncmp(optarg, "fatal", 5) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_FATAL;
-                    bayer_debug_level = BAYER_LOG_FATAL;
+                    mfu_debug_level = MFU_LOG_FATAL;
 
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level set to: fatal");
+                        MFU_LOG(MFU_LOG_INFO, "Debug level set to: fatal");
                     }
 
                 }
                 else if(strncmp(optarg, "err", 3) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_ERR;
-                    bayer_debug_level = BAYER_LOG_ERR;
+                    mfu_debug_level = MFU_LOG_ERR;
 
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level set to: errors");
+                        MFU_LOG(MFU_LOG_INFO, "Debug level set to: errors");
                     }
 
                 }
                 else if(strncmp(optarg, "warn", 4) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_WARN;
-                    bayer_debug_level = BAYER_LOG_WARN;
+                    mfu_debug_level = MFU_LOG_WARN;
 
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level set to: warnings");
+                        MFU_LOG(MFU_LOG_INFO, "Debug level set to: warnings");
                     }
 
                 }
                 else if(strncmp(optarg, "info", 4) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_WARN; /* we back off a level on CIRCLE verbosity */
-                    bayer_debug_level = BAYER_LOG_INFO;
+                    mfu_debug_level = MFU_LOG_INFO;
 
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level set to: info");
+                        MFU_LOG(MFU_LOG_INFO, "Debug level set to: info");
                     }
 
                 }
                 else if(strncmp(optarg, "dbg", 3) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_DBG;
-                    bayer_debug_level = BAYER_LOG_DBG;
+                    mfu_debug_level = MFU_LOG_DBG;
 
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level set to: debug");
+                        MFU_LOG(MFU_LOG_INFO, "Debug level set to: debug");
                     }
 
                 }
                 else {
                     if(DCOPY_global_rank == 0) {
-                        BAYER_LOG(BAYER_LOG_INFO, "Debug level `%s' not recognized. " \
+                        MFU_LOG(MFU_LOG_INFO, "Debug level `%s' not recognized. " \
                             "Defaulting to `info'.", optarg);
                     }
                 }
@@ -451,7 +451,7 @@ int main(int argc, \
                 DCOPY_user_opts.force = true;
 
                 if(DCOPY_global_rank == 0) {
-                    BAYER_LOG(BAYER_LOG_INFO, "Deleting destination on errors.");
+                    MFU_LOG(MFU_LOG_INFO, "Deleting destination on errors.");
                 }
 
                 break;
@@ -469,7 +469,7 @@ int main(int argc, \
                 DCOPY_user_opts.preserve = true;
 
                 if(DCOPY_global_rank == 0) {
-                    BAYER_LOG(BAYER_LOG_INFO, "Preserving file attributes.");
+                    MFU_LOG(MFU_LOG_INFO, "Preserving file attributes.");
                 }
 
                 break;
@@ -478,7 +478,7 @@ int main(int argc, \
                 DCOPY_user_opts.reliable_filesystem = false;
 
                 if(DCOPY_global_rank == 0) {
-                    BAYER_LOG(BAYER_LOG_INFO, "Unreliable filesystem specified. " \
+                    MFU_LOG(MFU_LOG_INFO, "Unreliable filesystem specified. " \
                         "Retry mode enabled.");
                 }
 
@@ -488,7 +488,7 @@ int main(int argc, \
                 DCOPY_user_opts.synchronous = true;
 
                 if(DCOPY_global_rank == 0) {
-                    BAYER_LOG(BAYER_LOG_INFO, "Using synchronous read/write (O_DIRECT)");
+                    MFU_LOG(MFU_LOG_INFO, "Using synchronous read/write (O_DIRECT)");
                 }
 
                 break;
@@ -503,7 +503,7 @@ int main(int argc, \
                 break;
 
             case 'k':
-                if (bayer_abtoull(optarg, &DCOPY_chunksize) != BAYER_SUCCESS) {
+                if (mfu_abtoull(optarg, &DCOPY_chunksize) != MFU_SUCCESS) {
                     if (DCOPY_global_rank == 0) {
                         fprintf(stderr, "Failed to convert -k: %s\n", optarg);
                         DCOPY_exit(EXIT_FAILURE);
@@ -511,7 +511,7 @@ int main(int argc, \
                 }
                 break;
             case 'b':
-                if (bayer_abtoull(optarg, &DCOPY_blocksize) != BAYER_SUCCESS) {
+                if (mfu_abtoull(optarg, &DCOPY_blocksize) != MFU_SUCCESS) {
                     if (DCOPY_global_rank == 0) {
                         fprintf(stderr, "Failed to convert -b: %s\n", optarg);
                         DCOPY_exit(EXIT_FAILURE);
@@ -550,8 +550,8 @@ int main(int argc, \
     DCOPY_user_opts.block_size = DCOPY_blocksize;
 
     if (DCOPY_global_rank == 0) {
-        BAYER_LOG(BAYER_LOG_INFO, "Chunk size is set to %d", DCOPY_chunksize);
-        BAYER_LOG(BAYER_LOG_INFO, "Block size is set to %d", DCOPY_blocksize);
+        MFU_LOG(MFU_LOG_INFO, "Chunk size is set to %d", DCOPY_chunksize);
+        MFU_LOG(MFU_LOG_INFO, "Block size is set to %d", DCOPY_blocksize);
     }
 
     /** Parse the source and destination paths. */
@@ -569,9 +569,9 @@ int main(int argc, \
 
     /* allocate buffer to read/write files, aligned on 1MB boundaraies */
     size_t alignment = 1024*1024;
-    DCOPY_user_opts.block_buf1 = (char*) BAYER_MEMALIGN(
+    DCOPY_user_opts.block_buf1 = (char*) MFU_MEMALIGN(
         DCOPY_user_opts.block_size, alignment);
-    DCOPY_user_opts.block_buf2 = (char*) BAYER_MEMALIGN(
+    DCOPY_user_opts.block_buf2 = (char*) MFU_MEMALIGN(
         DCOPY_user_opts.block_size, alignment);
 
     /* Set the log level for the processing library. */
@@ -600,7 +600,7 @@ int main(int argc, \
 
     /* force updates to disk */
     if (DCOPY_global_rank == 0) {
-        BAYER_LOG(BAYER_LOG_INFO, "Syncing updates to disk.");
+        MFU_LOG(MFU_LOG_INFO, "Syncing updates to disk.");
     }
     sync();
 

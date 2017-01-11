@@ -55,8 +55,8 @@
 
 #include "libcircle.h"
 #include "dtcmp.h"
-#include "bayer.h"
-#include "bayer_flist_internal.h"
+#include "mfu.h"
+#include "mfu_flist_internal.h"
 #include "strmap.h"
 
 /****************************************
@@ -74,23 +74,23 @@ static int SET_DIR_PERMS;
  * Functions on types
  ***************************************/
 
-/* given a mode_t from stat, return the corresponding BAYER filetype */
-static bayer_filetype get_bayer_filetype(mode_t mode)
+/* given a mode_t from stat, return the corresponding MFU filetype */
+static mfu_filetype get_mfu_filetype(mode_t mode)
 {
     /* set file type */
-    bayer_filetype type;
+    mfu_filetype type;
     if (S_ISDIR(mode)) {
-        type = BAYER_TYPE_DIR;
+        type = MFU_TYPE_DIR;
     }
     else if (S_ISREG(mode)) {
-        type = BAYER_TYPE_FILE;
+        type = MFU_TYPE_FILE;
     }
     else if (S_ISLNK(mode)) {
-        type = BAYER_TYPE_LINK;
+        type = MFU_TYPE_LINK;
     }
     else {
         /* unknown file type */
-        type = BAYER_TYPE_UNKNOWN;
+        type = MFU_TYPE_UNKNOWN;
     }
     return type;
 }
@@ -132,7 +132,7 @@ static void list_insert_elem(flist_t* flist, elem_t* elem)
     flist->list_count++;
 
     /* delete the index if we have one, it's out of date */
-    bayer_free(&flist->list_index);
+    mfu_free(&flist->list_index);
 
     return;
 }
@@ -141,16 +141,16 @@ static void list_insert_elem(flist_t* flist, elem_t* elem)
 static void list_insert_stat(flist_t* flist, const char* fpath, mode_t mode, const struct stat* sb)
 {
     /* create new element to record file path, file type, and stat info */
-    elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
+    elem_t* elem = (elem_t*) MFU_MALLOC(sizeof(elem_t));
 
     /* copy path */
-    elem->file = BAYER_STRDUP(fpath);
+    elem->file = MFU_STRDUP(fpath);
 
     /* set depth */
     elem->depth = get_depth(fpath);
 
     /* set file type */
-    elem->type = get_bayer_filetype(mode);
+    elem->type = get_mfu_filetype(mode);
 
     /* copy stat info */
     if (sb != NULL) {
@@ -294,7 +294,7 @@ static int lustre_mds_stat(int fd, char* fname, struct stat* sb)
     if (datasize > bufsize) {
         bufsize = datasize;
     }
-    char* buf = (char*) BAYER_MALLOC(bufsize);
+    char* buf = (char*) MFU_MALLOC(bufsize);
 
     /* Usage: ioctl(fd, IOC_MDC_GETFILEINFO, buf)
      * IN: fd open file descriptor of file's parent directory
@@ -329,7 +329,7 @@ static int lustre_mds_stat(int fd, char* fname, struct stat* sb)
     }
 
     /* free the buffer */
-    bayer_free(&buf);
+    mfu_free(&buf);
 
     return ret;
 }
@@ -337,7 +337,7 @@ static int lustre_mds_stat(int fd, char* fname, struct stat* sb)
 static void walk_lustrestat_process_dir(char* dir, CIRCLE_handle* handle)
 {
     /* TODO: may need to try these functions multiple times */
-    DIR* dirp = bayer_opendir(dir);
+    DIR* dirp = mfu_opendir(dir);
 
     if (! dirp) {
         /* TODO: print error */
@@ -353,7 +353,7 @@ static void walk_lustrestat_process_dir(char* dir, CIRCLE_handle* handle)
         /* Read all directory entries */
         while (1) {
             /* read next directory entry */
-            struct dirent* entry = bayer_readdir(dirp);
+            struct dirent* entry = mfu_readdir(dirp);
             if (entry == NULL) {
                 break;
             }
@@ -403,7 +403,7 @@ static void walk_lustrestat_process_dir(char* dir, CIRCLE_handle* handle)
     }
 
 done:
-    bayer_closedir(dirp);
+    mfu_closedir(dirp);
 
     return;
 }
@@ -417,7 +417,7 @@ static void walk_lustrestat_create(CIRCLE_handle* handle)
 
         /* stat top level item */
         struct stat st;
-        int status = bayer_lstat(path, &st);
+        int status = mfu_lstat(path, &st);
         if (status != 0) {
             /* TODO: print error */
             return;
@@ -469,10 +469,10 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
     char buf[BUF_SIZE];
 
     /* TODO: may need to try these functions multiple times */
-    int fd = bayer_open(dir, O_RDONLY | O_DIRECTORY);
+    int fd = mfu_open(dir, O_RDONLY | O_DIRECTORY);
     if (fd == -1) {
         /* print error */
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to open directory for reading: %s", dir);
+        MFU_LOG(MFU_LOG_ERR, "Failed to open directory for reading: %s", dir);
         return;
     }
 
@@ -481,7 +481,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
         /* execute system call to get block of directory entries */
         int nread = syscall(SYS_getdents, fd, buf, (int) BUF_SIZE);
         if (nread == -1) {
-            BAYER_LOG(BAYER_LOG_ERR, "syscall to getdents failed when reading %s (errno=%d %s)", dir, errno, strerror(errno));
+            MFU_LOG(MFU_LOG_ERR, "syscall to getdents failed when reading %s (errno=%d %s)", dir, errno, strerror(errno));
             break;
         }
 
@@ -527,7 +527,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
 
                     /* TODO: this is hacky, would be better to create list elem directly */
                     /* determine type of item (just need to set bits in mode
-                     * that get_bayer_filetype checks for) */
+                     * that get_mfu_filetype checks for) */
                     mode_t mode = 0;
                     if (d_type == DT_REG) {
                         mode |= S_IFREG;
@@ -551,7 +551,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
                     }
                 }
                 else {
-                    BAYER_LOG(BAYER_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu\n", len, sizeof(newpath));
+                    MFU_LOG(MFU_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu\n", len, sizeof(newpath));
                 }
             }
 
@@ -560,7 +560,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
         }
     }
 
-    bayer_close(dir, fd);
+    mfu_close(dir, fd);
 
     return;
 }
@@ -574,7 +574,7 @@ static void walk_getdents_create(CIRCLE_handle* handle)
 
         /* stat top level item */
         struct stat st;
-        int status = bayer_lstat(path, &st);
+        int status = mfu_lstat(path, &st);
         if (status != 0) {
             /* TODO: print error */
             return;
@@ -612,19 +612,19 @@ static void walk_getdents_process(CIRCLE_handle* handle)
 static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
 {
     /* TODO: may need to try these functions multiple times */
-    DIR* dirp = bayer_opendir(dir);
+    DIR* dirp = mfu_opendir(dir);
 
     /* if there is a permissions error and the usr read & execute are being turned
      * on when walk_stat=0 then catch the permissions error and turn the bits on */
     if (dirp == NULL) {
         if (errno == EACCES && SET_DIR_PERMS) {
             struct stat st;
-            bayer_lstat(dir, &st);
+            mfu_lstat(dir, &st);
             // turn on the usr read & execute bits
             st.st_mode |= S_IRUSR;
             st.st_mode |= S_IXUSR;
-            bayer_chmod(dir, st.st_mode);
-            dirp = bayer_opendir(dir);
+            mfu_chmod(dir, st.st_mode);
+            dirp = mfu_opendir(dir);
             if (dirp == NULL) {
                 if (errno == EACCES) {
                     printf("can't open directory at this time\n");
@@ -640,7 +640,7 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
         /* Read all directory entries */
         while (1) {
             /* read next directory entry */
-            struct dirent* entry = bayer_readdir(dirp);
+            struct dirent* entry = mfu_readdir(dirp);
             if (entry == NULL) {
                 break;
             }
@@ -670,7 +670,7 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
                     else {
                         /* type is unknown, we need to stat it */
                         struct stat st;
-                        int status = bayer_lstat(newpath, &st);
+                        int status = mfu_lstat(newpath, &st);
                         if (status == 0) {
                             have_mode = 1;
                             mode = st.st_mode;
@@ -700,7 +700,7 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
         }
     }
 
-    bayer_closedir(dirp);
+    mfu_closedir(dirp);
 
     return;
 }
@@ -714,7 +714,7 @@ static void walk_readdir_create(CIRCLE_handle* handle)
 
         /* stat top level item */
         struct stat st;
-        int status = bayer_lstat(path, &st);
+        int status = mfu_lstat(path, &st);
         if (status != 0) {
             /* TODO: print error */
             return;
@@ -752,7 +752,7 @@ static void walk_readdir_process(CIRCLE_handle* handle)
 static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
 {
     /* TODO: may need to try these functions multiple times */
-    DIR* dirp = bayer_opendir(dir);
+    DIR* dirp = mfu_opendir(dir);
 
     if (! dirp) {
         /* TODO: print error */
@@ -760,7 +760,7 @@ static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
     else {
         while (1) {
             /* read next directory entry */
-            struct dirent* entry = bayer_readdir(dirp);
+            struct dirent* entry = mfu_readdir(dirp);
             if (entry == NULL) {
                 break;
             }
@@ -790,7 +790,7 @@ static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
         }
     }
 
-    bayer_closedir(dirp);
+    mfu_closedir(dirp);
 
     return;
 }
@@ -815,7 +815,7 @@ static void walk_stat_process(CIRCLE_handle* handle)
 
     /* stat item */
     struct stat st;
-    int status = bayer_lstat(path, &st);
+    int status = mfu_lstat(path, &st);
     if (status != 0) {
         /* print error */
         return;
@@ -841,7 +841,7 @@ static void walk_stat_process(CIRCLE_handle* handle)
             if (!((usr_r_mask & st.st_mode) && (usr_x_mask & st.st_mode))) {
                 st.st_mode |= S_IRUSR;
                 st.st_mode |= S_IXUSR;
-                bayer_chmod(path, st.st_mode);
+                mfu_chmod(path, st.st_mode);
             }
         }
         /* TODO: check that we can recurse into directory */
@@ -852,14 +852,14 @@ static void walk_stat_process(CIRCLE_handle* handle)
 }
 
 /* Set up and execute directory walk */
-void bayer_flist_walk_path(const char* dirpath, int use_stat, int dir_permissions, bayer_flist bflist)
+void mfu_flist_walk_path(const char* dirpath, int use_stat, int dir_permissions, mfu_flist bflist)
 {
-    bayer_flist_walk_paths(1, &dirpath, use_stat, dir_permissions, bflist);
+    mfu_flist_walk_paths(1, &dirpath, use_stat, dir_permissions, bflist);
     return;
 }
 
 /* Set up and execute directory walk */
-void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, int dir_permissions, bayer_flist bflist)
+void mfu_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, int dir_permissions, mfu_flist bflist)
 {
     /* report walk count, time, and rate */
     double start_walk = MPI_Wtime();
@@ -881,7 +881,7 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* print message to user that we're starting */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
         uint64_t i;
         for (i = 0; i < num_paths; i++) {
             time_t walk_start_t = time(NULL);
@@ -919,10 +919,10 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
     if (use_stat) {
         flist->detail = 1;
         if (flist->have_users == 0) {
-            bayer_flist_usrgrp_get_users(flist);
+            mfu_flist_usrgrp_get_users(flist);
         }
         if (flist->have_groups == 0) {
-            bayer_flist_usrgrp_get_groups(flist);
+            mfu_flist_usrgrp_get_groups(flist);
         }
     }
 
@@ -953,13 +953,13 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
     CIRCLE_finalize();
 
     /* compute global summary */
-    bayer_flist_summarize(bflist);
+    mfu_flist_summarize(bflist);
 
     double end_walk = MPI_Wtime();
 
     /* report walk count, time, and rate */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
-        uint64_t all_count = bayer_flist_global_size(bflist);
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        uint64_t all_count = mfu_flist_global_size(bflist);
         double time_diff = end_walk - start_walk;
         double rate = 0.0;
         if (time_diff > 0.0) {
@@ -976,10 +976,10 @@ void bayer_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat
 /* Given an input file list, stat each file and enqueue details
  * in output file list, skip entries excluded by skip function
  * and skip args */
-void bayer_flist_stat(
-  bayer_flist input_flist,
-  bayer_flist flist,
-  bayer_flist_skip_fn skip_fn,
+void mfu_flist_stat(
+  mfu_flist input_flist,
+  mfu_flist flist,
+  mfu_flist_skip_fn skip_fn,
   void *skip_args)
 {
     flist_t* file_list = (flist_t*)flist;
@@ -989,33 +989,33 @@ void bayer_flist_stat(
 
     /* get user data if needed */
     if (file_list->have_users == 0) {
-        bayer_flist_usrgrp_get_users(flist);
+        mfu_flist_usrgrp_get_users(flist);
     }
 
     /* get groups data if needed */
     if (file_list->have_groups == 0) {
-        bayer_flist_usrgrp_get_groups(flist);
+        mfu_flist_usrgrp_get_groups(flist);
     }
 
     /* step through each item in input list and stat it */
     uint64_t idx;
-    uint64_t size = bayer_flist_size(input_flist);
+    uint64_t size = mfu_flist_size(input_flist);
     for (idx = 0; idx < size; idx++) {
         /* get name of item */
-        const char* name = bayer_flist_file_get_name(input_flist, idx);
+        const char* name = mfu_flist_file_get_name(input_flist, idx);
 
         /* check whether we should skip this item */
         if (skip_fn != NULL && skip_fn(name, skip_args)) {
             /* skip this file, don't include it in new list */
-            BAYER_LOG(BAYER_LOG_INFO, "skip %s");
+            MFU_LOG(MFU_LOG_INFO, "skip %s");
             continue;
         }
 
         /* stat the item */
         struct stat st;
-        int status = bayer_lstat(name, &st);
+        int status = mfu_lstat(name, &st);
         if (status != 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "bayer_lstat(): %d", status);
+            MFU_LOG(MFU_LOG_ERR, "mfu_lstat(): %d", status);
             continue;
         }
 
@@ -1024,5 +1024,5 @@ void bayer_flist_stat(
     }
 
     /* compute global summary */
-    bayer_flist_summarize(flist);
+    mfu_flist_summarize(flist);
 }

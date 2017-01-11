@@ -38,7 +38,7 @@
 
 #include "libcircle.h"
 #include "dtcmp.h"
-#include "bayer.h"
+#include "mfu.h"
 
 typedef enum {
     NULLFIELD = 0,
@@ -64,20 +64,20 @@ static int my_strcmp_rev(const void* a, const void* b)
     return strcmp((const char*)b, (const char*)a);
 }
 
-static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
+static int sort_files_readdir(const char* sortfields, mfu_flist* pflist)
 {
     /* get list from caller */
-    bayer_flist flist = *pflist;
+    mfu_flist flist = *pflist;
 
     /* create a new list as subset of original list */
-    bayer_flist flist2 = bayer_flist_subset(flist);
+    mfu_flist flist2 = mfu_flist_subset(flist);
 
-    uint64_t incount = bayer_flist_size(flist);
-    uint64_t chars   = bayer_flist_file_max_name(flist);
+    uint64_t incount = mfu_flist_size(flist);
+    uint64_t chars   = mfu_flist_file_max_name(flist);
 
     /* create datatype for packed file list element */
     MPI_Datatype dt_sat;
-    size_t bytes = bayer_flist_file_pack_size(flist);
+    size_t bytes = mfu_flist_file_pack_size(flist);
     MPI_Type_contiguous((int)bytes, MPI_BYTE, &dt_sat);
 
     /* get our rank and the size of comm_world */
@@ -93,13 +93,13 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
     /* build comparison op for filenames */
     DTCMP_Op op_filepath;
     if (DTCMP_Op_create(dt_filepath, my_strcmp, &op_filepath) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for filepath");
+        MFU_ABORT(1, "Failed to create sorting operation for filepath");
     }
 
     /* build comparison op for filenames */
     DTCMP_Op op_filepath_rev;
     if (DTCMP_Op_create(dt_filepath, my_strcmp_rev, &op_filepath_rev) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create reverse sorting operation for filepath");
+        MFU_ABORT(1, "Failed to create reverse sorting operation for filepath");
     }
 
     /* TODO: process sort fields */
@@ -114,7 +114,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
         ops[nfields]     = DTCMP_OP_NULL;
     }
     nfields = 0;
-    char* sortfields_copy = BAYER_STRDUP(sortfields);
+    char* sortfields_copy = MFU_STRDUP(sortfields);
     char* token = strtok(sortfields_copy, ",");
     while (token != NULL) {
         int valid = 1;
@@ -134,7 +134,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
             /* invalid token */
             valid = 0;
             if (rank == 0) {
-                BAYER_LOG(BAYER_LOG_ERR, "Invalid sort field: %s\n", token);
+                MFU_LOG(MFU_LOG_ERR, "Invalid sort field: %s\n", token);
             }
         }
         if (valid) {
@@ -146,18 +146,18 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
         }
         token = strtok(NULL, ",");
     }
-    bayer_free(&sortfields_copy);
+    mfu_free(&sortfields_copy);
 
     /* build key type */
     MPI_Datatype dt_key;
     if (DTCMP_Type_create_series(nfields, types, &dt_key) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create type for key");
+        MFU_ABORT(1, "Failed to create type for key");
     }
 
     /* create sort op */
     DTCMP_Op op_key;
     if (DTCMP_Op_create_series(nfields, ops, &op_key) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for key");
+        MFU_ABORT(1, "Failed to create sorting operation for key");
     }
 
     /* build keysat type */
@@ -165,7 +165,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
     keysat_types[0] = dt_key;
     keysat_types[1] = dt_sat;
     if (DTCMP_Type_create_series(2, keysat_types, &dt_keysat) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create type for keysat");
+        MFU_ABORT(1, "Failed to create type for keysat");
     }
 
     /* get extent of key type */
@@ -182,7 +182,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
 
     /* compute size of sort element and allocate buffer */
     size_t sortbufsize = (size_t)keysat_extent * incount;
-    void* sortbuf = BAYER_MALLOC(sortbufsize);
+    void* sortbuf = MFU_MALLOC(sortbufsize);
 
     /* copy data into sort elements */
     uint64_t idx = 0;
@@ -192,14 +192,14 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
         int i;
         for (i = 0; i < nfields; i++) {
             if (fields[i] == FILENAME) {
-                const char* name = bayer_flist_file_get_name(flist, idx);
+                const char* name = mfu_flist_file_get_name(flist, idx);
                 strcpy(sortptr, name);
             }
             sortptr += lengths[i];
         }
 
         /* pack file element */
-        sortptr += bayer_flist_file_pack(sortptr, flist, idx);
+        sortptr += mfu_flist_file_pack(sortptr, flist, idx);
 
         idx++;
     }
@@ -214,7 +214,7 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
                       MPI_COMM_WORLD, &handle
                   );
     if (sort_rc != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to sort data");
+        MFU_ABORT(1, "Failed to sort data");
     }
 
     /* step through sorted data filenames */
@@ -222,12 +222,12 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
     sortptr = (char*) outsortbuf;
     while (idx < (uint64_t)outsortcount) {
         sortptr += key_extent;
-        sortptr += bayer_flist_file_unpack(sortptr, flist2);
+        sortptr += mfu_flist_file_unpack(sortptr, flist2);
         idx++;
     }
 
     /* build summary of new list */
-    bayer_flist_summarize(flist2);
+    mfu_flist_summarize(flist2);
 
     /* free memory */
     DTCMP_Free(&handle);
@@ -243,34 +243,34 @@ static int sort_files_readdir(const char* sortfields, bayer_flist* pflist)
     MPI_Type_free(&dt_filepath);
 
     /* free input buffer holding sort elements */
-    bayer_free(&sortbuf);
+    mfu_free(&sortbuf);
 
     /* free the satellite type */
     MPI_Type_free(&dt_sat);
 
     /* return new list and free old one */
     *pflist = flist2;
-    bayer_flist_free(&flist);
+    mfu_flist_free(&flist);
 
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
-static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
+static int sort_files_stat(const char* sortfields, mfu_flist* pflist)
 {
     /* get list from caller */
-    bayer_flist flist = *pflist;
+    mfu_flist flist = *pflist;
 
     /* create a new list as subset of original list */
-    bayer_flist flist2 = bayer_flist_subset(flist);
+    mfu_flist flist2 = mfu_flist_subset(flist);
 
-    uint64_t incount     = bayer_flist_size(flist);
-    uint64_t chars       = bayer_flist_file_max_name(flist);
-    uint64_t chars_user  = bayer_flist_user_max_name(flist);
-    uint64_t chars_group = bayer_flist_group_max_name(flist);
+    uint64_t incount     = mfu_flist_size(flist);
+    uint64_t chars       = mfu_flist_file_max_name(flist);
+    uint64_t chars_user  = mfu_flist_user_max_name(flist);
+    uint64_t chars_group = mfu_flist_group_max_name(flist);
 
     /* create datatype for packed file list element */
     MPI_Datatype dt_sat;
-    size_t bytes = bayer_flist_file_pack_size(flist);
+    size_t bytes = mfu_flist_file_pack_size(flist);
     MPI_Type_contiguous((int)bytes, MPI_BYTE, &dt_sat);
 
     /* get our rank and the size of comm_world */
@@ -290,25 +290,25 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
     /* build comparison op for filenames */
     DTCMP_Op op_filepath, op_user, op_group;
     if (DTCMP_Op_create(dt_filepath, my_strcmp, &op_filepath) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for filepath");
+        MFU_ABORT(1, "Failed to create sorting operation for filepath");
     }
     if (DTCMP_Op_create(dt_user, my_strcmp, &op_user) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for username");
+        MFU_ABORT(1, "Failed to create sorting operation for username");
     }
     if (DTCMP_Op_create(dt_group, my_strcmp, &op_group) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for groupname");
+        MFU_ABORT(1, "Failed to create sorting operation for groupname");
     }
 
     /* build comparison op for filenames */
     DTCMP_Op op_filepath_rev, op_user_rev, op_group_rev;
     if (DTCMP_Op_create(dt_filepath, my_strcmp_rev, &op_filepath_rev) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create reverse sorting operation for groupname");
+        MFU_ABORT(1, "Failed to create reverse sorting operation for groupname");
     }
     if (DTCMP_Op_create(dt_user, my_strcmp_rev, &op_user_rev) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create reverse sorting operation for groupname");
+        MFU_ABORT(1, "Failed to create reverse sorting operation for groupname");
     }
     if (DTCMP_Op_create(dt_group, my_strcmp_rev, &op_group_rev) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create reverse sorting operation for groupname");
+        MFU_ABORT(1, "Failed to create reverse sorting operation for groupname");
     }
 
     /* TODO: process sort fields */
@@ -323,7 +323,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
         ops[nfields]     = DTCMP_OP_NULL;
     }
     nfields = 0;
-    char* sortfields_copy = BAYER_STRDUP(sortfields);
+    char* sortfields_copy = MFU_STRDUP(sortfields);
     char* token = strtok(sortfields_copy, ",");
     while (token != NULL) {
         int valid = 1;
@@ -439,7 +439,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
             /* invalid token */
             valid = 0;
             if (rank == 0) {
-                BAYER_LOG(BAYER_LOG_ERR, "Invalid sort field: %s\n", token);
+                MFU_LOG(MFU_LOG_ERR, "Invalid sort field: %s\n", token);
             }
         }
         if (valid) {
@@ -451,18 +451,18 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
         }
         token = strtok(NULL, ",");
     }
-    bayer_free(&sortfields_copy);
+    mfu_free(&sortfields_copy);
 
     /* build key type */
     MPI_Datatype dt_key;
     if (DTCMP_Type_create_series(nfields, types, &dt_key) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create key type");
+        MFU_ABORT(1, "Failed to create key type");
     }
 
     /* create op to sort by access time, then filename */
     DTCMP_Op op_key;
     if (DTCMP_Op_create_series(nfields, ops, &op_key) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create sorting operation for key");
+        MFU_ABORT(1, "Failed to create sorting operation for key");
     }
 
     /* build keysat type */
@@ -470,7 +470,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
     keysat_types[0] = dt_key;
     keysat_types[1] = dt_sat;
     if (DTCMP_Type_create_series(2, keysat_types, &dt_keysat) != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to create keysat type");
+        MFU_ABORT(1, "Failed to create keysat type");
     }
 
     /* get extent of key type */
@@ -487,7 +487,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
 
     /* compute size of sort element and allocate buffer */
     size_t sortbufsize = (size_t)keysat_extent * incount;
-    void* sortbuf = BAYER_MALLOC(sortbufsize);
+    void* sortbuf = MFU_MALLOC(sortbufsize);
 
     /* copy data into sort elements */
     uint64_t idx = 0;
@@ -497,39 +497,39 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
         int i;
         for (i = 0; i < nfields; i++) {
             if (fields[i] == FILENAME) {
-                const char* name = bayer_flist_file_get_name(flist, idx);
+                const char* name = mfu_flist_file_get_name(flist, idx);
                 strcpy(sortptr, name);
             }
             else if (fields[i] == USERNAME) {
-                const char* name = bayer_flist_file_get_username(flist, idx);
+                const char* name = mfu_flist_file_get_username(flist, idx);
                 strcpy(sortptr, name);
             }
             else if (fields[i] == GROUPNAME) {
-                const char* name = bayer_flist_file_get_groupname(flist, idx);
+                const char* name = mfu_flist_file_get_groupname(flist, idx);
                 strcpy(sortptr, name);
             }
             else if (fields[i] == USERID) {
-                uint32_t val32 = (uint32_t) bayer_flist_file_get_uid(flist, idx);
+                uint32_t val32 = (uint32_t) mfu_flist_file_get_uid(flist, idx);
                 memcpy(sortptr, &val32, 4);
             }
             else if (fields[i] == GROUPID) {
-                uint32_t val32 = (uint32_t) bayer_flist_file_get_gid(flist, idx);
+                uint32_t val32 = (uint32_t) mfu_flist_file_get_gid(flist, idx);
                 memcpy(sortptr, &val32, 4);
             }
             else if (fields[i] == ATIME) {
-                uint32_t val32 = (uint32_t) bayer_flist_file_get_atime(flist, idx);
+                uint32_t val32 = (uint32_t) mfu_flist_file_get_atime(flist, idx);
                 memcpy(sortptr, &val32, 4);
             }
             else if (fields[i] == MTIME) {
-                uint32_t val32 = (uint32_t) bayer_flist_file_get_mtime(flist, idx);
+                uint32_t val32 = (uint32_t) mfu_flist_file_get_mtime(flist, idx);
                 memcpy(sortptr, &val32, 4);
             }
             else if (fields[i] == CTIME) {
-                uint32_t val32 = (uint32_t) bayer_flist_file_get_ctime(flist, idx);
+                uint32_t val32 = (uint32_t) mfu_flist_file_get_ctime(flist, idx);
                 memcpy(sortptr, &val32, 4);
             }
             else if (fields[i] == FILESIZE) {
-                uint64_t val64 = bayer_flist_file_get_size(flist, idx);
+                uint64_t val64 = mfu_flist_file_get_size(flist, idx);
                 memcpy(sortptr, &val64, 8);
             }
 
@@ -537,7 +537,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
         }
 
         /* pack file element */
-        sortptr += bayer_flist_file_pack(sortptr, flist, idx);
+        sortptr += mfu_flist_file_pack(sortptr, flist, idx);
 
         idx++;
     }
@@ -552,7 +552,7 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
                       MPI_COMM_WORLD, &handle
                   );
     if (sort_rc != DTCMP_SUCCESS) {
-        BAYER_ABORT(1, "Failed to sort data");
+        MFU_ABORT(1, "Failed to sort data");
     }
 
     /* step through sorted data filenames */
@@ -560,12 +560,12 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
     sortptr = (char*) outsortbuf;
     while (idx < (uint64_t)outsortcount) {
         sortptr += key_extent;
-        sortptr += bayer_flist_file_unpack(sortptr, flist2);
+        sortptr += mfu_flist_file_unpack(sortptr, flist2);
         idx++;
     }
 
     /* build summary of new list */
-    bayer_flist_summarize(flist2);
+    mfu_flist_summarize(flist2);
 
     /* free memory */
     DTCMP_Free(&handle);
@@ -587,16 +587,16 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
     MPI_Type_free(&dt_filepath);
 
     /* free input buffer holding sort elements */
-    bayer_free(&sortbuf);
+    mfu_free(&sortbuf);
 
     /* free the satellite type */
     MPI_Type_free(&dt_sat);
 
     /* return new list and free old one */
     *pflist = flist2;
-    bayer_flist_free(&flist);
+    mfu_flist_free(&flist);
 
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* sort flist by specified fields, given as common-delimitted list
@@ -604,21 +604,21 @@ static int sort_files_stat(const char* sortfields, bayer_flist* pflist)
  *   name,user,group,uid,gid,atime,mtime,ctime,size
  * For example to sort by size in descending order, followed by name
  *   char fields[] = "size,-name"; */
-int bayer_flist_sort(const char* sortfields, bayer_flist* pflist)
+int mfu_flist_sort(const char* sortfields, mfu_flist* pflist)
 {
     if (sortfields == NULL || pflist == NULL) {
-        return BAYER_FAILURE;
+        return MFU_FAILURE;
     }
 
     /* get pointer to list */
-    bayer_flist flist = *pflist;
+    mfu_flist flist = *pflist;
 
     /* start timer */
     double start_sort = MPI_Wtime();
 
     /* sort list */
     int rc;
-    if (bayer_flist_have_detail(flist)) {
+    if (mfu_flist_have_detail(flist)) {
         rc = sort_files_stat(sortfields, pflist);
     }
     else {
@@ -629,8 +629,8 @@ int bayer_flist_sort(const char* sortfields, bayer_flist* pflist)
     double end_sort = MPI_Wtime();
 
     /* report sort count, time, and rate */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
-        uint64_t all_count = bayer_flist_global_size(flist);
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        uint64_t all_count = mfu_flist_global_size(flist);
         double secs = end_sort - start_sort;
         double rate = 0.0;
         if (secs > 0.0) {

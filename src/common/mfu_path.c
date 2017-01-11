@@ -20,7 +20,7 @@
 
 /* Defines a double linked list representing a file path. */
 
-#include "bayer.h"
+#include "mfu.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,72 +38,72 @@ Private functions
 =========================================
 */
 
-static inline int bayer_path_elem_init(bayer_path_elem* elem)
+static inline int mfu_path_elem_init(mfu_path_elem* elem)
 {
     elem->component = NULL;
     elem->chars     = 0;
     elem->next      = NULL;
     elem->prev      = NULL;
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
-static inline int bayer_path_init(bayer_path* path)
+static inline int mfu_path_init(mfu_path* path)
 {
     path->components = 0;
     path->chars      = 0;
     path->head       = NULL;
     path->tail       = NULL;
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* allocate and initialize a new path element */
-static bayer_path_elem* bayer_path_elem_alloc(void)
+static mfu_path_elem* mfu_path_elem_alloc(void)
 {
-    bayer_path_elem* elem = (bayer_path_elem*) malloc(sizeof(bayer_path_elem));
+    mfu_path_elem* elem = (mfu_path_elem*) malloc(sizeof(mfu_path_elem));
     if (elem != NULL) {
-        bayer_path_elem_init(elem);
+        mfu_path_elem_init(elem);
     }
     else {
-        BAYER_ABORT(-1, "Failed to allocate memory for path element");
+        MFU_ABORT(-1, "Failed to allocate memory for path element");
     }
     return elem;
 }
 
 /* free a path element */
-static int bayer_path_elem_free(bayer_path_elem** ptr_elem)
+static int mfu_path_elem_free(mfu_path_elem** ptr_elem)
 {
     if (ptr_elem != NULL) {
         /* got an address to the pointer of an element,
          * dereference to get pointer to elem */
-        bayer_path_elem* elem = *ptr_elem;
+        mfu_path_elem* elem = *ptr_elem;
         if (elem != NULL) {
             /* free the component which was strdup'ed */
-            bayer_free(&(elem->component));
+            mfu_free(&(elem->component));
         }
     }
 
     /* free the element structure itself */
-    bayer_free(ptr_elem);
+    mfu_free(ptr_elem);
 
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* allocate a new path */
-static bayer_path* bayer_path_alloc(void)
+static mfu_path* mfu_path_alloc(void)
 {
-    bayer_path* path = (bayer_path*) malloc(sizeof(bayer_path));
+    mfu_path* path = (mfu_path*) malloc(sizeof(mfu_path));
     if (path != NULL) {
-        bayer_path_init(path);
+        mfu_path_init(path);
     }
     else {
-        BAYER_ABORT(-1, "Failed to allocate memory for path object");
+        MFU_ABORT(-1, "Failed to allocate memory for path object");
     }
     return path;
 }
 
 /* allocate and return a duplicate of specified elememnt,
  * only copies value not next and previoud pointers */
-static bayer_path_elem* bayer_path_elem_dup(const bayer_path_elem* elem)
+static mfu_path_elem* mfu_path_elem_dup(const mfu_path_elem* elem)
 {
     /* check that element is not NULL */
     if (elem == NULL) {
@@ -111,9 +111,9 @@ static bayer_path_elem* bayer_path_elem_dup(const bayer_path_elem* elem)
     }
 
     /* allocate new element */
-    bayer_path_elem* dup_elem = bayer_path_elem_alloc();
+    mfu_path_elem* dup_elem = mfu_path_elem_alloc();
     if (dup_elem == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate memory for path element");
+        MFU_ABORT(-1, "Failed to allocate memory for path element");
     }
 
     /* set component and chars fields (next and prev will be set later) */
@@ -126,22 +126,22 @@ static bayer_path_elem* bayer_path_elem_dup(const bayer_path_elem* elem)
 /* return element at specified offset in path
  *   0   - points to first element
  *   N-1 - points to last element */
-static bayer_path_elem* bayer_path_elem_index(const bayer_path* path, int idx)
+static mfu_path_elem* mfu_path_elem_index(const mfu_path* path, int idx)
 {
     /* check that we got a path */
     if (path == NULL) {
-        BAYER_ABORT(-1, "Assert that path are not NULL");
+        MFU_ABORT(-1, "Assert that path are not NULL");
     }
 
     /* check that index is in range */
     if (idx < 0 || idx >= path->components) {
-        BAYER_ABORT(-1, "Offset %d is out of range [0,%d)",
+        MFU_ABORT(-1, "Offset %d is out of range [0,%d)",
                     idx, path->components
                    );
     }
 
     /* scan until we find element at specified index */
-    bayer_path_elem* current = NULL;
+    mfu_path_elem* current = NULL;
     if (path->components > 0) {
         int i;
         int from_head = idx;
@@ -169,16 +169,16 @@ static bayer_path_elem* bayer_path_elem_index(const bayer_path* path, int idx)
  *   0   - before first element
  *   N-1 - before last element
  *   N   - after last element */
-static int bayer_path_elem_insert(bayer_path* path, int offset, bayer_path_elem* elem)
+static int mfu_path_elem_insert(mfu_path* path, int offset, mfu_path_elem* elem)
 {
     /* check that we got a path and element */
     if (path == NULL || elem == NULL) {
-        BAYER_ABORT(-1, "Assert that path and elem are not NULL");
+        MFU_ABORT(-1, "Assert that path and elem are not NULL");
     }
 
     /* check that offset is in range */
     if (offset < 0 || offset > path->components) {
-        BAYER_ABORT(-1, "Offset %d is out of range",
+        MFU_ABORT(-1, "Offset %d is out of range",
                     offset, path->components
                    );
     }
@@ -190,7 +190,7 @@ static int bayer_path_elem_insert(bayer_path* path, int offset, bayer_path_elem*
         path->chars += elem->chars;
 
         /* get pointer to tail element and point to element as new tail */
-        bayer_path_elem* tail = path->tail;
+        mfu_path_elem* tail = path->tail;
         path->tail = elem;
 
         /* tie element to tail */
@@ -207,13 +207,13 @@ static int bayer_path_elem_insert(bayer_path* path, int offset, bayer_path_elem*
             path->head = elem;
         }
 
-        return BAYER_SUCCESS;
+        return MFU_SUCCESS;
     }
 
     /* otherwise, insert element before current element */
 
     /* lookup element at specified offset */
-    bayer_path_elem* current = bayer_path_elem_index(path, offset);
+    mfu_path_elem* current = mfu_path_elem_index(path, offset);
 
     /* attach to path */
     path->components++;
@@ -222,7 +222,7 @@ static int bayer_path_elem_insert(bayer_path* path, int offset, bayer_path_elem*
     /* insert element before current */
     if (current != NULL) {
         /* get pointer to element before current */
-        bayer_path_elem* prev = current->prev;
+        mfu_path_elem* prev = current->prev;
         elem->prev = prev;
         elem->next = current;
         if (prev != NULL) {
@@ -243,16 +243,16 @@ static int bayer_path_elem_insert(bayer_path* path, int offset, bayer_path_elem*
         elem->next = NULL;
     }
 
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* extract specified element from path */
-static int bayer_path_elem_extract(bayer_path* path, bayer_path_elem* elem)
+static int mfu_path_elem_extract(mfu_path* path, mfu_path_elem* elem)
 {
     /* check that we got a path and element */
     if (path == NULL || elem == NULL) {
         /* nothing to do in this case */
-        BAYER_ABORT(-1, "Assert that path and elem are not NULL");
+        MFU_ABORT(-1, "Assert that path and elem are not NULL");
     }
 
     /* TODO: would be nice to verify that elem is part of path */
@@ -262,8 +262,8 @@ static int bayer_path_elem_extract(bayer_path* path, bayer_path_elem* elem)
     path->chars -= elem->chars;
 
     /* lookup address of elements of next and previous items */
-    bayer_path_elem* prev = elem->prev;
-    bayer_path_elem* next = elem->next;
+    mfu_path_elem* prev = elem->prev;
+    mfu_path_elem* next = elem->next;
 
     /* fix up element that comes before */
     if (prev != NULL) {
@@ -285,13 +285,13 @@ static int bayer_path_elem_extract(bayer_path* path, bayer_path_elem* elem)
         path->tail = prev;
     }
 
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* allocates and returns a string filled in with formatted text,
  * assumes that caller has called va_start before and will call va_end
  * after */
-static char* bayer_path_alloc_strf(const char* format, va_list args1, va_list args2)
+static char* mfu_path_alloc_strf(const char* format, va_list args1, va_list args2)
 {
     /* get length of component string */
     size_t chars = (size_t) vsnprintf(NULL, 0, format, args1);
@@ -300,7 +300,7 @@ static char* bayer_path_alloc_strf(const char* format, va_list args1, va_list ar
     size_t len = chars + 1;
     char* str = (char*) malloc(len);
     if (str == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate memory for path component string");
+        MFU_ABORT(-1, "Failed to allocate memory for path component string");
     }
 
     /* copy formatted string into new memory */
@@ -317,22 +317,22 @@ Allocate and delete path objects
 */
 
 /* allocate a new path */
-bayer_path* bayer_path_new()
+mfu_path* mfu_path_new()
 {
-    bayer_path* path = bayer_path_alloc();
+    mfu_path* path = mfu_path_alloc();
     if (path == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate memory for path object");
+        MFU_ABORT(-1, "Failed to allocate memory for path object");
     }
     return path;
 }
 
 /* allocates a path from string */
-bayer_path* bayer_path_from_str(const char* str)
+mfu_path* mfu_path_from_str(const char* str)
 {
     /* allocate a path object */
-    bayer_path* path = bayer_path_alloc();
+    mfu_path* path = mfu_path_alloc();
     if (path == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate memory for path object");
+        MFU_ABORT(-1, "Failed to allocate memory for path object");
     }
 
     /* check that str is not NULL */
@@ -351,7 +351,7 @@ bayer_path* bayer_path_from_str(const char* str)
             size_t buflen = (size_t)(end - start + 1);
             char* buf = (char*) malloc(buflen);
             if (buf == NULL) {
-                BAYER_ABORT(-1, "Failed to allocate memory for component string");
+                MFU_ABORT(-1, "Failed to allocate memory for component string");
             }
 
             /* copy characters into string buffer and add terminating NUL */
@@ -362,9 +362,9 @@ bayer_path* bayer_path_from_str(const char* str)
             buf[chars] = '\0';
 
             /* allocate new element */
-            bayer_path_elem* elem = bayer_path_elem_alloc();
+            mfu_path_elem* elem = mfu_path_elem_alloc();
             if (elem == NULL) {
-                BAYER_ABORT(-1, "Failed to allocate memory for path component");
+                MFU_ABORT(-1, "Failed to allocate memory for path component");
             }
 
             /* record string in element */
@@ -372,7 +372,7 @@ bayer_path* bayer_path_from_str(const char* str)
             elem->chars     = chars;
 
             /* add element to path */
-            bayer_path_elem_insert(path, path->components, elem);
+            mfu_path_elem_insert(path, path->components, elem);
 
             if (*end != '\0') {
                 /* advance to next character */
@@ -390,30 +390,30 @@ bayer_path* bayer_path_from_str(const char* str)
 }
 
 /* allocates a path from formatted string */
-bayer_path* bayer_path_from_strf(const char* format, ...)
+mfu_path* mfu_path_from_strf(const char* format, ...)
 {
     /* allocate formatted string */
     va_list args1, args2;
     va_start(args1, format);
     va_start(args2, format);
-    char* str = bayer_path_alloc_strf(format, args1, args2);
+    char* str = mfu_path_alloc_strf(format, args1, args2);
     va_end(args2);
     va_end(args1);
     if (str == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate memory for path component string");
+        MFU_ABORT(-1, "Failed to allocate memory for path component string");
     }
 
     /* create path from string */
-    bayer_path* path = bayer_path_from_str(str);
+    mfu_path* path = mfu_path_from_str(str);
 
     /* free the string */
-    bayer_free(&str);
+    mfu_free(&str);
 
     return path;
 }
 
 /* duplicate a path */
-bayer_path* bayer_path_dup(const bayer_path* path)
+mfu_path* mfu_path_dup(const mfu_path* path)
 {
     /* easy if path is NULL */
     if (path == NULL) {
@@ -421,23 +421,23 @@ bayer_path* bayer_path_dup(const bayer_path* path)
     }
 
     /* allocate a new path */
-    bayer_path* dup_path = bayer_path_new();
+    mfu_path* dup_path = mfu_path_new();
     if (dup_path == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate path object");
+        MFU_ABORT(-1, "Failed to allocate path object");
     }
 
     /* get pointer to first element and delete elements in list */
-    bayer_path_elem* current = path->head;
+    mfu_path_elem* current = path->head;
     while (current != NULL) {
         /* get pointer to element after current, delete current,
          * and set current to next */
-        bayer_path_elem* dup_elem = bayer_path_elem_dup(current);
+        mfu_path_elem* dup_elem = mfu_path_elem_dup(current);
         if (dup_elem == NULL) {
-            BAYER_ABORT(-1, "Failed to allocate path element object");
+            MFU_ABORT(-1, "Failed to allocate path element object");
         }
 
         /* insert new element at end of path */
-        bayer_path_elem_insert(dup_path, dup_path->components, dup_elem);
+        mfu_path_elem_insert(dup_path, dup_path->components, dup_elem);
 
         /* advance to next element */
         current = current->next;
@@ -447,29 +447,29 @@ bayer_path* bayer_path_dup(const bayer_path* path)
 }
 
 /* free a path */
-int bayer_path_delete(bayer_path** ptr_path)
+int mfu_path_delete(mfu_path** ptr_path)
 {
     if (ptr_path != NULL) {
         /* got an address to the pointer of a path object,
          * dereference to get pointer to path */
-        bayer_path* path = *ptr_path;
+        mfu_path* path = *ptr_path;
         if (path != NULL) {
             /* get pointer to first element and delete elements in list */
-            bayer_path_elem* current = path->head;
+            mfu_path_elem* current = path->head;
             while (current != NULL) {
                 /* get pointer to element after current, delete current,
                  * and set current to next */
-                bayer_path_elem* next = current->next;
-                bayer_path_elem_free(&current);
+                mfu_path_elem* next = current->next;
+                mfu_path_elem_free(&current);
                 current = next;
             }
         }
     }
 
     /* free the path object itself */
-    bayer_free(ptr_path);
+    mfu_free(ptr_path);
 
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /*
@@ -479,7 +479,7 @@ get size and string functions
 */
 
 /* returns 1 if path has 0 components, 0 otherwise */
-int bayer_path_is_null(const bayer_path* path)
+int mfu_path_is_null(const mfu_path* path)
 {
     if (path != NULL) {
         int components = path->components;
@@ -491,7 +491,7 @@ int bayer_path_is_null(const bayer_path* path)
 }
 
 /* return number of components in path */
-int bayer_path_components(const bayer_path* path)
+int mfu_path_components(const mfu_path* path)
 {
     if (path != NULL) {
         int components = path->components;
@@ -502,14 +502,14 @@ int bayer_path_components(const bayer_path* path)
 
 /* return number of characters needed to store path
  * (not including terminating NUL) */
-size_t bayer_path_strlen(const bayer_path* path)
+size_t mfu_path_strlen(const mfu_path* path)
 {
     if (path != NULL) {
         int components = path->components;
         if (components > 0) {
             /* special case for root directory, we want to print "/"
              * not the empty string */
-            bayer_path_elem* head = path->head;
+            mfu_path_elem* head = path->head;
             if (components == 1 && strcmp(head->component, "") == 0) {
                 /* if we only one component and it is the empty string,
                  * print this as the root directory */
@@ -528,7 +528,7 @@ size_t bayer_path_strlen(const bayer_path* path)
 }
 
 /* copies path into buf, caller must ensure buf is large enough */
-static int bayer_path_strcpy_internal(char* buf, const bayer_path* path)
+static int mfu_path_strcpy_internal(char* buf, const mfu_path* path)
 {
     /* special case for root directory,
      * we want to print "/" not the empty string */
@@ -536,12 +536,12 @@ static int bayer_path_strcpy_internal(char* buf, const bayer_path* path)
     if (components == 1 && strcmp(path->head->component, "") == 0) {
         /* got the root directory, just print "/" */
         strcpy(buf, "/");
-        return BAYER_SUCCESS;
+        return MFU_SUCCESS;
     }
 
     /* copy contents into string buffer */
     char* ptr = buf;
-    bayer_path_elem* current = path->head;
+    mfu_path_elem* current = path->head;
     while (current != NULL) {
         /* copy component to buffer */
         char* component = current->component;
@@ -550,7 +550,7 @@ static int bayer_path_strcpy_internal(char* buf, const bayer_path* path)
         ptr += chars;
 
         /* if there is another component, add a slash */
-        bayer_path_elem* next = current->next;
+        mfu_path_elem* next = current->next;
         if (next != NULL) {
             *ptr = '/';
             ptr++;
@@ -563,41 +563,41 @@ static int bayer_path_strcpy_internal(char* buf, const bayer_path* path)
     /* terminate the string */
     *ptr = '\0';
 
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* copy string into user buffer, abort if buffer is too small */
-size_t bayer_path_strcpy(char* buf, size_t n, const bayer_path* path)
+size_t mfu_path_strcpy(char* buf, size_t n, const mfu_path* path)
 {
     /* check that we have a pointer to a path */
     if (path == NULL) {
-        BAYER_ABORT(-1, "Cannot copy NULL pointer to string");
+        MFU_ABORT(-1, "Cannot copy NULL pointer to string");
     }
 
     /* we can't copy a NULL path */
-    if (bayer_path_is_null(path)) {
-        BAYER_ABORT(-1, "Cannot copy a NULL path to string");
+    if (mfu_path_is_null(path)) {
+        MFU_ABORT(-1, "Cannot copy a NULL path to string");
     }
 
     /* get length of path */
-    size_t len = bayer_path_strlen(path) + 1;
+    size_t len = mfu_path_strlen(path) + 1;
 
     /* if user buffer is too small, abort */
     if (n < len) {
-        BAYER_ABORT(-1, "User buffer of %d bytes is too small to hold string of %d bytes",
+        MFU_ABORT(-1, "User buffer of %d bytes is too small to hold string of %d bytes",
                     n, len, __LINE__
                    );
     }
 
     /* copy contents into string buffer */
-    bayer_path_strcpy_internal(buf, path);
+    mfu_path_strcpy_internal(buf, path);
 
     /* return number of bytes we copied to buffer */
     return len;
 }
 
 /* allocate memory and return path in string form */
-char* bayer_path_strdup(const bayer_path* path)
+char* mfu_path_strdup(const mfu_path* path)
 {
     /* if we have no pointer to a path object return NULL */
     if (path == NULL) {
@@ -610,14 +610,14 @@ char* bayer_path_strdup(const bayer_path* path)
     }
 
     /* compute number of bytes we need to allocate and allocate string */
-    size_t buflen = bayer_path_strlen(path) + 1;
+    size_t buflen = mfu_path_strlen(path) + 1;
     char* buf = (char*) malloc(buflen);
     if (buf == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate buffer for path");
+        MFU_ABORT(-1, "Failed to allocate buffer for path");
     }
 
     /* copy contents into string buffer */
-    bayer_path_strcpy_internal(buf, path);
+    mfu_path_strcpy_internal(buf, path);
 
     /* return new string to caller */
     return buf;
@@ -634,13 +634,13 @@ insert, append, prepend functions
  *   0   - before first element
  *   N-1 - before last element
  *   N   - after last element */
-static int bayer_path_combine(bayer_path* path1, int offset, bayer_path** ptr_path2)
+static int mfu_path_combine(mfu_path* path1, int offset, mfu_path** ptr_path2)
 {
     if (path1 != NULL) {
         /* check that offset is in range */
         int components = path1->components;
         if (offset < 0 || offset > components) {
-            BAYER_ABORT(-1, "Offset %d is out of range [0,%d]",
+            MFU_ABORT(-1, "Offset %d is out of range [0,%d]",
                         offset, components
                        );
         }
@@ -648,17 +648,17 @@ static int bayer_path_combine(bayer_path* path1, int offset, bayer_path** ptr_pa
         if (ptr_path2 != NULL) {
             /* got an address to the pointer of a path object,
              * dereference to get pointer to path */
-            bayer_path* path2 = *ptr_path2;
+            mfu_path* path2 = *ptr_path2;
             if (path2 != NULL) {
                 /* get pointer to head and tail of path2 */
-                bayer_path_elem* head2 = path2->head;
-                bayer_path_elem* tail2 = path2->tail;
+                mfu_path_elem* head2 = path2->head;
+                mfu_path_elem* tail2 = path2->tail;
 
                 /* if offset equals number of components, insert after last element,
                  * otherwise, insert element before specified element */
                 if (offset == components) {
                     /* get pointer to tail of path1 */
-                    bayer_path_elem* tail1 = path1->tail;
+                    mfu_path_elem* tail1 = path1->tail;
                     if (tail1 != NULL) {
                         /* join tail of path1 to head of path2 */
                         tail1->next = head2;
@@ -678,10 +678,10 @@ static int bayer_path_combine(bayer_path* path1, int offset, bayer_path** ptr_pa
                 }
                 else {
                     /* lookup element at specified offset */
-                    bayer_path_elem* current = bayer_path_elem_index(path1, offset);
+                    mfu_path_elem* current = mfu_path_elem_index(path1, offset);
 
                     /* get pointer to element before current */
-                    bayer_path_elem* prev = current->prev;
+                    mfu_path_elem* prev = current->prev;
 
                     /* tie previous element to head of path2 */
                     if (prev != NULL) {
@@ -714,13 +714,13 @@ static int bayer_path_combine(bayer_path* path1, int offset, bayer_path** ptr_pa
         }
 
         /* free the path2 struct */
-        bayer_free(ptr_path2);
+        mfu_free(ptr_path2);
     }
     else {
-        BAYER_ABORT(-1, "Cannot attach a path to a NULL path");
+        MFU_ABORT(-1, "Cannot attach a path to a NULL path");
     }
 
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* inserts path2 so head element in path2 starts at specified offset
@@ -728,37 +728,37 @@ static int bayer_path_combine(bayer_path* path1, int offset, bayer_path** ptr_pa
  *   0   - before first element of path1
  *   N-1 - before last element of path1
  *   N   - after last element of path1 */
-int bayer_path_insert(bayer_path* path1, int offset, const bayer_path* path2)
+int mfu_path_insert(mfu_path* path1, int offset, const mfu_path* path2)
 {
-    int rc = BAYER_SUCCESS;
+    int rc = MFU_SUCCESS;
     if (path1 != NULL) {
         /* make a copy of path2, and combint at specified offset in path1,
          * combine deletes copy of path2 */
-        bayer_path* path2_copy = bayer_path_dup(path2);
-        rc = bayer_path_combine(path1, offset, &path2_copy);
+        mfu_path* path2_copy = mfu_path_dup(path2);
+        rc = mfu_path_combine(path1, offset, &path2_copy);
     }
     else {
-        BAYER_ABORT(-1, "Cannot attach a path to a NULL path");
+        MFU_ABORT(-1, "Cannot attach a path to a NULL path");
     }
     return rc;
 }
 
 /* prepends path2 to path1 */
-int bayer_path_prepend(bayer_path* path1, const bayer_path* path2)
+int mfu_path_prepend(mfu_path* path1, const mfu_path* path2)
 {
-    int rc = bayer_path_insert(path1, 0, path2);
+    int rc = mfu_path_insert(path1, 0, path2);
     return rc;
 }
 
 /* appends path2 to path1 */
-int bayer_path_append(bayer_path* path1, const bayer_path* path2)
+int mfu_path_append(mfu_path* path1, const mfu_path* path2)
 {
-    int rc = BAYER_SUCCESS;
+    int rc = MFU_SUCCESS;
     if (path1 != NULL) {
-        rc = bayer_path_insert(path1, path1->components, path2);
+        rc = mfu_path_insert(path1, path1->components, path2);
     }
     else {
-        BAYER_ABORT(-1, "Cannot attach a path to a NULL path");
+        MFU_ABORT(-1, "Cannot attach a path to a NULL path");
     }
     return rc;
 }
@@ -768,40 +768,40 @@ int bayer_path_append(bayer_path* path1, const bayer_path* path2)
  *   0   - before first element of path
  *   N-1 - before last element of path
  *   N   - after last element of path */
-int bayer_path_insert_str(bayer_path* path, int offset, const char* str)
+int mfu_path_insert_str(mfu_path* path, int offset, const char* str)
 {
     /* verify that we got a path as input */
     if (path == NULL) {
-        BAYER_ABORT(-1, "Cannot insert string to a NULL path");
+        MFU_ABORT(-1, "Cannot insert string to a NULL path");
     }
 
     /* create a path from this string */
-    bayer_path* newpath = bayer_path_from_str(str);
+    mfu_path* newpath = mfu_path_from_str(str);
     if (newpath == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate path for insertion");
+        MFU_ABORT(-1, "Failed to allocate path for insertion");
     }
 
     /* attach newpath to original path */
-    int rc = bayer_path_combine(path, offset, &newpath);
+    int rc = mfu_path_combine(path, offset, &newpath);
     return rc;
 }
 
 /* prepends components in string to path */
-int bayer_path_prepend_str(bayer_path* path, const char* str)
+int mfu_path_prepend_str(mfu_path* path, const char* str)
 {
-    int rc = bayer_path_insert_str(path, 0, str);
+    int rc = mfu_path_insert_str(path, 0, str);
     return rc;
 }
 
 /* appends components in string to path */
-int bayer_path_append_str(bayer_path* path, const char* str)
+int mfu_path_append_str(mfu_path* path, const char* str)
 {
-    int rc = BAYER_SUCCESS;
+    int rc = MFU_SUCCESS;
     if (path != NULL) {
-        rc = bayer_path_insert_str(path, path->components, str);
+        rc = mfu_path_insert_str(path, path->components, str);
     }
     else {
-        BAYER_ABORT(-1, "Cannot attach string to a NULL path");
+        MFU_ABORT(-1, "Cannot attach string to a NULL path");
     }
     return rc;
 }
@@ -811,85 +811,85 @@ int bayer_path_append_str(bayer_path* path, const char* str)
  *   0   - before first element of path
  *   N-1 - before last element of path
  *   N   - after last element of path */
-int bayer_path_insert_strf(bayer_path* path, int offset, const char* format, ...)
+int mfu_path_insert_strf(mfu_path* path, int offset, const char* format, ...)
 {
     /* verify that we got a path as input */
     if (path == NULL) {
-        BAYER_ABORT(-1, "Cannot append string to a NULL path");
+        MFU_ABORT(-1, "Cannot append string to a NULL path");
     }
 
     /* allocate formatted string */
     va_list args1, args2;
     va_start(args1, format);
     va_start(args2, format);
-    char* str = bayer_path_alloc_strf(format, args1, args2);
+    char* str = mfu_path_alloc_strf(format, args1, args2);
     va_end(args2);
     va_end(args1);
     if (str == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate memory for path component string");
+        MFU_ABORT(-1, "Failed to allocate memory for path component string");
     }
 
     /* attach str to path */
-    int rc = bayer_path_insert_str(path, offset, str);
+    int rc = mfu_path_insert_str(path, offset, str);
 
     /* free the string */
-    bayer_free(&str);
+    mfu_free(&str);
 
     return rc;
 }
 
 /* prepends components in string to path */
-int bayer_path_prepend_strf(bayer_path* path, const char* format, ...)
+int mfu_path_prepend_strf(mfu_path* path, const char* format, ...)
 {
     /* verify that we got a path as input */
     if (path == NULL) {
-        BAYER_ABORT(-1, "Cannot append string to a NULL path");
+        MFU_ABORT(-1, "Cannot append string to a NULL path");
     }
 
     /* allocate formatted string */
     va_list args1, args2;
     va_start(args1, format);
     va_start(args2, format);
-    char* str = bayer_path_alloc_strf(format, args1, args2);
+    char* str = mfu_path_alloc_strf(format, args1, args2);
     va_end(args2);
     va_end(args1);
     if (str == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate memory for path component string");
+        MFU_ABORT(-1, "Failed to allocate memory for path component string");
     }
 
     /* attach str to path */
-    int rc = bayer_path_insert_str(path, 0, str);
+    int rc = mfu_path_insert_str(path, 0, str);
 
     /* free the string */
-    bayer_free(&str);
+    mfu_free(&str);
 
     return rc;
 }
 
 /* adds a new component to end of path using printf-like formatting */
-int bayer_path_append_strf(bayer_path* path, const char* format, ...)
+int mfu_path_append_strf(mfu_path* path, const char* format, ...)
 {
     /* verify that we got a path as input */
     if (path == NULL) {
-        BAYER_ABORT(-1, "Cannot append string to a NULL path");
+        MFU_ABORT(-1, "Cannot append string to a NULL path");
     }
 
     /* allocate formatted string */
     va_list args1, args2;
     va_start(args1, format);
     va_start(args2, format);
-    char* str = bayer_path_alloc_strf(format, args1, args2);
+    char* str = mfu_path_alloc_strf(format, args1, args2);
     va_end(args2);
     va_end(args1);
     if (str == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate memory for path component string");
+        MFU_ABORT(-1, "Failed to allocate memory for path component string");
     }
 
     /* attach str to path */
-    int rc = bayer_path_insert_str(path, path->components, str);
+    int rc = mfu_path_insert_str(path, path->components, str);
 
     /* free the string */
-    bayer_free(&str);
+    mfu_free(&str);
 
     return rc;
 }
@@ -903,11 +903,11 @@ cut, slice, and subpath functions
 /* keeps upto length components of path starting at specified location
  * and discards the rest, offset can be negative to count
  * from back, a negative length copies the remainder of the string */
-int bayer_path_slice(bayer_path* path, int offset, int length)
+int mfu_path_slice(mfu_path* path, int offset, int length)
 {
     /* check that we have a path */
     if (path == NULL) {
-        return BAYER_SUCCESS;
+        return MFU_SUCCESS;
     }
 
     /* force offset into range */
@@ -922,23 +922,23 @@ int bayer_path_slice(bayer_path* path, int offset, int length)
     }
     else {
         /* nothing left to slice */
-        return BAYER_SUCCESS;
+        return MFU_SUCCESS;
     }
 
     /* lookup first element to be head of new path */
-    bayer_path_elem* current = bayer_path_elem_index(path, offset);
+    mfu_path_elem* current = mfu_path_elem_index(path, offset);
 
     /* delete any items before this one */
-    bayer_path_elem* elem = current->prev;
+    mfu_path_elem* elem = current->prev;
     while (elem != NULL) {
-        bayer_path_elem* prev = elem->prev;
-        bayer_path_elem_free(&elem);
+        mfu_path_elem* prev = elem->prev;
+        mfu_path_elem_free(&elem);
         elem = prev;
     }
 
     /* remember our starting element and intialize tail to NULL */
-    bayer_path_elem* head = current;
-    bayer_path_elem* tail = NULL;
+    mfu_path_elem* head = current;
+    mfu_path_elem* tail = NULL;
 
     /* step through length elements or to the end of the list,
      * a negative length means we step until end of list */
@@ -961,8 +961,8 @@ int bayer_path_slice(bayer_path* path, int offset, int length)
     /* current now points to first element to be cut,
      * delete it and all trailing items */
     while (current != NULL) {
-        bayer_path_elem* next = current->next;
-        bayer_path_elem_free(&current);
+        mfu_path_elem* next = current->next;
+        mfu_path_elem_free(&current);
         current = next;
     }
 
@@ -982,31 +982,31 @@ int bayer_path_slice(bayer_path* path, int offset, int length)
         path->tail = NULL;
     }
 
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* drops last component from path */
-int bayer_path_dirname(bayer_path* path)
+int mfu_path_dirname(mfu_path* path)
 {
-    int components = bayer_path_components(path);
+    int components = mfu_path_components(path);
     if (components > 0) {
-        int rc = bayer_path_slice(path, 0, components - 1);
+        int rc = mfu_path_slice(path, 0, components - 1);
         return rc;
     }
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* only leaves last component of path */
-int bayer_path_basename(bayer_path* path)
+int mfu_path_basename(mfu_path* path)
 {
-    int rc = bayer_path_slice(path, -1, 1);
+    int rc = mfu_path_slice(path, -1, 1);
     return rc;
 }
 
 /* copies upto length components of path starting at specified location
  * and returns subpath as new path, offset can be negative to count
  * from back, a negative length copies the remainder of the string */
-bayer_path* bayer_path_sub(bayer_path* path, int offset, int length)
+mfu_path* mfu_path_sub(mfu_path* path, int offset, int length)
 {
     /* check that we have a path */
     if (path == NULL) {
@@ -1030,9 +1030,9 @@ bayer_path* bayer_path_sub(bayer_path* path, int offset, int length)
     }
 
     /* allocate and initialize an empty path object */
-    bayer_path* newpath = bayer_path_alloc();
+    mfu_path* newpath = mfu_path_alloc();
     if (newpath == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate memory for path object");
+        MFU_ABORT(-1, "Failed to allocate memory for path object");
     }
 
     /* return the empty path if source path is empty */
@@ -1041,18 +1041,18 @@ bayer_path* bayer_path_sub(bayer_path* path, int offset, int length)
     }
 
     /* lookup first element to be head of new path */
-    bayer_path_elem* current = bayer_path_elem_index(path, offset);
+    mfu_path_elem* current = mfu_path_elem_index(path, offset);
 
     /* copy elements from path and attach to newpath */
     while ((length < 0 || length > 0) && current != NULL) {
         /* duplicate element */
-        bayer_path_elem* elem = bayer_path_elem_dup(current);
+        mfu_path_elem* elem = mfu_path_elem_dup(current);
         if (elem == NULL) {
-            BAYER_ABORT(-1, "Failed to duplicate element of path object");
+            MFU_ABORT(-1, "Failed to duplicate element of path object");
         }
 
         /* insert element into newpath */
-        bayer_path_elem_insert(newpath, newpath->components, elem);
+        mfu_path_elem_insert(newpath, newpath->components, elem);
 
         /* advance to next element */
         current = current->next;
@@ -1067,7 +1067,7 @@ bayer_path* bayer_path_sub(bayer_path* path, int offset, int length)
 
 /* chops path at specified location and returns remainder as new path,
  * offset can be negative to count from back */
-bayer_path* bayer_path_cut(bayer_path* path, int offset)
+mfu_path* mfu_path_cut(mfu_path* path, int offset)
 {
     /* check that we have a path */
     if (path == NULL) {
@@ -1075,9 +1075,9 @@ bayer_path* bayer_path_cut(bayer_path* path, int offset)
     }
 
     /* allocate and initialize an empty path object */
-    bayer_path* newpath = bayer_path_alloc();
+    mfu_path* newpath = mfu_path_alloc();
     if (newpath == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate memory for path object");
+        MFU_ABORT(-1, "Failed to allocate memory for path object");
     }
 
     /* if path is empty, return an empty path */
@@ -1095,7 +1095,7 @@ bayer_path* bayer_path_cut(bayer_path* path, int offset)
     }
 
     /* lookup first element to be head of new path */
-    bayer_path_elem* current = bayer_path_elem_index(path, offset);
+    mfu_path_elem* current = mfu_path_elem_index(path, offset);
 
     /* set head and tail of newpath2 */
     newpath->head = current;
@@ -1104,7 +1104,7 @@ bayer_path* bayer_path_cut(bayer_path* path, int offset)
     /* set tail (and head) of path */
     if (current != NULL) {
         /* get element before current to be new tail */
-        bayer_path_elem* prev = current->prev;
+        mfu_path_elem* prev = current->prev;
 
         /* cut current from previous element */
         current->prev = NULL;
@@ -1154,34 +1154,34 @@ simplify and resolve functions
 */
 
 /* removes consecutive '/', '.', '..', and trailing '/' */
-int bayer_path_reduce(bayer_path* path)
+int mfu_path_reduce(mfu_path* path)
 {
     /* check that we got a path */
     if (path == NULL) {
         /* nothing to do in this case */
-        return BAYER_SUCCESS;
+        return MFU_SUCCESS;
     }
 
 
     /* now iterate through and remove any "." and empty strings,
      * we go from back to front to handle paths like "./" */
-    bayer_path_elem* current = path->tail;
+    mfu_path_elem* current = path->tail;
     while (current != NULL) {
         /* get pointer to previous element */
-        bayer_path_elem* prev = current->prev;
+        mfu_path_elem* prev = current->prev;
 
         /* check whether component string matches "." or "" */
         char* component = current->component;
         if (strcmp(component, ".") == 0) {
             /* pull element out of path and delete it */
-            bayer_path_elem_extract(path, current);
-            bayer_path_elem_free(&current);
+            mfu_path_elem_extract(path, current);
+            mfu_path_elem_free(&current);
         }
         else if (strcmp(component, "") == 0 && current != path->head) {
             /* head is allowed to be empty string so that we don't chop leading '/' */
             /* pull element out of path and delete it */
-            bayer_path_elem_extract(path, current);
-            bayer_path_elem_free(&current);
+            mfu_path_elem_extract(path, current);
+            mfu_path_elem_free(&current);
         }
 
         /* advance to previous item */
@@ -1192,8 +1192,8 @@ int bayer_path_reduce(bayer_path* path)
     current = path->head;
     while (current != NULL) {
         /* get pointer to previous and next elements */
-        bayer_path_elem* prev = current->prev;
-        bayer_path_elem* next = current->next;
+        mfu_path_elem* prev = current->prev;
+        mfu_path_elem* next = current->next;
 
         /* check whether component string matches ".." */
         char* component = current->component;
@@ -1208,18 +1208,18 @@ int bayer_path_reduce(bayer_path* path)
                      * should be one at very beginning of string */
                     if (strcmp(prev_component, "") != 0) {
                         /* delete previous element */
-                        bayer_path_elem_extract(path, prev);
-                        bayer_path_elem_free(&prev);
+                        mfu_path_elem_extract(path, prev);
+                        mfu_path_elem_free(&prev);
 
                         /* delete current element */
-                        bayer_path_elem_extract(path, current);
-                        bayer_path_elem_free(&current);
+                        mfu_path_elem_extract(path, current);
+                        mfu_path_elem_free(&current);
                     }
                     else {
                         /* trying to pop past root directory, just drop the ".." */
-                        //BAYER_ABORT(-1, "Cannot pop past root directory");
-                        bayer_path_elem_extract(path, current);
-                        bayer_path_elem_free(&current);
+                        //MFU_ABORT(-1, "Cannot pop past root directory");
+                        mfu_path_elem_extract(path, current);
+                        mfu_path_elem_free(&current);
                     }
                 }
                 else {
@@ -1235,41 +1235,41 @@ int bayer_path_reduce(bayer_path* path)
         current = next;
     }
 
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* creates path from string, calls reduce, calls path_strdup,
- * and deletes path, caller must free returned string with bayer_free */
-char* bayer_path_strdup_reduce_str(const char* str)
+ * and deletes path, caller must free returned string with mfu_free */
+char* mfu_path_strdup_reduce_str(const char* str)
 {
-    bayer_path* path = bayer_path_from_str(str);
-    bayer_path_reduce(path);
-    char* newstr = bayer_path_strdup(path);
-    bayer_path_delete(&path);
+    mfu_path* path = mfu_path_from_str(str);
+    mfu_path_reduce(path);
+    char* newstr = mfu_path_strdup(path);
+    mfu_path_delete(&path);
     return newstr;
 }
 
 /* same as above, but prepend curr working dir if path not absolute */
-char* bayer_path_strdup_abs_reduce_str(const char* str)
+char* mfu_path_strdup_abs_reduce_str(const char* str)
 {
-    bayer_path* path = bayer_path_from_str(str);
-    if (! bayer_path_is_absolute(path)) {
+    mfu_path* path = mfu_path_from_str(str);
+    if (! mfu_path_is_absolute(path)) {
         char cwd[PATH_MAX];
-        bayer_getcwd(cwd, PATH_MAX);
-        bayer_path_prepend_str(path, cwd);
+        mfu_getcwd(cwd, PATH_MAX);
+        mfu_path_prepend_str(path, cwd);
     }
-    bayer_path_reduce(path);
-    char* newstr = bayer_path_strdup(path);
-    bayer_path_delete(&path);
+    mfu_path_reduce(path);
+    char* newstr = mfu_path_strdup(path);
+    mfu_path_delete(&path);
     return newstr;
 }
 
 /* return 1 if path starts with an empty string, 0 otherwise */
-int bayer_path_is_absolute(const bayer_path* path)
+int mfu_path_is_absolute(const mfu_path* path)
 {
     if (path != NULL) {
         if (path->components > 0) {
-            const bayer_path_elem* head = path->head;
+            const mfu_path_elem* head = path->head;
             const char* component = head->component;
             if (strcmp(component, "") == 0) {
                 return 1;
@@ -1281,59 +1281,59 @@ int bayer_path_is_absolute(const bayer_path* path)
 
 /* given a path, create a copy, prepernd curr working dir if path
  * not absolute, and reduce it */
-bayer_path* bayer_path_abs_reduce(const bayer_path* path)
+mfu_path* mfu_path_abs_reduce(const mfu_path* path)
 {
-    bayer_path* newpath = bayer_path_dup(path);
-    if (! bayer_path_is_absolute(newpath)) {
+    mfu_path* newpath = mfu_path_dup(path);
+    if (! mfu_path_is_absolute(newpath)) {
         char cwd[PATH_MAX];
-        bayer_getcwd(cwd, PATH_MAX);
-        bayer_path_prepend_str(newpath, cwd);
+        mfu_getcwd(cwd, PATH_MAX);
+        mfu_path_prepend_str(newpath, cwd);
     }
-    bayer_path_reduce(newpath);
+    mfu_path_reduce(newpath);
     return newpath;
 }
 
-bayer_path_result bayer_path_cmp(const bayer_path* src, const bayer_path* dst)
+mfu_path_result mfu_path_cmp(const mfu_path* src, const mfu_path* dst)
 {
     /* check that we got pointers to both src and dst */
     if (src == NULL || dst == NULL) {
         /* if one is NULL but not both, consider them to be different */
         if (src != NULL || dst != NULL) {
-            return BAYER_PATH_DIFF;
+            return MFU_PATH_DIFF;
         }
 
         /* both values are NULL, so consider them to be equal */
-        return BAYER_PATH_EQUAL;
+        return MFU_PATH_EQUAL;
     }
 
     /* check that src and dst aren't NULL paths */
-    int src_null = bayer_path_is_null(src);
-    int dst_null = bayer_path_is_null(dst);
+    int src_null = mfu_path_is_null(src);
+    int dst_null = mfu_path_is_null(dst);
     if (src_null || dst_null) {
         /* if one is NULL but not both, consider them to be different */
         if ((! src_null) || (! dst_null)) {
-            return BAYER_PATH_DIFF;
+            return MFU_PATH_DIFF;
         }
 
         /* both values are NULL, so consider them to be equal */
-        return BAYER_PATH_EQUAL;
+        return MFU_PATH_EQUAL;
     }
 
     /* force source and destination to absolute form and reduce them */
-    bayer_path* abs_src = bayer_path_abs_reduce(src);
-    bayer_path* abs_dst = bayer_path_abs_reduce(dst);
+    mfu_path* abs_src = mfu_path_abs_reduce(src);
+    mfu_path* abs_dst = mfu_path_abs_reduce(dst);
 
     /* get pointers to start of parent and child */
-    bayer_path_result result = BAYER_PATH_EQUAL;
-    bayer_path_elem* src_elem = abs_src->head;
-    bayer_path_elem* dst_elem = abs_dst->head;
+    mfu_path_result result = MFU_PATH_EQUAL;
+    mfu_path_elem* src_elem = abs_src->head;
+    mfu_path_elem* dst_elem = abs_dst->head;
     while (src_elem != NULL && dst_elem != NULL) {
         /* compare strings for this element */
         const char* src_component = src_elem->component;
         const char* dst_component = dst_elem->component;
         if (strcmp(src_component, dst_component) != 0) {
             /* found a component in src that's not in dst */
-            result = BAYER_PATH_DIFF;
+            result = MFU_PATH_DIFF;
             break;
         }
 
@@ -1344,47 +1344,47 @@ bayer_path_result bayer_path_cmp(const bayer_path* src, const bayer_path* dst)
 
     /* if everything is equal so far, but we've run out of components,
      * check to see if one is contained within the other */
-    if (result == BAYER_PATH_EQUAL) {
+    if (result == MFU_PATH_EQUAL) {
         if (src_elem == NULL && dst_elem != NULL) {
             /* dst is contained within source */
-            result = BAYER_PATH_DEST_CHILD;
+            result = MFU_PATH_DEST_CHILD;
         } else if (src_elem != NULL && dst_elem == NULL) {
             /* src is contained within dst */
-            result = BAYER_PATH_SRC_CHILD;
+            result = MFU_PATH_SRC_CHILD;
         }
     }
 
-    bayer_path_delete(&abs_src);
-    bayer_path_delete(&abs_dst);
+    mfu_path_delete(&abs_src);
+    mfu_path_delete(&abs_dst);
 
     return result;
 }
 
 /* compute and return relative path from src to dst */
-bayer_path* bayer_path_relative(const bayer_path* src, const bayer_path* dst)
+mfu_path* mfu_path_relative(const mfu_path* src, const mfu_path* dst)
 {
     /* check that we don't have NULL pointers */
     if (src == NULL || dst == NULL) {
-        BAYER_ABORT(-1, "Either src or dst pointer is NULL");
+        MFU_ABORT(-1, "Either src or dst pointer is NULL");
     }
 
     /* we can't get to a NULL path from a non-NULL path */
     int src_components = src->components;
     int dst_components = dst->components;
     if (src_components > 0 && dst_components == 0) {
-        BAYER_ABORT(-1, "Cannot get from non-NULL path to NULL path");
+        MFU_ABORT(-1, "Cannot get from non-NULL path to NULL path");
     }
 
     /* allocate a new path to record relative path */
-    bayer_path* rel = bayer_path_new();
+    mfu_path* rel = mfu_path_new();
     if (rel == NULL) {
-        BAYER_ABORT(-1, "Failed to allocate memory for relative path");
+        MFU_ABORT(-1, "Failed to allocate memory for relative path");
     }
 
     /* walk down both paths until we find the first location where they
      * differ */
-    const bayer_path_elem* src_elem = src->head;
-    const bayer_path_elem* dst_elem = dst->head;
+    const mfu_path_elem* src_elem = src->head;
+    const mfu_path_elem* dst_elem = dst->head;
     while (1) {
         /* check that we have valid src and dst elements */
         if (src_elem == NULL) {
@@ -1409,14 +1409,14 @@ bayer_path* bayer_path_relative(const bayer_path* src, const bayer_path* dst)
     /* if there is anything left in source, we need to pop back */
     while (src_elem != NULL) {
         /* pop back one level, and go to next element */
-        bayer_path_append_str(rel, "..");
+        mfu_path_append_str(rel, "..");
         src_elem = src_elem->next;
     }
 
     /* now tack on any items left from dst */
     while (dst_elem != NULL) {
         const char* dst_component = dst_elem->component;
-        bayer_path_append_str(rel, dst_component);
+        mfu_path_append_str(rel, dst_component);
         dst_elem = dst_elem->next;
     }
 
@@ -1431,22 +1431,22 @@ I/O routines with paths
 
 #if 0
 /* tests whether the file or directory is readable */
-int bayer_path_is_readable(const bayer_path* file)
+int mfu_path_is_readable(const mfu_path* file)
 {
     /* convert to string and delegate to I/O routine */
-    char* file_str = bayer_path_strdup(file);
-    int rc = bayer_file_is_readable(file_str);
-    bayer_free(&file_str);
+    char* file_str = mfu_path_strdup(file);
+    int rc = mfu_file_is_readable(file_str);
+    mfu_free(&file_str);
     return rc;
 }
 
 /* tests whether the file or directory is writeable */
-int bayer_path_is_writeable(const bayer_path* file)
+int mfu_path_is_writeable(const mfu_path* file)
 {
     /* convert to string and delegate to I/O routine */
-    char* file_str = bayer_path_strdup(file);
-    int rc = bayer_file_is_writable(file_str);
-    bayer_free(&file_str);
+    char* file_str = mfu_path_strdup(file);
+    int rc = mfu_file_is_writable(file_str);
+    mfu_free(&file_str);
     return rc;
 }
 #endif
@@ -1464,22 +1464,22 @@ Pretty print for TotalView debug window
 
 #include "tv_data_display.h"
 
-static int TV_ttf_display_type(const bayer_path* path)
+static int TV_ttf_display_type(const mfu_path* path)
 {
     if (path == NULL) {
         /* empty path, nothing to display here */
         return TV_ttf_format_ok;
     }
 
-    if (bayer_path_is_null(path)) {
+    if (mfu_path_is_null(path)) {
         /* empty path, nothing to display here */
         return TV_ttf_format_ok;
     }
 
     /* print path in string form */
-    char* str = bayer_path_strdup(path);
+    char* str = mfu_path_strdup(path);
     TV_ttf_add_row("path", TV_ttf_type_ascii_string, str);
-    bayer_free(&str);
+    mfu_free(&str);
 
     return TV_ttf_format_ok;
 }

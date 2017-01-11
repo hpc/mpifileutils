@@ -55,8 +55,8 @@
 #include <libgen.h> /* dirname */
 
 #include "dtcmp.h"
-#include "bayer.h"
-#include "bayer_flist_internal.h"
+#include "mfu.h"
+#include "mfu_flist_internal.h"
 
 /* create a datatype to hold file name and stat info */
 static void create_stattype(int detail, int chars, MPI_Datatype* dt_stat)
@@ -112,14 +112,14 @@ static size_t list_elem_encode(void* buf, const elem_t* elem)
     *ptr = '|';
     ptr++;
 
-    bayer_filetype type = elem->type;
-    if (type == BAYER_TYPE_FILE) {
+    mfu_filetype type = elem->type;
+    if (type == MFU_TYPE_FILE) {
         *ptr = 'F';
     }
-    else if (type == BAYER_TYPE_DIR) {
+    else if (type == MFU_TYPE_DIR) {
         *ptr = 'D';
     }
-    else if (type == BAYER_TYPE_LINK) {
+    else if (type == MFU_TYPE_LINK) {
         *ptr = 'L';
     }
     else {
@@ -140,31 +140,31 @@ static void list_elem_decode(char* buf, elem_t* elem)
     const char* file = strtok(buf, "|");
 
     /* copy path */
-    elem->file = BAYER_STRDUP(file);
+    elem->file = MFU_STRDUP(file);
 
     /* set depth */
-    elem->depth = bayer_flist_compute_depth(file);
+    elem->depth = mfu_flist_compute_depth(file);
 
     elem->detail = 0;
 
     const char* type = strtok(NULL, "|");
     if (type == NULL) {
-        elem->type = BAYER_TYPE_UNKNOWN;
+        elem->type = MFU_TYPE_UNKNOWN;
         return;
     }
 
     char c = type[0];
     if (c == 'F') {
-        elem->type = BAYER_TYPE_FILE;
+        elem->type = MFU_TYPE_FILE;
     }
     else if (c == 'D') {
-        elem->type = BAYER_TYPE_DIR;
+        elem->type = MFU_TYPE_DIR;
     }
     else if (c == 'L') {
-        elem->type = BAYER_TYPE_LINK;
+        elem->type = MFU_TYPE_LINK;
     }
     else {
-        elem->type = BAYER_TYPE_UNKNOWN;
+        elem->type = MFU_TYPE_UNKNOWN;
     }
 
     return;
@@ -197,20 +197,20 @@ static size_t list_elem_pack(void* buf, int detail, uint64_t chars, const elem_t
     ptr += chars;
 
     if (detail) {
-        bayer_pack_uint64(&ptr, elem->mode);
-        bayer_pack_uint64(&ptr, elem->uid);
-        bayer_pack_uint64(&ptr, elem->gid);
-        bayer_pack_uint64(&ptr, elem->atime);
-        bayer_pack_uint64(&ptr, elem->atime_nsec);
-        bayer_pack_uint64(&ptr, elem->mtime);
-        bayer_pack_uint64(&ptr, elem->mtime_nsec);
-        bayer_pack_uint64(&ptr, elem->ctime);
-        bayer_pack_uint64(&ptr, elem->ctime_nsec);
-        bayer_pack_uint64(&ptr, elem->size);
+        mfu_pack_uint64(&ptr, elem->mode);
+        mfu_pack_uint64(&ptr, elem->uid);
+        mfu_pack_uint64(&ptr, elem->gid);
+        mfu_pack_uint64(&ptr, elem->atime);
+        mfu_pack_uint64(&ptr, elem->atime_nsec);
+        mfu_pack_uint64(&ptr, elem->mtime);
+        mfu_pack_uint64(&ptr, elem->mtime_nsec);
+        mfu_pack_uint64(&ptr, elem->ctime);
+        mfu_pack_uint64(&ptr, elem->ctime_nsec);
+        mfu_pack_uint64(&ptr, elem->size);
     }
     else {
         /* just have the file type */
-        bayer_pack_uint32(&ptr, elem->type);
+        mfu_pack_uint32(&ptr, elem->type);
     }
 
     size_t bytes = (size_t)(ptr - start);
@@ -228,31 +228,31 @@ static size_t list_elem_unpack(const void* buf, int detail, uint64_t chars, elem
     ptr += chars;
 
     /* copy path */
-    elem->file = BAYER_STRDUP(file);
+    elem->file = MFU_STRDUP(file);
 
     /* set depth */
-    elem->depth = bayer_flist_compute_depth(file);
+    elem->depth = mfu_flist_compute_depth(file);
 
     elem->detail = detail;
 
     if (detail) {
         /* extract fields */
-        bayer_unpack_uint64(&ptr, &elem->mode);
-        bayer_unpack_uint64(&ptr, &elem->uid);
-        bayer_unpack_uint64(&ptr, &elem->gid);
-        bayer_unpack_uint64(&ptr, &elem->atime);
-        bayer_unpack_uint64(&ptr, &elem->atime_nsec);
-        bayer_unpack_uint64(&ptr, &elem->mtime);
-        bayer_unpack_uint64(&ptr, &elem->mtime_nsec);
-        bayer_unpack_uint64(&ptr, &elem->ctime);
-        bayer_unpack_uint64(&ptr, &elem->ctime_nsec);
-        bayer_unpack_uint64(&ptr, &elem->size);
+        mfu_unpack_uint64(&ptr, &elem->mode);
+        mfu_unpack_uint64(&ptr, &elem->uid);
+        mfu_unpack_uint64(&ptr, &elem->gid);
+        mfu_unpack_uint64(&ptr, &elem->atime);
+        mfu_unpack_uint64(&ptr, &elem->atime_nsec);
+        mfu_unpack_uint64(&ptr, &elem->mtime);
+        mfu_unpack_uint64(&ptr, &elem->mtime_nsec);
+        mfu_unpack_uint64(&ptr, &elem->ctime);
+        mfu_unpack_uint64(&ptr, &elem->ctime_nsec);
+        mfu_unpack_uint64(&ptr, &elem->size);
 
         /* use mode to set file type */
-        elem->type = bayer_flist_mode_to_filetype((mode_t)elem->mode);
+        elem->type = mfu_flist_mode_to_filetype((mode_t)elem->mode);
     }
     else {
-        bayer_unpack_uint32(&ptr, &elem->type);
+        mfu_unpack_uint32(&ptr, &elem->type);
     }
 
     size_t bytes = (size_t)(ptr - start);
@@ -263,13 +263,13 @@ static size_t list_elem_unpack(const void* buf, int detail, uint64_t chars, elem
 static void list_insert_decode(flist_t* flist, char* buf)
 {
     /* create new element to record file path, file type, and stat info */
-    elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
+    elem_t* elem = (elem_t*) MFU_MALLOC(sizeof(elem_t));
 
     /* decode buffer and store values in element */
     list_elem_decode(buf, elem);
 
     /* append element to tail of linked list */
-    bayer_flist_insert_elem(flist, elem);
+    mfu_flist_insert_elem(flist, elem);
 
     return;
 }
@@ -278,13 +278,13 @@ static void list_insert_decode(flist_t* flist, char* buf)
 static size_t list_insert_ptr(flist_t* flist, char* ptr, int detail, uint64_t chars)
 {
     /* create new element to record file path, file type, and stat info */
-    elem_t* elem = (elem_t*) BAYER_MALLOC(sizeof(elem_t));
+    elem_t* elem = (elem_t*) MFU_MALLOC(sizeof(elem_t));
 
     /* get name and advance pointer */
     size_t bytes = list_elem_unpack(ptr, detail, chars, elem);
 
     /* append element to tail of linked list */
-    bayer_flist_insert_elem(flist, elem);
+    mfu_flist_insert_elem(flist, elem);
 
     return bytes;
 }
@@ -297,7 +297,7 @@ static uint64_t get_filesize(const char* name)
 {
     uint64_t size = 0;
     struct stat sb;
-    int rc = bayer_lstat(name, &sb);
+    int rc = mfu_lstat(name, &sb);
     if (rc == 0) {
         size = (uint64_t) sb.st_size;
     }
@@ -366,8 +366,8 @@ static void read_cache_variable(
     /* allocate a buffer, ensure it's large enough to hold at least one
      * complete record */
     size_t bufsize = chunk_size;
-    void* buf1 = BAYER_MALLOC(bufsize);
-    void* buf2 = BAYER_MALLOC(bufsize);
+    void* buf1 = MFU_MALLOC(bufsize);
+    void* buf2 = MFU_MALLOC(bufsize);
     void* buf  = buf1;
 
     /* set file view to be sequence of characters past header */
@@ -516,8 +516,8 @@ static void read_cache_variable(
     }
 
     /* free buffer */
-    bayer_free(&buf2);
-    bayer_free(&buf1);
+    mfu_free(&buf2);
+    mfu_free(&buf1);
     buf = NULL;
 
     return;
@@ -597,7 +597,7 @@ static void read_cache_v3(
     /* read users, if any */
     if (users->count > 0 && users->chars > 0) {
         /* create type */
-        bayer_flist_usrgrp_create_stridtype((int)users->chars,  &(users->dt));
+        mfu_flist_usrgrp_create_stridtype((int)users->chars,  &(users->dt));
 
         /* get extent */
         MPI_Aint lb_user, extent_user;
@@ -605,7 +605,7 @@ static void read_cache_v3(
 
         /* allocate memory to hold data */
         size_t bufsize_user = users->count * (size_t)extent_user;
-        users->buf = (void*) BAYER_MALLOC(bufsize_user);
+        users->buf = (void*) MFU_MALLOC(bufsize_user);
         users->bufsize = bufsize_user;
 
         /* read data */
@@ -620,7 +620,7 @@ static void read_cache_v3(
     /* read groups, if any */
     if (groups->count > 0 && groups->chars > 0) {
         /* create type */
-        bayer_flist_usrgrp_create_stridtype((int)groups->chars, &(groups->dt));
+        mfu_flist_usrgrp_create_stridtype((int)groups->chars, &(groups->dt));
 
         /* get extent */
         MPI_Aint lb_group, extent_group;
@@ -628,7 +628,7 @@ static void read_cache_v3(
 
         /* allocate memory to hold data */
         size_t bufsize_group = groups->count * (size_t)extent_group;
-        groups->buf = (void*) BAYER_MALLOC(bufsize_group);
+        groups->buf = (void*) MFU_MALLOC(bufsize_group);
         groups->bufsize = bufsize_group;
 
         /* read data */
@@ -659,7 +659,7 @@ static void read_cache_v3(
         if (bufsize < (size_t) extent_file) {
             bufsize = (size_t) extent_file;
         }
-        void* buf = BAYER_MALLOC(bufsize);
+        void* buf = MFU_MALLOC(bufsize);
 
         /* compute number of items we can fit in each read iteration */
         uint64_t bufcount = (uint64_t)bufsize / (uint64_t)extent_file;
@@ -715,23 +715,23 @@ static void read_cache_v3(
         }
 
         /* free buffer */
-        bayer_free(&buf);
+        mfu_free(&buf);
 
         /* free off our datatype */
         MPI_Type_free(&dt);
     }
 
     /* create maps of users and groups */
-    bayer_flist_usrgrp_create_map(&flist->users, flist->user_id2name);
-    bayer_flist_usrgrp_create_map(&flist->groups, flist->group_id2name);
+    mfu_flist_usrgrp_create_map(&flist->users, flist->user_id2name);
+    mfu_flist_usrgrp_create_map(&flist->groups, flist->group_id2name);
 
     *outdisp = disp;
     return;
 }
 
-void bayer_flist_read_cache(
+void mfu_flist_read_cache(
     const char* name,
-    bayer_flist bflist)
+    mfu_flist bflist)
 {
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
@@ -744,7 +744,7 @@ void bayer_flist_read_cache(
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     /* report the filename we're writing to */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
         printf("Reading from input file: %s\n", name);
         fflush(stdout);
     }
@@ -792,14 +792,14 @@ void bayer_flist_read_cache(
     MPI_File_close(&fh);
 
     /* compute global summary */
-    bayer_flist_summarize(bflist);
+    mfu_flist_summarize(bflist);
 
     /* end timer */
     double end_read = MPI_Wtime();
 
     /* report read count, time, and rate */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
-        uint64_t all_count = bayer_flist_global_size(bflist);
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        uint64_t all_count = mfu_flist_global_size(bflist);
         double time_diff = end_read - start_read;
         double rate = 0.0;
         if (time_diff > 0.0) {
@@ -891,7 +891,7 @@ static void write_cache_readdir_variable(
     if (bufsize < recmax) {
         bufsize = recmax;
     }
-    void* buf = BAYER_MALLOC(bufsize);
+    void* buf = MFU_MALLOC(bufsize);
 
     /* set file view to be sequence of datatypes past header */
     MPI_File_set_view(fh, disp, MPI_CHAR, MPI_CHAR, datarep, MPI_INFO_NULL);
@@ -929,7 +929,7 @@ static void write_cache_readdir_variable(
     }
 
     /* free write buffer */
-    bayer_free(&buf);
+    mfu_free(&buf);
 
     /* close file */
     MPI_File_close(&fh);
@@ -1012,7 +1012,7 @@ static void write_cache_readdir(
     if (bufsize < (size_t) extent) {
         bufsize = (size_t) extent;
     }
-    void* buf = BAYER_MALLOC(bufsize);
+    void* buf = MFU_MALLOC(bufsize);
 
     /* compute number of items we can fit in each write iteration */
     uint64_t bufcount = (uint64_t)bufsize / (uint64_t)extent;
@@ -1059,7 +1059,7 @@ static void write_cache_readdir(
     }
 
     /* free write buffer */
-    bayer_free(&buf);
+    mfu_free(&buf);
 
     /* close file */
     MPI_File_close(&fh);
@@ -1173,7 +1173,7 @@ static void write_cache_stat(
     if (bufsize < (size_t) extent) {
         bufsize = (size_t) extent;
     }
-    void* buf = BAYER_MALLOC(bufsize);
+    void* buf = MFU_MALLOC(bufsize);
 
     /* compute number of items we can fit in each write iteration */
     uint64_t bufcount = (uint64_t)bufsize / (uint64_t)extent;
@@ -1220,7 +1220,7 @@ static void write_cache_stat(
     }
 
     /* free write buffer */
-    bayer_free(&buf);
+    mfu_free(&buf);
 
     /* close file */
     MPI_File_close(&fh);
@@ -1231,9 +1231,9 @@ static void write_cache_stat(
     return;
 }
 
-void bayer_flist_write_cache(
+void mfu_flist_write_cache(
     const char* name,
-    bayer_flist bflist)
+    mfu_flist bflist)
 {
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
@@ -1242,7 +1242,7 @@ void bayer_flist_write_cache(
     double start_write = MPI_Wtime();
 
     /* report the filename we're writing to */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
         printf("Writing to output file: %s\n", name);
         fflush(stdout);
     }
@@ -1259,8 +1259,8 @@ void bayer_flist_write_cache(
     double end_write = MPI_Wtime();
 
     /* report write count, time, and rate */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
-        uint64_t all_count = bayer_flist_global_size(flist);
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        uint64_t all_count = mfu_flist_global_size(flist);
         double secs = end_write - start_write;
         double rate = 0.0;
         if (secs > 0.0) {

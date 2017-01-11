@@ -53,6 +53,6 @@ compiler:
   - gcc
 
 notifications:
-  email:
+  email: false
     #- sikich1@llnl.gov
     #- moody20@llnl.gov

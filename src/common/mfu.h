@@ -23,11 +23,11 @@
 extern "C" {
 #endif
 
-#ifndef BAYER_H
-#define BAYER_H
+#ifndef MFU_H
+#define MFU_H
 
-#define BAYER_SUCCESS (0)
-#define BAYER_FAILURE (1)
+#define MFU_SUCCESS (0)
+#define MFU_FAILURE (1)
 
 /* TODO: ugly hack until we get a configure test */
 // HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
@@ -41,14 +41,14 @@ extern "C" {
 #endif
 #include <limits.h>
 
-#include "bayer_util.h"
-#include "bayer_path.h"
-#include "bayer_io.h"
-#include "bayer_flist.h"
-#include "bayer_param_path.h"
+#include "mfu_util.h"
+#include "mfu_path.h"
+#include "mfu_io.h"
+#include "mfu_flist.h"
+#include "mfu_param_path.h"
 #include "strmap.h"
 
-#endif /* BAYER_H */
+#endif /* MFU_H */
 
 /* enable C++ codes to include this header directly */
 #ifdef __cplusplus

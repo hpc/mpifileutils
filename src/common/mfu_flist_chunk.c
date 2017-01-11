@@ -26,7 +26,7 @@
 
 #include "libcircle.h"
 #include "dtcmp.h"
-#include "bayer.h"
+#include "mfu.h"
 
 /****************************************
  * Functions to divide flist into linked list of file sections
@@ -55,7 +55,7 @@ static int map_chunk_to_rank(uint64_t offset, uint64_t cutoff, uint64_t chunks_p
 /* This is a long routine, but the idea is simple.  All tasks sum up
  * the number of file chunks they have, and those are then evenly
  * distributed amongst the processes.  */
-bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_size)
+mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
 {
     /* get our rank and number of ranks */
     int rank, ranks;
@@ -65,15 +65,15 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
     /* total up number of file chunks for all files in our list */
     uint64_t count = 0;
     uint64_t idx;
-    uint64_t size = bayer_flist_size(list);
+    uint64_t size = mfu_flist_size(list);
     for (idx = 0; idx < size; idx++) {
         /* get type of item */
-        bayer_filetype type = bayer_flist_file_get_type(list, idx);
+        mfu_filetype type = mfu_flist_file_get_type(list, idx);
 
         /* if we have a file, add up its chunks */
-        if (type == BAYER_TYPE_FILE) {
+        if (type == MFU_TYPE_FILE) {
             /* get size of file */
-            uint64_t file_size = bayer_flist_file_get_size(list, idx);
+            uint64_t file_size = mfu_flist_file_get_size(list, idx);
 
             /* compute number of chunks to copy for this file */
             uint64_t chunks = file_size / chunk_size;
@@ -112,8 +112,8 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
      * we'll set a flag to 1 if we have data for that rank
      * and set it to 0 otherwise, then we'll exchange flags
      * with an alltoall */
-    int* sendlist = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
-    int* recvlist = (int*) BAYER_MALLOC((size_t)ranks * sizeof(int));
+    int* sendlist = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
+    int* recvlist = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
 
     /* assume we won't send to any ranks,
      * so initialize all ranks to 0 */
@@ -144,11 +144,11 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
     }
 
     /* allocate a linked list for each process we'll send to */
-    bayer_file_chunk** heads = (bayer_file_chunk**) BAYER_MALLOC((size_t)send_ranks * sizeof(bayer_file_chunk*));
-    bayer_file_chunk** tails = (bayer_file_chunk**) BAYER_MALLOC((size_t)send_ranks * sizeof(bayer_file_chunk*));
-    uint64_t* counts  = (uint64_t*)   BAYER_MALLOC((size_t)send_ranks * sizeof(uint64_t));
-    uint64_t* bytes   = (uint64_t*)   BAYER_MALLOC((size_t)send_ranks * sizeof(uint64_t));
-    char** sendbufs   = (char**)      BAYER_MALLOC((size_t)send_ranks * sizeof(char*));
+    mfu_file_chunk** heads = (mfu_file_chunk**) MFU_MALLOC((size_t)send_ranks * sizeof(mfu_file_chunk*));
+    mfu_file_chunk** tails = (mfu_file_chunk**) MFU_MALLOC((size_t)send_ranks * sizeof(mfu_file_chunk*));
+    uint64_t* counts  = (uint64_t*)   MFU_MALLOC((size_t)send_ranks * sizeof(uint64_t));
+    uint64_t* bytes   = (uint64_t*)   MFU_MALLOC((size_t)send_ranks * sizeof(uint64_t));
+    char** sendbufs   = (char**)      MFU_MALLOC((size_t)send_ranks * sizeof(char*));
 
     /* initialize values */
     for (i = 0; i < send_ranks; i++) {
@@ -165,12 +165,12 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
     uint64_t current_offset = offset;
     for (idx = 0; idx < size; idx++) {
         /* get type of item */
-        bayer_filetype type = bayer_flist_file_get_type(list, idx);
+        mfu_filetype type = mfu_flist_file_get_type(list, idx);
 
         /* if we have a file, add up its chunks */
-        if (type == BAYER_TYPE_FILE) {
+        if (type == MFU_TYPE_FILE) {
             /* get size of file */
-            uint64_t file_size = bayer_flist_file_get_size(list, idx);
+            uint64_t file_size = mfu_flist_file_get_size(list, idx);
 
             /* compute number of chunks to copy for this file */
             uint64_t chunks = file_size / chunk_size;
@@ -196,7 +196,7 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
                     /* we've already got an element started for this
                      * file and rank, just update its count field to
                      * append this element */
-                    bayer_file_chunk* elem = tails[rank_index];
+                    mfu_file_chunk* elem = tails[rank_index];
                     elem->length += chunk_size;
 
                     /* adjusting length in case chunk is a partial chunk */
@@ -207,8 +207,8 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
                 } else {
                     /* we're sending to a new rank or have the start
                      * of a new file, either way allocate a new element */
-                    bayer_file_chunk* elem = (bayer_file_chunk*) BAYER_MALLOC(sizeof(bayer_file_chunk));
-                    elem->name             = bayer_flist_file_get_name(list, idx);
+                    mfu_file_chunk* elem = (mfu_file_chunk*) MFU_MALLOC(sizeof(mfu_file_chunk));
+                    elem->name             = mfu_flist_file_get_name(list, idx);
                     elem->offset           = chunk_id * chunk_size;
                     elem->length           = chunk_size;
                     elem->file_size        = file_size;
@@ -269,7 +269,7 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
     }
     
     /* build the list of ranks to receive from */
-    int *recvranklist = (int *)BAYER_MALLOC(sizeof(int) * recv_ranks);
+    int *recvranklist = (int *)MFU_MALLOC(sizeof(int) * recv_ranks);
     int recv_count = 0;
     for (i = 0; i < ranks; i++) {
         if (recvlist[i]) {
@@ -280,15 +280,15 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
  
     /* determine number of messages we'll have outstanding */
     int msgs = send_ranks + recv_ranks;
-    MPI_Request* request = (MPI_Request*) BAYER_MALLOC((size_t)msgs * sizeof(MPI_Request));
-    MPI_Status*  status  = (MPI_Status*)  BAYER_MALLOC((size_t)msgs * sizeof(MPI_Status));
+    MPI_Request* request = (MPI_Request*) MFU_MALLOC((size_t)msgs * sizeof(MPI_Request));
+    MPI_Status*  status  = (MPI_Status*)  MFU_MALLOC((size_t)msgs * sizeof(MPI_Status));
 
     /* create storage to hold byte counts that we'll send
      * and receive, it would be best to use uint64_t here
      * but for that, we'd need to create a datatypen,
      * with an int, we should be careful we don't overflow */
-    int* send_counts = (int*) BAYER_MALLOC((size_t)send_ranks * sizeof(int));
-    int* recv_counts = (int*) BAYER_MALLOC((size_t)recv_ranks * sizeof(int));
+    int* send_counts = (int*) MFU_MALLOC((size_t)send_ranks * sizeof(int));
+    int* recv_counts = (int*) MFU_MALLOC((size_t)recv_ranks * sizeof(int));
 
     /* initialize our send counts */
     for (i = 0; i < send_ranks; i++) {
@@ -317,22 +317,22 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
     for (i = 0; i < send_ranks; i++) {
         /* allocate buffer for this destination */
         size_t sendbuf_size = (size_t) bytes[i];
-        sendbufs[i] = (char*) BAYER_MALLOC(sendbuf_size);
+        sendbufs[i] = (char*) MFU_MALLOC(sendbuf_size);
 
         /* pack data into buffer */
         char* sendptr = sendbufs[i];
-        bayer_file_chunk* elem = heads[i];
+        mfu_file_chunk* elem = heads[i];
         while (elem != NULL) {
             /* pack file name */
             strcpy(sendptr, elem->name);
             sendptr += strlen(elem->name) + 1;
 
             /* pack chunk id, count, and file size */
-            bayer_pack_uint64(&sendptr, elem->offset);
-            bayer_pack_uint64(&sendptr, elem->length);
-            bayer_pack_uint64(&sendptr, elem->file_size);
-            bayer_pack_uint64(&sendptr, elem->rank_of_owner);
-            bayer_pack_uint64(&sendptr, elem->index_of_owner);
+            mfu_pack_uint64(&sendptr, elem->offset);
+            mfu_pack_uint64(&sendptr, elem->length);
+            mfu_pack_uint64(&sendptr, elem->file_size);
+            mfu_pack_uint64(&sendptr, elem->rank_of_owner);
+            mfu_pack_uint64(&sendptr, elem->index_of_owner);
 
             /* go to next element */
             elem = elem->next;
@@ -346,7 +346,7 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
     }
 
     /* allocate memory for recvs */
-    char* recvbuf = (char*) BAYER_MALLOC(recvbuf_size);
+    char* recvbuf = (char*) MFU_MALLOC(recvbuf_size);
 
     /* post irecv for incoming data */
     char* recvptr = recvbuf;
@@ -368,8 +368,8 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
     /* waitall */
     MPI_Waitall(msgs, request, status);
 
-    bayer_file_chunk* head = NULL;
-    bayer_file_chunk* tail = NULL;
+    mfu_file_chunk* head = NULL;
+    mfu_file_chunk* tail = NULL;
 
     /* iterate over all received data */
     const char* packptr = recvbuf;
@@ -381,14 +381,14 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
 
         /* unpack chunk offset, count, and file size */
         uint64_t offset, length, file_size, rank_of_owner, index_of_owner;
-        bayer_unpack_uint64(&packptr, &offset);
-        bayer_unpack_uint64(&packptr, &length);
-        bayer_unpack_uint64(&packptr, &file_size);
-        bayer_unpack_uint64(&packptr, &rank_of_owner);
-        bayer_unpack_uint64(&packptr, &index_of_owner);
+        mfu_unpack_uint64(&packptr, &offset);
+        mfu_unpack_uint64(&packptr, &length);
+        mfu_unpack_uint64(&packptr, &file_size);
+        mfu_unpack_uint64(&packptr, &rank_of_owner);
+        mfu_unpack_uint64(&packptr, &index_of_owner);
 
         /* allocate memory for new struct and set next pointer to null */
-        bayer_file_chunk* p = malloc(sizeof(bayer_file_chunk));
+        mfu_file_chunk* p = malloc(sizeof(mfu_file_chunk));
         p->next = NULL;
 
         /* set the fields of the struct */
@@ -417,23 +417,23 @@ bayer_file_chunk* bayer_file_chunk_list_alloc(bayer_flist list, uint64_t chunk_s
 }
 
 /* free the linked list of structs (copy elem's) */
-void bayer_file_chunk_list_free(bayer_file_chunk** phead)
+void mfu_file_chunk_list_free(mfu_file_chunk** phead)
 {
     /* check whether we were given a pointer */
     if (phead != NULL) {
-        /* free the linked list of structs (bayer_file_chunk) */
-        bayer_file_chunk* tmp;
-        bayer_file_chunk* current = *phead;
+        /* free the linked list of structs (mfu_file_chunk) */
+        mfu_file_chunk* tmp;
+        mfu_file_chunk* current = *phead;
         while (current != NULL) {
             /* get pointer to current element and advance current */
             tmp = current;
             current = current->next;
 
             /* free the name string we had strdup'd */
-            bayer_free(&tmp->name);
+            mfu_free(&tmp->name);
 
             /* free the element */
-            bayer_free(&tmp);
+            mfu_free(&tmp);
         }
 
         /* set caller's pointer to NULL to indicate it's freed */

@@ -63,8 +63,8 @@ int DCOPY_open_file(const char* file, int read_flag, DCOPY_file_cache_t* cache)
         } else {
             /* the file we're trying to open is different,
              * close the old file and delete the name */
-            bayer_close(name, fd);
-            bayer_free(&cache->name);
+            mfu_close(name, fd);
+            mfu_free(&cache->name);
         }
     }
 
@@ -74,18 +74,18 @@ int DCOPY_open_file(const char* file, int read_flag, DCOPY_file_cache_t* cache)
         if (DCOPY_user_opts.synchronous) {
             flags |= O_DIRECT;
         }
-        newfd = bayer_open(file, flags);
+        newfd = mfu_open(file, flags);
     } else {
         int flags = O_WRONLY | O_CREAT;
         if (DCOPY_user_opts.synchronous) {
             flags |= O_DIRECT;
         }
-        newfd = bayer_open(file, flags, DCOPY_DEF_PERMS_FILE);
+        newfd = mfu_open(file, flags, DCOPY_DEF_PERMS_FILE);
     }
 
     /* cache the file descriptor */
     if (newfd != -1) {
-        cache->name = BAYER_STRDUP(file);
+        cache->name = MFU_STRDUP(file);
         cache->fd   = newfd;
         cache->read = read_flag;
 #ifdef LUSTRE_SUPPORT
@@ -95,12 +95,12 @@ int DCOPY_open_file(const char* file, int read_flag, DCOPY_file_cache_t* cache)
 
             rc = ioctl(newfd, LL_IOC_GROUP_LOCK, DCOPY_user_opts.grouplock_id);
             if (rc) {
-                BAYER_LOG(BAYER_LOG_ERR, "Failed to obtain grouplock with ID %d "
+                MFU_LOG(MFU_LOG_ERR, "Failed to obtain grouplock with ID %d "
                     "on file `%s', ignoring this error: %s",
                     DCOPY_user_opts.grouplock_id,
                     file, strerror(errno));
             } else {
-                BAYER_LOG(BAYER_LOG_INFO, "Obtained grouplock with ID %d "
+                MFU_LOG(MFU_LOG_INFO, "Obtained grouplock with ID %d "
                     "on file `%s', fd %d", DCOPY_user_opts.grouplock_id,
                     file, newfd);
             }
@@ -123,12 +123,12 @@ int DCOPY_close_file(DCOPY_file_cache_t* cache)
         /* if open for write, fsync */
         int read_flag = cache->read;
         if (! read_flag) {
-            rc = bayer_fsync(name, fd);
+            rc = mfu_fsync(name, fd);
         }
 
         /* close the file and delete the name string */
-        rc = bayer_close(name, fd);
-        bayer_free(&cache->name);
+        rc = mfu_close(name, fd);
+        mfu_free(&cache->name);
     }
 
     return rc;
@@ -136,17 +136,17 @@ int DCOPY_close_file(DCOPY_file_cache_t* cache)
 
 /* copy all extended attributes from op->operand to dest_path */
 void DCOPY_copy_xattrs(
-    bayer_flist flist,
+    mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
 {
 #if DCOPY_USE_XATTRS
     /* get source file name */
-    const char* src_path = bayer_flist_file_get_name(flist, idx);
+    const char* src_path = mfu_flist_file_get_name(flist, idx);
 
     /* start with a reasonable buffer, we'll allocate more as needed */
     size_t list_bufsize = 1204;
-    char* list = (char*) BAYER_MALLOC(list_bufsize);
+    char* list = (char*) MFU_MALLOC(list_bufsize);
 
     /* get list, if list_size == ERANGE, try again */
     ssize_t list_size;
@@ -160,7 +160,7 @@ void DCOPY_copy_xattrs(
             if(errno == ERANGE) {
                 /* buffer is too small, free our current buffer
                  * and call it again with size==0 to get new size */
-                bayer_free(&list);
+                mfu_free(&list);
                 list_bufsize = 0;
             }
             else if(errno == ENOTSUP) {
@@ -169,7 +169,7 @@ void DCOPY_copy_xattrs(
             }
             else {
                 /* this is a real error */
-                BAYER_LOG(BAYER_LOG_ERR, "Failed to get list of extended attributes on %s llistxattr() errno=%d %s",
+                MFU_LOG(MFU_LOG_ERR, "Failed to get list of extended attributes on %s llistxattr() errno=%d %s",
                     src_path, errno, strerror(errno)
                    );
                 break;
@@ -180,7 +180,7 @@ void DCOPY_copy_xattrs(
                 /* called llistxattr with size==0 and got back positive
                  * number indicating size of buffer we need to allocate */
                 list_bufsize = (size_t) list_size;
-                list = (char*) BAYER_MALLOC(list_bufsize);
+                list = (char*) MFU_MALLOC(list_bufsize);
             }
             else {
                 /* got our list, it's size is in list_size, which may be 0 */
@@ -197,7 +197,7 @@ void DCOPY_copy_xattrs(
             /* start with a reasonable buffer,
              * allocate something bigger as needed */
             size_t val_bufsize = 1024;
-            void* val = (void*) BAYER_MALLOC(val_bufsize);
+            void* val = (void*) MFU_MALLOC(val_bufsize);
 
             /* lookup value for name */
             ssize_t val_size;
@@ -210,7 +210,7 @@ void DCOPY_copy_xattrs(
                     if(errno == ERANGE) {
                         /* buffer is too small, free our current buffer
                          * and call it again with size==0 to get new size */
-                        bayer_free(&val);
+                        mfu_free(&val);
                         val_bufsize = 0;
                     }
                     else if(errno == ENOATTR) {
@@ -220,7 +220,7 @@ void DCOPY_copy_xattrs(
                     }
                     else {
                         /* this is a real error */
-                        BAYER_LOG(BAYER_LOG_ERR, "Failed to get value for name=%s on %s llistxattr() errno=%d %s",
+                        MFU_LOG(MFU_LOG_ERR, "Failed to get value for name=%s on %s llistxattr() errno=%d %s",
                             name, src_path, errno, strerror(errno)
                            );
                         break;
@@ -231,7 +231,7 @@ void DCOPY_copy_xattrs(
                         /* called lgetxattr with size==0 and got back positive
                          * number indicating size of buffer we need to allocate */
                         val_bufsize = (size_t) val_size;
-                        val = (void*) BAYER_MALLOC(val_bufsize);
+                        val = (void*) MFU_MALLOC(val_bufsize);
                     }
                     else {
                         /* got our value, it's size is in val_size, which may be 0 */
@@ -245,14 +245,14 @@ void DCOPY_copy_xattrs(
                 int setrc = lsetxattr(dest_path, name, val, (size_t) val_size, 0);
 
                 if(setrc != 0) {
-                    BAYER_LOG(BAYER_LOG_ERR, "Failed to set value for name=%s on %s llistxattr() errno=%d %s",
+                    MFU_LOG(MFU_LOG_ERR, "Failed to set value for name=%s on %s llistxattr() errno=%d %s",
                         name, dest_path, errno, strerror(errno)
                        );
                 }
             }
 
             /* free value string */
-            bayer_free(&val);
+            mfu_free(&val);
             val_bufsize = 0;
 
             /* jump to next name */
@@ -262,7 +262,7 @@ void DCOPY_copy_xattrs(
     }
 
     /* free space allocated for list */
-    bayer_free(&list);
+    mfu_free(&list);
     list_bufsize = 0;
 
     return;
@@ -270,16 +270,16 @@ void DCOPY_copy_xattrs(
 }
 
 void DCOPY_copy_ownership(
-    bayer_flist flist,
+    mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
 {
     /* get user id and group id of file */
-    uid_t uid = (uid_t) bayer_flist_file_get_uid(flist, idx);
-    gid_t gid = (gid_t) bayer_flist_file_get_gid(flist, idx);
+    uid_t uid = (uid_t) mfu_flist_file_get_uid(flist, idx);
+    gid_t gid = (gid_t) mfu_flist_file_get_gid(flist, idx);
 
     /* note that we use lchown to change ownership of link itself, it path happens to be a link */
-    if(bayer_lchown(dest_path, uid, gid) != 0) {
+    if(mfu_lchown(dest_path, uid, gid) != 0) {
         /* TODO: are there other EPERM conditions we do want to report? */
 
         /* since the user running dcp may not be the owner of the
@@ -287,7 +287,7 @@ void DCOPY_copy_ownership(
          * will be left with the effective uid and gid of the dcp
          * process, don't bother reporting an error for that case */
         if (errno != EPERM) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -298,18 +298,18 @@ void DCOPY_copy_ownership(
 
 /* TODO: condionally set setuid and setgid bits? */
 void DCOPY_copy_permissions(
-    bayer_flist flist,
+    mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
 {
     /* get mode and type */
-    bayer_filetype type = bayer_flist_file_get_type(flist, idx);
-    mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, idx);
+    mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+    mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
 
     /* change mode */
-    if(type != BAYER_TYPE_LINK) {
-        if(bayer_chmod(dest_path, mode) != 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
+    if(type != MFU_TYPE_LINK) {
+        if(mfu_chmod(dest_path, mode) != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -319,17 +319,17 @@ void DCOPY_copy_permissions(
 }
 
 void DCOPY_copy_timestamps(
-    bayer_flist flist,
+    mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
 {
     /* get atime seconds and nsecs */
-    uint64_t atime      = bayer_flist_file_get_atime(flist, idx);
-    uint64_t atime_nsec = bayer_flist_file_get_atime_nsec(flist, idx);
+    uint64_t atime      = mfu_flist_file_get_atime(flist, idx);
+    uint64_t atime_nsec = mfu_flist_file_get_atime_nsec(flist, idx);
 
     /* get mtime seconds and nsecs */
-    uint64_t mtime      = bayer_flist_file_get_mtime(flist, idx);
-    uint64_t mtime_nsec = bayer_flist_file_get_mtime_nsec(flist, idx);
+    uint64_t mtime      = mfu_flist_file_get_mtime(flist, idx);
+    uint64_t mtime_nsec = mfu_flist_file_get_mtime_nsec(flist, idx);
 
     /* fill in time structures */
     struct timespec times[2];
@@ -343,7 +343,7 @@ void DCOPY_copy_timestamps(
      * if it's not absolute, and set times on link (not target file)
      * if dest_path refers to a link */
     if(utimensat(AT_FDCWD, dest_path, times, AT_SYMLINK_NOFOLLOW) != 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
             dest_path, errno, strerror(errno)
            );
     }
@@ -357,7 +357,7 @@ void DCOPY_copy_timestamps(
         times.actime  = statbuf->st_atime;
         times.modtime = statbuf->st_mtime;
         if(utime(dest_path, &times) != 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -369,7 +369,7 @@ void DCOPY_copy_timestamps(
         tv[1].tv_sec  = statbuf->st_mtime;
         tv[1].tv_usec = 0;
         if(lutimes(dest_path, tv) != 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -390,7 +390,7 @@ void DCOPY_abort(int code)
 void DCOPY_exit(int code)
 {
     /* CIRCLE_finalize or will this hang? */
-    bayer_finalize();
+    mfu_finalize();
     MPI_Finalize();
     exit(code);
 }

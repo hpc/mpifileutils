@@ -54,7 +54,7 @@ int DTAR_global_rank;
 DTAR_options_t DTAR_user_opts;
 DTAR_writer_t DTAR_writer;
 DTAR_statistics_t DTAR_statistics;
-bayer_flist DTAR_flist;
+mfu_flist DTAR_flist;
 uint64_t* DTAR_fsizes = NULL;
 uint64_t* DTAR_offsets = NULL;
 uint64_t DTAR_total = 0;
@@ -66,11 +66,11 @@ static void process_flist() {
     uint64_t idx;
     for (idx = 0; idx < DTAR_count; idx++) {
         DTAR_fsizes[idx] = 0;
-        bayer_filetype type = bayer_flist_file_get_type(DTAR_flist, idx);
-        if (type == BAYER_TYPE_DIR || type == BAYER_TYPE_LINK) {
+        mfu_filetype type = mfu_flist_file_get_type(DTAR_flist, idx);
+        if (type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
             DTAR_fsizes[idx] = DTAR_HDR_LENGTH;
-        } else if (type == BAYER_TYPE_FILE) {
-            uint64_t fsize = bayer_flist_file_get_size(DTAR_flist, idx);
+        } else if (type == MFU_TYPE_FILE) {
+            uint64_t fsize = mfu_flist_file_get_size(DTAR_flist, idx);
             uint64_t rem = (fsize) % 512;
             if (rem == 0) {
                 DTAR_fsizes[idx] = fsize + DTAR_HDR_LENGTH;
@@ -97,16 +97,16 @@ static void create_archive(char *filename) {
     DTAR_writer_init();
 
     /* walk path to get stats info on all files */
-    DTAR_flist = bayer_flist_new();
+    DTAR_flist = mfu_flist_new();
     for (int i = 0; i < num_src_params; i++) {
-        bayer_flist_walk_path(src_params[i].path, 1, 0, DTAR_flist);
+        mfu_flist_walk_path(src_params[i].path, 1, 0, DTAR_flist);
     }
 
-    DTAR_count = bayer_flist_size(DTAR_flist);
+    DTAR_count = mfu_flist_size(DTAR_flist);
 
     /* allocate memory for DTAR_fsizes */
-    DTAR_fsizes = (uint64_t*) BAYER_MALLOC( DTAR_count * sizeof(uint64_t));
-    DTAR_offsets = (uint64_t*) BAYER_MALLOC(DTAR_count * sizeof(uint64_t));
+    DTAR_fsizes = (uint64_t*) MFU_MALLOC( DTAR_count * sizeof(uint64_t));
+    DTAR_offsets = (uint64_t*) MFU_MALLOC(DTAR_count * sizeof(uint64_t));
 
     /* calculate size, offset for each file as well as global offset*/
     process_flist();
@@ -120,8 +120,8 @@ static void create_archive(char *filename) {
     archive_write_open_fd(ar, DTAR_writer.fd_tar);
 
     for (uint64_t idx = 0; idx < DTAR_count; idx++ ) {
-        bayer_filetype type = bayer_flist_file_get_type(DTAR_flist, idx);
-        if (type == BAYER_TYPE_FILE || type == BAYER_TYPE_DIR || type == BAYER_TYPE_LINK) {
+        mfu_filetype type = mfu_flist_file_get_type(DTAR_flist, idx);
+        if (type == MFU_TYPE_FILE || type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
             DTAR_write_header(ar, idx, DTAR_offsets[idx]);
         }
     }
@@ -146,10 +146,10 @@ static void create_archive(char *filename) {
     /* clean up */
 
     archive_write_free(ar);
-    bayer_free(&DTAR_fsizes);
-    bayer_free(&DTAR_offsets);
-    bayer_flist_free(&DTAR_flist);
-    bayer_close(DTAR_writer.name, DTAR_writer.fd_tar);
+    mfu_free(&DTAR_fsizes);
+    mfu_free(&DTAR_offsets);
+    mfu_flist_free(&DTAR_flist);
+    mfu_close(DTAR_writer.name, DTAR_writer.fd_tar);
 
 }
 
@@ -249,7 +249,7 @@ extract_archive(const char *filename, bool verbose, int flags) {
 int main(int argc, char **argv) {
 
     MPI_Init(&argc, &argv);
-    bayer_init();
+    mfu_init();
 
     MPI_Comm_rank(MPI_COMM_WORLD, &DTAR_rank);
     MPI_Comm_rank(MPI_COMM_WORLD, &DTAR_size);
@@ -260,26 +260,26 @@ int main(int argc, char **argv) {
     context = g_option_context_new(" [sources ... ] [destination file]");
     g_option_context_add_main_entries(context, entries, NULL);
     if (!g_option_context_parse(context, &argc, &argv, &error)) {
-        BAYER_LOG(BAYER_LOG_ERR, "Command line option parsing error: %s", error->message);
+        MFU_LOG(MFU_LOG_ERR, "Command line option parsing error: %s", error->message);
         g_option_context_get_help(context, TRUE, NULL);
         DTAR_exit(EXIT_FAILURE);
 
     }
 
     if (opts_debug)
-        bayer_debug_level = BAYER_LOG_DBG;
+        mfu_debug_level = MFU_LOG_DBG;
     else if (opts_verbose)
-        bayer_debug_level = BAYER_LOG_INFO;
+        mfu_debug_level = MFU_LOG_INFO;
     else
-        bayer_debug_level = BAYER_LOG_ERR;
+        mfu_debug_level = MFU_LOG_ERR;
 
     if (!opts_create  &&  !opts_extract && DTAR_global_rank == 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "One of extract(x) or create(c) need to be specified");
+        MFU_LOG(MFU_LOG_ERR, "One of extract(x) or create(c) need to be specified");
         DTAR_exit(EXIT_FAILURE);
     }
 
     if (opts_create && opts_extract && DTAR_global_rank == 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Only one of extraction(x) or create(c) can be specified");
+        MFU_LOG(MFU_LOG_ERR, "Only one of extraction(x) or create(c) can be specified");
         DTAR_exit(EXIT_FAILURE);
     }
 
@@ -295,7 +295,7 @@ int main(int argc, char **argv) {
         DTAR_user_opts.flags |= ARCHIVE_EXTRACT_XATTR;
         DTAR_user_opts.preserve = TRUE;
         if (DTAR_global_rank == 0)
-            BAYER_LOG(BAYER_LOG_INFO, "Creating archive with extended attributes");
+            MFU_LOG(MFU_LOG_INFO, "Creating archive with extended attributes");
     }
 
     DTAR_user_opts.chunk_size = opts_chunksize * 1024 * 1024;
@@ -308,7 +308,7 @@ int main(int argc, char **argv) {
     DTAR_statistics.total_bytes_copied = 0;
 
     if (DTAR_rank == 0) {
-        BAYER_LOG(BAYER_LOG_INFO, "Chunk size = %" PRIu64, DTAR_user_opts.chunk_size);
+        MFU_LOG(MFU_LOG_INFO, "Chunk size = %" PRIu64, DTAR_user_opts.chunk_size);
     }
 
     time(&(DTAR_statistics.time_started));
@@ -321,7 +321,7 @@ int main(int argc, char **argv) {
         extract_archive(opts_tarfile, opts_verbose, DTAR_user_opts.flags);
     } else {
         if (DTAR_rank == 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Neither creation or extraction is specified");
+            MFU_LOG(MFU_LOG_ERR, "Neither creation or extraction is specified");
             DTAR_exit(EXIT_FAILURE);
         }
 

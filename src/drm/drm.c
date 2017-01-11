@@ -39,7 +39,7 @@
 
 #include "libcircle.h"
 #include "dtcmp.h"
-#include "bayer.h"
+#include "mfu.h"
 
 /* TODO: change globals to struct */
 static int walk_stat = 0;
@@ -74,7 +74,7 @@ int main(int argc, char** argv)
 
     /* initialize MPI */
     MPI_Init(&argc, &argv);
-    bayer_init();
+    mfu_init();
 
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -115,17 +115,17 @@ int main(int argc, char** argv)
 
         switch (c) {
             case 'i':
-                inputname = BAYER_STRDUP(optarg);
+                inputname = MFU_STRDUP(optarg);
                 break;
             case 'l':
                 walk_stat = 0;
                 break;
             case 'e':
-                regex_exp = BAYER_STRDUP(optarg);
+                regex_exp = MFU_STRDUP(optarg);
                 exclude = 1;
                 break;
             case 'a':
-                regex_exp = BAYER_STRDUP(optarg);
+                regex_exp = MFU_STRDUP(optarg);
                 exclude = 0;
                 break;
             case 'n':
@@ -138,7 +138,7 @@ int main(int argc, char** argv)
                 dryrun = 1;
                 break;            
             case 'v':
-                bayer_debug_level = BAYER_LOG_VERBOSE;
+                mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
             case '?':
                 usage = 1;
@@ -152,7 +152,7 @@ int main(int argc, char** argv)
 
     /* paths to walk come after the options */
     int numpaths = 0;
-    bayer_param_path* paths = NULL;
+    mfu_param_path* paths = NULL;
     if (optind < argc) {
         /* got a path to walk */
         walk = 1;
@@ -161,11 +161,11 @@ int main(int argc, char** argv)
         numpaths = argc - optind;
 
         /* allocate space for each path */
-        paths = (bayer_param_path*) BAYER_MALLOC((size_t)numpaths * sizeof(bayer_param_path));
+        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
         /* process each path */
         char** argpaths = &argv[optind];
-        bayer_param_path_set_all(numpaths, argpaths, paths);
+        mfu_param_path_set_all(numpaths, argpaths, paths);
 
         /* advance to next set of options */
         optind += numpaths;
@@ -188,33 +188,33 @@ int main(int argc, char** argv)
         if (rank == 0) {
             print_usage();
         }
-        bayer_finalize();
+        mfu_finalize();
         MPI_Finalize();
         return 1;
     }
 
     /* create an empty file list */
-    bayer_flist flist = bayer_flist_new();
+    mfu_flist flist = mfu_flist_new();
 
     /* get our list of files, either by walking or reading an
      * input file */
     if (walk) {
         /* walk list of input paths */
-        bayer_param_path_walk(numpaths, paths, walk_stat, flist, dir_perm);
+        mfu_param_path_walk(numpaths, paths, walk_stat, flist, dir_perm);
     }
     else {
         /* read list from file */
-        bayer_flist_read_cache(inputname, flist);
+        mfu_flist_read_cache(inputname, flist);
     }
 
     /* assume we'll use the full list */
-    bayer_flist srclist = flist;
+    mfu_flist srclist = flist;
 
     /* filter the list if needed */
-    bayer_flist filtered_flist = BAYER_FLIST_NULL;
+    mfu_flist filtered_flist = MFU_FLIST_NULL;
     if (regex_exp != NULL) {
         /* filter the list based on regex */
-        filtered_flist = bayer_flist_filter_regex(flist, regex_exp, exclude, name);
+        filtered_flist = mfu_flist_filter_regex(flist, regex_exp, exclude, name);
 
         /* update our source list to use the filtered list instead of the original */
         srclist = filtered_flist;
@@ -224,35 +224,35 @@ int main(int argc, char** argv)
     if (dryrun) {
         /* just print what we would delete without actually doing anything,
          * this is useful if the user is trying to get a regex right */
-        bayer_flist_print(srclist);
+        mfu_flist_print(srclist);
     } else {
         /* remove files */
-        bayer_flist_unlink(srclist);
+        mfu_flist_unlink(srclist);
     }
 
     /* free list if it was used */
-    if (filtered_flist != BAYER_FLIST_NULL){
+    if (filtered_flist != MFU_FLIST_NULL){
         /* free the filtered flist (if any) */
-        bayer_flist_free(&filtered_flist);
+        mfu_flist_free(&filtered_flist);
     }
 
     /* free the file list */
-    bayer_flist_free(&flist);
+    mfu_flist_free(&flist);
 
     /* free the path parameters */
-    bayer_param_path_free_all(numpaths, paths);
+    mfu_param_path_free_all(numpaths, paths);
 
     /* free memory allocated to hold params */
-    bayer_free(&paths);
+    mfu_free(&paths);
 
     /* free the regex string if we have one */
-    bayer_free(&regex_exp);
+    mfu_free(&regex_exp);
 
     /* free the input file name */
-    bayer_free(&inputname);
+    mfu_free(&inputname);
 
     /* shut down MPI */
-    bayer_finalize();
+    mfu_finalize();
     MPI_Finalize();
 
     return 0;

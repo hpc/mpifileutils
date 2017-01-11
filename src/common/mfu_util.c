@@ -18,7 +18,7 @@
  * Please also read the LICENSE file.
 */
 
-#include "bayer.h"
+#include "mfu.h"
 #include "mpi.h"
 #include "dtcmp.h"
 
@@ -29,42 +29,42 @@
 #include <errno.h>
 #include <limits.h>
 
-int bayer_initialized = 0;
+int mfu_initialized = 0;
 
 /* set globals */
-int bayer_rank = -1;
+int mfu_rank = -1;
 
 /* users may override these to change settings */
-FILE* bayer_debug_stream = NULL;
-bayer_loglevel bayer_debug_level = BAYER_LOG_ERR;
+FILE* mfu_debug_stream = NULL;
+mfu_loglevel mfu_debug_level = MFU_LOG_ERR;
 
-/* initialize bayer library,
+/* initialize mfu library,
  * reference counting allows for multiple init/finalize pairs */
-int bayer_init()
+int mfu_init()
 {
-    if (bayer_initialized == 0) {
+    if (mfu_initialized == 0) {
         /* set globals */
-        MPI_Comm_rank(MPI_COMM_WORLD, &bayer_rank);
-        bayer_debug_stream = stdout;
+        MPI_Comm_rank(MPI_COMM_WORLD, &mfu_rank);
+        mfu_debug_stream = stdout;
 
         DTCMP_Init();
-        bayer_initialized++;
+        mfu_initialized++;
     }
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
-/* finalize bayer library */
-int bayer_finalize()
+/* finalize mfu library */
+int mfu_finalize()
 {
-    if (bayer_initialized > 0) {
+    if (mfu_initialized > 0) {
         DTCMP_Finalize();
-        bayer_initialized--;
+        mfu_initialized--;
     }
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* print abort message and call MPI_Abort to kill run */
-void bayer_abort(const char* file, int line, int rc, const char* fmt, ...)
+void mfu_abort(const char* file, int line, int rc, const char* fmt, ...)
 {
     va_list argp;
     fprintf(stderr, "ABORT: rank X on HOST: ");
@@ -77,8 +77,8 @@ void bayer_abort(const char* file, int line, int rc, const char* fmt, ...)
 }
 
 /* if size > 0 allocates size bytes and returns pointer,
- * calls bayer_abort if malloc fails, returns NULL if size == 0 */
-void* bayer_malloc(size_t size, const char* file, int line)
+ * calls mfu_abort if malloc fails, returns NULL if size == 0 */
+void* mfu_malloc(size_t size, const char* file, int line)
 {
     /* only bother if size > 0 */
     if (size > 0) {
@@ -86,7 +86,7 @@ void* bayer_malloc(size_t size, const char* file, int line)
         void* ptr = malloc(size);
         if (ptr == NULL) {
             /* allocate failed, abort */
-            bayer_abort(file, line, 1, "Failed to allocate %llu bytes",
+            mfu_abort(file, line, 1, "Failed to allocate %llu bytes",
                         (unsigned long long) size
                        );
         }
@@ -99,9 +99,9 @@ void* bayer_malloc(size_t size, const char* file, int line)
 }
 
 /* if size > 0, allocates size bytes aligned with specified alignment
- * and returns pointer, calls bayer_abort on failure,
+ * and returns pointer, calls mfu_abort on failure,
  * returns NULL if size == 0 */
-void* bayer_memalign(size_t size, size_t alignment, const char* file, int line)
+void* mfu_memalign(size_t size, size_t alignment, const char* file, int line)
 {
     /* only bother if size > 0 */
     if (size > 0) {
@@ -110,7 +110,7 @@ void* bayer_memalign(size_t size, size_t alignment, const char* file, int line)
         int rc = posix_memalign(&ptr, alignment, size);
         if (rc != 0) {
             /* allocate failed, abort */
-            bayer_abort(file, line, 1, "Failed to allocate %llu bytes posix_memalign rc=%d",
+            mfu_abort(file, line, 1, "Failed to allocate %llu bytes posix_memalign rc=%d",
                         (unsigned long long) size, rc
                        );
         }
@@ -122,15 +122,15 @@ void* bayer_memalign(size_t size, size_t alignment, const char* file, int line)
     return NULL;
 }
 
-/* if str != NULL, call strdup and return pointer, calls bayer_abort if strdup fails */
-char* bayer_strdup(const char* str, const char* file, int line)
+/* if str != NULL, call strdup and return pointer, calls mfu_abort if strdup fails */
+char* mfu_strdup(const char* str, const char* file, int line)
 {
     if (str != NULL) {
         /* TODO: check that str length is below some max? */
         char* ptr = strdup(str);
         if (ptr == NULL) {
             /* allocate failed, abort */
-            bayer_abort(file, line, 1, "Failed to allocate string");
+            mfu_abort(file, line, 1, "Failed to allocate string");
         }
 
         return ptr;
@@ -138,7 +138,7 @@ char* bayer_strdup(const char* str, const char* file, int line)
     return NULL;
 }
 
-char* bayer_strdupf(const char* file, int line, const char* format, ...)
+char* mfu_strdupf(const char* file, int line, const char* format, ...)
 {
   va_list args;
   char* str = NULL;
@@ -155,7 +155,7 @@ char* bayer_strdupf(const char* file, int line, const char* format, ...)
 
   /* allocate and print the string */
   if (size > 0) {
-    str = (char*) bayer_malloc(size, file, line);
+    str = (char*) mfu_malloc(size, file, line);
 
     va_start(args, format);
     vsnprintf(str, size, format, args);
@@ -166,7 +166,7 @@ char* bayer_strdupf(const char* file, int line, const char* format, ...)
 }
 
 /* free memory if pointer is not NULL, set pointer to NULL */
-void bayer_free(void* p)
+void mfu_free(void* p)
 {
     /* verify that we got a valid pointer to a pointer */
     if (p != NULL) {
@@ -181,7 +181,7 @@ void bayer_free(void* p)
     }
 }
 
-void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
+void mfu_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
 {
     /* get our rank in the communicator */
     int rank;
@@ -189,7 +189,7 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
 
     /* check that caller gave us a pointer to a char pointer */
     if (recv == NULL) {
-        BAYER_ABORT(1, "Invalid recv pointer");
+        MFU_ABORT(1, "Invalid recv pointer");
     }
 
     /* First, broadcast length of string. */
@@ -204,13 +204,13 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
     }
 
     if (MPI_SUCCESS != MPI_Bcast(&len, 1, MPI_INT, root, comm)) {
-        BAYER_ABORT(1, "Failed to broadcast length of string");
+        MFU_ABORT(1, "Failed to broadcast length of string");
     }
 
     /* If the string is non-zero bytes, allocate space and bcast it. */
     if (len > 0) {
         /* allocate space to receive string */
-        *recv = (char*) BAYER_MALLOC((size_t)len);
+        *recv = (char*) MFU_MALLOC((size_t)len);
 
         /* Broadcast the string. */
         if (rank == root) {
@@ -218,7 +218,7 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
         }
 
         if (MPI_SUCCESS != MPI_Bcast(*recv, len, MPI_CHAR, root, comm)) {
-            BAYER_ABORT(1, "Failed to bcast string");
+            MFU_ABORT(1, "Failed to bcast string");
         }
 
     }
@@ -230,7 +230,7 @@ void bayer_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
     return;
 }
 
-static void bayer_format_1024(
+static void mfu_format_1024(
     double input,
     const char** units_list,
     int units_len,
@@ -264,18 +264,18 @@ static void bayer_format_1024(
 /* given a number of bytes, return value converted to returned units */
 #define NUM_UNITS_BYTES (7)
 static const char* units_bytes[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB"};
-void bayer_format_bytes(uint64_t bytes, double* val, const char** units)
+void mfu_format_bytes(uint64_t bytes, double* val, const char** units)
 {
     double bytes_d = (double) bytes;
-    bayer_format_1024(bytes_d, units_bytes, NUM_UNITS_BYTES, val, units);
+    mfu_format_1024(bytes_d, units_bytes, NUM_UNITS_BYTES, val, units);
     return;
 }
 
 #define NUM_UNITS_BW (6)
 static const char* units_bw[] = {"B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s"};
-void bayer_format_bw(double bw, double* val, const char** units)
+void mfu_format_bw(double bw, double* val, const char** units)
 {
-    bayer_format_1024(bw, units_bw, NUM_UNITS_BW, val, units);
+    mfu_format_1024(bw, units_bw, NUM_UNITS_BW, val, units);
     return;
 }
 
@@ -299,21 +299,21 @@ static unsigned long long exa   = 1152921504606846976ULL;
  *
  * Examples: 2kb, 1.5m, 200GB, 1.4T.
  *
- * Returns BAYER_SUCCESS if conversion is successful,
- * and BAYER_FAILURE otherwise.
+ * Returns MFU_SUCCESS if conversion is successful,
+ * and MFU_FAILURE otherwise.
  *
  * Returns converted value in val parameter.  This
  * parameter is only updated if successful. */
-int bayer_abtoull(const char* str, unsigned long long* val)
+int mfu_abtoull(const char* str, unsigned long long* val)
 {
     /* check that we have a string */
     if (str == NULL) {
-        return BAYER_FAILURE;
+        return MFU_FAILURE;
     }
 
     /* check that we have a value to write to */
     if (val == NULL) {
-        return BAYER_FAILURE;
+        return MFU_FAILURE;
     }
 
     /* pull the floating point portion of our byte string off */
@@ -322,11 +322,11 @@ int bayer_abtoull(const char* str, unsigned long long* val)
     double num = strtod(str, &next);
     if (errno != 0) {
         /* conversion failed */
-        return BAYER_FAILURE;
+        return MFU_FAILURE;
     }
     if (str == next) {
         /* no conversion performed */
-        return BAYER_FAILURE;
+        return MFU_FAILURE;
     }
 
     /* now extract any units, e.g. KB MB GB, etc */
@@ -359,7 +359,7 @@ int bayer_abtoull(const char* str, unsigned long long* val)
                 break;
             default:
                 /* unknown units symbol */
-                return BAYER_FAILURE;
+                return MFU_FAILURE;
         }
 
         next++;
@@ -371,13 +371,13 @@ int bayer_abtoull(const char* str, unsigned long long* val)
 
         /* check that we've hit the end of the string */
         if (*next != 0) {
-            return BAYER_FAILURE;
+            return MFU_FAILURE;
         }
     }
 
     /* check that we got a positive value */
     if (num < 0) {
-        return BAYER_FAILURE;
+        return MFU_FAILURE;
     }
 
     /* TODO: double check this overflow calculation */
@@ -387,19 +387,19 @@ int bayer_abtoull(const char* str, unsigned long long* val)
     double max_d = (double) ULLONG_MAX;
     if (val_d > max_d) {
         /* overflow */
-        return BAYER_FAILURE;
+        return MFU_FAILURE;
     }
 
     /* set return value */
     *val = (unsigned long long) val_d;
 
-    return BAYER_SUCCESS;
+    return MFU_SUCCESS;
 }
 
 /* give a mode type, print permission bits in ls -l form,
  * e.g., -rwxr--r-- for a file of 755
  * buf must be at least 11 characters long */
-void bayer_format_mode(mode_t mode, char* buf)
+void mfu_format_mode(mode_t mode, char* buf)
 {
     if (S_ISDIR(mode)) {
         buf[0] = 'd';
@@ -479,7 +479,7 @@ void bayer_format_mode(mode_t mode, char* buf)
     return;
 }
 
-void bayer_pack_uint32(char** pptr, uint32_t value)
+void mfu_pack_uint32(char** pptr, uint32_t value)
 {
     /* TODO: convert to network order */
     uint32_t* ptr = *(uint32_t**)pptr;
@@ -487,7 +487,7 @@ void bayer_pack_uint32(char** pptr, uint32_t value)
     *pptr += 4;
 }
 
-void bayer_unpack_uint32(const char** pptr, uint32_t* value)
+void mfu_unpack_uint32(const char** pptr, uint32_t* value)
 {
     /* TODO: convert to host order */
     const uint32_t* ptr = *(const uint32_t**)pptr;
@@ -495,7 +495,7 @@ void bayer_unpack_uint32(const char** pptr, uint32_t* value)
     *pptr += 4;
 }
 
-void bayer_pack_uint64(char** pptr, uint64_t value)
+void mfu_pack_uint64(char** pptr, uint64_t value)
 {
     /* TODO: convert to network order */
     uint64_t* ptr = *(uint64_t**)pptr;
@@ -503,7 +503,7 @@ void bayer_pack_uint64(char** pptr, uint64_t value)
     *pptr += 8;
 }
 
-void bayer_unpack_uint64(const char** pptr, uint64_t* value)
+void mfu_unpack_uint64(const char** pptr, uint64_t* value)
 {
     /* TODO: convert to host order */
     const uint64_t* ptr = *(const uint64_t**)pptr;
@@ -512,7 +512,7 @@ void bayer_unpack_uint64(const char** pptr, uint64_t* value)
 }
 
 /* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
-uint32_t bayer_hash_jenkins(const char* key, size_t len)
+uint32_t mfu_hash_jenkins(const char* key, size_t len)
 {
     uint32_t hash, i;
     for (hash = i = 0; i < len; ++i) {

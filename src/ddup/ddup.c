@@ -26,7 +26,7 @@
 #include <inttypes.h>
 #include "mpi.h"
 #include "dtcmp.h"
-#include "bayer.h"
+#include "mfu.h"
 #include "list.h"
 
 /* number of uint64_t values in our key
@@ -97,19 +97,19 @@ static int read_data(const char* fname, char* chunk_buf, uint64_t chunk_id,
     memset(chunk_buf, 0, chunk_size);
 
     /* open the file */
-    int fd = bayer_open(fname, O_RDONLY);
+    int fd = mfu_open(fname, O_RDONLY);
     if (fd < 0) {
         return -1;
     }
 
     /* seek to the correct offset */
-    if (bayer_lseek(fname, fd, (off_t)offset, SEEK_SET) == (off_t) - 1) {
+    if (mfu_lseek(fname, fd, (off_t)offset, SEEK_SET) == (off_t) - 1) {
         status = -1;
         goto out;
     }
 
     /* read data from file */
-    ssize_t read_size = bayer_read(fname, fd, chunk_buf, chunk_size);
+    ssize_t read_size = mfu_read(fname, fd, chunk_buf, chunk_size);
     if (read_size < 0) {
         /* read failed */
         status = -1;
@@ -140,7 +140,7 @@ static int read_data(const char* fname, char* chunk_buf, uint64_t chunk_id,
 
 out:
     /* close our file and return */
-    bayer_close(fname, fd);
+    mfu_close(fname, fd);
     return status;
 }
 
@@ -168,13 +168,13 @@ int main(int argc, char** argv)
     SHA256_CTX* ctx_ptr;
 
     MPI_Init(NULL, NULL);
-    bayer_init();
+    mfu_init();
 
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-    bayer_debug_level = BAYER_LOG_INFO;
+    mfu_debug_level = MFU_LOG_INFO;
 
     static struct option long_options[] = {
         {"debug",    0, 0, 'd'},
@@ -190,45 +190,45 @@ int main(int argc, char** argv)
         switch (c) {
             case 'd':
                 if (strncmp(optarg, "fatal", 5) == 0) {
-                    bayer_debug_level = BAYER_LOG_FATAL;
+                    mfu_debug_level = MFU_LOG_FATAL;
 
                     if (rank == 0)
-                        BAYER_LOG(BAYER_LOG_INFO,
+                        MFU_LOG(MFU_LOG_INFO,
                                   "Debug level set to: fatal");
                 }
                 else if (strncmp(optarg, "err", 3) == 0) {
-                    bayer_debug_level = BAYER_LOG_ERR;
+                    mfu_debug_level = MFU_LOG_ERR;
 
                     if (rank == 0)
-                        BAYER_LOG(BAYER_LOG_INFO,
+                        MFU_LOG(MFU_LOG_INFO,
                                   "Debug level set to: "
                                   "errors");
                 }
                 else if (strncmp(optarg, "warn", 4) == 0) {
-                    bayer_debug_level = BAYER_LOG_WARN;
+                    mfu_debug_level = MFU_LOG_WARN;
 
                     if (rank == 0)
-                        BAYER_LOG(BAYER_LOG_INFO,
+                        MFU_LOG(MFU_LOG_INFO,
                                   "Debug level set to: "
                                   "warnings");
                 }
                 else if (strncmp(optarg, "info", 4) == 0) {
-                    bayer_debug_level = BAYER_LOG_INFO;
+                    mfu_debug_level = MFU_LOG_INFO;
 
                     if (rank == 0)
-                        BAYER_LOG(BAYER_LOG_INFO,
+                        MFU_LOG(MFU_LOG_INFO,
                                   "Debug level set to: info");
                 }
                 else if (strncmp(optarg, "dbg", 3) == 0) {
-                    bayer_debug_level = BAYER_LOG_DBG;
+                    mfu_debug_level = MFU_LOG_DBG;
 
                     if (rank == 0)
-                        BAYER_LOG(BAYER_LOG_INFO,
+                        MFU_LOG(MFU_LOG_INFO,
                                   "Debug level set to: debug");
                 }
                 else {
                     if (rank == 0)
-                        BAYER_LOG(BAYER_LOG_INFO,
+                        MFU_LOG(MFU_LOG_INFO,
                                   "Debug level `%s' not "
                                   "recognized. Defaulting to "
                                   "`info'.", optarg);
@@ -239,7 +239,7 @@ int main(int argc, char** argv)
     /* check that user gave us a directory */
     if (argv[optind] == NULL) {
         if (rank == 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "You must specify a directory path");
+            MFU_LOG(MFU_LOG_ERR, "You must specify a directory path");
         }
         MPI_Barrier(MPI_COMM_WORLD);
         status = -1;
@@ -259,42 +259,42 @@ int main(int argc, char** argv)
     mtcmp_cmp_init(&cmp);
 
     /* allocate buffer to read data from file */
-    char* chunk_buf = (char*)BAYER_MALLOC(DDUP_CHUNK_SIZE);
+    char* chunk_buf = (char*)MFU_MALLOC(DDUP_CHUNK_SIZE);
 
     /* allocate a file list */
-    bayer_flist flist = bayer_flist_new();
+    mfu_flist flist = mfu_flist_new();
 
     /* Walk the path(s) to build the flist */
-    bayer_flist_walk_path(dir, 1, 0, flist);
+    mfu_flist_walk_path(dir, 1, 0, flist);
 
     /* TODO: spread list among procs? */
 
     /* get local number of items in flist */
-    uint64_t checking_files = bayer_flist_size(flist);
+    uint64_t checking_files = mfu_flist_size(flist);
 
     /* allocate memory to hold SHA256 context values */
-    struct file_item* file_items = (struct file_item*) BAYER_MALLOC(checking_files * sizeof(*file_items));
+    struct file_item* file_items = (struct file_item*) MFU_MALLOC(checking_files * sizeof(*file_items));
 
     /* Allocate two lists of length size, where each
      * element has (DDUP_KEY_SIZE + 1) uint64_t values
      * (id, checksum, index)
      */
     size_t list_bytes = checking_files * (DDUP_KEY_SIZE + 1) * sizeof(uint64_t);
-    uint64_t* list     = (uint64_t*) BAYER_MALLOC(list_bytes);
-    uint64_t* new_list = (uint64_t*) BAYER_MALLOC(list_bytes);
+    uint64_t* list     = (uint64_t*) MFU_MALLOC(list_bytes);
+    uint64_t* new_list = (uint64_t*) MFU_MALLOC(list_bytes);
 
     /* Initialize the list */
     uint64_t* ptr = list;
     uint64_t new_checking_files = 0;
     for (i = 0; i < checking_files; i++) {
         /* check that item is a regular file */
-        mode_t mode = (mode_t) bayer_flist_file_get_mode(flist, i);
+        mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, i);
         if (! S_ISREG(mode)) {
             continue;
         }
 
         /* get the file size */
-        file_size = bayer_flist_file_get_size(flist, i);
+        file_size = mfu_flist_file_get_size(flist, i);
         if (file_size == 0) {
             /* Files with size zero are not interesting at all */
             continue;
@@ -324,9 +324,9 @@ int main(int argc, char** argv)
     /* allocate arrays to hold result from DTCMP_Rankv call to
      * assign group and rank values to each item */
     uint64_t output_bytes = checking_files * sizeof(uint64_t);
-    uint64_t* group_id    = (uint64_t*) BAYER_MALLOC(output_bytes);
-    uint64_t* group_ranks = (uint64_t*) BAYER_MALLOC(output_bytes);
-    uint64_t* group_rank  = (uint64_t*) BAYER_MALLOC(output_bytes);
+    uint64_t* group_id    = (uint64_t*) MFU_MALLOC(output_bytes);
+    uint64_t* group_ranks = (uint64_t*) MFU_MALLOC(output_bytes);
+    uint64_t* group_rank  = (uint64_t*) MFU_MALLOC(output_bytes);
 
     /* get total number of items across all tasks */
     uint64_t sum_checking_files;
@@ -345,10 +345,10 @@ int main(int argc, char** argv)
             uint64_t idx = ptr[DDUP_KEY_SIZE];
 
             /* look up file name */
-            const char* fname = bayer_flist_file_get_name(flist, idx);
+            const char* fname = mfu_flist_file_get_name(flist, idx);
 
             /* look up file size */
-            file_size = bayer_flist_file_get_size(flist, idx);
+            file_size = mfu_flist_file_get_size(flist, idx);
 
             /* read a chunk of data from the file into chunk_buf */
             uint64_t data_size;
@@ -398,10 +398,10 @@ int main(int argc, char** argv)
             uint64_t idx = ptr[DDUP_KEY_SIZE];
 
             /* look up file name */
-            const char* fname = bayer_flist_file_get_name(flist, idx);
+            const char* fname = mfu_flist_file_get_name(flist, idx);
 
             /* look up file size */
-            file_size = bayer_flist_file_get_size(flist, idx);
+            file_size = mfu_flist_file_get_size(flist, idx);
 
             /* get a pointer to the SHA256 context for this file */
             ctx_ptr = &file_items[idx].ctx;
@@ -409,13 +409,13 @@ int main(int argc, char** argv)
             if (group_ranks[i] == 1) {
                 /*
                  * Only one file in this group,
-                 * bayer_flist_file_name(flist, idx) is unique
+                 * mfu_flist_file_name(flist, idx) is unique
                  */
             } else if (file_size <= (chunk_id * chunk_size)) {
                 /*
                  * We've run out of bytes to checksum, and we
                  * still have a group size > 1
-                 * bayer_flist_file_name(flist, idx) is a
+                 * mfu_flist_file_name(flist, idx) is a
                  * duplicate with other files that also have
                  * matching group_id[i]
                  */
@@ -446,7 +446,7 @@ int main(int argc, char** argv)
                 /* move on to next item in new list */
                 new_ptr += DDUP_KEY_SIZE + 1;
 
-                BAYER_LOG(BAYER_LOG_DBG, "checking file "
+                MFU_LOG(MFU_LOG_DBG, "checking file "
                           "\"%s\" for chunk index %d of size %"
                           PRIu64"\n", fname, (int)chunk_id,
                           chunk_size);
@@ -470,14 +470,14 @@ int main(int argc, char** argv)
                       MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
     }
 
-    bayer_free(&group_rank);
-    bayer_free(&group_ranks);
-    bayer_free(&group_id);
-    bayer_free(&new_list);
-    bayer_free(&list);
-    bayer_free(&file_items);
-    bayer_free(&chunk_buf);
-    bayer_flist_free(&flist);
+    mfu_free(&group_rank);
+    mfu_free(&group_ranks);
+    mfu_free(&group_id);
+    mfu_free(&new_list);
+    mfu_free(&list);
+    mfu_free(&file_items);
+    mfu_free(&chunk_buf);
+    mfu_flist_free(&flist);
 
     mtcmp_cmp_fini(&cmp);
     mpi_type_fini(&key, &keysat);
@@ -485,7 +485,7 @@ int main(int argc, char** argv)
     status = 0;
 
 out:
-    bayer_finalize();
+    mfu_finalize();
     MPI_Finalize();
 
     return status;

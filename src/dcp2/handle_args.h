@@ -26,10 +26,10 @@
 void DCOPY_parse_path_args(char** argv, int optind, int argc);
 
 /* walks each source path and adds entries to flist */
-void DCOPY_walk_paths(bayer_flist flist);
+void DCOPY_walk_paths(mfu_flist flist);
 
 /* given a file name, return destination file name,
- * caller must free using bayer_free when done */
+ * caller must free using mfu_free when done */
 char* DCOPY_build_dest(const char* name);
 
 void DCOPY_free_path_args(void);

@@ -49,7 +49,7 @@
 #include <archive.h>
 #include <archive_entry.h>
 
-#include "bayer.h"
+#include "mfu.h"
 
 
 #define DTAR_HDR_LENGTH 1536
@@ -106,11 +106,11 @@ extern DTAR_statistics_t DTAR_statistics;
 extern uint64_t DTAR_total;
 extern uint64_t DTAR_count;
 extern uint64_t DTAR_goffset;
-extern bayer_flist DTAR_flist;
+extern mfu_flist DTAR_flist;
 extern uint64_t* DTAR_fsizes;
 extern uint64_t* DTAR_offsets;
-extern bayer_param_path* src_params;
-extern bayer_param_path dest_param;
+extern mfu_param_path* src_params;
+extern mfu_param_path dest_param;
 extern int num_src_params;
 
 extern int DTAR_rank;

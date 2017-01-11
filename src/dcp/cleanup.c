@@ -65,7 +65,7 @@ static void DCOPY_truncate_file(DCOPY_operation_t* op, \
                 op->dest_base_appendix);
     }
 
-    BAYER_LOG(BAYER_LOG_DBG, "Truncating file to `%" PRId64 "'.", op->file_size);
+    MFU_LOG(MFU_LOG_DBG, "Truncating file to `%" PRId64 "'.", op->file_size);
 
     /*
      * Try the recursive file before file-to-file. The cast below requires us
@@ -73,7 +73,7 @@ static void DCOPY_truncate_file(DCOPY_operation_t* op, \
      */
     if(truncate64(dest_path_recursive, op->file_size) < 0) {
         if(truncate64(dest_path_file_to_file, op->file_size) < 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
+            MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
                 dest_path_recursive, errno, strerror(errno));
 
             DCOPY_retry_failed_operation(COPY, handle, op);

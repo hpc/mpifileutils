@@ -63,21 +63,21 @@ void DCOPY_retry_failed_operation(DCOPY_operation_code_t target, \
     char* new_op;
 
     if(DCOPY_user_opts.reliable_filesystem) {
-        BAYER_LOG(BAYER_LOG_ERR, "Not retrying failed operation. " \
+        MFU_LOG(MFU_LOG_ERR, "Not retrying failed operation. " \
             "Reliable filesystem is specified. (op=%d chunk=%ld src=%s dst=%s)",
             target, op->chunk, op->operand, op->dest_full_path);
 
         DCOPY_abort(EXIT_FAILURE);
     }
     else {
-        BAYER_LOG(BAYER_LOG_INFO, "Attempting to retry operation.");
+        MFU_LOG(MFU_LOG_INFO, "Attempting to retry operation.");
 
         new_op = DCOPY_encode_operation(target, op->chunk, op->operand, \
                                         op->source_base_offset, \
                                         op->dest_base_appendix, op->file_size);
 
         handle->enqueue(new_op);
-        bayer_free(&new_op);
+        mfu_free(&new_op);
     }
 
     return;
@@ -101,7 +101,7 @@ char* DCOPY_encode_operation(DCOPY_operation_code_t code, \
      */
 
     /* allocate memory to encode op */
-    char* op = (char*) BAYER_MALLOC(CIRCLE_MAX_STRING_LEN);
+    char* op = (char*) MFU_MALLOC(CIRCLE_MAX_STRING_LEN);
 
     /* set pointer to next byte to write to and record number of bytes left */
     char* ptr = op;
@@ -115,7 +115,7 @@ char* DCOPY_encode_operation(DCOPY_operation_code_t code, \
     /* snprintf returns number of bytes written excluding terminating NUL,
      * so if we're equal, we'd write one byte too many */
     if((size_t)written >= remaining) {
-        BAYER_LOG(BAYER_LOG_ERR, \
+        MFU_LOG(MFU_LOG_ERR, \
             "Exceeded libcircle message size due to large file path. " \
             "This is a known bug in dcp that we intend to fix. Sorry!");
         DCOPY_abort(EXIT_FAILURE);
@@ -134,7 +134,7 @@ char* DCOPY_encode_operation(DCOPY_operation_code_t code, \
         /* snprintf returns number of bytes written excluding terminating NUL,
          * so if we're equal, we'd write one byte too many */
         if((size_t)written >= remaining) {
-            BAYER_LOG(BAYER_LOG_ERR, \
+            MFU_LOG(MFU_LOG_ERR, \
                 "Exceeded libcircle message size due to large file path. " \
                 "This is a known bug in dcp that we intend to fix. Sorry!");
             DCOPY_abort(EXIT_FAILURE);
@@ -157,22 +157,22 @@ DCOPY_operation_t* DCOPY_decode_operation(char* op)
     DCOPY_operation_t* ret = (DCOPY_operation_t*) malloc(sizeof(DCOPY_operation_t));
 
     if(sscanf(strtok(op, ":"), "%" SCNd64, &(ret->file_size)) != 1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Could not decode file size attribute");
+        MFU_LOG(MFU_LOG_ERR, "Could not decode file size attribute");
         DCOPY_abort(EXIT_FAILURE);
     }
 
     if(sscanf(strtok(NULL, ":"), "%" SCNd64, &(ret->chunk)) != 1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Could not decode chunk index attribute");
+        MFU_LOG(MFU_LOG_ERR, "Could not decode chunk index attribute");
         DCOPY_abort(EXIT_FAILURE);
     }
 
     if(sscanf(strtok(NULL, ":"), "%" SCNu16, &(ret->source_base_offset)) != 1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Could not decode source base offset attribute");
+        MFU_LOG(MFU_LOG_ERR, "Could not decode source base offset attribute");
         DCOPY_abort(EXIT_FAILURE);
     }
 
     if(sscanf(strtok(NULL, ":"), "%d", (int*) &(ret->code)) != 1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Could not decode stage code attribute");
+        MFU_LOG(MFU_LOG_ERR, "Could not decode stage code attribute");
         DCOPY_abort(EXIT_FAILURE);
     }
 
@@ -180,7 +180,7 @@ DCOPY_operation_t* DCOPY_decode_operation(char* op)
     int op_len;
     char* str = strtok(NULL, ":");
     if(sscanf(str, "%d", &op_len) != 1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Could not decode operand string length");
+        MFU_LOG(MFU_LOG_ERR, "Could not decode operand string length");
         DCOPY_abort(EXIT_FAILURE);
     }
 
@@ -206,7 +206,7 @@ DCOPY_operation_t* DCOPY_decode_operation(char* op)
         int dest_len;
         str = strtok(str, ":");
         if(sscanf(str, "%d", &dest_len) != 1) {
-            BAYER_LOG(BAYER_LOG_ERR, "Could not decode destination base appendix string length");
+            MFU_LOG(MFU_LOG_ERR, "Could not decode destination base appendix string length");
             DCOPY_abort(EXIT_FAILURE);
         }
 
@@ -247,14 +247,14 @@ DCOPY_operation_t* DCOPY_decode_operation(char* op)
 
     /* fail if we would have overwritten the buffer */
     if((size_t)written >= sizeof(dest_path_recursive)) {
-        BAYER_LOG(BAYER_LOG_ERR, "Destination path buffer too small");
+        MFU_LOG(MFU_LOG_ERR, "Destination path buffer too small");
         DCOPY_abort(EXIT_FAILURE);
     }
 
     /* record destination path in operation descriptor */
-    ret->dest_full_path = BAYER_STRDUP(dest_path_recursive);
+    ret->dest_full_path = MFU_STRDUP(dest_path_recursive);
     if(ret->dest_full_path == NULL) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to allocate full destination path");
+        MFU_LOG(MFU_LOG_ERR, "Failed to allocate full destination path");
         DCOPY_abort(EXIT_FAILURE);
     }
 
@@ -271,8 +271,8 @@ void DCOPY_opt_free(DCOPY_operation_t** optptr)
 
         if(opt != NULL) {
             /* free memory and then the object itself */
-            bayer_free(&opt->dest_full_path);
-            bayer_free(&opt);
+            mfu_free(&opt->dest_full_path);
+            mfu_free(&opt);
         }
 
         /* set caller's pointer to NULL to catch bugs */
@@ -298,8 +298,8 @@ int DCOPY_open_file(const char* file, int read_flag, DCOPY_file_cache_t* cache)
         } else {
             /* the file we're trying to open is different,
              * close the old file and delete the name */
-            bayer_close(name, fd);
-            bayer_free(&cache->name);
+            mfu_close(name, fd);
+            mfu_free(&cache->name);
         }
     }
 
@@ -309,18 +309,18 @@ int DCOPY_open_file(const char* file, int read_flag, DCOPY_file_cache_t* cache)
         if (DCOPY_user_opts.synchronous) {
             flags |= O_DIRECT;
         }
-        newfd = bayer_open(file, flags);
+        newfd = mfu_open(file, flags);
     } else {
         int flags = O_WRONLY | O_CREAT;
         if (DCOPY_user_opts.synchronous) {
             flags |= O_DIRECT;
         }
-        newfd = bayer_open(file, flags, DCOPY_DEF_PERMS_FILE);
+        newfd = mfu_open(file, flags, DCOPY_DEF_PERMS_FILE);
     }
 
     /* cache the file descriptor */
     if (newfd != -1) {
-        cache->name = BAYER_STRDUP(file);
+        cache->name = MFU_STRDUP(file);
         cache->fd   = newfd;
         cache->read = read_flag;
     }
@@ -337,8 +337,8 @@ int DCOPY_close_file(DCOPY_file_cache_t* cache)
     if (name != NULL) {
         /* TODO: if open for write, fsync? */
         int fd = cache->fd;
-        rc = bayer_close(name, fd);
-        bayer_free(&cache->name);
+        rc = mfu_close(name, fd);
+        mfu_free(&cache->name);
     }
 
     return rc;
@@ -356,7 +356,7 @@ void DCOPY_copy_xattrs(
 
     /* start with a reasonable buffer, we'll allocate more as needed */
     size_t list_bufsize = 1204;
-    char* list = (char*) BAYER_MALLOC(list_bufsize);
+    char* list = (char*) MFU_MALLOC(list_bufsize);
 
     /* get list, if list_size == ERANGE, try again */
     ssize_t list_size;
@@ -370,7 +370,7 @@ void DCOPY_copy_xattrs(
             if(errno == ERANGE) {
                 /* buffer is too small, free our current buffer
                  * and call it again with size==0 to get new size */
-                bayer_free(&list);
+                mfu_free(&list);
                 list_bufsize = 0;
             }
             else if(errno == ENOTSUP) {
@@ -379,7 +379,7 @@ void DCOPY_copy_xattrs(
             }
             else {
                 /* this is a real error */
-                BAYER_LOG(BAYER_LOG_ERR, "Failed to get list of extended attributes on %s llistxattr() errno=%d %s",
+                MFU_LOG(MFU_LOG_ERR, "Failed to get list of extended attributes on %s llistxattr() errno=%d %s",
                     src_path, errno, strerror(errno)
                    );
                 break;
@@ -390,7 +390,7 @@ void DCOPY_copy_xattrs(
                 /* called llistxattr with size==0 and got back positive
                  * number indicating size of buffer we need to allocate */
                 list_bufsize = (size_t) list_size;
-                list = (char*) BAYER_MALLOC(list_bufsize);
+                list = (char*) MFU_MALLOC(list_bufsize);
             }
             else {
                 /* got our list, it's size is in list_size, which may be 0 */
@@ -407,7 +407,7 @@ void DCOPY_copy_xattrs(
             /* start with a reasonable buffer,
              * allocate something bigger as needed */
             size_t val_bufsize = 1024;
-            void* val = (void*) BAYER_MALLOC(val_bufsize);
+            void* val = (void*) MFU_MALLOC(val_bufsize);
 
             /* lookup value for name */
             ssize_t val_size;
@@ -420,7 +420,7 @@ void DCOPY_copy_xattrs(
                     if(errno == ERANGE) {
                         /* buffer is too small, free our current buffer
                          * and call it again with size==0 to get new size */
-                        bayer_free(&val);
+                        mfu_free(&val);
                         val_bufsize = 0;
                     }
                     else if(errno == ENOATTR) {
@@ -430,7 +430,7 @@ void DCOPY_copy_xattrs(
                     }
                     else {
                         /* this is a real error */
-                        BAYER_LOG(BAYER_LOG_ERR, "Failed to get value for name=%s on %s llistxattr() errno=%d %s",
+                        MFU_LOG(MFU_LOG_ERR, "Failed to get value for name=%s on %s llistxattr() errno=%d %s",
                             name, src_path, errno, strerror(errno)
                            );
                         break;
@@ -441,7 +441,7 @@ void DCOPY_copy_xattrs(
                         /* called lgetxattr with size==0 and got back positive
                          * number indicating size of buffer we need to allocate */
                         val_bufsize = (size_t) val_size;
-                        val = (void*) BAYER_MALLOC(val_bufsize);
+                        val = (void*) MFU_MALLOC(val_bufsize);
                     }
                     else {
                         /* got our value, it's size is in val_size, which may be 0 */
@@ -455,14 +455,14 @@ void DCOPY_copy_xattrs(
                 int setrc = lsetxattr(dest_path, name, val, (size_t) val_size, 0);
 
                 if(setrc != 0) {
-                    BAYER_LOG(BAYER_LOG_ERR, "Failed to set value for name=%s on %s llistxattr() errno=%d %s",
+                    MFU_LOG(MFU_LOG_ERR, "Failed to set value for name=%s on %s llistxattr() errno=%d %s",
                         name, dest_path, errno, strerror(errno)
                        );
                 }
             }
 
             /* free value string */
-            bayer_free(&val);
+            mfu_free(&val);
             val_bufsize = 0;
 
             /* jump to next name */
@@ -472,7 +472,7 @@ void DCOPY_copy_xattrs(
     }
 
     /* free space allocated for list */
-    bayer_free(&list);
+    mfu_free(&list);
     list_bufsize = 0;
 
     return;
@@ -484,7 +484,7 @@ void DCOPY_copy_ownership(
     const char* dest_path)
 {
     /* note that we use lchown to change ownership of link itself, it path happens to be a link */
-    if(bayer_lchown(dest_path, statbuf->st_uid, statbuf->st_gid) != 0) {
+    if(mfu_lchown(dest_path, statbuf->st_uid, statbuf->st_gid) != 0) {
         /* TODO: are there other EPERM conditions we do want to report? */
 
         /* since the user running dcp may not be the owner of the
@@ -492,7 +492,7 @@ void DCOPY_copy_ownership(
          * will be left with the effective uid and gid of the dcp
          * process, don't bother reporting an error for that case */
         if (errno != EPERM) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -508,8 +508,8 @@ void DCOPY_copy_permissions(
 {
     /* change mode */
     if(! S_ISLNK(statbuf->st_mode)) {
-        if(bayer_chmod(dest_path, statbuf->st_mode) != 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
+        if(mfu_chmod(dest_path, statbuf->st_mode) != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -567,7 +567,7 @@ void DCOPY_copy_timestamps(
      * if it's not absolute, and set times on link (not target file)
      * if dest_path refers to a link */
     if(utimensat(AT_FDCWD, dest_path, times, AT_SYMLINK_NOFOLLOW) != 0) {
-        BAYER_LOG(BAYER_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
             dest_path, errno, strerror(errno)
            );
     }
@@ -581,7 +581,7 @@ void DCOPY_copy_timestamps(
         times.actime  = statbuf->st_atime;
         times.modtime = statbuf->st_mtime;
         if(utime(dest_path, &times) != 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -593,7 +593,7 @@ void DCOPY_copy_timestamps(
         tv[1].tv_sec  = statbuf->st_mtime;
         tv[1].tv_usec = 0;
         if(lutimes(dest_path, tv) != 0) {
-            BAYER_LOG(BAYER_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -614,7 +614,7 @@ void DCOPY_abort(int code)
 void DCOPY_exit(int code)
 {
     /* CIRCLE_finalize or will this hang? */
-    bayer_finalize();
+    mfu_finalize();
     MPI_Finalize();
     exit(code);
 }

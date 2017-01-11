@@ -39,7 +39,7 @@
 #include <libgen.h> /* dirname */
 
 #include "libcircle.h"
-#include "bayer.h"
+#include "mfu.h"
 
 /* whether to do directory walk with stat of every ite */
 static int walk_stat = 1;
@@ -75,7 +75,7 @@ static void free_list(struct perms** p_head)
     /* free the memory for the linked list of structs */
     while (current != NULL) {
         tmp = current;
-        bayer_free(&current);
+        mfu_free(&current);
         current = tmp->next;
     }
 
@@ -109,7 +109,7 @@ static int lookup_gid(const char* name, gid_t* gid)
 
             /* print error message if we can */
             if (errno != 0) {
-                BAYER_LOG(BAYER_LOG_ERR, "Failed to find entry for group %s errno=%d %s",
+                MFU_LOG(MFU_LOG_ERR, "Failed to find entry for group %s errno=%d %s",
                           name, errno, strerror(errno)
                          );
             }
@@ -330,7 +330,7 @@ static int parse_modebits(char* modestr, struct perms** p_head)
         if (octal) {
             /* in octal mode, just create one node in our list */
             rc = 1;
-            struct perms* p = BAYER_MALLOC(sizeof(struct perms));
+            struct perms* p = MFU_MALLOC(sizeof(struct perms));
             p->next = NULL;
             p->octal = 1;
             p->mode_octal = strtol(modestr, NULL, 8);
@@ -342,7 +342,7 @@ static int parse_modebits(char* modestr, struct perms** p_head)
             struct perms* tail = NULL;
 
             /* make a copy of the input string since strtok will clobber it */
-            char* tmpstr = BAYER_STRDUP(modestr);
+            char* tmpstr = MFU_STRDUP(modestr);
 
             /* create a linked list of structs that gets broken up based on the comma syntax
              * i.e. u+r,g+x */
@@ -377,7 +377,7 @@ static int parse_modebits(char* modestr, struct perms** p_head)
             }
 
             /* free the duplicated string */
-            bayer_free(&tmpstr);
+            mfu_free(&tmpstr);
         }
     }
 
@@ -582,7 +582,7 @@ static void set_target_bits(const struct perms* p, int read, int write, int exec
 
 /* given a pointer to a permissions struct, set mode bits according to symbolic
  * strings like "ug+rX" */
-static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t* mode)
+static void set_symbolic_bits(const struct perms* p, mfu_filetype type, mode_t* mode)
 {
     /* set the bits based on flags set when parsing input string */
 
@@ -602,7 +602,7 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
                 /* If it is a directory then always turn on the user execute
                  * bit. This is also how chmod u+X behaves in the case of a 
                  * directory. */
-                if (type == BAYER_TYPE_DIR) {
+                if (type == MFU_TYPE_DIR) {
                     *mode |= S_IXUSR;
                 }
             }
@@ -621,7 +621,7 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
                 /* If it is a directory then always turn off the user execute
                  * bits. This is also how chmod u-X behaves in the case of a 
                  * directory */
-                if (type == BAYER_TYPE_DIR) {
+                if (type == MFU_TYPE_DIR) {
                     *mode &= ~S_IXUSR;
                 }
             }
@@ -651,7 +651,7 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
             }
             if (p->capital_execute) {
                 /* g+X: enable group execute if user execute is set, or if item is directory */
-                if (*mode & S_IXUSR || type == BAYER_TYPE_DIR) {
+                if (*mode & S_IXUSR || type == MFU_TYPE_DIR) {
                     *mode |= S_IXGRP;
                 }
             }
@@ -686,7 +686,7 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
             }
             if (p->capital_execute) {
                 /* o+X: enable other execute if user execute is set, or if item is directory */
-                if (*mode & S_IXUSR || type == BAYER_TYPE_DIR) {
+                if (*mode & S_IXUSR || type == MFU_TYPE_DIR) {
                     *mode |= S_IXOTH;
                 }
             }
@@ -713,7 +713,7 @@ static void set_symbolic_bits(const struct perms* p, bayer_filetype type, mode_t
 
 /* given our list of permission ops, the type, and the current mode,
  * compute what the new mode should be */
-static void set_modebits(struct perms* head, bayer_filetype type, mode_t old_mode, mode_t* mode)
+static void set_modebits(struct perms* head, mfu_filetype type, mode_t old_mode, mode_t* mode)
 {
     /* if in octal mode then loop through and check which ones are on based on the mask and
      * the current octal mode bits */
@@ -776,25 +776,25 @@ static void set_modebits(struct perms* head, bayer_filetype type, mode_t old_mod
     }
 }
 
-static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* grname, struct perms* head, gid_t gid)
+static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* grname, struct perms* head, gid_t gid)
 {
     /* each process directly changes permissions on its elements for each level */
     uint64_t idx;
-    uint64_t size = bayer_flist_size(list);
+    uint64_t size = mfu_flist_size(list);
     for (idx = 0; idx < size; idx++) {
         /* get file name */
-        const char* dest_path = bayer_flist_file_get_name(list, idx);
+        const char* dest_path = mfu_flist_file_get_name(list, idx);
 
         /* update group if user gave a group name */
         if (grname != NULL) {
             /* get user id and group id of file */
-            uid_t uid = (uid_t) bayer_flist_file_get_uid(list, idx);
-            gid_t oldgid = (gid_t) bayer_flist_file_get_gid(list, idx);
+            uid_t uid = (uid_t) mfu_flist_file_get_uid(list, idx);
+            gid_t oldgid = (gid_t) mfu_flist_file_get_gid(list, idx);
 
             /* only bother to change group if it's different */
             if (oldgid != gid) {
                 /* note that we use lchown to change ownership of link itself, it path happens to be a link */
-                if (bayer_lchown(dest_path, uid, gid) != 0) {
+                if (mfu_lchown(dest_path, uid, gid) != 0) {
                     /* are there other EPERM conditions we do want to report? */
 
                     /* since the user running dcp may not be the owner of the
@@ -802,7 +802,7 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
                      * will be left with the effective uid and gid of the dcp
                      * process, don't bother reporting an error for that case */
                     if (errno != EPERM) {
-                        BAYER_LOG(BAYER_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
+                        MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
                                   dest_path, errno, strerror(errno)
                                  );
                     }
@@ -813,16 +813,16 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
         /* update permissions if we have a list of structs */
         if (head != NULL) {
             /* get mode and type */
-            bayer_filetype type = bayer_flist_file_get_type(list, idx);
+            mfu_filetype type = mfu_flist_file_get_type(list, idx);
 
             /* if in octal mode skip this call */
             mode_t mode = 0;
             if (! head->octal) {
-                mode = (mode_t) bayer_flist_file_get_mode(list, idx);
+                mode = (mode_t) mfu_flist_file_get_mode(list, idx);
             }
 
             /* change mode, unless item is a link */
-            if (type != BAYER_TYPE_LINK) {
+            if (type != MFU_TYPE_LINK) {
                 /* given our list of permission ops, the type, and the current mode,
                  * compute what the new mode should be */
                 mode_t new_mode;
@@ -832,8 +832,8 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
                  * matches the old mode */
 
                 /* set the mode on the file */
-                if (bayer_chmod(dest_path, new_mode) != 0) {
-                    BAYER_LOG(BAYER_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
+                if (mfu_chmod(dest_path, new_mode) != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
                               dest_path, errno, strerror(errno)
                              );
                 }
@@ -847,7 +847,7 @@ static void dchmod_level(bayer_flist list, uint64_t* dchmod_count, const char* g
     return;
 }
 
-static void flist_chmod(bayer_flist flist, const char* grname, struct perms* head)
+static void flist_chmod(mfu_flist flist, const char* grname, struct perms* head)
 {
     /* lookup groupid if set, bail out if not */
     gid_t gid;
@@ -865,8 +865,8 @@ static void flist_chmod(bayer_flist flist, const char* grname, struct perms* hea
 
     /* split files into separate lists by directory depth */
     int levels, minlevel;
-    bayer_flist* lists;
-    bayer_flist_array_by_depth(flist, &levels, &minlevel, &lists);
+    mfu_flist* lists;
+    mfu_flist_array_by_depth(flist, &levels, &minlevel, &lists);
 
     /* set bits on items starting at the deepest level, this is so we still get child items
      * in the case that we're disabling bits on the parent items */
@@ -874,7 +874,7 @@ static void flist_chmod(bayer_flist flist, const char* grname, struct perms* hea
         double start = MPI_Wtime();
 
         /* get list of items for this level */
-        bayer_flist list = lists[level];
+        mfu_flist list = lists[level];
 
         /* do a dchmod on each element in the list for this level & pass it the size */
         uint64_t size = 0;
@@ -885,7 +885,7 @@ static void flist_chmod(bayer_flist flist, const char* grname, struct perms* hea
 
         double end = MPI_Wtime();
 
-        if (bayer_debug_level >= BAYER_LOG_VERBOSE) {
+        if (mfu_debug_level >= MFU_LOG_VERBOSE) {
             uint64_t min, max, sum;
             MPI_Allreduce(&size, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
             MPI_Allreduce(&size, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
@@ -895,7 +895,7 @@ static void flist_chmod(bayer_flist flist, const char* grname, struct perms* hea
                 rate = (double)sum / (end - start);
             }
             double time_diff = end - start;
-            if (bayer_rank == 0) {
+            if (mfu_rank == 0) {
                 printf("level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
                        (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
                       );
@@ -905,15 +905,15 @@ static void flist_chmod(bayer_flist flist, const char* grname, struct perms* hea
     }
 
     /* free the array of lists */
-    bayer_flist_array_free(levels, &lists);
+    mfu_flist_array_free(levels, &lists);
 
     /* wait for all tasks & end timer */
     MPI_Barrier(MPI_COMM_WORLD);
     double end_dchmod = MPI_Wtime();
 
     /* report remove count, time, and rate */
-    if (bayer_debug_level >= BAYER_LOG_VERBOSE && bayer_rank == 0) {
-        uint64_t all_count = bayer_flist_global_size(flist);
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        uint64_t all_count = mfu_flist_global_size(flist);
         double time_diff = end_dchmod - start_dchmod;
         double rate = 0.0;
         if (time_diff > 0.0) {
@@ -950,7 +950,7 @@ int main(int argc, char** argv)
 {
     /* initialize MPI */
     MPI_Init(&argc, &argv);
-    bayer_init();
+    mfu_init();
 
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -993,20 +993,20 @@ int main(int argc, char** argv)
 
         switch (c) {
             case 'i':
-                inputname = BAYER_STRDUP(optarg);
+                inputname = MFU_STRDUP(optarg);
                 break;
             case 'g':
-                groupname = BAYER_STRDUP(optarg);
+                groupname = MFU_STRDUP(optarg);
                 break;
             case 'm':
-                modestr = BAYER_STRDUP(optarg);
+                modestr = MFU_STRDUP(optarg);
                 break;
             case 'e':
-                regex_exp = BAYER_STRDUP(optarg);
+                regex_exp = MFU_STRDUP(optarg);
                 exclude = 1;
                 break;
             case 'a':
-                regex_exp = BAYER_STRDUP(optarg);
+                regex_exp = MFU_STRDUP(optarg);
                 exclude = 0;
                 break;
             case 'n':
@@ -1016,7 +1016,7 @@ int main(int argc, char** argv)
                 usage = 1;
                 break;
             case 'v':
-                bayer_debug_level = BAYER_LOG_VERBOSE;
+                mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
             case '?':
                 usage = 1;
@@ -1030,7 +1030,7 @@ int main(int argc, char** argv)
 
     /* paths to walk come after the options */
     int numpaths = 0;
-    bayer_param_path* paths = NULL;
+    mfu_param_path* paths = NULL;
     if (optind < argc) {
         /* got a path to walk */
         walk = 1;
@@ -1039,11 +1039,11 @@ int main(int argc, char** argv)
         numpaths = argc - optind;
 
         /* allocate space for each path */
-        paths = (bayer_param_path*) BAYER_MALLOC((size_t)numpaths * sizeof(bayer_param_path));
+        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
         /* process each path */
         char** argpaths = &argv[optind];
-        bayer_param_path_set_all(numpaths, argpaths, paths);
+        mfu_param_path_set_all(numpaths, argpaths, paths);
 
         /* advance to next set of options */
         optind += numpaths;
@@ -1080,13 +1080,13 @@ int main(int argc, char** argv)
         if (rank == 0) {
             print_usage();
         }
-        bayer_finalize();
+        mfu_finalize();
         MPI_Finalize();
         return 1;
     }
 
     /* create an empty file list */
-    bayer_flist flist = bayer_flist_new();
+    mfu_flist flist = mfu_flist_new();
 
     /* flag used to check if permissions need to be
      * set on the walk */
@@ -1101,21 +1101,21 @@ int main(int argc, char** argv)
             walk_stat = 0;
         }
         /* walk list of input paths */
-        bayer_param_path_walk(numpaths, paths, walk_stat, flist, dir_perms);
+        mfu_param_path_walk(numpaths, paths, walk_stat, flist, dir_perms);
     }
     else {
         /* read list from file */
-        bayer_flist_read_cache(inputname, flist);
+        mfu_flist_read_cache(inputname, flist);
     }
 
     /* assume we'll use the full list */
-    bayer_flist srclist = flist;
+    mfu_flist srclist = flist;
 
     /* filter the list if needed */
-    bayer_flist filtered_flist = BAYER_FLIST_NULL;
+    mfu_flist filtered_flist = MFU_FLIST_NULL;
     if (regex_exp != NULL) {
         /* filter the list based on regex */
-        filtered_flist = bayer_flist_filter_regex(flist, regex_exp, exclude, name);
+        filtered_flist = mfu_flist_filter_regex(flist, regex_exp, exclude, name);
 
         /* update our source list to use the filtered list instead of the original */
         srclist = filtered_flist;
@@ -1125,39 +1125,39 @@ int main(int argc, char** argv)
     flist_chmod(srclist, groupname, head);
    
     /* free list if it was used */
-    if (filtered_flist != BAYER_FLIST_NULL){
+    if (filtered_flist != MFU_FLIST_NULL){
         /* free the filtered flist (if any) */
-        bayer_flist_free(&filtered_flist);
+        mfu_flist_free(&filtered_flist);
     }
 
     /* free the file list */
-    bayer_flist_free(&flist);
+    mfu_flist_free(&flist);
 
     /* free the path parameters */
-    bayer_param_path_free_all(numpaths, paths);
+    mfu_param_path_free_all(numpaths, paths);
 
     /* free memory allocated to hold params */
-    bayer_free(&paths);
+    mfu_free(&paths);
 
     /* free the group name */
-    bayer_free(&groupname);
+    mfu_free(&groupname);
 
     /* free the modestr */
-    bayer_free(&modestr);
+    mfu_free(&modestr);
 
     /* free the match_pattern if it isn't null */
     if (regex_exp != NULL) {
-        bayer_free(&regex_exp);
+        mfu_free(&regex_exp);
     }
 
     /* free the head of the list */
     free_list(&head);
 
     /* free the input file name */
-    bayer_free(&inputname);
+    mfu_free(&inputname);
 
     /* shut down MPI */
-    bayer_finalize();
+    mfu_finalize();
     MPI_Finalize();
 
     return 0;

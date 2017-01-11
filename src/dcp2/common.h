@@ -54,7 +54,7 @@
 
 #include "mpi.h"
 
-#include "bayer.h"
+#include "mfu.h"
 
 #include <libcircle.h>
 #include <stdbool.h>
@@ -157,25 +157,25 @@ int DCOPY_close_file(
 );
 
 void DCOPY_copy_xattrs(
-    bayer_flist flist,
+    mfu_flist flist,
     uint64_t index,
     const char* dest_path
 );
 
 void DCOPY_copy_ownership(
-    bayer_flist flist,
+    mfu_flist flist,
     uint64_t index,
     const char* dest_path
 );
 
 void DCOPY_copy_permissions(
-    bayer_flist flist,
+    mfu_flist flist,
     uint64_t index,
     const char* dest_path
 );
 
 void DCOPY_copy_timestamps(
-    bayer_flist flist,
+    mfu_flist flist,
     uint64_t index,
     const char* dest_path
 );

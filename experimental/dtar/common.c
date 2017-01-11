@@ -41,7 +41,7 @@ void DTAR_abort(int code) {
 }
 
 void DTAR_exit(int code) {
-    bayer_finalize();
+    mfu_finalize();
     MPI_Finalize();
     exit(code);
 }
@@ -52,7 +52,7 @@ struct archive * DTAR_new_archive() {
     archive_write_set_format_pax(a);
     int r = archive_write_open_fd(a, DTAR_writer.fd_tar);
     if ( r != ARCHIVE_OK) {
-        BAYER_LOG(BAYER_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(a));
+        MFU_LOG(MFU_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(a));
         return NULL;
     }
 
@@ -62,7 +62,7 @@ struct archive * DTAR_new_archive() {
 void DTAR_write_header(struct archive *ar, uint64_t idx, uint64_t offset)
 {
 
-    const char * fname = bayer_flist_file_get_name(DTAR_flist, idx);
+    const char * fname = mfu_flist_file_get_name(DTAR_flist, idx);
 
     /* fill up entry, FIXME: the uglyness of removing leading slash */
     struct archive_entry *entry = archive_entry_new();
@@ -73,17 +73,17 @@ void DTAR_write_header(struct archive *ar, uint64_t idx, uint64_t offset)
         archive_read_disk_set_standard_lookup(source);
         int fd = open(fname, O_RDONLY);
         if (archive_read_disk_entry_from_file(source, entry, fd, NULL) != ARCHIVE_OK) {
-            BAYER_LOG(BAYER_LOG_ERR, "archive_read_disk_entry_from_file(): %s", archive_error_string(ar));
+            MFU_LOG(MFU_LOG_ERR, "archive_read_disk_entry_from_file(): %s", archive_error_string(ar));
         }
         archive_read_free(source);
     } else {
-        /* read stat info from bayer_flist */
+        /* read stat info from mfu_flist */
         struct stat stbuf;
-        bayer_lstat(fname, &stbuf);
+        mfu_lstat(fname, &stbuf);
         archive_entry_copy_stat(entry, &stbuf);
-        const char* uname = bayer_flist_file_get_username(DTAR_flist, idx);
+        const char* uname = mfu_flist_file_get_username(DTAR_flist, idx);
         archive_entry_set_uname(entry, uname);
-        const char* gname = bayer_flist_file_get_groupname(DTAR_flist, idx);
+        const char* gname = mfu_flist_file_get_groupname(DTAR_flist, idx);
         archive_entry_set_gname(entry, gname);
     }
     /* write entry info to archive */
@@ -91,13 +91,13 @@ void DTAR_write_header(struct archive *ar, uint64_t idx, uint64_t offset)
     archive_write_set_format_pax(dest);
 
     if (archive_write_open_fd(dest, DTAR_writer.fd_tar) != ARCHIVE_OK) {
-        BAYER_LOG(BAYER_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(ar));
+        MFU_LOG(MFU_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(ar));
     }
 
     lseek64(DTAR_writer.fd_tar, offset, SEEK_SET);
 
     if (archive_write_header(dest, entry) != ARCHIVE_OK) {
-        BAYER_LOG(BAYER_LOG_ERR, "archive_write_header(): %s", archive_error_string(ar));
+        MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s", archive_error_string(ar));
     }
     archive_entry_free(entry);
     archive_write_free(dest);
@@ -106,12 +106,12 @@ void DTAR_write_header(struct archive *ar, uint64_t idx, uint64_t offset)
 
 void DTAR_enqueue_copy(CIRCLE_handle *handle) {
     for (uint64_t idx = 0; idx < DTAR_count; idx++) {
-        bayer_filetype type = bayer_flist_file_get_type(DTAR_flist, idx);
+        mfu_filetype type = mfu_flist_file_get_type(DTAR_flist, idx);
         /* add copy work only for files */
-        if (type == BAYER_TYPE_FILE) {
+        if (type == MFU_TYPE_FILE) {
             uint64_t dataoffset = DTAR_offsets[idx] + DTAR_HDR_LENGTH;
-            const char * name = bayer_flist_file_get_name(DTAR_flist, idx);
-            uint64_t size = bayer_flist_file_get_size(DTAR_flist, idx);
+            const char * name = mfu_flist_file_get_name(DTAR_flist, idx);
+            uint64_t size = mfu_flist_file_get_size(DTAR_flist, idx);
 
             /* compute number of chunks */
             uint64_t num_chunks = size / DTAR_user_opts.chunk_size;
@@ -119,7 +119,7 @@ void DTAR_enqueue_copy(CIRCLE_handle *handle) {
                 char* newop = DTAR_encode_operation(
                         COPY_DATA, name, size, chunk_idx, dataoffset);
                 handle->enqueue(newop);
-                bayer_free(&newop);
+                mfu_free(&newop);
 
             }
 
@@ -128,7 +128,7 @@ void DTAR_enqueue_copy(CIRCLE_handle *handle) {
                 char* newop = DTAR_encode_operation(
                         COPY_DATA, name, size, num_chunks, dataoffset);
                 handle->enqueue(newop);
-                bayer_free(&newop);
+                mfu_free(&newop);
             }
         }
     }
@@ -176,7 +176,7 @@ void DTAR_perform_copy(CIRCLE_handle* handle) {
     }
 
     close(in_fd);
-    bayer_free(&op);
+    mfu_free(&op);
 }
 
 
@@ -185,7 +185,7 @@ char * DTAR_encode_operation( DTAR_operation_code_t code, const char* operand,
 {
 
     size_t opsize = (size_t) CIRCLE_MAX_STRING_LEN;
-    char* op = (char*) BAYER_MALLOC(opsize);
+    char* op = (char*) MFU_MALLOC(opsize);
     size_t len = strlen(operand);
 
     int written = snprintf(op, opsize,
@@ -193,7 +193,7 @@ char * DTAR_encode_operation( DTAR_operation_code_t code, const char* operand,
             fsize, chunk_idx, offset, code, (int) len, operand);
 
     if (written >= opsize) {
-        BAYER_LOG(BAYER_LOG_ERR, "Exceed libcirlce message size");
+        MFU_LOG(MFU_LOG_ERR, "Exceed libcirlce message size");
         DTAR_abort(EXIT_FAILURE);
     }
 
@@ -203,26 +203,26 @@ char * DTAR_encode_operation( DTAR_operation_code_t code, const char* operand,
 
 DTAR_operation_t* DTAR_decode_operation(char *op) {
 
-    DTAR_operation_t* ret = (DTAR_operation_t*) BAYER_MALLOC(
+    DTAR_operation_t* ret = (DTAR_operation_t*) MFU_MALLOC(
             sizeof(DTAR_operation_t));
 
     if (sscanf(strtok(op, ":"), "%" SCNu64, &(ret->file_size)) != 1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Could not decode file size attribute.");
+        MFU_LOG(MFU_LOG_ERR, "Could not decode file size attribute.");
         DTAR_abort(EXIT_FAILURE);
     }
 
     if (sscanf(strtok(NULL, ":"), "%" SCNu64, &(ret->chunk_index)) != 1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Could not decode chunk index attribute.");
+        MFU_LOG(MFU_LOG_ERR, "Could not decode chunk index attribute.");
         DTAR_abort(EXIT_FAILURE);
     }
 
     if (sscanf(strtok(NULL, ":"), "%" SCNu64, &(ret->offset)) != 1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Could not decode source base offset attribute.");
+        MFU_LOG(MFU_LOG_ERR, "Could not decode source base offset attribute.");
         DTAR_abort(EXIT_FAILURE);
     }
 
     if (sscanf(strtok(NULL, ":"), "%d", (int*) &(ret->code)) != 1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Could not decode stage code attribute.");
+        MFU_LOG(MFU_LOG_ERR, "Could not decode stage code attribute.");
         DTAR_abort(EXIT_FAILURE);
     }
 
@@ -230,7 +230,7 @@ DTAR_operation_t* DTAR_decode_operation(char *op) {
     int op_len;
     char* str = strtok(NULL, ":");
     if (sscanf(str, "%d", &op_len) != 1) {
-        BAYER_LOG(BAYER_LOG_ERR, "Could not decode operand string length.");
+        MFU_LOG(MFU_LOG_ERR, "Could not decode operand string length.");
         DTAR_abort(EXIT_FAILURE);
     }
 
@@ -262,12 +262,12 @@ void DTAR_epilogue() {
         double agg_rate_tmp;
         double agg_rate = (double) DTAR_statistics.total_size / rel_time;
         const char* agg_rate_units;
-        bayer_format_bytes(agg_rate, &agg_rate_tmp, &agg_rate_units);
+        mfu_format_bytes(agg_rate, &agg_rate_tmp, &agg_rate_units);
 
-        BAYER_LOG(BAYER_LOG_INFO, "Started:    %s", starttime_str);
-        BAYER_LOG(BAYER_LOG_INFO, "Completed:  %s", endtime_str);
-        BAYER_LOG(BAYER_LOG_INFO, "Total archive size: %" PRIu64, DTAR_statistics.total_size);
-        BAYER_LOG(BAYER_LOG_INFO, "Rate: %.3lf %s " \
+        MFU_LOG(MFU_LOG_INFO, "Started:    %s", starttime_str);
+        MFU_LOG(MFU_LOG_INFO, "Completed:  %s", endtime_str);
+        MFU_LOG(MFU_LOG_INFO, "Total archive size: %" PRIu64, DTAR_statistics.total_size);
+        MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
                 "(%.3" PRIu64 " bytes in %.3lf seconds)", \
                 agg_rate_tmp, agg_rate_units, DTAR_statistics.total_size, rel_time);
     }

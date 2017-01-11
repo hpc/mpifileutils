@@ -56,8 +56,8 @@
 
 #include "mpi.h"
 
-#include "bayer.h"
-#include "bayer_util.h"
+#include "mfu.h"
+#include "mfu_util.h"
 
 #include <libcircle.h>
 #include <stdbool.h>

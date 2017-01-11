@@ -18,7 +18,7 @@
  * Please also read the LICENSE file.
 */
 
-/* defines internal types and function prototypes for bayer_flist
+/* defines internal types and function prototypes for mfu_flist
  * implementations */
 
 /* enable C++ codes to include this header directly */
@@ -26,15 +26,15 @@
 extern "C" {
 #endif
 
-#ifndef BAYER_FLIST_INTERNAL_H
-#define BAYER_FLIST_INTERNAL_H
+#ifndef MFU_FLIST_INTERNAL_H
+#define MFU_FLIST_INTERNAL_H
 
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include "mpi.h"
 
-#include "bayer.h"
+#include "mfu.h"
 #include "strmap.h"
 
 /****************************************
@@ -45,7 +45,7 @@ extern "C" {
 typedef struct list_elem {
     char* file;             /* file name (strdup'd) */
     int depth;              /* depth within directory tree */
-    bayer_filetype type;    /* type of file object */
+    mfu_filetype type;    /* type of file object */
     int detail;             /* flag to indicate whether we have stat data */
     uint64_t mode;          /* stat mode */
     uint64_t uid;           /* user id */
@@ -99,42 +99,42 @@ typedef struct flist {
 
 /* create a type consisting of chars number of characters
  * immediately followed by a uint32_t */
-void bayer_flist_usrgrp_create_stridtype(int chars, MPI_Datatype* dt);
+void mfu_flist_usrgrp_create_stridtype(int chars, MPI_Datatype* dt);
 
 /* build a name-to-id map and an id-to-name map */
-void bayer_flist_usrgrp_create_map(const buf_t* items, strmap* id2name);
+void mfu_flist_usrgrp_create_map(const buf_t* items, strmap* id2name);
 
 /* given an id, lookup its corresponding name, returns id converted
  * to a string if no matching name is found */
-const char* bayer_flist_usrgrp_get_name_from_id(strmap* id2name, uint64_t id);
+const char* mfu_flist_usrgrp_get_name_from_id(strmap* id2name, uint64_t id);
 
 /* read user array from file system using getpwent() */
-void bayer_flist_usrgrp_get_users(flist_t* flist);
+void mfu_flist_usrgrp_get_users(flist_t* flist);
 
 /* read group array from file system using getgrent() */
-void bayer_flist_usrgrp_get_groups(flist_t* flist);
+void mfu_flist_usrgrp_get_groups(flist_t* flist);
 
 /* initialize structures for user and group names and id-to-name maps */
-void bayer_flist_usrgrp_init(flist_t* flist);
+void mfu_flist_usrgrp_init(flist_t* flist);
 
 /* free user and group structures */
-void bayer_flist_usrgrp_free(flist_t* flist);
+void mfu_flist_usrgrp_free(flist_t* flist);
 
 /* copy user and group structures from srclist to flist */
-void bayer_flist_usrgrp_copy(flist_t* srclist, flist_t* flist);
+void mfu_flist_usrgrp_copy(flist_t* srclist, flist_t* flist);
 
 /* append element to tail of linked list */
-void bayer_flist_insert_elem(flist_t* flist, elem_t* elem);
+void mfu_flist_insert_elem(flist_t* flist, elem_t* elem);
 
-/* given a mode_t from stat, return the corresponding BAYER filetype */
-bayer_filetype bayer_flist_mode_to_filetype(mode_t mode);
+/* given a mode_t from stat, return the corresponding MFU filetype */
+mfu_filetype mfu_flist_mode_to_filetype(mode_t mode);
 
 /* given path, return level within directory tree,
  * counts '/' characters assuming path is standardized
  * and absolute */
-int bayer_flist_compute_depth(const char* path);
+int mfu_flist_compute_depth(const char* path);
 
-#endif /* BAYER_FLIST_INTERNAL_H */
+#endif /* MFU_FLIST_INTERNAL_H */
 
 /* enable C++ codes to include this header directly */
 #ifdef __cplusplus

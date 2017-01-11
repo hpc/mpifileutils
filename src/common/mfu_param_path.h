@@ -26,8 +26,8 @@
 extern "C" {
 #endif
 
-#ifndef BAYER_PARAM_PATH_H
-#define BAYER_PARAM_PATH_H
+#ifndef MFU_PARAM_PATH_H
+#define MFU_PARAM_PATH_H
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -39,7 +39,7 @@ extern "C" {
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* Collective routine called "bayer_param_path_set" to process input
+/* Collective routine called "mfu_param_path_set" to process input
  * paths specified by the user.  This routine takes a path as a string,
  * processes it in different ways, and fills in a data structure.
  *
@@ -56,11 +56,11 @@ extern "C" {
  * calls, only rank 0 executes the stat calls, and it broadcasts the
  * results to all other ranks in the job.
  *
- * After calling bayer_param_path_set, you must eventually call
- * bayer_param_path_free to release resources allocated in
- * bayer_param_path_set. */
+ * After calling mfu_param_path_set, you must eventually call
+ * mfu_param_path_free to release resources allocated in
+ * mfu_param_path_set. */
 
-typedef struct bayer_param_path_t {
+typedef struct mfu_param_path_t {
     char* orig;              /* original path as specified by user */
     char* path;              /* reduced path, but still includes symlinks */
     int   path_stat_valid;   /* flag to indicate whether path_stat is valid */
@@ -68,27 +68,27 @@ typedef struct bayer_param_path_t {
     char* target;            /* fully resolved path, no more symlinks */
     int   target_stat_valid; /* flag to indicate whether target_stat is valid */
     struct stat target_stat; /* stat of target path */
-} bayer_param_path;
+} mfu_param_path;
 
 /* set fields in params according to paths,
  * the number of paths is specified in num,
  * paths is an array of char* of length num pointing to the input paths,
  * params is an array of length num to hold output */
-void bayer_param_path_set_all(uint64_t num, const char** paths, bayer_param_path* params);
+void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params);
 
-/* free resources allocated in call to bayer_param_path_set_all */
-void bayer_param_path_free_all(uint64_t num, bayer_param_path* params);
+/* free resources allocated in call to mfu_param_path_set_all */
+void mfu_param_path_free_all(uint64_t num, mfu_param_path* params);
 
 /* set fields in param according to path */
-void bayer_param_path_set(const char* path, bayer_param_path* param);
+void mfu_param_path_set(const char* path, mfu_param_path* param);
 
 /* free memory associated with param */
-void bayer_param_path_free(bayer_param_path* param);
+void mfu_param_path_free(mfu_param_path* param);
 
 /* given a list of param_paths, walk each one and add to flist */
-void bayer_param_path_walk(uint64_t num, const bayer_param_path* params, int walk_stat, bayer_flist flist, int dir_perms);
+void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, int walk_stat, mfu_flist flist, int dir_perms);
 
-#endif /* BAYER_PARAM_PATH_H */
+#endif /* MFU_PARAM_PATH_H */
 
 /* enable C++ codes to include this header directly */
 #ifdef __cplusplus
