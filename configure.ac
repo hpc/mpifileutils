@@ -79,7 +79,7 @@ AC_CONFIG_FILES([Makefile                \
                  src/common/Makefile     \
                  src/dchmod/Makefile     \
                  src/dcmp/Makefile       \
-                 src/dcp/Makefile        \
+                 src/dcp1/Makefile       \
                  src/dcp2/Makefile       \
                  src/ddup/Makefile       \
                  src/dfilemaker/Makefile \

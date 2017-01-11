@@ -1,6 +1,6 @@
 include $(top_srcdir)/common.mk
 
-bin_PROGRAMS = dcp
+bin_PROGRAMS = dcp1
 
 noinst_HEADERS = \
     cleanup.h \
@@ -11,15 +11,15 @@ noinst_HEADERS = \
     handle_args.h \
     treewalk.h
 
-dcp_SOURCES = \
+dcp1_SOURCES = \
     cleanup.c \
     common.c \
     compare.c \
     copy.c \
-    dcp.c \
+    dcp1.c \
     handle_args.c \
     treewalk.c
 
-dcp_CPPFLAGS = -I../common/ $(MPI_CFLAGS) $(libcircle_CFLAGS)
-dcp_LDFLAGS = $(MPI_CLDFLAGS)
-dcp_LDADD = ../common/libfileutils_common.a $(MPI_CLDFLAGS) $(libcircle_LIBS)
+dcp1_CPPFLAGS = -I../common/ $(MPI_CFLAGS) $(libcircle_CFLAGS)
+dcp1_LDFLAGS = $(MPI_CLDFLAGS)
+dcp1_LDADD = ../common/libfileutils_common.a $(MPI_CLDFLAGS) $(libcircle_LIBS)
