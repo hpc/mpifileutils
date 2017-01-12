@@ -2,7 +2,7 @@
 
 ###############################################################################
 #
-#                     A simple test runner for dcp.
+#                     A simple test runner for dcp1.
 #
 ###############################################################################
 
@@ -12,8 +12,8 @@ DEBUG=1
 # A temporary directory that all tests can use for scratch files.
 TEST_TMP_DIR=../tmp
 
-# The dcp binary path to use. This must be relative to the test_all.sh script.
-TEST_DCP_BIN=../src/dcp
+# The dcp1 binary path to use. This must be relative to the test_all.sh script.
+TEST_DCP_BIN=../src/dcp1
 
 # The mpirun binary to use.
 TEST_MPIRUN_BIN=/usr/bin/mpirun
