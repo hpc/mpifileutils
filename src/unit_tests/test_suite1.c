@@ -1,4 +1,5 @@
 #include <CUnit/CUnit.h>
+#include "test_suite1.h"
 
 int init_test_suite1(void)
 {
@@ -17,9 +18,9 @@ int is_odd (int x)
 
 void test_is_odd (void)
 {
-  CU_ASSERT(is_odd(1)  == 1);
-  CU_ASSERT(is_odd(2)  == 0);
-  CU_ASSERT(is_odd(3)  == 1);
+  CU_ASSERT(is_odd(1) == 1);
+  CU_ASSERT(is_odd(2) == 0);
+  CU_ASSERT(is_odd(3) == 1);
 }
 
 int setup_test_suite1(void) {
