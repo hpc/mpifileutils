@@ -223,109 +223,6 @@ static int distribute_item_add(struct distribute_item *items,
     return 0;
 }
 
-static int distribution_gather(struct distribute_option *option,
-                               struct distribute_item *items, uint64_t *count,
-                               uint64_t groups, int rank, int ranks)
-{
-    int *counts;
-    int allcount;
-    int i;
-    uint64_t j;
-    int disp = 0;
-    int mycount = (int)*count;
-    struct distribute_item *recvbuf = NULL;
-    int* disps = NULL;
-    MPI_Datatype item_type;
-    uint64_t number;
-
-    MPI_Type_contiguous(2, MPI_UINT64_T, &item_type);
-    MPI_Type_commit(&item_type);
-
-    /* Determine total number of children across all ranks */
-    MPI_Allreduce(&mycount, &allcount, 1, MPI_UINT64_T, MPI_SUM,
-                  MPI_COMM_WORLD);
-    if (rank == 0) {
-        recvbuf = MFU_MALLOC((uint64_t)allcount * sizeof(*items));
-        counts = MFU_MALLOC((uint64_t)ranks * sizeof(int));
-        disps = MFU_MALLOC((uint64_t)ranks * sizeof(int));
-    }
-
-    /* Tell rank 0 where the data is coming from */
-    MPI_Gather(&mycount, 1, MPI_INT, counts, 1, MPI_INT, 0,
-               MPI_COMM_WORLD);
-
-    /* Compute displacements and total bytes */
-    if (rank == 0) {
-        for (i = 0; i < ranks; i++) {
-            disps[i] = disp;
-            disp += counts[i];
-        }
-    }
-
-    /* Gather data to rank 0 */
-    MPI_Gatherv(items, (int)mycount, item_type, recvbuf, counts, disps, item_type,
-                0, MPI_COMM_WORLD);
-
-    /* Summarize */
-    if (rank != 0) {
-        MPI_Type_free(&item_type);
-        return 0;
-    }
-
-    for (i = mycount; i < allcount; i++) {
-        distribute_item_add(items, groups, count, recvbuf[i].value,
-                            recvbuf[i].ranks);
-    }
-
-    assert(*count == groups);
-
-    /* Print results */
-    if (option->separator_number == 0) {
-        printf("Size\tNumber\n");
-        for (i = 0; i < (int)groups; i++) {
-            printf("%"PRIu64"\t%"PRIu64"\n",
-                   items[i].value, items[i].ranks);
-        }
-    } else {
-        printf("Range\tNumber\n");
-        j = 0;
-        for (i = 0; i <= option->separator_number; i++) {
-            printf("[");
-            if (i == 0)
-                printf("0");
-            else
-                printf("%"PRIu64, option->separators[i - 1] + 1);
-
-            printf("~");
-
-            if (i == option->separator_number) {
-                if (groups > 0 && j < groups) {
-                    assert(items[j].value == option->separators[i - 1] + 1);
-                    number = items[j].ranks;
-                    j++;
-                } else {
-                    number = 0;
-                }
-                printf("MAX]\t%"PRIu64"\n", number);
-            } else {
-                if (groups > 0 && j < groups &&
-                    items[j].value == option->separators[i]) {
-                    number = items[j].ranks;
-                    j++;
-                } else {
-                    number = 0;
-                }
-                printf("%"PRIu64"]\t%"PRIu64"\n",
-                       option->separators[i], number);
-            }
-        }
-    }
-    mfu_free(&disps);
-    mfu_free(&counts);
-    MPI_Type_free(&item_type);
-    return 0;
-}
-
 static uint64_t distribute_get_value(struct distribute_option *option,
                                      mfu_flist flist, uint64_t idx)
 {
@@ -345,6 +242,90 @@ static uint64_t distribute_get_value(struct distribute_option *option,
     }
     /* Return the biggest separator + 1 */
     return separator + 1;
+}
+
+static int distribution_gather(struct distribute_option *option, int rank, mfu_flist flist)
+{
+    /* get local size for each rank */
+    uint64_t size = mfu_flist_size(flist);
+    
+    /* allocate a count for each bin, initialize the bin counts to 0 
+     * it is seperator + 1 because the last bin is the last seperator
+     * to the DISTRIBUTE_MAX */
+    int seperators = option->separator_number;
+    uint64_t* dist = (uint64_t*)malloc((seperators + 1) * sizeof(uint64_t));
+
+    /* initialize the bin counts to 0 */
+    for (int i = 0; i <= seperators; i++) {
+        dist[i] = 0;
+    }
+
+   /* for each file, identify appropriate bin and increment its count */
+   for (int i = 0; i < size; i++) {
+
+        /* get the size of the file */
+        uint64_t file_size = mfu_flist_file_get_size(flist, i);
+        
+        /* index of bin the file will belong to */
+        int idx = 0;
+
+        /* loop through the bins and find the one the file belongs to */
+        for (int j = 0; j <= seperators; j++) {
+                if (file_size <= option->separators[j]) {
+                        /* found the bin set bin index & increment its count */
+                        idx = j;
+                        dist[idx]++;
+                        break;
+                } else if (file_size <= MAX_DISTRIBUTE_SEPARATORS && file_size > option->separators[seperators]) {
+                        /* this file belongs in the last bin */
+                        idx = seperators;
+                        dist[idx]++;
+                        break;
+                }
+        }
+   }
+
+   /* sum bin counts across all procs */
+   uint64_t* disttotal = (uint64_t*) malloc((seperators + 1) * sizeof(uint64_t));
+
+   /* initialize the disttotal array to 0 */
+   for (int i = 0; i <= seperators; i++) {
+        disttotal[i] = 0;
+   }
+   
+   /* get the total sum across all of the bins */
+   MPI_Allreduce(dist, disttotal, (uint64_t)seperators + 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+   /* Print the file distribution */
+   if (rank == 0) {
+        /* number of files in a bin */
+        uint64_t number;
+
+        printf("Range\tNumber\n");
+                for (int i = 0; i <= option->separator_number; i++) {
+                        printf("[");
+                        if (i == 0)
+                                printf("0");
+                        else
+                                printf("%"PRIu64, option->separators[i - 1] + 1);
+
+                        printf("~");
+
+                        if (i == option->separator_number) {
+                                number = disttotal[i];
+                                printf("MAX]\t%"PRIu64"\n", number);
+                        } else {
+                                number = disttotal[i];
+                                printf("%"PRIu64"]\t%"PRIu64"\n",
+                                option->separators[i], number);
+                        }
+                }
+   }
+
+   /* free the memory used to hold bin counts */
+   mfu_free(&dist);
+   mfu_free(&disttotal);
+   return 0;
 }
 
 /* 1 for any kind of distribution field */
@@ -415,7 +396,8 @@ static int print_flist_distribution(struct distribute_option *option,
                             group_ranks[i]);
     }
 
-    distribution_gather(option, items, &item_count, groups, rank, ranks);
+    /* figure out the number of files in each bin */
+    distribution_gather(option, rank, flist);
 
     if (items)
         mfu_free(&items);
