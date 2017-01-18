@@ -335,7 +335,7 @@ static int distribution_gather(struct distribute_option *option, int rank, mfu_f
 #define DISTRIBUTE_KEY_SIZE 1
 static int print_flist_distribution(struct distribute_option *option,
                                     mfu_flist* pflist,
-                                    int rank, int ranks)
+                                    int rank)
 {
     
     /* file list to use */
@@ -715,7 +715,7 @@ int main(int argc, char** argv)
     print_summary(flist);
 
     if (distribution != NULL) {
-        print_flist_distribution(&option, &flist, rank, ranks);
+        print_flist_distribution(&option, &flist, rank);
     }
 
     /* write data to cache file */
