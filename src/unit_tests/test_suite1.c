@@ -1,4 +1,5 @@
 #include <CUnit/CUnit.h>
+#include <CUnit/Basic.h>
 #include "test_suite1.h"
 
 int init_test_suite1(void)

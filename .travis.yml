@@ -12,35 +12,71 @@ before_install:
  - sudo apt-cache search mpich
  - sudo apt-get install -qq check libopenmpi-dev openmpi-bin check bc libattr1-dev python-pip
  - sudo pip install nose
+
+ - set -x
+ - OPT="-g -O0"
+ - installdir=`pwd`/install
+ - mkdir -p deps
+ - cd deps
+
  - libcircle=libcircle-0.2.1-rc.1
  - wget https://github.com/adammoody/libcircle/releases/download/v0.2.1-rc.1/${libcircle}.tar.gz
  - tar -zxf ${libcircle}.tar.gz
  - pushd ${libcircle}
- - ./configure --enable-tests && make && make check && sudo make install
+ - ./configure \
+        --prefix=$installdir \
+        --disable-silent-rules && \
+        make VERBOSE=1 && \
+        make VERBOSE=1 install
+   #--enable-tests && make && make check && sudo make install
  - popd
+
  - lwgrp=lwgrp-1.0.2
  - wget https://github.com/hpc/lwgrp/releases/download/v1.0.2/${lwgrp}.tar.gz
  - tar -zxf ${lwgrp}.tar.gz
  - pushd ${lwgrp}
- - ./configure && make && sudo make install
+ - ./configure \
+        --prefix=${installdir} \
+        --disable-silent-rules && \
+        make && \
+        make install 
+   # && make && sudo make install
  - popd
+
  - dtcmp=dtcmp-1.0.3
  - wget https://github.com/hpc/dtcmp/releases/download/v1.0.3/${dtcmp}.tar.gz
  - tar zxvf ${dtcmp}.tar.gz
  - pushd ${dtcmp}
- - ./configure --with-lwgrp=/usr/local && make && sudo make install
+ - ./configure \
+        --prefix=${installdir} \
+        --disable-silent-rules \
+        --with-lwgrp=${installdir} && \
+        make && \
+        make install 
+   # --with-lwgrp=/usr/local && make && sudo make install
  - popd
+
  - libarchive=libarchive-3.1.2
  - wget http://www.libarchive.org/downloads/${libarchive}.tar.gz
  - tar zxvf ${libarchive}.tar.gz
  - pushd ${libarchive}
- - ./configure && make && sudo make install
+ - export CFLAGS=${OPT}
+ - ./configure \
+        --prefix=${installdir} && \
+        make && \
+        make install
+   # && make && sudo make install
  - popd
+
  - cunit=CUnit-2.1-2
  - wget https://sourceforge.net/projects/cunit/files/CUnit/2.1-2/${cunit}-src.tar.bz2 
  - tar xvfj ${cunit}-src.tar.bz2
  - pushd ${cunit}
- - ./configure && make && sudo make install
+ - ./configure \
+        --prefix=${installdir} && \
+        make && \
+        make install
+   # && make && sudo make install
  - popd
 
  - sudo ldconfig
