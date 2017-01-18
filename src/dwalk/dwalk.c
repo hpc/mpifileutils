@@ -260,39 +260,42 @@ static int distribution_gather(struct distribute_option *option, int rank, mfu_f
         dist[i] = 0;
     }
 
+   /* variable to keep track of how many files are in the last (size~MAX) bin */
+   int max_bin_count = 0;
+
    /* for each file, identify appropriate bin and increment its count */
    for (int i = 0; i < size; i++) {
 
         /* get the size of the file */
         uint64_t file_size = mfu_flist_file_get_size(flist, i);
         
-        /* index of bin the file will belong to */
-        int idx = 0;
+        /* set last bin to -1, if a bin is not found while looping through the 
+         * list of file size seperators, then it belongs in the last bin
+         * so (last file size - MAX bin) */
+        int max_bin_flag = -1;
 
         /* loop through the bins and find the one the file belongs to */
-        for (int j = 0; j <= seperators; j++) {
+        for (int j = 0; j < seperators; j++) {
                 if (file_size <= option->separators[j]) {
                         /* found the bin set bin index & increment its count */
-                        idx = j;
-                        dist[idx]++;
+                        dist[j]++;
+
+                        /* a file for this bin was found so can't belong to 
+                         * last bin (so set the flag) & exit the loop */
+                        max_bin_flag = 1;
                         break;
-                } else if (file_size <= MAX_DISTRIBUTE_SEPARATORS && file_size > option->separators[seperators]) {
-                        /* this file belongs in the last bin */
-                        idx = seperators;
-                        dist[idx]++;
-                        break;
-                }
+                }       
+        }
+
+        /* if max_bin_flag is still -1 then the file belongs to the last bin */
+        if (max_bin_flag < 0) {
+            dist[seperators]++;
         }
    }
 
    /* sum bin counts across all procs */
    uint64_t* disttotal = (uint64_t*) malloc((seperators + 1) * sizeof(uint64_t));
 
-   /* initialize the disttotal array to 0 */
-   for (int i = 0; i <= seperators; i++) {
-        disttotal[i] = 0;
-   }
-   
    /* get the total sum across all of the bins */
    MPI_Allreduce(dist, disttotal, (uint64_t)seperators + 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
@@ -334,79 +337,13 @@ static int print_flist_distribution(struct distribute_option *option,
                                     mfu_flist* pflist,
                                     int rank, int ranks)
 {
-    mfu_flist flist = *pflist;
-    MPI_Datatype key;
-    MPI_Datatype keysat;
-    uint64_t output_bytes;
-    uint64_t* group_id;
-    uint64_t* group_ranks;
-    uint64_t* group_rank;
-    uint64_t checking_files;
-    size_t list_bytes;
-    uint64_t* list;
-    uint64_t* ptr;
-    uint64_t i;
-    uint64_t index;
-    uint64_t groups;
-    struct distribute_item *items = NULL;
-    uint64_t item_count = 0;
-    uint64_t value;
-
-    MPI_Type_contiguous(DISTRIBUTE_KEY_SIZE, MPI_UINT64_T, &key);
-    MPI_Type_commit(&key);
-
-    /* KEY + 1 for index in the filst */
-    MPI_Type_contiguous(DISTRIBUTE_KEY_SIZE + 1, MPI_UINT64_T, &keysat);
-    MPI_Type_commit(&keysat);
-
-    checking_files = mfu_flist_size(flist);
-    output_bytes = checking_files * sizeof(uint64_t);
-    group_id = (uint64_t *) MFU_MALLOC(output_bytes);
-    group_ranks = (uint64_t *) MFU_MALLOC(output_bytes);
-    group_rank = (uint64_t *) MFU_MALLOC(output_bytes);
-
-    list_bytes = checking_files * (DISTRIBUTE_KEY_SIZE + 1) * sizeof(uint64_t);
-    list = (uint64_t *) MFU_MALLOC(list_bytes);
-
-    /* Initialize the list */
-    ptr = list;
-    for (i = 0; i < checking_files; i++) {
-        ptr[0] = distribute_get_value(option, flist, i);
-        ptr[DISTRIBUTE_KEY_SIZE] = i; /* Index in flist */
-        ptr += DISTRIBUTE_KEY_SIZE + 1;
-    }
-
-    /* Assign group ids and compute group sizes */
-    DTCMP_Rankv((int)checking_files, list, &groups, group_id,
-                group_ranks, group_rank, key, keysat, DTCMP_OP_UINT64T_ASCEND,
-                DTCMP_FLAG_NONE, MPI_COMM_WORLD);
-
-    if (groups > 0) {
-        items = (struct distribute_item *)MFU_MALLOC(sizeof(*items) *
-                                                       groups);
-    }
-
-    group_rank = (uint64_t *) MFU_MALLOC(groups);
-    for (i = 0; i < checking_files; i++) {
-        /* Get index into flist for this item */
-        index = *(list + i * (DISTRIBUTE_KEY_SIZE + 1) +
-                  DISTRIBUTE_KEY_SIZE);
-        value = distribute_get_value(option, flist, index);
-        distribute_item_add(items, groups, &item_count, value,
-                            group_ranks[i]);
-    }
+    
+    /* file list to use */
+    mfu_flist flist = *pflist;  
 
     /* figure out the number of files in each bin */
     distribution_gather(option, rank, flist);
 
-    if (items)
-        mfu_free(&items);
-    mfu_free(&list);
-    mfu_free(&group_rank);
-    mfu_free(&group_ranks);
-    mfu_free(&group_id);
-    MPI_Type_free(&keysat);
-    MPI_Type_free(&key);
     return 0;
 }
 
