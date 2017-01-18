@@ -82,8 +82,8 @@ before_install:
  - export PATH="${topdir}/autotools/install/bin:$PATH"
 
 
-script: ./autogen.sh 
-#script: ./autogen.sh && ./configure && make && make test
+# script: ./autogen.sh 
+script: ./autogen.sh && ./configure && make && make test
 
  - rm -rf build
  - mkdir -p build
