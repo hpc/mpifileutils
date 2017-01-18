@@ -1,7 +1,7 @@
-sudo: required
-dist: trusty
+ sudo: required
+ dist: trusty
 
-language: c
+ language: c
 
 # - sudo apt-get install -qq check mpich check bc libattr1-dev python-pip
 before_install:
