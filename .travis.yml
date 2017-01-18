@@ -27,7 +27,7 @@ before_install:
         --prefix=${installdir} \
         --disable-silent-rules && \
         make VERBOSE=1 && \
-        make VERBOSE=1 install
+        sudo make VERBOSE=1 install
    #--enable-tests && make && make check && sudo make install
  - popd
 
@@ -39,7 +39,7 @@ before_install:
         --prefix=${installdir} \
         --disable-silent-rules && \
         make && \
-        make install 
+        sudo make install 
    # && make && sudo make install
  - popd
 
@@ -52,7 +52,7 @@ before_install:
         --disable-silent-rules \
         --with-lwgrp=${installdir} && \
         make && \
-        make install 
+        sudo make install 
    # --with-lwgrp=/usr/local && make && sudo make install
  - popd
 
@@ -64,7 +64,7 @@ before_install:
  - ./configure \
         --prefix=${installdir} && \
         make && \
-        make install
+        sudo make install
    # && make && sudo make install
  - popd
 
@@ -75,7 +75,7 @@ before_install:
  - ./configure \
         --prefix=${installdir} && \
         make && \
-        make install
+        sudo make install
    # && make && sudo make install
  - popd
 
