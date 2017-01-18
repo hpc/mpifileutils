@@ -24,7 +24,7 @@ before_install:
  - tar -zxf ${libcircle}.tar.gz
  - pushd ${libcircle}
  - ./configure \
-        --prefix=$installdir \
+        --prefix=${installdir} \
         --disable-silent-rules && \
         make VERBOSE=1 && \
         make VERBOSE=1 install
@@ -81,8 +81,36 @@ before_install:
 
  - sudo ldconfig
 
-script: ./autogen.sh && export CC=mpicc && ./configure && make && make test
+ - set -x
+ - topdir=`pwd`
+ - installdir=$topdir/install
+ - export PATH="${topdir}/autotools/install/bin:$PATH"
+
+
+script: ./autogen.sh 
 #script: ./autogen.sh && ./configure && make && make test
+
+ - rm -rf build
+ - mkdir -p build
+ - cd build
+
+ - export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
+
+# TODO: avoid this step
+# necessary so configure test of dtcmp links with MPI
+ - export CC=mpicc
+
+# hack to get things to build after common library
+ - export CFLAGS="-I${topdir}/src/common -DDCOPY_USE_XATTRS"
+ - export LDFLAGS="-Wl,-rpath,${topdir}/install/lib -L${topdir}/install/lib -lcircle"
+
+ - ../configure \
+        --enable-lustre \
+        --prefix=$installdir \
+        --disable-silent-rules \
+        --with-dtcmp=$installdir && \
+        make VERBOSE=1 && \
+        make VERBOSE=1 install
 
 compiler:
   - clang
