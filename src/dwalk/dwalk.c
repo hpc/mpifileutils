@@ -250,13 +250,13 @@ static int distribution_gather(struct distribute_option *option, int rank, mfu_f
     uint64_t size = mfu_flist_size(flist);
     
     /* allocate a count for each bin, initialize the bin counts to 0 
-     * it is seperator + 1 because the last bin is the last seperator
+     * it is separator + 1 because the last bin is the last separator
      * to the DISTRIBUTE_MAX */
-    int seperators = option->separator_number;
-    uint64_t* dist = (uint64_t*)malloc((seperators + 1) * sizeof(uint64_t));
+    int separators = option->separator_number;
+    uint64_t* dist = (uint64_t*)malloc((separators + 1) * sizeof(uint64_t));
 
     /* initialize the bin counts to 0 */
-    for (int i = 0; i <= seperators; i++) {
+    for (int i = 0; i <= separators; i++) {
         dist[i] = 0;
     }
 
@@ -270,12 +270,12 @@ static int distribution_gather(struct distribute_option *option, int rank, mfu_f
         uint64_t file_size = mfu_flist_file_get_size(flist, i);
         
         /* set last bin to -1, if a bin is not found while looping through the 
-         * list of file size seperators, then it belongs in the last bin
+         * list of file size separators, then it belongs in the last bin
          * so (last file size - MAX bin) */
         int max_bin_flag = -1;
 
         /* loop through the bins and find the one the file belongs to */
-        for (int j = 0; j < seperators; j++) {
+        for (int j = 0; j < separators; j++) {
                 if (file_size <= option->separators[j]) {
                         /* found the bin set bin index & increment its count */
                         dist[j]++;
@@ -289,15 +289,15 @@ static int distribution_gather(struct distribute_option *option, int rank, mfu_f
 
         /* if max_bin_flag is still -1 then the file belongs to the last bin */
         if (max_bin_flag < 0) {
-            dist[seperators]++;
+            dist[separators]++;
         }
    }
 
    /* sum bin counts across all procs */
-   uint64_t* disttotal = (uint64_t*) malloc((seperators + 1) * sizeof(uint64_t));
+   uint64_t* disttotal = (uint64_t*) malloc((separators + 1) * sizeof(uint64_t));
 
    /* get the total sum across all of the bins */
-   MPI_Allreduce(dist, disttotal, (uint64_t)seperators + 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+   MPI_Allreduce(dist, disttotal, (uint64_t)separators + 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
    /* Print the file distribution */
    if (rank == 0) {
@@ -365,7 +365,7 @@ static int distribute_separator_add(struct distribute_option *option,
     count = option->separator_number;
     option->separator_number++;
     if (option->separator_number > MAX_DISTRIBUTE_SEPARATORS) {
-        printf("Too many seperators");
+        printf("Too many separators");
         return -1;
     }
     
@@ -435,13 +435,13 @@ static int distribution_parse(struct distribute_option *option,
         }
 
         if (mfu_abtoull(ptr, &separator) != MFU_SUCCESS) {
-            printf("Invalid seperator \"%s\"\n", ptr);
+            printf("Invalid separator \"%s\"\n", ptr);
             status = -1;
             goto out;
         }
 
         if (distribute_separator_add(option, separator)) {
-            printf("Duplicated seperator \"%llu\"\n", separator);
+            printf("Duplicated separator \"%llu\"\n", separator);
             status = -1;
             goto out;
         }
