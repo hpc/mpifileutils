@@ -4,14 +4,13 @@ dist: trusty
 language: c
 
 before_install:
-- set -x
-- OPT="-g -O0"
-- installdir=`pwd`/install
-- mkdir -p deps
-- pushd deps
-- export CFLAGS=${OPT}
+ - set -x
+ - OPT="-g -O0"
+ - installdir=`pwd`/install
+ - mkdir -p deps
+ - pushd deps
+ - export CFLAGS=${OPT}
 # - sudo apt-get install -qq check mpich check bc libattr1-dev python-pip
-install:
  - test -n $CC  && unset CC
  - test -n $CXX && unset CXX
  - sudo apt-get update -qq
