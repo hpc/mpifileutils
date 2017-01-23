@@ -1,6 +1,6 @@
 #include <CUnit/CUnit.h>AUTOMAKE_OPTIONS = foreign
 ACLOCAL_AMFLAGS = -I m4
-AM_LDFLAGS = -lcunit
+
 #SUBDIRS = src doc
 SUBDIRS = src
 
