@@ -8,7 +8,7 @@ before_install:
 - OPT="-g -O0"
 - installdir=`pwd`/install
 - mkdir -p deps
-- cd deps
+- pushd deps
 - export CFLAGS=${OPT}
 # - sudo apt-get install -qq check mpich check bc libattr1-dev python-pip
 install:
@@ -23,7 +23,7 @@ install:
  - wget https://github.com/adammoody/libcircle/releases/download/v0.2.1-rc.1/${libcircle}.tar.gz
  - tar -zxf ${libcircle}.tar.gz
  - pushd ${libcircle}
- # ./configure --prefix=$installdir --disable-silent-rules && make VERBOSE=1 && make VERBOSE=1 install
+ # ./configure --prefix=$installdir --disable-silent-rules && make && make install
  - ./configure --enable-tests && make && make check && sudo make install
  - popd
  - lwgrp=lwgrp-1.0.2
