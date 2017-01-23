@@ -2,7 +2,7 @@ include $(top_srcdir)/common.mk
 
 bin_PROGRAMS = unit_tests
 
-unit_tests_noinst_HEADERS = test_suite1.h
+noinst_HEADERS = test_suite1.h
 unit_tests_SOURCES = unit_tests.c test_suite1.c
 unit_tests_CPPFLAGS = -I../common/ $(MPI_CFLAGS) $(libcircle_CFLAGS)
 unit_tests_LDFLAGS = $(MPI_CLDFLAGS) -lcunit 
