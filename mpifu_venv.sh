@@ -1,4 +1,4 @@
-# !/bin/bash
+#!/bin/bash
 
 # This script assumes you have at least python-2.7.10 installed
 # Pass in the top level directory of where you have the project downloaded
