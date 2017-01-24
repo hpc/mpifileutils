@@ -1,10 +1,24 @@
 #%.1: ../../markdown/%.1.md
 #	pandoc -s -t man $< -o $@
 
-man1_MANS = \
+dist_man1_MANS = \
+  dchmod.1 \
   dcmp.1 \
   dcp.1 \
   drm.1 \
   dwalk.1
 
-EXTRA_DIST = $(man1_MANS)
+#man1_MANS = \
+#  dchmod.1 \
+#  dcmp.1 \
+#  dcp.1 \
+#  dcp1.1 \
+#  dfilemaker.1 \
+#  dfind.1 \
+#  dgrep.1 \
+#  dparallel.1 \
+#  drm.1 \
+#  dtar.1 \
+#  dwalk.1
+
+#EXTRA_DIST = $(man1_MANS)
