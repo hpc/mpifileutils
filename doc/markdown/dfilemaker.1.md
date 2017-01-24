@@ -67,5 +67,5 @@ suitable for testing.
 `dtar` (1).
 `dwalk` (1).
 
-The FileUtils source code and all documentation may be downloaded from
+The mpiFileUtils source code and all documentation may be downloaded from
 <http://fileutils.io>

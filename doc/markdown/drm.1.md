@@ -11,6 +11,10 @@ drm - distributed file remove program
 # DESCRIPTION
 
 drm is a tool for removing files recurseivly in parallel. 
+drm is similar to *rm(1)*, but unlike *rm(1)* there is no
+need to pass a recursive option as files will be removed
+from the top level directory to the bottom of the file tree
+by default.  
 
 # OPTIONS
 
@@ -29,6 +33,11 @@ drm is a tool for removing files recurseivly in parallel.
 -n, \--name
 :	Exclude and/or match a list of files from command based only on file name.
 
+-d, \--dryrun
+:	Print out a list of files that **would** be deleted. This is especially useful
+        if you are matching or excluding with a regular expression option to make sure
+        what will be deleted is what you want and/or expect.
+
 -h, \--help
 :   Print a brief message listing the *drm(1)* options and usage.
 
@@ -43,13 +52,8 @@ Not sure.
 `dchmod` (1).
 `dcmp` (1).
 `dcp` (1).
-`dfilemaker` (1).
-`dfind` (1).
-`dgrep` (1).
-`dparallel` (1).
 `drm` (1).
-`dtar` (1).
 `dwalk` (1).
 
-The FileUtils source code and all documentation may be downloaded from
+The mpiFileUtils source code and all documentation may be downloaded from
 <http://fileutils.io>

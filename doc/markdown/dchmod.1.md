@@ -9,7 +9,7 @@ dchmod - distributed chmod program
 # DESCRIPTION
 Parallel MPI application to recurseively walk, and then change permissions starting from the top level directory. 
 
-dchmod prrovides functionality similar to chmod. Like chmod, the tool supports the use of octal or symbolic mode to change the permissions. But unlinke chmod, there is no need to use a recursive option, as the permissions will be updated from the top level directory all the way to the bottom of the tree by default. 
+dchmod prrovides functionality similar to *chmod(1)*. Like *chmod(1)*, the tool supports the use of octal or symbolic mode to change the permissions. But unlinke *chmod(1)*, there is no need to use a recursive option, as the permissions will be updated from the top level directory all the way to the bottom of the tree by default. 
  
 
 # OPTIONS
@@ -41,12 +41,7 @@ N/A
 # SEE ALSO
 `dcmp` (1). 
 `dcp` (1). 
-`dfilemaker` (1). 
-`dfind` (1). 
-`dgrep` (1). 
-`dparallel` (1). 
 `drm` (1). 
-`dtar` (1). 
 `dwalk` (1).
 
 The mpiFileUtils source code and all documentation may be downloaded from <http://fileutils.io> 

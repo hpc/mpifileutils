@@ -1,15 +1,15 @@
 % DCMP(1)
 
 # NAME
-dcmp - distributed cmp program
+dcmp - distributed *cmp(1)* program
 
 # SYNOPSIS
 **dcmp [OPTION] SOURCE DEST ** 
 
 # DESCRIPTION
-Parallel MPI application to recurseively walk, and then compare files with the same name that live in different directories. 
+Parallel MPI application to recurseively walk, and then compare files with the same name that live in different directories. This tools is similar to *cmp(1)*. Also, it will tell you how many files in two different directories are the same (or different), out of the total set of files and directories.  
 
-dcmp prrovides functionality similar to cmp.  
+dcmp prrovides functionality similar to *cmp(1)*.  
 
 # OPTIONS
 -b, \--base 
@@ -17,9 +17,6 @@ dcmp prrovides functionality similar to cmp.
 
 -o, \--output 
 : 	write output fields and states to a file. 
-
--n, \--name 
-:	 Match or exclude the regular expression based only on file name, and not the full path. Should be used in combination with the match and/or exclude options if you do not want to match/exclude the full path name, but just the file name. 
 
 -h, \--help 
 : 	Print the command usage, and the list of options available. 
@@ -34,12 +31,7 @@ None found (so far).
 # SEE ALSO
 `dchmod` (1). 
 `dcp` (1). 
-`dfilemaker` (1). 
-`dfind` (1). 
-`dgrep` (1). 
-`dparallel` (1). 
 `drm` (1). 
-`dtar` (1). 
 `dwalk` (1).
 
-The FileUtils source code and all documentation may be downloaded from <http://fileutils.io> (Should I put github link here instead??)
+The mpiFileUtils source code and all documentation may be downloaded from <http://fileutils.io>

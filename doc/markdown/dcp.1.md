@@ -71,13 +71,7 @@ to use it then dcp will default to a normal copy.
 
 `dchmod` (1).
 `dcmp` (1).
-`dcp` (1).
-`dfilemaker` (1).
-`dfind` (1).
-`dgrep` (1).
-`dparallel` (1).
 `drm` (1).
-`dtar` (1).
 `dwalk` (1).
 
 The mpiFileUtils source code and all documentation may be downloaded from
