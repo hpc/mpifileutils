@@ -5,7 +5,7 @@ use mvapich2-gnu
 
 set -x
 
-fileutils=fileutils-0.0.1-alpha.6
+mpifileutils=mpifileutils-0.6
 
 topdir=`pwd`
 installdir=$topdir/install
@@ -29,7 +29,7 @@ export CFLAGS="-I${topdir}/src/common -DDCOPY_USE_XATTRS"
 export LDFLAGS="-Wl,-rpath,${topdir}/install/lib -L${topdir}/install/lib -lcircle"
 
 ../configure \
-  --prefix=/usr/local/fileutils \
+  --prefix=/usr/local/mpifileutils \
   --enable-experimental \
   --with-libdtcmp=$installdir && \
 make dist
@@ -37,13 +37,18 @@ if [ $? -ne 0 ] ; then
   echo "failed to make dist file utils"
   exit 1
 fi
+make distcheck
+if [ $? -ne 0 ] ; then
+  echo "failed to make distcheck file utils"
+  exit 1
+fi
 
-cp fileutils*.tar.gz ../.
+cp mpifileutils*.tar.gz ../.
 exit 0
 
-rm -rf ${fileutils}
-tar -zxf ${fileutils}.tar.gz
-cd ${fileutils}
+rm -rf ${mpifileutils}
+tar -zxf ${mpifileutils}.tar.gz
+cd ${mpifileutils}
 
 mkdir build
 cd build

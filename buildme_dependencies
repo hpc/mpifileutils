@@ -8,7 +8,7 @@
 #module load mvapich2-gnu-psm/1.7
 
 . /usr/local/tools/dotkit/init.sh
-use mvapich2-gnu
+use mvapich2-gnu-2.2
 
 # MVAPICH
 #curdir=`pwd`
