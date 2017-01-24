@@ -39,6 +39,9 @@ config.h
 config.log
 config.status
 /stamp-h1
+auxdir/install-sh
+config.h.in
+config.h.in~
 
 aclocal.m4
 auxdir/depcomp
