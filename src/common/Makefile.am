@@ -1,8 +1,10 @@
 include $(top_srcdir)/common.mk
 
-noinst_LIBRARIES = libfileutils_common.a
+#noinst_LIBRARIES = libfileutils_common.a
+lib_LTLIBRARIES = libmfu.la
 
-noinst_HEADERS = \
+#noinst_HEADERS = \
+include_HEADERS = \
     mfu.h \
     mfu_flist.h \
     mfu_flist_internal.h \
@@ -13,7 +15,7 @@ noinst_HEADERS = \
     strmap.h \
     list.h
 
-libfileutils_common_a_SOURCES = \
+libmfu_la_SOURCES = \
     mfu_flist.c \
     mfu_flist_chunk.c \
     mfu_flist_io.c \
@@ -27,6 +29,6 @@ libfileutils_common_a_SOURCES = \
     mfu_util.c \
     strmap.c
 
-libfileutils_common_a_CPPFLAGS = \
+libmfu_la_CPPFLAGS = \
      $(MPI_CFLAGS) \
      $(libcircle_CFLAGS)

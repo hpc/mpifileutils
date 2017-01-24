@@ -16,4 +16,4 @@ dfind_SOURCES = \
 
 dfind_CPPFLAGS = -I../../src/common/ $(MPI_CFLAGS) $(libcircle_CFLAGS)
 dfind_LDFLAGS = $(MPI_CLDFLAGS)
-dfind_LDADD = ../../src/common/libfileutils_common.a $(MPI_CLDFLAGS) $(libcircle_LIBS)
+dfind_LDADD = ../../src/common/libmfu.la $(MPI_CLDFLAGS) $(libcircle_LIBS)

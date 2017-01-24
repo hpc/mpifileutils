@@ -22,4 +22,4 @@ dcp1_SOURCES = \
 
 dcp1_CPPFLAGS = -I../common/ $(MPI_CFLAGS) $(libcircle_CFLAGS)
 dcp1_LDFLAGS = $(MPI_CLDFLAGS)
-dcp1_LDADD = ../common/libfileutils_common.a $(MPI_CLDFLAGS) $(libcircle_LIBS)
+dcp1_LDADD = ../common/libmfu.la $(MPI_CLDFLAGS) $(libcircle_LIBS)

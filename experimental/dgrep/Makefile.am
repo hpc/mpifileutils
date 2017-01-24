@@ -9,4 +9,4 @@ noinst_HEADERS = \
 dgrep_SOURCES = dgrep.c
 dgrep_CPPFLAGS = -I../../src/common/ $(MPI_CFLAGS) $(libcircle_CFLAGS)
 dgrep_LDFLAGS = $(MPI_CLDFLAGS)
-dgrep_LDADD = ../../src/common/libfileutils_common.a $(MPI_CLDFLAGS) $(libcircle_LIBS)
+dgrep_LDADD = ../../src/common/libmfu.la $(MPI_CLDFLAGS) $(libcircle_LIBS)

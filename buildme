@@ -26,6 +26,7 @@ export CC=mpicc
 export CFLAGS="-I${topdir}/src/common -DDCOPY_USE_XATTRS"
 export LDFLAGS="-Wl,-rpath,${topdir}/install/lib -L${topdir}/install/lib -lcircle"
 
+#  --enable-experimental \
 ../configure \
   --enable-lustre \
   --prefix=$installdir \
