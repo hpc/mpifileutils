@@ -45,6 +45,11 @@ AC_FUNC_LSTAT_FOLLOWS_SLASHED_SYMLINK
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([endgrent endpwent getcwd lchown memset mkdir realpath rmdir strchr strdup strerror strstr utime])
 
+##
+# enable libtool
+##
+AC_PROG_LIBTOOL
+
 # Check for nose test program.
 X_AC_PANDOC
 
