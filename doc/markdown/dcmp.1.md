@@ -15,7 +15,7 @@ dcmp prrovides functionality similar to *cmp(1)*.
 -b, \--base 
 : 	Do a base comparison.
 
--o, \--output=<FIELD0=STATE0@FIELD1=STATE1,FIELD2=STATE2:FILE> 
+-o, \--output <FIELD0=STATE0@FIELD1=STATE1,FIELD2=STATE2:FILE> 
 : 	write output fields and states to a file. 
 
 -h, \--help 

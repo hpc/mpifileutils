@@ -12,19 +12,19 @@ dwalk can walk a file tree in parallel with various different options. You can s
 
 # OPTIONS
 
--i, \--input=<FILE>
+-i, \--input <FILE>
 :   Read a list of inputs from a file.
 
--o, \--output=<FILE>
+-o, \--output <FILE>
 :   Write the processed list to a file.
 
 -l, \--lite
 :   Walk file system without stat.
 
--s, \--sort=<FIELD>
+-s, \--sort <FIELD>
 :   Sort output by comma-delimited fields. Available fields: name, user, group, uid, gid, atime, mtime, ctime, size.
 
--d, \--distribution=<FIELD>:<SEPARATORS>. 
+-d, \--distribution <FIELD>:<SEPARATORS>. 
 :   Print the file distribution by field. So, for the size field you could do size:0,80,100 which would then tell you
     how many files from the directory and/or subdirectories you pass in are between 0-0 bytes, 1-80 bytes, 81-99 bytes, 
     and 100 - MAX file size bytes. 

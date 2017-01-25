@@ -17,12 +17,12 @@ have 0 bytes then you would use the \-\-distribution option.
 .SH DESCRIPTION
 .SH OPTIONS
 .TP
-.B \-i, \-\-input=
+.B \-i, \-\-input 
 Read a list of inputs from a file.
 .RS
 .RE
 .TP
-.B \-o, \-\-output=
+.B \-o, \-\-output 
 Write the processed list to a file.
 .RS
 .RE
@@ -32,14 +32,14 @@ Walk file system without stat.
 .RS
 .RE
 .TP
-.B \-s, \-\-sort=
+.B \-s, \-\-sort 
 Sort output by comma\-delimited fields.
 Available fields: name, user, group, uid, gid, atime, mtime, ctime,
 size.
 .RS
 .RE
 .TP
-.B \-d, \-\-distribution=:.
+.B \-d, \-\-distribution :.
 Print the file distribution by field.
 So, for the size field you could do size:0,80,100 which would then tell
 you how many files from the directory and/or subdirectories you pass in

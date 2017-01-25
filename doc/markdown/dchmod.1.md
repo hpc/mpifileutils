@@ -13,16 +13,16 @@ dchmod prrovides functionality similar to *chmod(1)*. Like *chmod(1)*, the tool 
  
 
 # OPTIONS
--g, \--group=<GROUP> 
+-g, \--group <GROUP> 
 :   Change group to specified group name. 
 
--m, \--mode=<STRING>
+-m, \--mode <STRING>
 :   The mode that you want the file or directory to be. 
 
--e, \--exclude=<REGEX>
+-e, \--exclude <REGEX>
 :   Exclude a set of files from command given a regular expression. 
 
--m, \--match=<REGEX>
+-m, \--match <REGEX>
 :   Match a set of files from command given a regular expression.
 
 -n, \--name 
