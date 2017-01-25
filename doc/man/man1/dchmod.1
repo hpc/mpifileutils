@@ -21,22 +21,22 @@ option, as the permissions will be updated from the top level directory
 all the way to the bottom of the tree by default.
 .SH OPTIONS
 .TP
-.B \-g, \-\-group 
+.B \-g, \-\-group=
 Change group to specified group name.
 .RS
 .RE
 .TP
-.B \-m, \-\-mode 
+.B \-m, \-\-mode=
 The mode that you want the file or directory to be.
 .RS
 .RE
 .TP
-.B \-e, \-\-exclude 
+.B \-e, \-\-exclude=
 Exclude a set of files from command given a regular expression.
 .RS
 .RE
 .TP
-.B \-m, \-\-match 
+.B \-m, \-\-match=
 Match a set of files from command given a regular expression.
 .RS
 .RE
@@ -47,10 +47,9 @@ the full path.
 Should be used in combination with the match and/or exclude options if
 you don not want to match/exclude the full path name, but just the file
 name.
+\-h, \-\-help
 .RS
 .RE
-.TP
-.B \-h, \-\-help
 Print the command usage, and the list of options available.
 .RS
 .RE

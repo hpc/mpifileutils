@@ -20,7 +20,7 @@ will copy from the top level directory to the bottom of the file tree by default
 
 # OPTIONS
 
--d, \--debug <level>
+-d, \--debug=<LEVEL>
 :   Specify the level of debug information to output. Level may be one of:
     *fatal*, *err*, *warn*, *info*, or *dbg*. Increasingly verbose debug
     levels include the output of less verbose debug levels.
@@ -35,7 +35,7 @@ will copy from the top level directory to the bottom of the file tree by default
 -g, \--grouplock
 :   Use Lustre grouplock when reading/writing a file.
 
--i, \--input <file>
+-i, \--input=<FILE>
 :   Read an input list from a file.
 
 -p, \--preserve 

@@ -13,21 +13,20 @@ dchmod prrovides functionality similar to *chmod(1)*. Like *chmod(1)*, the tool 
  
 
 # OPTIONS
--g, \--group <name> 
+-g, \--group=<GROUP> 
 :   Change group to specified group name. 
 
--m, \--mode <string>
+-m, \--mode=<STRING>
 :   The mode that you want the file or directory to be. 
 
--e, \--exclude <regex>
+-e, \--exclude=<REGEX>
 :   Exclude a set of files from command given a regular expression. 
 
--m, \--match <regex>
+-m, \--match=<REGEX>
 :   Match a set of files from command given a regular expression.
 
 -n, \--name 
 :   Match or exclude the regular expression based only on file name, and not the full path. Should be used in combination with the match and/or exclude options if you don not want to match/exclude the full path name, but just the file name. 
-
 -h, \--help 
 : 	Print the command usage, and the list of options available. 
 

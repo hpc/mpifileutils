@@ -18,16 +18,16 @@ by default.
 
 # OPTIONS
 
--i, \--input <file>
+-i, \--input=<FILE>
 :	Read a list from a file.
 
 -l, \--lite 
 :	Walk file system without stat.
 
---exclude <regex>
+--exclude=<REGEX>
 :   Exclude a list of files from command.
 
---match <regex>
+--match=<REGEX>
 :	Match a list of files from command.
 
 -n, \--name
