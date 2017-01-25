@@ -22,12 +22,13 @@ will copy from the top level directory to the bottom of the file tree by
 default.
 .SH OPTIONS
 .TP
-.B \-d, \-\-debug=\f[I]level\f[]
+.B \-d, \-\-debug 
 Specify the level of debug information to output.
 Level may be one of: \f[I]fatal\f[], \f[I]err\f[], \f[I]warn\f[],
 \f[I]info\f[], or \f[I]dbg\f[].
 Increasingly verbose debug levels include the output of less verbose
 debug levels.
+Levels: dbg, info, warn, err, fatal
 .RS
 .RE
 .TP
@@ -45,12 +46,12 @@ Use Lustre grouplock when reading/writing a file.
 .RS
 .RE
 .TP
-.B \-i, \-\-i
+.B \-i, \-\-input 
 Read an input list from a file.
 .RS
 .RE
 .TP
-.B \-p, \-\-input
+.B \-p, \-\-preserve
 Preserve the original files owner, group, permissions (including the
 setuid and setgid bits), time of last modification and time of last
 access.
@@ -78,6 +79,20 @@ Print version information and exit.
 Print a brief message listing the \f[I]dcp(1)\f[] options and usage.
 .RS
 .RE
+.SH EXAMPLES
+.PP
+Example will use 4 nodes:
+.IP "1." 3
+salloc \-N4 \-ppdebug
+.PP
+Do a regular copy:
+.IP "2." 3
+srun \-n4 dcp src/ dest/
+.PP
+Copy & preserve permissions, ownership, timestamps, and extended
+attributes:
+.IP "3." 3
+srun \-n4 dcp \-d src/ dest/
 .SS Known bugs
 .PP
 When the force option is specified and truncation fails, the copy and

@@ -26,12 +26,12 @@ Walk file system without stat.
 .RS
 .RE
 .TP
-.B \-\-exclude regex
+.B \-\-exclude 
 Exclude a list of files from command.
 .RS
 .RE
 .TP
-.B \-\-match regex
+.B \-\-match 
 Match a list of files from command.
 .RS
 .RE
@@ -59,6 +59,24 @@ Print a brief message listing the \f[I]drm(1)\f[] options and usage.
 Print version information and exit.
 .RS
 .RE
+.SH EXAMPLES
+.PP
+Example will use 4 nodes: 1.
+salloc \-N4 \-ppdebug
+.PP
+Regular remove: 2.
+srun \-n4 drm /src
+.PP
+Remove with a \-\-dryrun option.
+This run will NOT delete anything.
+It will just print the files to be deleted.
+3.
+srun \-n4 drm \-\-dryrun /src
+.PP
+Use drm \-\-dryrun option with a regex filter to only delete files that
+match a file or directory name (instead of matching the full path).
+4.
+srun \-n4 drm \-\-dryrun \-\-name \-\-match afilename /dir/to/search
 .SS Known bugs
 .PP
 Not sure.

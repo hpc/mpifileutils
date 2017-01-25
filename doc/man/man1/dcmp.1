@@ -24,7 +24,7 @@ Do a base comparison.
 .RS
 .RE
 .TP
-.B \-o, \-\-output
+.B \-o, \-\-output field0=state0\@field1=state1,field2=state2:file
 write output fields and states to a file.
 .RS
 .RE
@@ -40,6 +40,18 @@ Files walked, started, completed, seconds, files, bytes read, byte rate,
 and file rate.
 .RS
 .RE
+.SH EXAMPLES
+.PP
+Example will use 4 nodes: 1.
+salloc \-N4 \-ppdebug
+.PP
+Compare two files in different directories: 2.
+srun \-n4 dcmp /src1/file1 /src2/file2
+.PP
+Compare two directories with verbose output.
+The verbose output will give you the timing & bytes read info as well:
+3.
+srun \-n4 dcmp \-v /src1 /src2
 .SS Known bugs
 .PP
 None found (so far).

@@ -13,16 +13,16 @@ dchmod prrovides functionality similar to *chmod(1)*. Like *chmod(1)*, the tool 
  
 
 # OPTIONS
--g, \--group 
+-g, \--group <name> 
 :   Change group to specified group name. 
 
--m, \--mode 
+-m, \--mode <string>
 :   The mode that you want the file or directory to be. 
 
--e, \--exclude 
+-e, \--exclude <regex>
 :   Exclude a set of files from command given a regular expression. 
 
--m, \--match 
+-m, \--match <regex>
 :   Match a set of files from command given a regular expression.
 
 -n, \--name 
@@ -33,6 +33,26 @@ dchmod prrovides functionality similar to *chmod(1)*. Like *chmod(1)*, the tool 
 
 -v, \--verbose 
 : 	Prints a list of statistics/timing data for the command. How many files walked, how many levels there are in the tree, and how many files the command operated on. This option also prints the files/sec for each of those.
+
+# EXAMPLES
+
+Example will use 4 nodes:
+
+1. salloc -N4 -ppdebug
+
+Use octal mode to change permissions:
+
+2. srun -n4 dchmod -m 755 /directory
+
+Use symbolic mode to change permissions (you can list modes for user, group, etc if you separate them with a comma):
+
+3. srun -n4 dchmod -g deg -m u+r,g+rw /directory
+
+Change permissions to u+rw on all files/directories EXCEPT those that match regex:
+
+4. srun -n4 dchmod --name --exclude afilename -m u+rw /directory
+
+Note: You can also do #4 the same with the --match option instead. It will change file permissions on all of the files/directories that match the regex.
 
 ### Known bugs
 

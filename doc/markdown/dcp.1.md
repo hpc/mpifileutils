@@ -20,10 +20,11 @@ will copy from the top level directory to the bottom of the file tree by default
 
 # OPTIONS
 
--d, \--debug=*level*
+-d, \--debug <level>
 :   Specify the level of debug information to output. Level may be one of:
     *fatal*, *err*, *warn*, *info*, or *dbg*. Increasingly verbose debug
     levels include the output of less verbose debug levels.
+    Levels: dbg, info, warn, err, fatal
 
 -f, \--force
 :   Remove existing destination files if creation or truncation fails. If the
@@ -34,10 +35,10 @@ will copy from the top level directory to the bottom of the file tree by default
 -g, \--grouplock
 :   Use Lustre grouplock when reading/writing a file.
 
--i, \--i
+-i, \--input <file>
 :   Read an input list from a file.
 
--p, \--input 
+-p, \--preserve 
 :   Preserve the original files owner, group, permissions (including the
     setuid and setgid bits), time of last  modification and time of last
     access. In case duplication of owner or group fails, the setuid and setgid
@@ -54,6 +55,20 @@ will copy from the top level directory to the bottom of the file tree by default
 
 -h, \--help
 :   Print a brief message listing the *dcp(1)* options and usage.
+
+# EXAMPLES
+
+Example will use 4 nodes:
+
+1. salloc -N4 -ppdebug
+
+Do a regular copy:
+
+2. srun -n4 dcp src/ dest/
+
+Copy & preserve permissions, ownership, timestamps, and extended attributes:
+
+3. srun -n4 dcp -d src/ dest/
 
 ### Known bugs
 When the force option is specified and truncation fails, the copy and

@@ -15,7 +15,7 @@ dcmp prrovides functionality similar to *cmp(1)*.
 -b, \--base 
 : 	Do a base comparison.
 
--o, \--output 
+-o, \--output field0=state0@field1=state1,field2=state2:file 
 : 	write output fields and states to a file. 
 
 -h, \--help 
@@ -24,8 +24,18 @@ dcmp prrovides functionality similar to *cmp(1)*.
 -v, \--verbose 
 : 	Prints a list of statistics/timing data for the command. Files walked, started, completed, seconds, files, bytes read, byte rate, and file rate. 
 
-### Known bugs
+# EXAMPLES
 
+Example will use 4 nodes:
+1. salloc -N4 -ppdebug
+
+Compare two files in different directories:
+2. srun -n4 dcmp /src1/file1 /src2/file2
+
+Compare two directories with verbose output. The verbose output will give you the timing & bytes read info as well:
+3. srun -n4 dcmp -v /src1 /src2
+
+### Known bugs
 None found (so far).
 
 # SEE ALSO

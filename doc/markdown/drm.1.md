@@ -24,10 +24,10 @@ by default.
 -l, \--lite 
 :	Walk file system without stat.
 
---exclude regex
+--exclude <regex>
 :   Exclude a list of files from command.
 
---match regex
+--match <regex>
 :	Match a list of files from command.
 
 -n, \--name
@@ -43,6 +43,20 @@ by default.
 
 -v, \--version
 :   Print version information and exit.
+
+# EXAMPLES
+
+Example will use 4 nodes:
+1. salloc -N4 -ppdebug
+
+Regular remove:
+2. srun -n4 drm /src
+
+Remove with a --dryrun option. This run will NOT delete anything. It will just print the files to be deleted. 
+3. srun -n4 drm --dryrun /src
+
+Use drm --dryrun option with a regex filter to only delete files that match a file or directory name (instead of matching the full path).
+4. srun -n4 drm --dryrun --name --match afilename /dir/to/search
 
 ### Known bugs
 Not sure.
