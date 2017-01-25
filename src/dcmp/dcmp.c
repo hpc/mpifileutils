@@ -36,6 +36,7 @@
 #include <assert.h>
 
 #include "mfu.h"
+#include "strmap.h"
 #include "list.h"
 
 /* globals to hold user-input paths */

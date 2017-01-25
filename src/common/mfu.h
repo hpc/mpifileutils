@@ -46,7 +46,6 @@ extern "C" {
 #include "mfu_io.h"
 #include "mfu_flist.h"
 #include "mfu_param_path.h"
-#include "strmap.h"
 
 #endif /* MFU_H */
 

@@ -4,7 +4,9 @@ include $(top_srcdir)/common.mk
 #lib_LIBRARIES = libmfu.a
 lib_LTLIBRARIES = libmfu.la
 
-#noinst_HEADERS =
+noinst_HEADERS = \
+    strmap.h \
+    list.h
 
 include_HEADERS = \
     mfu.h \
@@ -13,9 +15,7 @@ include_HEADERS = \
     mfu_io.h \
     mfu_param_path.h \
     mfu_path.h \
-    mfu_util.h \
-    strmap.h \
-    list.h
+    mfu_util.h
 
 libmfu_la_SOURCES = \
     mfu_flist.c \
