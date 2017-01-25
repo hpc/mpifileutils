@@ -1,9 +1,11 @@
 include $(top_srcdir)/common.mk
 
 #noinst_LIBRARIES = libfileutils_common.a
+#lib_LIBRARIES = libmfu.a
 lib_LTLIBRARIES = libmfu.la
 
-#noinst_HEADERS = \
+#noinst_HEADERS =
+
 include_HEADERS = \
     mfu.h \
     mfu_flist.h \
