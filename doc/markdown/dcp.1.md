@@ -2,7 +2,7 @@
 
 # NAME
 
-dcp - distributed file copy program
+dcp - distributed copy
 
 # SYNOPSIS
 

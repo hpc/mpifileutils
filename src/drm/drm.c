@@ -59,9 +59,9 @@ static void print_usage(void)
     printf("  -l, --lite             - walk file system without stat\n");
     printf("      --exclude <regex>  - exclude a list of files from command\n");
     printf("      --match   <regex>  - match a list of files from command\n");
-    printf("  -n, --name             - exclude a list of files from command\n");
-    printf("  -v, --verbose          - verbose output\n");
+    printf("      --name             - exclude a list of files from command\n");
     printf("      --dryrun           - print out list of files that would be deleted\n");
+    printf("  -v, --verbose          - verbose output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -96,16 +96,16 @@ int main(int argc, char** argv)
         {"exclude",  1, 0, 'e'},
         {"match",    1, 0, 'a'},
         {"name",     0, 0, 'n'},        
-        {"help",     0, 0, 'h'},
         {"dryrun",   0, 0, 'd'},
         {"verbose",  0, 0, 'v'},
+        {"help",     0, 0, 'h'},
         {0, 0, 0, 0}
     };
 
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:nlhv",
+                    argc, argv, "i:lhv",
                     long_options, &option_index
                 );
 
@@ -131,14 +131,14 @@ int main(int argc, char** argv)
             case 'n':
                 name = 1;
                 break;
-            case 'h':
-                usage = 1;
-                break;
             case 'd':
                 dryrun = 1;
                 break;            
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'h':
+                usage = 1;
                 break;
             case '?':
                 usage = 1;

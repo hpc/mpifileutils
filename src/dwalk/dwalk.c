@@ -403,21 +403,21 @@ int main(int argc, char** argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"distribution", 1, 0, 'd'},
         {"input",        1, 0, 'i'},
         {"output",       1, 0, 'o'},
         {"lite",         0, 0, 'l'},
         {"sort",         1, 0, 's'},
+        {"distribution", 1, 0, 'd'},
         {"print",        0, 0, 'p'},
-        {"help",         0, 0, 'h'},
         {"verbose",      0, 0, 'v'},
+        {"help",         0, 0, 'h'},
         {0, 0, 0, 0}
     };
 
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "d:i:o:ls:phv",
+                    argc, argv, "i:o:ls:d:pvh",
                     long_options, &option_index
                 );
 
@@ -426,9 +426,6 @@ int main(int argc, char** argv)
         }
 
         switch (c) {
-            case 'd':
-                distribution = MFU_STRDUP(optarg);
-                break;
             case 'i':
                 inputname = MFU_STRDUP(optarg);
                 break;
@@ -441,14 +438,17 @@ int main(int argc, char** argv)
             case 's':
                 sortfields = MFU_STRDUP(optarg);
                 break;
+            case 'd':
+                distribution = MFU_STRDUP(optarg);
+                break;
             case 'p':
                 print = 1;
                 break;
-            case 'h':
-                usage = 1;
-                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'h':
+                usage = 1;
                 break;
             case '?':
                 usage = 1;

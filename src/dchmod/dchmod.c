@@ -938,7 +938,7 @@ static void print_usage(void)
     printf("  -m, --mode    <string> - change mode\n");
     printf("      --exclude <regex>  - exclude a list of files from command\n");
     printf("      --match   <regex>  - match a list of files from command\n");
-    printf("  -n, --name             - exclude a list of files from command\n");
+    printf("      --name             - exclude a list of files from command\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
@@ -983,7 +983,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:g:m:nlhv",
+                    argc, argv, "i:g:m:vh",
                     long_options, &option_index
                 );
 
@@ -1012,11 +1012,11 @@ int main(int argc, char** argv)
             case 'n':
                 name = 1;
                 break;
-            case 'h':
-                usage = 1;
-                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'h':
+                usage = 1;
                 break;
             case '?':
                 usage = 1;

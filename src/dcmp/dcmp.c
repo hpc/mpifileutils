@@ -50,11 +50,11 @@ static void print_usage(void)
     printf("Usage: dcmp [options] source target\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -h, --help  - print usage\n");
-    printf("  -v, --verbose\n");
     printf("  -b, --base  - do base comparison\n");
     printf("  -o, --output field0=state0@field1=state1,field2=state2:file "
     	   "- write list to file\n");
+    printf("  -v, --verbose\n");
+    printf("  -h, --help  - print usage\n");
     printf("\n");
     fflush(stdout);
 }
@@ -1941,9 +1941,9 @@ int main(int argc, char **argv)
     static struct option long_options[] = {
         {"base",     0, 0, 'b'},
         {"debug",    0, 0, 'd'},
-        {"help",     0, 0, 'h'},
         {"output",   1, 0, 'o'},
         {"verbose",  0, 0, 'v'},
+        {"help",     0, 0, 'h'},
         {0, 0, 0, 0}
     };
     int ret = 0;
@@ -1954,7 +1954,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "bdho:v",
+            argc, argv, "bdo:vh",
             long_options, &option_index
         );
 
