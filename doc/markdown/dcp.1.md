@@ -10,77 +10,61 @@ dcp - distributed file copy program
 
 # DESCRIPTION
 
+Parallel MPI application to recursively copy files and directories.
+
 dcp is a file copy tool in the spirit of *cp(1)* that evenly distributes work
 across a large cluster without any centralized state. It is designed for
-copying files which are located on a distributed parallel file system. The
-method used in the file copy process is a self-stabilization algorithm which
-enables per-node autonomous processing and a token passing scheme to detect
-termination. Unlike *cp(1)* there is no need to use a recursive option, as dcp
-will copy from the top level directory to the bottom of the file tree by default.
+copying files that are located on a distributed parallel file system.
 
 # OPTIONS
 
--d, \--debug <LEVEL>
-:   Specify the level of debug information to output. Level may be one of:
-    *fatal*, *err*, *warn*, *info*, or *dbg*. Increasingly verbose debug
-    levels include the output of less verbose debug levels.
-    Levels: dbg, info, warn, err, fatal
-
--f, \--force
-:   Remove existing destination files if creation or truncation fails. If the
-    destination filesystem is specified to be unreliable
-    (`-U`, `--unreliable-filesystem`), this option may lower performance since
-    each failure will cause the entire file to be invalidated and copied again.
-
--g, \--grouplock
-:   Use Lustre grouplock when reading/writing a file.
-
 -i, \--input <FILE>
-:   Read an input list from a file.
+:   Read source input list from file.
 
 -p, \--preserve 
-:   Preserve the original files owner, group, permissions (including the
-    setuid and setgid bits), time of last  modification and time of last
-    access. In case duplication of owner or group fails, the setuid and setgid
-    bits are cleared.
+:   Preserve permissions, group, timestamps, and extended attributes.
 
 -s, \--synchronous
-:   Use synchronous read/write calls (0_DIRECT)
+:   Use synchronous read/write calls (open files with 0_DIRECT)
 
 -S, \--sparse
-:   Create sparse files when possible. 
+:   Create sparse files when possible (non-functioning).
 
--v, \--version
-:   Print version information and exit.
+-v, \--verbose
+:   Run in verbose mode.
 
 -h, \--help
 :   Print a brief message listing the *dcp(1)* options and usage.
 
+# RESTRICTIONS
+
+If a long-running copy is interrupted, one should delete the partial copy and rerun dcp from the beginning.  One may use drm to quickly remove a partial copy of a large directory tree.
+
+To ensure the copy was successful, one should run dcmp after dcp completes to verify the copy, especially if dcp was not run with the -s option.
+
 # EXAMPLES
 
-Example will use 4 nodes:
+1. To copy dir1 as dir2:
 
-1. salloc -N4 -ppdebug
+mpirun -np 128 dcp /source/dir1 /dest/dir2
 
-Do a regular copy:
+2. To copy contents of dir1 into dir2:
 
-2. srun -n4 dcp src/ dest/
+mkdir /dest/dir2
+mpirun -np 128 dcp /source/dir1/* /dest/dir2
 
-Copy & preserve permissions, ownership, timestamps, and extended attributes:
+3. To copy while preserving permissions, group, timestamps, and attributes:
 
-3. srun -n4 dcp -d src/ dest/
+mpirun -np 128 dcp -p /source/dir1/ /dest/dir2
 
-### Known bugs
-When the force option is specified and truncation fails, the copy and
-truncation will be stuck in an infinite loop until the truncation operation
-returns with success.
-
-The maximum supported filename length for any file transfered is approximately
-4068 characters. This may be less than the number of characters that your
-operating system supports.
+# KNOWN BUGS
 
 Using the -S option for sparse files does not work yet at LLNL. If you try
 to use it then dcp will default to a normal copy.
+
+The -g option is still being developed.
+
+The maximum supported filename length for any file transfered is approximately 4068 characters.  This may be less than the number of characters that your operating system supports.
 
 # SEE ALSO
 
@@ -90,4 +74,4 @@ to use it then dcp will default to a normal copy.
 `dwalk` (1).
 
 The mpiFileUtils source code and all documentation may be downloaded from
-<http://fileutils.io>
+<https://github.com/hpc/mpifileutils>

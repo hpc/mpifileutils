@@ -1048,19 +1048,16 @@ void DCOPY_print_usage(void)
     printf("\n");
     printf("Options:\n");
     /* printf("  -c, --compare       - read data back after writing to compare\n"); */
-    printf("  -d, --debug <level> - specify debug verbosity level (default info)\n");
-    printf("  -f, --force         - delete destination file if error on open\n");
+    /* printf("  -d, --debug <level> - specify debug verbosity level (default info)\n"); */
 #ifdef LUSTRE_SUPPORT
-    printf("  -g, --groulock      - use Lustre grouplock when reading/writing file\n");
+    /* printf("  -g, --grouplock <id> - use Lustre grouplock when reading/writing file\n"); */
 #endif
-    printf("  -i, --input <file>  - read list from file\n");
+    printf("  -i, --input <file>  - read source list from file\n");
     printf("  -p, --preserve      - preserve permissions, ownership, timestamps, extended attributes\n");
     printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
     printf("  -S, --sparse        - create sparse files when possible\n");
-    printf("  -v, --version       - print version info\n");
+    printf("  -v, --verbose       - verbose output\n");
     printf("  -h, --help          - print usage\n");
-    printf("\n");
-    printf("Level: dbg,info,warn,err,fatal\n");
     printf("\n");
     fflush(stdout);
 }
@@ -1106,9 +1103,6 @@ int main(int argc, \
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
     mfu_debug_level = MFU_LOG_INFO;
 
-    /* By default, don't unlink destination files if an open() fails. */
-    DCOPY_user_opts.force = false;
-
     /* By default, don't bother to preserve all attributes. */
     DCOPY_user_opts.preserve = false;
 
@@ -1129,19 +1123,18 @@ int main(int argc, \
 
     static struct option long_options[] = {
         {"debug"                , required_argument, 0, 'd'},
-        {"force"                , no_argument      , 0, 'f'},
         {"grouplock"            , required_argument, 0, 'g'},
-        {"help"                 , no_argument      , 0, 'h'},
         {"input"                , required_argument, 0, 'i'},
         {"preserve"             , no_argument      , 0, 'p'},
         {"synchronous"          , no_argument      , 0, 's'},
         {"sparse"               , no_argument      , 0, 'S'},
-        {"version"              , no_argument      , 0, 'v'},
+        {"verbose"              , no_argument      , 0, 'v'},
+        {"help"                 , no_argument      , 0, 'h'},
         {0                      , 0                , 0, 0  }
     };
 
     /* Parse options */
-    while((c = getopt_long(argc, argv, "d:fg:hi:pusSv", \
+    while((c = getopt_long(argc, argv, "d:g:hi:pusSv", \
                            long_options, &option_index)) != -1) {
         switch(c) {
 
@@ -1200,15 +1193,6 @@ int main(int argc, \
 
                 break;
 
-            case 'f':
-                DCOPY_user_opts.force = true;
-
-                if(DCOPY_global_rank == 0) {
-                    MFU_LOG(MFU_LOG_INFO, "Deleting destination on errors.");
-                }
-
-                break;
-
 #ifdef LUSTRE_SUPPORT
             case 'g':
                 DCOPY_user_opts.grouplock_id = atoi(optarg);
@@ -1220,14 +1204,6 @@ int main(int argc, \
 
                 break;
 #endif
-
-            case 'h':
-                if(DCOPY_global_rank == 0) {
-                    DCOPY_print_usage();
-                }
-
-                DCOPY_exit(EXIT_SUCCESS);
-                break;
 
             case 'i':
                 DCOPY_user_opts.input_file = MFU_STRDUP(optarg);
@@ -1264,8 +1240,13 @@ int main(int argc, \
                 break;
 
             case 'v':
+                mfu_debug_level = MFU_LOG_VERBOSE;
+
+                break;
+
+            case 'h':
                 if(DCOPY_global_rank == 0) {
-                    DCOPY_print_version();
+                    DCOPY_print_usage();
                 }
 
                 DCOPY_exit(EXIT_SUCCESS);
