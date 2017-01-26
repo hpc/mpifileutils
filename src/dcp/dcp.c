@@ -19,7 +19,6 @@
 */
 
 #include "mfu_flist.h"
-//#include "mfu_flist.c"
 
 #include "dcp.h"
 
