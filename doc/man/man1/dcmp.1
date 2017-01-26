@@ -4,19 +4,19 @@
 .hy
 .SH NAME
 .PP
-dcmp \- distributed \f[I]cmp(1)\f[] program
+dcmp \- distributed compare
 .SH SYNOPSIS
 .PP
 \f[B]dcmp [OPTION] SOURCE DEST \f[]
 .SH DESCRIPTION
 .PP
-Parallel MPI application to recurseively walk, and then compare files
-with the same name that live in different directories.
-This tools is similar to \f[I]cmp(1)\f[].
-Also, it will tell you how many files in two different directories are
-the same (or different), out of the total set of files and directories.
+Parallel MPI application to compare two files or to recurseively compare
+files with same prefix path within two different directories.
+This tool is similar to \f[I]cmp(1)\f[].
+It reports how many files in two different directories are the same (or
+different).
 .PP
-dcmp prrovides functionality similar to \f[I]cmp(1)\f[].
+dcmp provides functionality similar to a recursive \f[I]cmp(1)\f[].
 .SH OPTIONS
 .TP
 .B \-b, \-\-base
@@ -29,32 +29,28 @@ write output fields and states to a file.
 .RS
 .RE
 .TP
-.B \-h, \-\-help
-Print the command usage, and the list of options available.
-.RS
-.RE
-.TP
 .B \-v, \-\-verbose
+Run in verbose mode.
 Prints a list of statistics/timing data for the command.
 Files walked, started, completed, seconds, files, bytes read, byte rate,
 and file rate.
 .RS
 .RE
+.TP
+.B \-h, \-\-help
+Print the command usage, and the list of options available.
+.RS
+.RE
 .SH EXAMPLES
+.IP "1." 3
+Compare two files in different directories:
 .PP
-Example will use 4 nodes: 1.
-salloc \-N4 \-ppdebug
-.PP
-Compare two files in different directories: 2.
-srun \-n4 dcmp /src1/file1 /src2/file2
-.PP
+mpirun \-np 128 dcmp /src1/file1 /src2/file2
+.IP "2." 3
 Compare two directories with verbose output.
-The verbose output will give you the timing & bytes read info as well:
-3.
-srun \-n4 dcmp \-v /src1 /src2
-.SS Known bugs
+The verbose output prints timing and number of bytes read:
 .PP
-None found (so far).
+mpirun \-np 128 dcmp \-v /src1 /src2
 .SH SEE ALSO
 .PP
 \f[C]dchmod\f[] (1).
@@ -63,4 +59,4 @@ None found (so far).
 \f[C]dwalk\f[] (1).
 .PP
 The mpiFileUtils source code and all documentation may be downloaded
-from <http://fileutils.io>
+from <https://github.com/hpc/mpifileutils>
