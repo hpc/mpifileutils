@@ -85,10 +85,11 @@ AC_CONFIG_FILES([Makefile                \
                  src/dchmod/Makefile     \
                  src/dcmp/Makefile       \
                  src/dcp1/Makefile       \
-                 src/dcp/Makefile       \
+                 src/dcp/Makefile        \
                  src/ddup/Makefile       \
                  src/dfilemaker/Makefile \
                  src/drm/Makefile        \
+                 src/dstripe/Makefile    \
                  src/dwalk/Makefile      \
                  doc/Makefile            \
                  doc/man/Makefile        \
@@ -104,7 +105,7 @@ AC_CONFIG_FILES([experimental/Makefile           \
                  experimental/dgrep/Makefile     \
                  experimental/dparallel/Makefile \
                  experimental/dtar/Makefile      \
-                 experimental/dsh/Makefile        \
+                 experimental/dsh/Makefile       \
 ])
 fi
 

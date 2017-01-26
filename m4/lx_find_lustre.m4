@@ -13,6 +13,12 @@ AC_DEFUN([X_AC_LUSTRE], [
         [enable_lustre="no"])
   AC_MSG_RESULT([$enable_lustre])
 
-  AS_IF([test "x$enable_lustre" = xyes],
-        [AC_DEFINE(LUSTRE_SUPPORT, 1, [enable Lustre support])])
+#  AC_SEARCH_LIBS([llapi_file_create], [lustreapi], [], [
+#    AC_MSG_ERROR([couldn't find liblustreapi])], [])
+
+  AS_IF([test "x$enable_lustre" = xyes], [
+    AC_DEFINE(LUSTRE_SUPPORT, 1, [enable Lustre support])
+    LUSTRE_LIBS="-llustreapi"
+    AC_SUBST(LUSTRE_LIBS)
+  ])
 ])
