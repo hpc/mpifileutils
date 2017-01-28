@@ -21,7 +21,7 @@ dchmod provides functionality similar to *chmod(1)* and *chgrp(1)*. Like *chmod(
 :   Change group to specified GROUP name. 
 
 -m, \--mode MODE
-:   The mode that you want the file or directory to be.  MODE may be octal or symbolic syntax similar to chmod(1).
+:   The mode that you want the file or directory to be.  MODE may be octal or symbolic syntax similar to chmod(1).  In symbolic notation, "ugoa" are supported as are "rwxX".
 
 --exclude REGEX
 :   Do not modify items whose full path matches REGEX (regexec).
