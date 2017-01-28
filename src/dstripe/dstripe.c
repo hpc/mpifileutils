@@ -25,13 +25,16 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <lustre/lustreapi.h>
 #include <stdio.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <limits.h>
 #include "mpi.h"
+
+#ifdef LUSTRE_SUPPORT
+#include <lustre/lustreapi.h>
+#endif
 
 #include "mfu.h"
 
@@ -65,7 +68,6 @@ int main(int argc, char* argv[])
 
     /* nothing to do if lustre support is disabled */
 #ifndef LUSTRE_SUPPORT
-#error "Failed to set LUSTRE_SUPPORT"
         if (rank == 0) {
             printf("Lustre support is disabled\n");
             fflush(stdout);
