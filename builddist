@@ -31,6 +31,7 @@ export LDFLAGS="-Wl,-rpath,${topdir}/install/lib -L${topdir}/install/lib -lcircl
 ../configure \
   --prefix=/usr/local/mpifileutils \
   --enable-experimental \
+  --enable-lustre \
   --with-libdtcmp=$installdir && \
 make dist
 if [ $? -ne 0 ] ; then
