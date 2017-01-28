@@ -2,10 +2,12 @@
 #	pandoc -s -t man $< -o $@
 
 dist_man1_MANS = \
+  dbcast.1 \
   dchmod.1 \
   dcmp.1 \
   dcp.1 \
   drm.1 \
+  dstripe.1 \
   dwalk.1
 
 #man1_MANS = \

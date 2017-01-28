@@ -6,7 +6,7 @@ dbcast - distributed broadcast
 
 # SYNOPSIS
 
-**dbcast <CHUNK_SIZE> <SRC_FILE> <DEST_FILE>**
+**dbcast CHUNK_SIZE SRC_FILE DEST_FILE**
 
 # DESCRIPTION
 

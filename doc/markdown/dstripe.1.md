@@ -6,7 +6,7 @@ dstripe - restripe files on underlying storage
 
 # SYNOPSIS
 
-**dstripe <STRIPE_COUNT> <STRIPE_SIZE> <SRC_FILE> <DEST_FILE>**
+**dstripe STRIPE_COUNT STRIPE_SIZE SRC_FILE DEST_FILE**
 
 # DESCRIPTION
 
