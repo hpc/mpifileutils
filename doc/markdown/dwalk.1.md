@@ -72,10 +72,13 @@ mpirun -np 128 dwalk -v --print -d size:0,20,1G src/
 
 # SEE ALSO
 
+`dbcast` (1).
 `dchmod` (1).
 `dcmp` (1).
 `dcp` (1).
 `drm` (1).
+`dstripe` (1).
+`dwalk` (1).
 
 The mpiFileUtils source code and all documentation may be downloaded from
 <https://github.com/hpc/mpifileutils>

@@ -82,6 +82,7 @@ AC_SEARCH_LIBS([SHA256_Init], [crypto], [], [AC_MSG_ERROR([could not find libcry
 AC_CONFIG_FILES([Makefile                \
                  src/Makefile            \
                  src/common/Makefile     \
+                 src/dbcast/Makefile     \
                  src/dchmod/Makefile     \
                  src/dcmp/Makefile       \
                  src/dcp1/Makefile       \

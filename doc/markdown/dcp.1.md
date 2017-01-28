@@ -68,9 +68,12 @@ The maximum supported filename length for any file transfered is approximately 4
 
 # SEE ALSO
 
+`dbcast` (1).
 `dchmod` (1).
 `dcmp` (1).
+`dcp` (1).
 `drm` (1).
+`dstripe` (1).
 `dwalk` (1).
 
 The mpiFileUtils source code and all documentation may be downloaded from

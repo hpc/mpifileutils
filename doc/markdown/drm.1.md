@@ -68,9 +68,12 @@ mpirun -np 128 drm --name --match '^foo$' /dir/to/delete/from
 
 # SEE ALSO
 
+`dbcast` (1).
 `dchmod` (1).
 `dcmp` (1).
 `dcp` (1).
+`drm` (1).
+`dstripe` (1).
 `dwalk` (1).
 
 The mpiFileUtils source code and all documentation may be downloaded from

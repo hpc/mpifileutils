@@ -1,11 +1,13 @@
 # mpiFileUtils
 mpiFileUtils is a suite of MPI-based tools to manage large datasets, which may vary from large directory trees to large files. High-performance computing users often generate large datasets with parallel applications that run with many processes (millions in some cases). However those users are then stuck with single-process tools like cp and rm to manage their datasets. This suite provides MPI-based tools to handle typical jobs like copy, remove, and compare for such datasets, providing speedups of up to 20-30x.
 
+ - [dbcast](doc/markdown/dbcast.1.md) - Broadcast files to compute nodes.
  - [dchmod](doc/markdown/dchmod.1.md) - Change permissions and group access on files.
  - [dcmp](doc/markdown/dcmp.1.md) - Compare files.
  - [dcp](doc/markdown/dcp.1.md) - Copy files.
  - [dfilemaker](doc/markdown/dfilemaker.1.md) - Generate random files.
  - [drm](doc/markdown/drm.1.md) - Remove files.
+ - [dstripe](doc/markdown/dstripe.1.md) - Restripe files.
  - [dwalk](doc/markdown/dwalk.1.md) - List files.
 
 ## Experimental Utilities
