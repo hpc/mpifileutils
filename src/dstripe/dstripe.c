@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <getopt.h>
 #include "mpi.h"
 
 #ifdef LUSTRE_SUPPORT
@@ -41,7 +42,11 @@
 static void print_usage(void)
 {
     printf("\n");
-    printf("Usage: restripe <#stripes> <stripesize> <input> <output>\n");
+    printf("Usage: dstripe [options] <stripes> <stripesize> <input> <output>...\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -r, --report           - input file stripe info\n");
+    printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
     return;
@@ -57,42 +62,111 @@ int main(int argc, char* argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    int option_index = 0;
+    int usage = 0;
+    int report = 0;
+    int stripes;
+    unsigned long long stripe_size;
+    char *in_path;
+    char *out_path;
+
+    static struct option long_options[] = {
+        {"help",     0, 0, 'h'},
+        {"report",   0, 0, 'r'},
+        {0, 0, 0, 0}
+    };
+
+    while (1) {
+        int c = getopt_long(
+                    argc, argv, "rh",
+                    long_options, &option_index
+                );
+
+        if (c == -1) {
+            break;
+        }
+
+        switch (c) {
+            case 'r':
+		report = 1;
+                break;
+            case 'h':
+                usage = 1;
+                break;
+            case '?':
+                usage = 1;
+                break;
+            default:
+                if (rank == 0) {
+                    printf("?? getopt returned character code 0%o ??\n", c);
+                }
+        }
+    }
+
     /* check that we got the right number of parameters */
-    if (argc != 5) {
+    if ((argc - optind) == 4) {
+        /* get number of stripes from command line */
+        stripes = atoi(argv[optind++]);
+
+        /* parse stripe size string */
+        if (mfu_abtoull(argv[optind], &stripe_size) != MFU_SUCCESS) {
+            if (rank == 0) {
+                printf("Failed to parse stripe size: %s\n", argv[optind]);
+                fflush(stdout);
+            }
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        optind++;
+
+        /* get source and destination paths */
+        in_path = argv[optind++];
+        out_path = argv[optind++];
+    } else {
+        usage = 1;
+    }
+
+    if (usage) {
         if (rank == 0) {
             print_usage();
         }
+
+        mfu_finalize();
         MPI_Finalize();
-        return 0;
+        return 1;
     }
 
     /* nothing to do if lustre support is disabled */
 #ifndef LUSTRE_SUPPORT
-        if (rank == 0) {
-            printf("Lustre support is disabled\n");
-            fflush(stdout);
-        }
-        MPI_Abort(MPI_COMM_WORLD, 1);
+    if (rank == 0) {
+        printf("Lustre support is disabled\n");
+        fflush(stdout);
+    }
+    MPI_Abort(MPI_COMM_WORLD, 1);
 #endif
 
-    /* get number of stripes from command line */
-    int stripes = atoi(argv[1]);
-
-    /* parse stripe size string */
-    unsigned long long stripe_size;
-    if (mfu_abtoull(argv[2], &stripe_size) != MFU_SUCCESS) {
-        if (rank == 0) {
-            printf("Failed to parse stripe size: %s\n", argv[2]);
-            fflush(stdout);
-        }
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-
-    /* get source and destination paths */
-    char* in_path  = argv[3];
-    char* out_path = argv[4];
-
     /* TODO: verify that source / target are on Lustre */
+
+#ifdef LUSTRE_SUPPORT
+    if (report) {
+        /* just have rank 0 report striping info */
+        if (rank == 0) {
+            struct lov_user_md lum;
+            int rc = llapi_file_get_stripe(in_path, &lum);
+            if (rc != 0) {
+                printf("retrieving file stripe information has failed, %s\n", strerror(-rc));
+                fflush(stdout);
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+
+            printf("File \"%s\" has a stripe count of %d and a stripe size of %d bytes.\n",
+                       in_path, lum.lmm_stripe_count, lum.lmm_stripe_size);
+        }
+
+        mfu_finalize();
+        MPI_Finalize();
+        return 0;
+    }
+#endif
 
     /* lustre requires stripe sizes to be aligned */
     if (stripe_size % 65536 != 0) {
