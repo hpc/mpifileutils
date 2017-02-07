@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <getopt.h>
+#include <string.h>
 #include "mpi.h"
 
 #ifdef LUSTRE_SUPPORT
@@ -42,9 +43,10 @@
 static void print_usage(void)
 {
     printf("\n");
-    printf("Usage: dstripe [options] <input> <output>...\n");
+    printf("Usage: dstripe [options] <input>\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -o, --output           - path to output file\n");
     printf("  -c, --count            - stripe count (default -1)\n");
     printf("  -s, --size             - stripe size in bytes (default 1MB)\n");
     printf("  -r, --report           - input file stripe info\n");
@@ -68,11 +70,15 @@ int main(int argc, char* argv[])
     int usage = 0;
     int report = 0;
     int stripes = -1;
+    int delete_input = 0;
     unsigned long long stripe_size = 1048576;
-    char *in_path;
-    char *out_path;
+    char in_path[PATH_MAX];
+    char out_path[PATH_MAX];
+    in_path[0] = '\0';
+    out_path[0] = '\0';
 
     static struct option long_options[] = {
+        {"output",   1, 0, 'o'},
         {"count",    1, 0, 'c'},
         {"size",     1, 0, 's'},
         {"help",     0, 0, 'h'},
@@ -81,7 +87,7 @@ int main(int argc, char* argv[])
     };
 
     while (1) {
-        int c = getopt_long(argc, argv, "c:s:rh",
+        int c = getopt_long(argc, argv, "o:c:s:rh",
                     long_options, &option_index);
 
         if (c == -1) {
@@ -89,6 +95,10 @@ int main(int argc, char* argv[])
         }
 
         switch (c) {
+            case 'o':
+                /* path to output file */
+                strcpy(out_path, optarg);
+                break;
             case 'c':
                 /* stripe count */
                 stripes = atoi(optarg);
@@ -104,12 +114,15 @@ int main(int argc, char* argv[])
                 }
                 break;
             case 'r':
+                /* report striping info */
 		report = 1;
                 break;
             case 'h':
+                /* display usage */
                 usage = 1;
                 break;
             case '?':
+                /* display usage */
                 usage = 1;
                 break;
             default:
@@ -119,11 +132,9 @@ int main(int argc, char* argv[])
         }
     }
 
-    /* check that we got the right number of parameters */
-    if ((argc - optind) == 2) {
-        /* get source and destination paths */
-        in_path = argv[optind++];
-        out_path = argv[optind++];
+    /* finally, we should have only 1 argument left, the input file path */
+    if ((argc - optind) == 1) {
+        strcpy(in_path, argv[optind]);
     } else {
         usage = 1;
     }
@@ -144,8 +155,15 @@ int main(int argc, char* argv[])
         printf("Lustre support is disabled\n");
         fflush(stdout);
     }
+
     MPI_Abort(MPI_COMM_WORLD, 1);
 #endif
+
+    /* If the out_path and in_path are equal, just create a temp file */
+    if (strcmp(out_path, in_path) == 0) {
+        out_path[0] = '\0';
+        delete_input = 1;
+    }
 
     /* TODO: verify that source / target are on Lustre */
 
@@ -171,12 +189,30 @@ int main(int argc, char* argv[])
     }
 #endif
 
+    /* generate an output path if one was not provided */
+    if (rank == 0 && *out_path == '\0') {
+        char template[PATH_MAX];
+        char path[PATH_MAX];
+        strcpy(template, in_path);
+        strcat(template, ".XXXXXX");
+
+        do {
+            strcpy(path, template);
+            mktemp(path);
+        } while (!mfu_access(path, F_OK));
+
+        strcpy(out_path, path);
+        delete_input = 1;
+    }
+    MPI_Bcast(out_path, strlen(out_path) + 1, MPI_CHAR, 0, MPI_COMM_WORLD);
+
     /* lustre requires stripe sizes to be aligned */
     if (stripe_size % 65536 != 0) {
         if (rank == 0) {
             printf("Stripe size must be a multiple of 65536\n");
             fflush(stdout);
         }
+
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
@@ -360,6 +396,21 @@ int main(int argc, char* argv[])
 
         if (mfu_chmod(out_path, (mode_t) mode) != 0) {
             printf("Failed to chmod file %s (%s)", out_path, strerror(errno));
+            fflush(stdout);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+    }
+
+    /* remove input file and rename temp file */
+    if (rank == 0 && delete_input) {
+        if (mfu_unlink(in_path) != 0) {
+            printf("Failed to remove input file %s\n", in_path);
+            fflush(stdout);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+
+        if (rename(out_path, in_path) != 0) {
+            printf("Failed to rename file %s to %s\n", out_path, in_path);
             fflush(stdout);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
