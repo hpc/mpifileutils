@@ -42,9 +42,11 @@
 static void print_usage(void)
 {
     printf("\n");
-    printf("Usage: dstripe [options] <stripes> <stripesize> <input> <output>...\n");
+    printf("Usage: dstripe [options] <input> <output>...\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -c, --count            - stripe count (default -1)\n");
+    printf("  -s, --size             - stripe size in bytes (default 1MB)\n");
     printf("  -r, --report           - input file stripe info\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
@@ -65,28 +67,42 @@ int main(int argc, char* argv[])
     int option_index = 0;
     int usage = 0;
     int report = 0;
-    int stripes;
-    unsigned long long stripe_size;
+    int stripes = -1;
+    unsigned long long stripe_size = 1048576;
     char *in_path;
     char *out_path;
 
     static struct option long_options[] = {
+        {"count",    1, 0, 'c'},
+        {"size",     1, 0, 's'},
         {"help",     0, 0, 'h'},
         {"report",   0, 0, 'r'},
         {0, 0, 0, 0}
     };
 
     while (1) {
-        int c = getopt_long(
-                    argc, argv, "rh",
-                    long_options, &option_index
-                );
+        int c = getopt_long(argc, argv, "c:s:rh",
+                    long_options, &option_index);
 
         if (c == -1) {
             break;
         }
 
         switch (c) {
+            case 'c':
+                /* stripe count */
+                stripes = atoi(optarg);
+                break;
+            case 's':
+                /* stripe size in bytes */
+                if (mfu_abtoull(optarg, &stripe_size) != MFU_SUCCESS) {
+                    if (rank == 0) {
+                        printf("Failed to parse stripe size: %s\n", optarg);
+                        fflush(stdout);
+                    }
+                    MPI_Abort(MPI_COMM_WORLD, 1);
+                }
+                break;
             case 'r':
 		report = 1;
                 break;
@@ -104,20 +120,7 @@ int main(int argc, char* argv[])
     }
 
     /* check that we got the right number of parameters */
-    if ((argc - optind) == 4) {
-        /* get number of stripes from command line */
-        stripes = atoi(argv[optind++]);
-
-        /* parse stripe size string */
-        if (mfu_abtoull(argv[optind], &stripe_size) != MFU_SUCCESS) {
-            if (rank == 0) {
-                printf("Failed to parse stripe size: %s\n", argv[optind]);
-                fflush(stdout);
-            }
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-        optind++;
-
+    if ((argc - optind) == 2) {
         /* get source and destination paths */
         in_path = argv[optind++];
         out_path = argv[optind++];
