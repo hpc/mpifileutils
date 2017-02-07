@@ -50,6 +50,7 @@ static void print_usage(void)
     printf("  -c, --count            - stripe count (default -1)\n");
     printf("  -s, --size             - stripe size in bytes (default 1MB)\n");
     printf("  -r, --report           - input file stripe info\n");
+    printf("  -v, --verbose          - verbose output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -69,6 +70,7 @@ int main(int argc, char* argv[])
     int option_index = 0;
     int usage = 0;
     int report = 0;
+    int verbose = 0;
     int stripes = -1;
     int delete_input = 0;
     unsigned long long stripe_size = 1048576;
@@ -87,7 +89,7 @@ int main(int argc, char* argv[])
     };
 
     while (1) {
-        int c = getopt_long(argc, argv, "o:c:s:rh",
+        int c = getopt_long(argc, argv, "o:c:s:rhv",
                     long_options, &option_index);
 
         if (c == -1) {
@@ -116,6 +118,10 @@ int main(int argc, char* argv[])
             case 'r':
                 /* report striping info */
 		report = 1;
+                break;
+            case 'v':
+                /* verbose output */
+                verbose = 1;
                 break;
             case 'h':
                 /* display usage */
@@ -228,6 +234,13 @@ int main(int argc, char* argv[])
         }
     }
 #endif
+
+    if (verbose) {
+        if (rank == 0) {
+            printf("Input File: %s\nOutput File: %s\n",
+                in_path, out_path);
+        }
+    }
 
     MPI_Barrier(MPI_COMM_WORLD);
 
