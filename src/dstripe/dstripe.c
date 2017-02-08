@@ -30,6 +30,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <getopt.h>
+#include <string.h>
 #include "mpi.h"
 
 #ifdef LUSTRE_SUPPORT
@@ -41,7 +43,15 @@
 static void print_usage(void)
 {
     printf("\n");
-    printf("Usage: restripe <#stripes> <stripesize> <input> <output>\n");
+    printf("Usage: dstripe [options] <input>\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -o, --output           - path to output file\n");
+    printf("  -c, --count            - stripe count (default -1)\n");
+    printf("  -s, --size             - stripe size in bytes (default 1MB)\n");
+    printf("  -r, --report           - input file stripe info\n");
+    printf("  -v, --verbose          - verbose output\n");
+    printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
     return;
@@ -57,42 +67,150 @@ int main(int argc, char* argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-    /* check that we got the right number of parameters */
-    if (argc != 5) {
+    int option_index = 0;
+    int usage = 0;
+    int report = 0;
+    int verbose = 0;
+    int stripes = -1;
+    int delete_input = 0;
+    unsigned long long stripe_size = 1048576;
+    char in_path[PATH_MAX];
+    char out_path[PATH_MAX];
+    in_path[0] = '\0';
+    out_path[0] = '\0';
+
+    static struct option long_options[] = {
+        {"output",   1, 0, 'o'},
+        {"count",    1, 0, 'c'},
+        {"size",     1, 0, 's'},
+        {"help",     0, 0, 'h'},
+        {"report",   0, 0, 'r'},
+        {0, 0, 0, 0}
+    };
+
+    while (1) {
+        int c = getopt_long(argc, argv, "o:c:s:rhv",
+                    long_options, &option_index);
+
+        if (c == -1) {
+            break;
+        }
+
+        switch (c) {
+            case 'o':
+                /* path to output file */
+                strcpy(out_path, optarg);
+                break;
+            case 'c':
+                /* stripe count */
+                stripes = atoi(optarg);
+                break;
+            case 's':
+                /* stripe size in bytes */
+                if (mfu_abtoull(optarg, &stripe_size) != MFU_SUCCESS) {
+                    if (rank == 0) {
+                        printf("Failed to parse stripe size: %s\n", optarg);
+                        fflush(stdout);
+                    }
+                    MPI_Abort(MPI_COMM_WORLD, 1);
+                }
+                break;
+            case 'r':
+                /* report striping info */
+		report = 1;
+                break;
+            case 'v':
+                /* verbose output */
+                verbose = 1;
+                break;
+            case 'h':
+                /* display usage */
+                usage = 1;
+                break;
+            case '?':
+                /* display usage */
+                usage = 1;
+                break;
+            default:
+                if (rank == 0) {
+                    printf("?? getopt returned character code 0%o ??\n", c);
+                }
+        }
+    }
+
+    /* finally, we should have only 1 argument left, the input file path */
+    if ((argc - optind) == 1) {
+        strcpy(in_path, argv[optind]);
+    } else {
+        usage = 1;
+    }
+
+    if (usage) {
         if (rank == 0) {
             print_usage();
         }
+
+        mfu_finalize();
         MPI_Finalize();
-        return 0;
+        return 1;
     }
 
     /* nothing to do if lustre support is disabled */
 #ifndef LUSTRE_SUPPORT
-        if (rank == 0) {
-            printf("Lustre support is disabled\n");
-            fflush(stdout);
-        }
-        MPI_Abort(MPI_COMM_WORLD, 1);
-#endif
-
-    /* get number of stripes from command line */
-    int stripes = atoi(argv[1]);
-
-    /* parse stripe size string */
-    unsigned long long stripe_size;
-    if (mfu_abtoull(argv[2], &stripe_size) != MFU_SUCCESS) {
-        if (rank == 0) {
-            printf("Failed to parse stripe size: %s\n", argv[2]);
-            fflush(stdout);
-        }
-        MPI_Abort(MPI_COMM_WORLD, 1);
+    if (rank == 0) {
+        printf("Lustre support is disabled\n");
+        fflush(stdout);
     }
 
-    /* get source and destination paths */
-    char* in_path  = argv[3];
-    char* out_path = argv[4];
+    MPI_Abort(MPI_COMM_WORLD, 1);
+#endif
+
+    /* If the out_path and in_path are equal, just create a temp file */
+    if (strcmp(out_path, in_path) == 0) {
+        out_path[0] = '\0';
+        delete_input = 1;
+    }
 
     /* TODO: verify that source / target are on Lustre */
+
+#ifdef LUSTRE_SUPPORT
+    if (report) {
+        /* just have rank 0 report striping info */
+        if (rank == 0) {
+            struct lov_user_md lum;
+            int rc = llapi_file_get_stripe(in_path, &lum);
+            if (rc != 0) {
+                printf("retrieving file stripe information has failed, %s\n", strerror(-rc));
+                fflush(stdout);
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+
+            printf("File \"%s\" has a stripe count of %d and a stripe size of %d bytes.\n",
+                       in_path, lum.lmm_stripe_count, lum.lmm_stripe_size);
+        }
+
+        mfu_finalize();
+        MPI_Finalize();
+        return 0;
+    }
+#endif
+
+    /* generate an output path if one was not provided */
+    if (rank == 0 && *out_path == '\0') {
+        char template[PATH_MAX];
+        char path[PATH_MAX];
+        strcpy(template, in_path);
+        strcat(template, ".XXXXXX");
+
+        do {
+            strcpy(path, template);
+            mktemp(path);
+        } while (!mfu_access(path, F_OK));
+
+        strcpy(out_path, path);
+        delete_input = 1;
+    }
+    MPI_Bcast(out_path, strlen(out_path) + 1, MPI_CHAR, 0, MPI_COMM_WORLD);
 
     /* lustre requires stripe sizes to be aligned */
     if (stripe_size % 65536 != 0) {
@@ -100,6 +218,7 @@ int main(int argc, char* argv[])
             printf("Stripe size must be a multiple of 65536\n");
             fflush(stdout);
         }
+
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
@@ -115,6 +234,13 @@ int main(int argc, char* argv[])
         }
     }
 #endif
+
+    if (verbose) {
+        if (rank == 0) {
+            printf("Input File: %s\nOutput File: %s\n",
+                in_path, out_path);
+        }
+    }
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -283,6 +409,21 @@ int main(int argc, char* argv[])
 
         if (mfu_chmod(out_path, (mode_t) mode) != 0) {
             printf("Failed to chmod file %s (%s)", out_path, strerror(errno));
+            fflush(stdout);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+    }
+
+    /* remove input file and rename temp file */
+    if (rank == 0 && delete_input) {
+        if (mfu_unlink(in_path) != 0) {
+            printf("Failed to remove input file %s\n", in_path);
+            fflush(stdout);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+
+        if (rename(out_path, in_path) != 0) {
+            printf("Failed to rename file %s to %s\n", out_path, in_path);
             fflush(stdout);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
