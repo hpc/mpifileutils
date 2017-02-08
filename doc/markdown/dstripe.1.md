@@ -6,7 +6,7 @@ dstripe - restripe files on underlying storage
 
 # SYNOPSIS
 
-**dstripe [OPTION] SRC_FILE**
+**dstripe [OPTION] FILE**
 
 # DESCRIPTION
 
@@ -14,25 +14,21 @@ Parallel MPI application to restripe a given file.
 
 This tool is in active development.  It will eventually report striping information and it will also support recursive operation on directories.  It currently only works on Lustre.
 
-dstripe enables one to restripe a file across the underlying storage devices.  dstripe will make a full copy of the source file with the new striping parameters and write it to the destination file.
-
-One must specify the source file (SRC_FILE) to perform a restripe with. By default, stripe size is 1MB and stripe count is -1 allowing dstripe to use all available stipes.
-
-One must specify the integer number of stripes as the first parameter in STRIPE_COUNT.  One can specify -1 to use all available stripes.  One must specify the stripe size in bytes in STRIPE_SIZE.  It is possible to use units like "MB" or "GB" after the number.  The units should come immediately after the number without spaces.  Then one must give the source file in SRC_FILE and the name for the new file in DEST_FILE.
+dstripe enables one to restripe a file across the underlying storage devices.  One must specify the source file (FILE) to perform a restripe with. By default, stripe size is 1MB and stripe count is -1 allowing dstripe to use all available stripes.
 
 # OPTIONS
 
 -o, \--output DEST_FILE
-:	Write the restriped file to DEST_FILE. If DEST_FILE is equivalent to SRC_FILE, the restriped file overwrites SRC_FILE. Otherwise, SRC_FILE will not be removed after restriping.
+:	Write the restriped file to DEST_FILE rather than overwriting FILE. If DEST_FILE is equivalent to FILE, the restriped file overwrites FILE. Otherwise, FILE will not be removed after restriping.
 
 -c, \--count STRIPE_COUNT
-:	The number of stripes to use when restriping SRC_FILE. If STRIPE_COUNT is -1, then all available stripes are used. The default stripe count is -1.
+:	The number of stripes to use when restriping FILE. If STRIPE_COUNT is -1, then all available stripes are used. The default stripe count is -1.
 
 -s, \--size STRIPE_SIZE
-:	The stripe size to use during restriping. It is possible to use units like "MB" and "GB" after the number (ex. 2MB). The default stripe size is 1MB.
+:	The stripe size to use during restriping. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default stripe size is 1MB.
 
 -r, \--report
-:	Display the stripe count and stripe size of SRC_FILE. No restriping is performed when using this option.
+:	Display the stripe count and stripe size of FILE. No restriping is performed when using this option.
 
 -v, \--verbose
 : 	Run in verbose mode.
