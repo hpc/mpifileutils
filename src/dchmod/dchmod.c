@@ -718,12 +718,20 @@ static void set_symbolic_bits(const struct perms* p, mfu_filetype type, mode_t* 
         mode_t old_mask = umask(S_IWGRP | S_IWOTH);
         umask(old_mask);
 
-        /* only change the permission bits that umask allows */
+        /* only change permission bits that umask allows */
         *mode &= ~old_mask;
 
-        /* now or this with the old mode to not turn off any
-         * bits that were previously turn on */
-        *mode |= old_mode;
+        /* handle mode different if it is a +r,-r, etc */
+        if (p->plus) {
+            /* now OR this with the old mode to not turn off any
+            * bits that were previously turn on */
+            *mode |= old_mode;
+        } else {
+            /* in the case that it was a -r,-w, etc we have to
+             * turn the bits back on that shouldn't be affected
+             * by umask */
+            *mode |= old_mask; 
+        }
     }
 
     return;
