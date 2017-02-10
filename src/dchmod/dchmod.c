@@ -44,6 +44,9 @@
 /* whether to do directory walk with stat of every ite */
 static int walk_stat = 1;
 
+/* global variable to hold umask value */
+mode_t old_mask;
+
 /* we parse the mode string given by the user and build a linked list of
  * permissions operations, this defines one element in that list.  This
  * enables the user to specify a sequence of operations separated with
@@ -714,26 +717,16 @@ static void set_symbolic_bits(const struct perms* p, mfu_filetype type, mode_t* 
     /* if assume_all flag is on then calculate the mode 
      * based on the umask value */
     if (p->assume_all) {
-        /* lookup current mask and set it back */
-        mode_t old_mask = umask(S_IWGRP | S_IWOTH);
-        umask(old_mask);
+        /* get set of bits in current mode that we won't change 
+         * because of umask */
+        old_mode &= old_mask;
 
-        /* save the mode after parsing before masking off bits */
-        mode_t assume_all_mode = *mode;
-
-        /* only change permission bits that umask allows */
+        /* mask out any bits of new mode that we shouldn't change 
+         * due to umask */
         *mode &= ~old_mask;
 
-        if (p->plus) {
-            /* now OR this with the old mode to not turn off any
-            * bits that were previously turn on */
-            *mode |= old_mode;
-        } else {
-            /* in the case that it was a -r,-w, etc we have to
-             * turn the bits back on that shouldn't be affected
-             * by umask */
-            *mode |= assume_all_mode; 
-        }
+        /* merge in bits from previous mode that had been masked */
+        *mode |= old_mode;
     }
 
     return;
@@ -1148,6 +1141,11 @@ int main(int argc, char** argv)
         /* update our source list to use the filtered list instead of the original */
         srclist = filtered_flist;
     }
+   
+    /* lookup current mask and set it back before 
+     * chmod call */
+    old_mask = umask(S_IWGRP | S_IWOTH);
+    umask(old_mask);
 
     /* change group and permissions */
     flist_chmod(srclist, groupname, head);
