@@ -50,6 +50,7 @@ static void print_usage(void)
     printf("Usage: dcmp [options] source target\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -s, --sync  - make source & target directory the same\n");
     printf("  -b, --base  - do base comparison\n");
     printf("  -o, --output field0=state0@field1=state1,field2=state2:file "
     	   "- write list to file\n");
@@ -858,12 +859,43 @@ static void dcmp_strmap_compare_data(
     return;
 }
 
+/* loop on the dest map to check for files only in the dst list 
+ * and copy to a remove_list for the --sync option */
+static int dcmp_only_dst(strmap* src_map,
+    strmap* dst_map, mfu_flist dst_list, mfu_flist dst_remove_list)
+{
+    /* variable to check if file is only in dst list */
+    int only_dest = 0;
+
+    /* iterate over each item in dest map */
+    const strmap_node* node;
+    strmap_foreach(dst_map, node) {
+        /* get file name */
+        const char* key = strmap_node_key(node);
+
+        /* get index of destination file */
+        uint64_t dst_index;
+        int ret = dcmp_strmap_item_index(dst_map, key, &dst_index);
+        assert(ret == 0);
+
+        /* get index of source file */
+        uint64_t src_index;
+        ret = dcmp_strmap_item_index(src_map, key, &src_index);
+        if (ret) {
+            /* This file only exist in dest */
+            only_dest = 1;
+            mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
+        }
+    }
+    return only_dest;
+}
+
 /* compare entries from src into dst */
 static void dcmp_strmap_compare(mfu_flist src_list,
                                 strmap* src_map,
                                 mfu_flist dst_list,
                                 strmap* dst_map,
-                                size_t strlen_prefix)
+                                size_t strlen_prefix, int do_sync)
 {
     /* wait for all tasks and start timer */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -872,6 +904,14 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     /* create compare_lists */
     mfu_flist src_compare_list = mfu_flist_subset(src_list);
     mfu_flist dst_compare_list = mfu_flist_subset(dst_list);
+    
+    /* dst remove list for sync option */
+    mfu_flist dst_remove_list;
+
+    /* create dst remove list if sync option is on */
+    if (do_sync) {
+        dst_remove_list = mfu_flist_subset(dst_list);
+    }
 
     /* iterate over each item in source map */
     const strmap_node* node;
@@ -973,6 +1013,19 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     mfu_flist_summarize(src_compare_list);
     mfu_flist_summarize(dst_compare_list);
 
+    /* if sync option was specified then check for dst/target files
+     * that are not in the src list, and summarize the list before
+     * removing it */
+    if (do_sync) {
+        /* returns 1 and copies the dst/target file to the remove list if
+         * the file only exists in dst/target list */
+        int rc = dcmp_only_dst(src_map, dst_map, dst_list, dst_remove_list);
+        if (rc) {
+            mfu_flist_summarize(dst_remove_list);
+            mfu_flist_unlink(dst_remove_list);
+        }
+    }
+
     /* compare the contents of the files if we have anything in the compare list */
     uint64_t cmp_global_size = mfu_flist_global_size(src_compare_list);
     if (cmp_global_size > 0) {
@@ -1056,6 +1109,11 @@ static void dcmp_strmap_compare(mfu_flist src_list,
             all_count, time_diff, file_rate);     
     }
     
+    /* free the dst_remove_list if sync option is on */
+    if (do_sync) {
+        mfu_flist_free(&dst_remove_list);
+    }
+
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
     mfu_flist_free(&src_compare_list); 
@@ -1938,7 +1996,11 @@ int main(int argc, char **argv)
      *   3) file contents + items in #2 */
 
     int option_index = 0;
+    
+    /* flag to check for sync option */
+    int do_sync = 0;
     static struct option long_options[] = {
+        {"sync",     0, 0, 's'} ,
         {"base",     0, 0, 'b'},
         {"debug",    0, 0, 'd'},
         {"output",   1, 0, 'o'},
@@ -1954,7 +2016,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "bdo:vh",
+            argc, argv, "sbdo:vh",
             long_options, &option_index
         );
 
@@ -1963,6 +2025,9 @@ int main(int argc, char **argv)
         }
 
         switch (c) {
+        case 's':
+            do_sync = 1;
+            break;
         case 'b':
             options.base ++;
             break;
@@ -2056,7 +2121,7 @@ int main(int argc, char **argv)
     strmap* map2 = dcmp_strmap_creat(flist4, path2);
 
     /* compare files in map1 with those in map2 */
-    dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1));
+    dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1), do_sync);
 
     /* check the results are valid */
     if (options.debug) {
