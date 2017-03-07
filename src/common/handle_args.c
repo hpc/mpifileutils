@@ -26,7 +26,6 @@
  */
 
 #include "handle_args.h"
-#include "dcp.h"
 #include "mfu.h"
 
 #include <errno.h>
@@ -269,7 +268,7 @@ void DCOPY_parse_path_args(char** argv, \
      * one or more sources and one destination */
     if(argv == NULL || num_args < 2) {
         if(DCOPY_global_rank == 0) {
-            DCOPY_print_usage();
+            //DCOPY_print_usage();
             MFU_LOG(MFU_LOG_ERR, "You must specify a source and destination path");
         }
 
