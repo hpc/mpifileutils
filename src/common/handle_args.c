@@ -38,7 +38,7 @@
 #include <unistd.h>
 
 /** Where we should store options specified by the user. */
-DCOPY_options_t DCOPY_user_opts;
+//DCOPY_options_t DCOPY_user_opts;
 
 static int num_src_params;
 static mfu_param_path* src_params;

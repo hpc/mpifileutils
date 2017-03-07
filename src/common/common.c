@@ -41,8 +41,8 @@ DCOPY_statistics_t DCOPY_statistics;
 DCOPY_options_t DCOPY_user_opts;
 
 /** Cache most recent open file descriptor to avoid opening / closing the same file */
-DCOPY_file_cache_t DCOPY_src_cache;
-DCOPY_file_cache_t DCOPY_dst_cache;
+//DCOPY_file_cache_t DCOPY_src_cache;
+//DCOPY_file_cache_t DCOPY_dst_cache;
 
 /** What rank the current process is. */
 int DCOPY_global_rank;
@@ -132,6 +132,75 @@ int DCOPY_close_file(DCOPY_file_cache_t* cache)
     }
 
     return rc;
+}
+
+/* iterate through list of files and set ownership, timestamps,
+ * and permissions starting from deepest level and working upwards,
+ * we go in this direction in case updating a file updates its
+ * parent directory */
+void DCOPY_set_metadata(int levels, int minlevel, mfu_flist* lists)
+{
+    if (DCOPY_global_rank == 0) {
+        if(DCOPY_user_opts.preserve) {
+            MFU_LOG(MFU_LOG_INFO, "Setting ownership, permissions, and timestamps.");
+        }
+        else {
+            MFU_LOG(MFU_LOG_INFO, "Fixing permissions.");
+        }
+    }
+
+    /* now set timestamps on files starting from deepest level */
+    int level;
+    for (level = levels-1; level >= 0; level--) {
+        /* get list at this level */
+        mfu_flist list = lists[level];
+
+        /* cycle through our list of items and set timestamps
+         * for each one at this level */
+        uint64_t idx;
+        uint64_t size = mfu_flist_size(list);
+        for (idx = 0; idx < size; idx++) {
+            /* get type of item */
+            mfu_filetype type = mfu_flist_file_get_type(list, idx);
+
+            /* we've already set these properties for links,
+             * so we can skip those here */
+            if (type == MFU_TYPE_LINK) {
+                continue;
+            }
+
+            /* TODO: skip file if it's not readable */
+
+            /* get destination name of item */
+            const char* name = mfu_flist_file_get_name(list, idx);
+            char* dest = DCOPY_build_dest(name);
+
+            /* No need to copy it */
+            if (dest == NULL) {
+                continue;
+            }
+
+            if(DCOPY_user_opts.preserve) {
+                DCOPY_copy_ownership(list, idx, dest);
+                DCOPY_copy_permissions(list, idx, dest);
+                DCOPY_copy_timestamps(list, idx, dest);
+            }
+            else {
+                /* TODO: set permissions based on source permissons
+                 * masked by umask */
+                DCOPY_copy_permissions(list, idx, dest);
+            }
+
+            /* free destination item */
+            mfu_free(&dest);
+        }
+        
+        /* wait for all procs to finish before we start
+         * with files at next level */
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+
+    return;
 }
 
 /* copy all extended attributes from op->operand to dest_path */
