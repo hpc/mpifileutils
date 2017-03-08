@@ -136,10 +136,18 @@ typedef struct {
 } DCOPY_file_cache_t;
 
 /** Cache most recent open file descriptor to avoid opening / closing the same file */
-extern DCOPY_file_cache_t DCOPY_src_cache;
-extern DCOPY_file_cache_t DCOPY_dst_cache;
+DCOPY_file_cache_t DCOPY_src_cache;
+DCOPY_file_cache_t DCOPY_dst_cache;
 
-extern int DCOPY_global_rank;
+int DCOPY_global_rank;
+/** Options specified by the user. */
+DCOPY_options_t DCOPY_user_opts;
+
+/** Statistics to gather for summary output. */
+DCOPY_statistics_t DCOPY_statistics;
+
+/** Cache most recent open file descriptors. */
+DCOPY_file_cache_t DCOPY_file_cache;
 
 int DCOPY_open_source(
     const char* file
@@ -154,6 +162,8 @@ int DCOPY_open_file(
 int DCOPY_close_file(
     DCOPY_file_cache_t* cache
 );
+
+void DCOPY_set_metadata(int levels, int minlevel, mfu_flist* lists);
 
 void DCOPY_copy_xattrs(
     mfu_flist flist,
