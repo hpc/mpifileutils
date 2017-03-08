@@ -457,7 +457,7 @@ void mfu_flist_free(mfu_flist* pbflist)
     return;
 }
 
-int mfu_create_directory(mfu_flist list, uint64_t idx)
+static int mfu_create_directory(mfu_flist list, uint64_t idx)
 {
     /* get name of directory */
     const char* name = mfu_flist_file_get_name(list, idx);
@@ -573,7 +573,7 @@ int mfu_create_directories(int levels, int minlevel, mfu_flist* lists)
     return rc;
 }
 
-int mfu_create_link(mfu_flist list, uint64_t idx)
+static int mfu_create_link(mfu_flist list, uint64_t idx)
 {
     /* get source name */
     const char* src_path = mfu_flist_file_get_name(list, idx);
@@ -630,7 +630,7 @@ int mfu_create_link(mfu_flist list, uint64_t idx)
     return 0;
 }
 
-int mfu_create_file(mfu_flist list, uint64_t idx)
+static int mfu_create_file(mfu_flist list, uint64_t idx)
 {
     /* get source name */
     const char* src_path = mfu_flist_file_get_name(list, idx);
@@ -785,7 +785,7 @@ int mfu_create_files(int levels, int minlevel, mfu_flist* lists)
 
 /* return 1 if entire buffer is 0, return 0 if any byte is not 0,
  * we avoid writing NULL blocks when supporting sparse files */
-int mfu_is_all_null(const char* buf, uint64_t buf_size)
+static int mfu_is_all_null(const char* buf, uint64_t buf_size)
 {
     uint64_t i;
     for (i = 0; i < buf_size; i++) {
@@ -799,7 +799,7 @@ int mfu_is_all_null(const char* buf, uint64_t buf_size)
 /* when using sparse files, we need to write the last byte if the
  * hole is adjacent to EOF, so we need to detect whether we're at
  * the end of the file */
-int mfu_is_eof(const char* file, int fd)
+static int mfu_is_eof(const char* file, int fd)
 {
     /* read one byte from fd to determine whether this is EOF.
      * This is not efficient, but it is the only reliable way */
@@ -820,7 +820,7 @@ int mfu_is_eof(const char* file, int fd)
     return 0;
 }
 
-int mfu_copy_file_normal(
+static int mfu_copy_file_normal(
     const char* src,
     const char* dest,
     const int in_fd,
@@ -987,7 +987,7 @@ int mfu_copy_file_normal(
     return 0;
 }
 
-int mfu_copy_file_fiemap(
+static int mfu_copy_file_fiemap(
     const char* src,
     const char* dest,
     const int in_fd,
@@ -1164,7 +1164,7 @@ fail_normal_copy:
     return -1;
 }
 
-int mfu_copy_file(
+static int mfu_copy_file(
     const char* src,
     const char* dest,
     uint64_t offset,
@@ -1212,8 +1212,8 @@ void mfu_copy_files(mfu_flist list)
     }
 
     /* get chunk size for copying files */
-    uint64_t chunk_size = (uint64_t)DCOPY_user_opts.chunk_size;
-
+    uint64_t chunk_size = (uint64_t)DCOPY_CHUNK_SIZE;
+    
     /* split file list into a linked list of file sections,
      * this evenly spreads the file sections across processes */
     mfu_file_chunk* p = mfu_file_chunk_list_alloc(list, chunk_size);

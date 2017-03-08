@@ -137,48 +137,12 @@ void mfu_flist_array_by_depth(
     mfu_flist** outlists /* OUT - array of lists split by depth */
 );
 
-int mfu_create_directory(mfu_flist list, uint64_t idx);
-
 /* create directories, we work from shallowest level to the deepest
  * with a barrier in between levels, so that we don't try to create
  * a child directory until the parent exists */
 int mfu_create_directories(int levels, int minlevel, mfu_flist* lists);
 
-int mfu_create_link(mfu_flist list, uint64_t idx);
-
-int mfu_create_file(mfu_flist list, uint64_t idx);
-
 int mfu_create_files(int levels, int minlevel, mfu_flist* lists);
-
-int mfu_is_all_null(const char* buf, uint64_t buf_size);
-
-int mfu_is_eof(const char* file, int fd);
-
-int mfu_copy_file_normal(
-    const char* src,
-    const char* dest,
-    const int in_fd,
-    const int out_fd,
-    off_t offset,
-    off_t length,
-    uint64_t file_size);
-
-int mfu_copy_file_fiemap(
-    const char* src,
-    const char* dest,
-    const int in_fd,
-    const int out_fd,
-    uint64_t offset,
-    uint64_t length,
-    uint64_t file_size,
-    bool* normal_copy_required);
-
-int mfu_copy_file(
-    const char* src,
-    const char* dest,
-    uint64_t offset,
-    uint64_t length,
-    uint64_t file_size);
 
 void mfu_copy_files(mfu_flist list);
 
