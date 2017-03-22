@@ -32,6 +32,7 @@
 #include <limits.h>
 #include <getopt.h>
 #include <string.h>
+#include <inttypes.h>
 #include "mpi.h"
 
 #ifdef LUSTRE_SUPPORT
@@ -56,73 +57,144 @@ static void print_usage(void)
     return;
 }
 
+/* generate a random, alpha suffix */
 static void generate_suffix(char *suffix, const int len)
 {
     const char set[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     int numchars = len - 1;
 
+    /* first char has to be a dot */
     suffix[0] = '.';
 
+    /* randomly fill in our array with chars */
     for (int i = 1; i < numchars; i++) {
         int set_idx = (double)rand() / RAND_MAX * (sizeof(set) - 1);
         suffix[i] = set[set_idx];
     }
 
+    /* need to be null terminated */
     suffix[len - 1] = '\0';
 }
 
-static mfu_flist filter_list(mfu_flist list, int stripe_count, int stripe_size)
+/* uses the lustre api to obtain stripe count and stripe size of a file */
+static void get_file_stripe_info(const char *path, uint64_t *stripe_size, uint64_t *stripe_count)
 {
-    MPI_Barrier(MPI_COMM_WORLD);
-    mfu_flist filtered = mfu_flist_subset(list);
-
 #ifdef LUSTRE_SUPPORT
-    uint64_t idx;
-    uint64_t size = mfu_flist_size(list);
-    int rc = 0;
+    /* obtain the llapi_layout for a file by path */
+    struct llapi_layout *layout = llapi_layout_get_by_path(path, 0);
 
-    /* account for different versions of the lov_user_md struct */
-    int lumsz = lov_user_md_size(LOV_MAX_STRIPE_COUNT, LOV_USER_MAGIC_V3);
-    struct lov_user_md *lum = NULL;
-
-    lum = malloc(lumsz);
-    if (lum == NULL) {
-        printf("ran out of memory");
+    /* if no llapi_layout is returned, then some problem occured */
+    if (layout == NULL) {
+        printf("retrieving file stripe information for '%s' has failed, %s\n", path, strerror(errno));
         fflush(stdout);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
+    /* obtain stripe count and stripe size */
+    llapi_layout_stripe_size_get(layout, stripe_size);
+    llapi_layout_stripe_count_get(layout, stripe_count);
+
+    /* free the alloced llapi_layout */
+    llapi_layout_free(layout);
+#endif
+}
+
+/* create a striped lustre file at the path provided with the specified stripe size and count */
+static void create_striped_file(const char *path, uint64_t stripe_size, int stripe_count)
+{
+#ifdef LUSTRE_SUPPORT
+    /* create a new llapi_layout for file creation */
+    struct llapi_layout *layout = llapi_layout_alloc();
+    int fd = -1;
+
+    if (stripe_count == -1) {
+        /* stripe count of -1 means use all availabe devices */
+        llapi_layout_stripe_count_set(layout, LLAPI_LAYOUT_WIDE);
+    } else if (stripe_count == 0) {
+        /* stripe count of 0 means use the lustre filesystem default */
+        llapi_layout_stripe_count_set(layout, LLAPI_LAYOUT_DEFAULT);
+    } else {
+        /* use the number of stripes specified*/
+        llapi_layout_stripe_count_set(layout, stripe_count);
+    }
+
+    /* specify the stripe size of each stripe */
+    llapi_layout_stripe_size_set(layout, stripe_size);
+
+    /* create the file */
+    fd = llapi_layout_file_create(path, 0, 0644, layout);
+    if (fd < 0) {
+        fprintf(stderr, "cannot create %s: %s\n", path, strerror(errno));
+        fflush(stdout);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    close(fd);
+
+    /* free our alloced llapi_layout */
+    llapi_layout_free(layout);
+#endif
+}
+
+/* print to stdout the stripe size and count of each file in the mfu_flist */
+static void stripe_info_report(mfu_flist list)
+{
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(list);
+
     for (idx = 0; idx < size; idx++) {
         mfu_filetype type = mfu_flist_file_get_type(list, idx);
+
+        /* report striping information for regular files only */
         if (type == MFU_TYPE_FILE) {
             const char* in_path = mfu_flist_file_get_name(list, idx);
-            rc = llapi_file_get_stripe(in_path, lum);
-            if (rc != 0) {
-                free(lum);
-                lum = NULL;
-                printf("retrieving file stripe information for '%s' has failed, %s\n",
-                    in_path, strerror(-rc));
-                fflush(stdout);
-                MPI_Abort(MPI_COMM_WORLD, 1);
-            }
+            uint64_t stripe_size;
+            uint64_t stripe_count;
 
-            /* TODO: handle if a file is already in the list? */
+            /* get the striping info and print it out */
+            get_file_stripe_info(in_path, &stripe_size, &stripe_count);
 
-            /* TODO: handle when stripe count is -1 */
-            if (lum->lmm_stripe_count != stripe_count || lum->lmm_stripe_size != stripe_size) {
+            printf("File \"%s\" has a stripe count of %" PRId64 " and a stripe size of %" PRId64 " bytes.\n",
+                       in_path, stripe_count, stripe_size);
+            fflush(stdout);
+        }
+    }
+}
+
+/* filter the list of files down based on the current stripe size and stripe count */
+static mfu_flist filter_list(mfu_flist list, int stripe_count, uint64_t stripe_size)
+{
+    /* this is going to be a subset of the full file list */
+    mfu_flist filtered = mfu_flist_subset(list);
+
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(list);
+
+    for (idx = 0; idx < size; idx++) {
+        mfu_filetype type = mfu_flist_file_get_type(list, idx);
+
+        /* we only care about regular files */
+        if (type == MFU_TYPE_FILE) {
+            const char* in_path = mfu_flist_file_get_name(list, idx);
+            uint64_t curr_stripe_size;
+            uint64_t curr_stripe_count;
+
+            /* obtain the file's current stripe size and stripe count */
+            get_file_stripe_info(in_path, &curr_stripe_size, &curr_stripe_count);
+
+            /* TODO: this should probably be better */
+            /* if the current stripe size or stripe count doesn't match, then a restripe the file */
+            if (curr_stripe_count != stripe_count || curr_stripe_size != stripe_size) {
                 mfu_flist_file_copy(list, idx, filtered);
             }
         }
     }
 
-    free(lum);
-    lum = NULL;
-#endif
-
+    /* summarize and return the new list */
     mfu_flist_summarize(filtered);
     return filtered;
 }
 
+/* write a chunk of the file */
 static void write_file_chunk(mfu_file_chunk* p, const char* out_path)
 {
     size_t chunk_size = 1024*1024;
@@ -131,6 +203,8 @@ static void write_file_chunk(mfu_file_chunk* p, const char* out_path)
     const char *in_path = p->name;
     uint64_t stripe_size = (off_t)p->length;
 
+    /* if the file size is 0, there's no data to restripe */
+    /* if the stripe size is 0, then there's no work to be done */
     if (file_size == 0 || stripe_size == 0) {
         return;
     }
@@ -264,52 +338,6 @@ static void write_file_chunk(mfu_file_chunk* p, const char* out_path)
     mfu_free(&buf);
 }
 
-static void flist_dstripe_report(mfu_flist list)
-{
-#ifdef LUSTRE_SUPPORT
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    uint64_t idx;
-    uint64_t size = mfu_flist_size(list);
-    int rc = 0;
-
-    /* account for different versions of the lov_user_md struct */
-    int lumsz = lov_user_md_size(LOV_MAX_STRIPE_COUNT, LOV_USER_MAGIC_V3);
-    struct lov_user_md *lum = NULL;
-
-    lum = malloc(lumsz);
-    if (lum == NULL) {
-        printf("ran out of memory");
-        fflush(stdout);
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-
-    for (idx = 0; idx < size; idx++) {
-        mfu_filetype type = mfu_flist_file_get_type(list, idx);
-        if (type == MFU_TYPE_FILE) {
-            const char* in_path = mfu_flist_file_get_name(list, idx);
-            rc = llapi_file_get_stripe(in_path, lum);
-            if (rc != 0) {
-                free(lum);
-                lum = NULL;
-                printf("retrieving file stripe information for '%s' has failed, %s\n",
-                    in_path, strerror(-rc));
-                fflush(stdout);
-                MPI_Abort(MPI_COMM_WORLD, 1);
-            }
-
-            /* print stripe count and stripe size */
-            printf("File \"%s\" has a stripe count of %d and a stripe size of %d bytes.\n",
-                       in_path, lum->lmm_stripe_count, lum->lmm_stripe_size);
-            fflush(stdout);
-        }
-    }
-
-    free(lum);
-    lum = NULL;
-#endif
-}
-
 int main(int argc, char* argv[])
 {
     MPI_Init(&argc, &argv);
@@ -325,10 +353,12 @@ int main(int argc, char* argv[])
     int usage = 0;
     int report = 0;
     int verbose = 0;
-    int stripes = -1;
-    unsigned long long stripe_size = 1048576;
     unsigned int numpaths = 0;
     mfu_param_path* paths = NULL;
+
+    /* default to 1MB stripe size and stripe across all OSTs */
+    int stripes = -1;
+    uint64_t stripe_size = 1048576;
 
     static struct option long_options[] = {
         {"count",    1, 0, 'c'},
@@ -400,6 +430,7 @@ int main(int argc, char* argv[])
         usage = 1;
     }
 
+    /* if we need to print usage, print it and exit */
     if (usage) {
         if (rank == 0) {
             print_usage();
@@ -421,9 +452,9 @@ int main(int argc, char* argv[])
 #endif
 
     /* stripe count must be -1 for all available or greater than 0 */
-    if (stripes < 0 && stripes != -1) {
+    if (stripes < -1) {
         if (rank == 0) {
-            printf("Stripe count must be -1 for all servers or a positive value\n");
+            printf("Stripe count must be -1 for all servers, 0 for lustre file system default, or a positive value\n");
             fflush(stdout);
         }
 
@@ -431,7 +462,7 @@ int main(int argc, char* argv[])
     }
 
     /* lustre requires stripe sizes to be aligned */
-    if (stripe_size % 65536 != 0) {
+    if (stripe_size > 0 && stripe_size % 65536 != 0) {
         if (rank == 0) {
             printf("Stripe size must be a multiple of 65536\n");
             fflush(stdout);
@@ -448,8 +479,15 @@ int main(int argc, char* argv[])
 
     /* report the stripe count in all files we found */
     if (report) {
-        flist_dstripe_report(flist);
+        /* report the files in our list */
+        stripe_info_report(flist);
+
+        /* free the paths and our list */
         mfu_flist_free(&flist);
+        mfu_param_path_free_all(numpaths, paths);
+        mfu_free(&paths);
+
+        /* finalize */
         mfu_finalize();
         MPI_Finalize();
         return 0;
@@ -459,54 +497,56 @@ int main(int argc, char* argv[])
     mfu_flist filtered = filter_list(flist, stripes, stripe_size);
     mfu_flist_free(&flist);
 
-    /* generate a global suffix for our temp files and have each node check it's list*/
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    /* generate a global suffix for our temp files and have each node check it's list */
     char suffix[8];
     uint64_t retry;
 
+    /* seed our random number generator */
     srand(time(NULL));
 
+    /* keep trying to make a valid random suffix...*/
     do {
         uint64_t attempt = 0;
 
+        /* make rank 0 responsible for generating a random suffix */
         if (rank == 0) {
             generate_suffix(suffix, sizeof(suffix));
         }
 
+        /* broadcast the random suffix to all ranks */
         MPI_Bcast(suffix, sizeof(suffix), MPI_CHAR, 0, MPI_COMM_WORLD);
 
+        /* check that the file doesn't already exist */
         uint64_t size = mfu_flist_size(filtered);
         for (idx = 0; idx < size; idx++) {
             char temp_path[PATH_MAX];
             strcpy(temp_path, mfu_flist_file_get_name(filtered, idx));
             strcat(temp_path, suffix);
             if(!mfu_access(temp_path, F_OK)) {
+                /* the file already exists */
                 attempt = 1;
                 break;
             }
         }
 
+        /* do a reduce to figure out if a rank has a file collision */
         MPI_Allreduce(&attempt, &retry, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
     } while(retry != 0);
 
     uint64_t size = mfu_flist_size(filtered);
-#ifdef LUSTRE_SUPPORT
     /* create new files so we can restripe */
     for (idx = 0; idx < size; idx++) {
         char temp_path[PATH_MAX];
         strcpy(temp_path, mfu_flist_file_get_name(filtered, idx));
         strcat(temp_path, suffix);
 
-        /* set striping params on new file */
-        int rc = llapi_file_create(temp_path, stripe_size, 0, stripes, LOV_PATTERN_RAID0);
-        if (rc < 0) {
-            printf("file creation has failed, %s\n", strerror(-rc));
-            fflush(stdout);
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
+        /* create a striped file at the temp file path */
+        create_striped_file(temp_path, stripe_size, stripes);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
-#endif
 
     /* found a suffix, now we need to break our files into chunks based on stripe size */
     mfu_file_chunk* file_chunks = mfu_file_chunk_list_alloc(filtered, stripe_size);
@@ -516,6 +556,7 @@ int main(int argc, char* argv[])
         strcpy(temp_path, p->name);
         strcat(temp_path, suffix);
 
+        /* write each chunk in our list */
         write_file_chunk(p, temp_path);
         p = p->next;
     }
@@ -530,18 +571,21 @@ int main(int argc, char* argv[])
         strcpy(out_path, in_path);
         strcat(out_path, suffix);
 
+        /* change the mode of the newly restriped file to be the same as the old one */
         if (mfu_chmod(out_path, (mode_t) mode) != 0) {
             printf("Failed to chmod file %s (%s)", out_path, strerror(errno));
             fflush(stdout);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
+        /* unlink the old file */
         if (mfu_unlink(in_path) != 0) {
             printf("Failed to remove input file %s\n", in_path);
             fflush(stdout);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
+        /* rename the new, restriped file to the old name */
         if (rename(out_path, in_path) != 0) {
             printf("Failed to rename file %s to %s\n", out_path, in_path);
             fflush(stdout);
@@ -552,8 +596,12 @@ int main(int argc, char* argv[])
     /* wait for everyone to finish */
     MPI_Barrier(MPI_COMM_WORLD);
 
+    /* free the chunk list, filtered list, path parameters */
     mfu_file_chunk_list_free(&file_chunks);
     mfu_flist_free(&filtered);
+    mfu_param_path_free_all(numpaths, paths);
+    mfu_free(&paths);
+
     mfu_finalize();
     MPI_Finalize();
 
