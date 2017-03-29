@@ -6,29 +6,26 @@ dstripe - restripe files on underlying storage
 
 # SYNOPSIS
 
-**dstripe [OPTION] FILE**
+**dstripe [OPTION] PATH...**
 
 # DESCRIPTION
 
 Parallel MPI application to restripe a given file.
 
-This tool is in active development.  It will eventually report striping information and it will also support recursive operation on directories.  It currently only works on Lustre.
+This tool is in active development. It currently only works on Lustre.
 
-dstripe enables one to restripe a file across the underlying storage devices.  One must specify the source file (FILE) to perform a restripe with. By default, stripe size is 1MB and stripe count is -1 allowing dstripe to use all available stripes.
+dstripe enables one to restripe a file across the underlying storage devices. One must specify a list of paths to recursively walk. By default, stripe size is 1MB and stripe count is -1 allowing dstripe to use all available stripes. 
 
 # OPTIONS
 
--o, \--output DEST_FILE
-:	Write the restriped file to DEST_FILE rather than overwriting FILE. If DEST_FILE is equivalent to FILE, the restriped file overwrites FILE. Otherwise, FILE will not be removed after restriping.
-
 -c, \--count STRIPE_COUNT
-:	The number of stripes to use when restriping FILE. If STRIPE_COUNT is -1, then all available stripes are used. The default stripe count is -1.
+:	The number of stripes to use during file restriping. If STRIPE_COUNT is -1, then all available stripes are used. If STRIPE_COUNT is 0, the lustre file system default is used. The default stripe count is -1.
 
 -s, \--size STRIPE_SIZE
-:	The stripe size to use during restriping. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default stripe size is 1MB.
+:	The stripe size to use during file restriping. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default stripe size is 1MB.
 
 -r, \--report
-:	Display the stripe count and stripe size of FILE. No restriping is performed when using this option.
+:	Display the stripe count and stripe size of all files found in PATH. No restriping is performed when using this option.
 
 -v, \--verbose
 : 	Run in verbose mode.
@@ -44,11 +41,15 @@ mpirun -np 128 dstripe -s 1MB /path/to/file
 
 2. To stripe a file across 20 storage devices with a 1GB stripe size:
 
-mpirun -np 128 dstripe -c 20 -s 1GB -o /path/to/file2 /path/to/file
+mpirun -np 128 dstripe -c 20 -s 1GB /path/to/file
 
-3. To display the current stripe count and stripe size of a file:
+3. To restripe all files in /path/to/files/ across 10 storage devices with 2MB stripe size:
 
-dstripe -r /path/to/file
+mpirun -np 128 dstripe -c 10 -s 2MB /path/to/files/
+
+4. To display the current stripe count and stripe size of all files in /path/to/files/:
+
+mpirun -np 128 dstripe -r /path/to/files/
 
 # SEE ALSO
 
