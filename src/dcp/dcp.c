@@ -20,9 +20,7 @@
 
 #include "handle_args.h"
 
-#include "mfu_flist.h"
-
-#include "dcp.h"
+#include "mfu_flist.h" 
 
 #include <getopt.h>
 #include <string.h>
@@ -96,7 +94,7 @@ static int64_t DCOPY_sum_int64(int64_t val)
 /**
  * Print out information on the results of the file copy.
  */
-static void DCOPY_epilogue(void)
+static void DCOPY_epilogue(int rank)
 {
     double rel_time = DCOPY_statistics.wtime_ended - \
                       DCOPY_statistics.wtime_started;
@@ -107,7 +105,7 @@ static void DCOPY_epilogue(void)
     int64_t agg_copied = DCOPY_sum_int64(DCOPY_statistics.total_bytes_copied);
     double agg_rate = (double)agg_copied / rel_time;
 
-    if(DCOPY_global_rank == 0) {
+    if(rank == 0) {
         char starttime_str[256];
         struct tm* localstart = localtime(&(DCOPY_statistics.time_started));
         strftime(starttime_str, 256, "%b-%d-%Y,%H:%M:%S", localstart);
@@ -154,14 +152,6 @@ static void DCOPY_epilogue(void)
 }
 
 /**
- * Print the current version.
- */
-static void DCOPY_print_version(void)
-{
-    fprintf(stdout, "%s-%s\n", PACKAGE_NAME, PACKAGE_VERSION);
-}
-
-/**
  * Print a usage message.
  */
 void DCOPY_print_usage(void)
@@ -198,11 +188,12 @@ int main(int argc, \
 {
     int c;
     int option_index = 0;
+    int rank;
 
     MPI_Init(&argc, &argv);
     mfu_init();
 
-    MPI_Comm_rank(MPI_COMM_WORLD, &DCOPY_global_rank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     /* Initialize our processing library and related callbacks. */
     /* This is a bit of chicken-and-egg problem, because we'd like
@@ -226,8 +217,8 @@ int main(int argc, \
     DCOPY_statistics.total_bytes_copied = 0;
 
     /* Initialize file cache */
-    DCOPY_src_cache.name = NULL;
-    DCOPY_dst_cache.name = NULL;
+    mfu_copy_src_cache.name = NULL;
+    mfu_copy_dst_cache.name = NULL;
 
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
@@ -244,7 +235,8 @@ int main(int argc, \
     DCOPY_user_opts.sparse = false;
 
     /* Set default chunk size */
-    DCOPY_user_opts.chunk_size = DCOPY_CHUNK_SIZE;
+    uint64_t chunk_size = (1*1024*1024);
+    DCOPY_user_opts.chunk_size = chunk_size ;
 
     /* Set default block size */
     DCOPY_user_opts.block_size = FD_BLOCK_SIZE;
@@ -274,7 +266,7 @@ int main(int argc, \
                     CIRCLE_debug = CIRCLE_LOG_FATAL;
                     mfu_debug_level = MFU_LOG_FATAL;
 
-                    if(DCOPY_global_rank == 0) {
+                    if(rank == 0) {
                         MFU_LOG(MFU_LOG_INFO, "Debug level set to: fatal");
                     }
 
@@ -283,7 +275,7 @@ int main(int argc, \
                     CIRCLE_debug = CIRCLE_LOG_ERR;
                     mfu_debug_level = MFU_LOG_ERR;
 
-                    if(DCOPY_global_rank == 0) {
+                    if(rank == 0) {
                         MFU_LOG(MFU_LOG_INFO, "Debug level set to: errors");
                     }
 
@@ -292,7 +284,7 @@ int main(int argc, \
                     CIRCLE_debug = CIRCLE_LOG_WARN;
                     mfu_debug_level = MFU_LOG_WARN;
 
-                    if(DCOPY_global_rank == 0) {
+                    if(rank == 0) {
                         MFU_LOG(MFU_LOG_INFO, "Debug level set to: warnings");
                     }
 
@@ -301,7 +293,7 @@ int main(int argc, \
                     CIRCLE_debug = CIRCLE_LOG_WARN; /* we back off a level on CIRCLE verbosity */
                     mfu_debug_level = MFU_LOG_INFO;
 
-                    if(DCOPY_global_rank == 0) {
+                    if(rank == 0) {
                         MFU_LOG(MFU_LOG_INFO, "Debug level set to: info");
                     }
 
@@ -310,13 +302,13 @@ int main(int argc, \
                     CIRCLE_debug = CIRCLE_LOG_DBG;
                     mfu_debug_level = MFU_LOG_DBG;
 
-                    if(DCOPY_global_rank == 0) {
+                    if(rank == 0) {
                         MFU_LOG(MFU_LOG_INFO, "Debug level set to: debug");
                     }
 
                 }
                 else {
-                    if(DCOPY_global_rank == 0) {
+                    if(rank == 0) {
                         MFU_LOG(MFU_LOG_INFO, "Debug level `%s' not recognized. " \
                             "Defaulting to `info'.", optarg);
                     }
@@ -328,7 +320,7 @@ int main(int argc, \
             case 'g':
                 DCOPY_user_opts.grouplock_id = atoi(optarg);
 
-                if(DCOPY_global_rank == 0) {
+                if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "groulock ID: %d.",
                         DCOPY_user_opts.grouplock_id);
                 }
@@ -338,7 +330,7 @@ int main(int argc, \
 
             case 'i':
                 DCOPY_user_opts.input_file = MFU_STRDUP(optarg);
-                if(DCOPY_global_rank == 0) {
+                if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Using input list.");
                 }
                 break;
@@ -346,7 +338,7 @@ int main(int argc, \
             case 'p':
                 DCOPY_user_opts.preserve = true;
 
-                if(DCOPY_global_rank == 0) {
+                if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Preserving file attributes.");
                 }
 
@@ -355,7 +347,7 @@ int main(int argc, \
             case 's':
                 DCOPY_user_opts.synchronous = true;
 
-                if(DCOPY_global_rank == 0) {
+                if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Using synchronous read/write (O_DIRECT)");
                 }
 
@@ -364,7 +356,7 @@ int main(int argc, \
             case 'S':
                 DCOPY_user_opts.sparse = true;
 
-                if(DCOPY_global_rank == 0) {
+                if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Using sparse file");
                 }
 
@@ -376,7 +368,7 @@ int main(int argc, \
                 break;
 
             case 'h':
-                if(DCOPY_global_rank == 0) {
+                if(rank == 0) {
                     DCOPY_print_usage();
                 }
 
@@ -385,7 +377,7 @@ int main(int argc, \
 
             case '?':
             default:
-                if(DCOPY_global_rank == 0) {
+                if(rank == 0) {
                     if(optopt == 'd') {
                         DCOPY_print_usage();
                         fprintf(stderr, "Option -%c requires an argument.\n", \
@@ -450,14 +442,14 @@ int main(int argc, \
     mfu_create_files(levels, minlevel, lists);
 
     /* copy data */
-    mfu_copy_files(flist);
+    mfu_copy_files(flist, chunk_size);
 
     /* close files */
-    DCOPY_close_file(&DCOPY_src_cache);
-    DCOPY_close_file(&DCOPY_dst_cache);
+    mfu_copy_close_file(&mfu_copy_src_cache);
+    mfu_copy_close_file(&mfu_copy_dst_cache);
 
     /* set permissions, ownership, and timestamps if needed */
-    DCOPY_set_metadata(levels, minlevel, lists);
+    mfu_copy_set_metadata(levels, minlevel, lists);
 
     /* free our lists of levels */
     mfu_flist_array_free(levels, &lists);
@@ -470,13 +462,13 @@ int main(int argc, \
     time(&(DCOPY_statistics.time_ended));
 
     /* force updates to disk */
-    if (DCOPY_global_rank == 0) {
+    if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Syncing updates to disk.");
     }
     sync();
 
     /* Print the results to the user. */
-    DCOPY_epilogue();
+    DCOPY_epilogue(rank);
 
     DCOPY_exit(EXIT_SUCCESS);
 }

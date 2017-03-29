@@ -24,7 +24,7 @@
  *
  * <http://www.bringhurst.org/2012/12/16/file-copy-tool-argument-handling.html>
  */
-
+#include "mfu_flist.h"
 #include "handle_args.h"
 #include "mfu.h"
 
@@ -84,11 +84,15 @@ static mfu_param_path  dest_param;
 /* check that source and destination paths are valid */
 static void DCOPY_check_paths(void)
 {
+    /* get current rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
     /* assume path parameters are valid */
     int valid = 1;
 
     /* just have rank 0 check */
-    if(DCOPY_global_rank == 0) {
+    if(rank == 0) {
         /* count number of readable source paths */
         int i;
         int num_readable = 0;
@@ -242,11 +246,11 @@ bcast:
 
     /* exit job if we found a problem */
     if(! valid) {
-        if(DCOPY_global_rank == 0) {
+        if(rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Exiting run");
         }
         MPI_Barrier(MPI_COMM_WORLD);
-        DCOPY_exit(EXIT_FAILURE);
+        //DCOPY_exit(EXIT_FAILURE);
     }
 
     /* rank 0 broadcasts whether we're copying into a directory */
@@ -260,6 +264,10 @@ void DCOPY_parse_path_args(char** argv, \
                            int optind_local, \
                            int argc)
 {
+    /* get current rank */  
+    int rank; 
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    
     /* compute number of paths and index of last argument */
     int num_args = argc - optind_local;
     int last_arg_index = num_args + optind_local - 1;
@@ -267,13 +275,13 @@ void DCOPY_parse_path_args(char** argv, \
     /* we need to have at least two paths,
      * one or more sources and one destination */
     if(argv == NULL || num_args < 2) {
-        if(DCOPY_global_rank == 0) {
+        if(rank == 0) {
             //DCOPY_print_usage();
             MFU_LOG(MFU_LOG_ERR, "You must specify a source and destination path");
         }
 
         MPI_Barrier(MPI_COMM_WORLD);
-        DCOPY_exit(EXIT_FAILURE);
+        //DCOPY_exit(EXIT_FAILURE);
     }
 
     /* determine number of source paths */
@@ -305,12 +313,16 @@ void DCOPY_parse_path_args(char** argv, \
 
 void DCOPY_walk_paths(mfu_flist flist)
 {
+    /* get current rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
     int i;
     for (i = 0; i < num_src_params; i++) {
         /* get path for step */
         const char* target = src_params[i].path;
 
-        if (DCOPY_global_rank == 0) {
+        if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Walking %s", target);
         }
 

@@ -85,7 +85,6 @@ AC_CONFIG_FILES([Makefile                \
                  src/dbcast/Makefile     \
                  src/dchmod/Makefile     \
                  src/dcmp/Makefile       \
-                 src/dcp1/Makefile       \
                  src/dcp/Makefile        \
                  src/ddup/Makefile       \
                  src/dfilemaker/Makefile \
