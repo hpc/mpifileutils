@@ -50,7 +50,7 @@ static void print_usage(void)
     printf("  -c, --count            - stripe count (default -1)\n");
     printf("  -s, --size             - stripe size in bytes (default 1MB)\n");
     printf("  -m, --minsize          - minimum file size (default 0MB)\n");
-    printf("  -r, --report           - input file stripe info\n");
+    printf("  -r, --report           - display file size and stripe info\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
@@ -136,26 +136,57 @@ static void create_striped_file(const char *path, uint64_t stripe_size, int stri
 #endif
 }
 
+static void generate_pretty_size(char *out, unsigned int length, uint64_t size)
+{
+    double size_tmp;
+    const char* size_units;
+    char *unit;
+    unsigned int unit_len;
+
+    mfu_format_bytes(size, &size_tmp, &size_units);
+    snprintf(out, length, "%.2f %s", size_tmp, size_units);
+}
+
 /* print to stdout the stripe size and count of each file in the mfu_flist */
 static void stripe_info_report(mfu_flist list)
 {
     uint64_t idx;
     uint64_t size = mfu_flist_size(list);
 
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* print header */
+    if (rank == 0) {
+        printf("%10s %3.3s %8.8s %s\n", "Size", "Cnt", "Str Size", "File Path");
+        printf("%10s %3.3s %8.8s %s\n", "----", "---", "--------", "---------");
+        fflush(stdout);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    /* print out file info */
     for (idx = 0; idx < size; idx++) {
         mfu_filetype type = mfu_flist_file_get_type(list, idx);
 
         /* report striping information for regular files only */
         if (type == MFU_TYPE_FILE) {
             const char* in_path = mfu_flist_file_get_name(list, idx);
-            uint64_t stripe_size;
-            uint64_t stripe_count;
+            uint64_t stripe_size = 0;
+            uint64_t stripe_count = 0;
+            char filesize[11];
+            char stripesize[9];
 
             /* get the striping info and print it out */
             get_file_stripe_info(in_path, &stripe_size, &stripe_count);
 
-            printf("File \"%s\" has a stripe count of %" PRId64 " and a stripe size of %" PRId64 " bytes.\n",
-                       in_path, stripe_count, stripe_size);
+            /* format it nicely */
+            generate_pretty_size(filesize, sizeof(filesize), mfu_flist_file_get_size(list, idx));
+            generate_pretty_size(stripesize, sizeof(stripesize), stripe_size);
+
+            /* print the row */
+            printf("%10.10s %3" PRId64 " %8.8s %s\n", filesize, stripe_count, stripesize, in_path);
+
             fflush(stdout);
         }
     }
@@ -495,13 +526,19 @@ int main(int argc, char* argv[])
     mfu_flist flist = mfu_flist_new();
     mfu_param_path_walk(numpaths, paths, 1, flist, 0);
 
-    /* report the stripe count in all files we found */
+    /* filter down our list to files which don't meet our striping requirements */
+    mfu_flist filtered = filter_list(flist, stripes, stripe_size, min_size);
+    mfu_flist_free(&flist);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    /* report the file size and stripe count of all files we found */
     if (report) {
-        /* report the files in our list */
-        stripe_info_report(flist);
+        /* report the files in our filtered list */
+        stripe_info_report(filtered);
 
         /* free the paths and our list */
-        mfu_flist_free(&flist);
+        mfu_flist_free(&filtered);
         mfu_param_path_free_all(numpaths, paths);
         mfu_free(&paths);
 
@@ -510,12 +547,6 @@ int main(int argc, char* argv[])
         MPI_Finalize();
         return 0;
     }
-
-    /* filter down our list to files which don't meet our striping requirements */
-    mfu_flist filtered = filter_list(flist, stripes, stripe_size, min_size);
-    mfu_flist_free(&flist);
-
-    MPI_Barrier(MPI_COMM_WORLD);
 
     /* generate a global suffix for our temp files and have each node check it's list */
     char suffix[8];

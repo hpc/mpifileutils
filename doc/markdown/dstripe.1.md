@@ -28,7 +28,7 @@ dstripe enables one to restripe a file across the underlying storage devices. On
 :	The minimum size a file must be to be a candidate for restriping. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default minimum file size is 0MB.
 
 -r, \--report
-:	Display the stripe count and stripe size of all files found in PATH. No restriping is performed when using this option.
+:	Display the file size, stripe count, and stripe size of all files found in PATH. No restriping is performed when using this option.
 
 -v, \--verbose
 : 	Run in verbose mode.
