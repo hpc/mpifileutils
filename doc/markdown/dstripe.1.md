@@ -24,6 +24,9 @@ dstripe enables one to restripe a file across the underlying storage devices. On
 -s, \--size STRIPE_SIZE
 :	The stripe size to use during file restriping. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default stripe size is 1MB.
 
+-m, \--minsize SIZE
+:	The minimum size a file must be to be a candidate for restriping. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default minimum file size is 0MB.
+
 -r, \--report
 :	Display the stripe count and stripe size of all files found in PATH. No restriping is performed when using this option.
 
@@ -43,11 +46,15 @@ mpirun -np 128 dstripe -s 1MB /path/to/file
 
 mpirun -np 128 dstripe -c 20 -s 1GB /path/to/file
 
-3. To restripe all files in /path/to/files/ across 10 storage devices with 2MB stripe size:
+3. To restripe all files in /path/to/files/ that are at least 1GB in size:
+
+mpirun -np 128 dstripe -m 1GB /path/to/files/
+
+4. To restripe all files in /path/to/files/ across 10 storage devices with 2MB stripe size:
 
 mpirun -np 128 dstripe -c 10 -s 2MB /path/to/files/
 
-4. To display the current stripe count and stripe size of all files in /path/to/files/:
+5. To display the current stripe count and stripe size of all files in /path/to/files/:
 
 mpirun -np 128 dstripe -r /path/to/files/
 

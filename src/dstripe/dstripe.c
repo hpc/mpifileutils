@@ -49,6 +49,7 @@ static void print_usage(void)
     printf("Options:\n");
     printf("  -c, --count            - stripe count (default -1)\n");
     printf("  -s, --size             - stripe size in bytes (default 1MB)\n");
+    printf("  -m, --minsize          - minimum file size (default 0MB)\n");
     printf("  -r, --report           - input file stripe info\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -h, --help             - print usage\n");
@@ -161,7 +162,7 @@ static void stripe_info_report(mfu_flist list)
 }
 
 /* filter the list of files down based on the current stripe size and stripe count */
-static mfu_flist filter_list(mfu_flist list, int stripe_count, uint64_t stripe_size)
+static mfu_flist filter_list(mfu_flist list, int stripe_count, uint64_t stripe_size, uint64_t min_size)
 {
     /* this is going to be a subset of the full file list */
     mfu_flist filtered = mfu_flist_subset(list);
@@ -174,9 +175,14 @@ static mfu_flist filter_list(mfu_flist list, int stripe_count, uint64_t stripe_s
 
         /* we only care about regular files */
         if (type == MFU_TYPE_FILE) {
+            /* if our file is below the minimum file size, skip it */
+            if (mfu_flist_file_get_size(list, idx) < min_size) {
+                continue;
+            }
+
             const char* in_path = mfu_flist_file_get_name(list, idx);
-            uint64_t curr_stripe_size;
-            uint64_t curr_stripe_count;
+            uint64_t curr_stripe_size = 0;
+            uint64_t curr_stripe_count = 0;
 
             /* obtain the file's current stripe size and stripe count */
             get_file_stripe_info(in_path, &curr_stripe_size, &curr_stripe_count);
@@ -356,20 +362,22 @@ int main(int argc, char* argv[])
     unsigned int numpaths = 0;
     mfu_param_path* paths = NULL;
 
-    /* default to 1MB stripe size and stripe across all OSTs */
+    /* default to 1MB stripe size, stripe across all OSTs, and all files are candidates */
     int stripes = -1;
     uint64_t stripe_size = 1048576;
+    uint64_t min_size = 0;
 
     static struct option long_options[] = {
         {"count",    1, 0, 'c'},
         {"size",     1, 0, 's'},
+        {"minsize",  1, 0, 'm'},
         {"help",     0, 0, 'h'},
         {"report",   0, 0, 'r'},
         {0, 0, 0, 0}
     };
 
     while (1) {
-        int c = getopt_long(argc, argv, "c:s:rhv",
+        int c = getopt_long(argc, argv, "c:s:m:rhv",
                     long_options, &option_index);
 
         if (c == -1) {
@@ -386,6 +394,16 @@ int main(int argc, char* argv[])
                 if (mfu_abtoull(optarg, &stripe_size) != MFU_SUCCESS) {
                     if (rank == 0) {
                         printf("Failed to parse stripe size: %s\n", optarg);
+                        fflush(stdout);
+                    }
+                    MPI_Abort(MPI_COMM_WORLD, 1);
+                }
+                break;
+            case 'm':
+                /* min file size in bytes */
+                if (mfu_abtoull(optarg, &min_size) != MFU_SUCCESS) {
+                    if (rank == 0) {
+                        printf("Failed to parse minimum file size: %s\n", optarg);
                         fflush(stdout);
                     }
                     MPI_Abort(MPI_COMM_WORLD, 1);
@@ -494,7 +512,7 @@ int main(int argc, char* argv[])
     }
 
     /* filter down our list to files which don't meet our striping requirements */
-    mfu_flist filtered = filter_list(flist, stripes, stripe_size);
+    mfu_flist filtered = filter_list(flist, stripes, stripe_size, min_size);
     mfu_flist_free(&flist);
 
     MPI_Barrier(MPI_COMM_WORLD);
