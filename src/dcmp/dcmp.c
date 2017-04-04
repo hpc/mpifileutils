@@ -18,7 +18,8 @@
  * For details, see https://github.com/hpc/fileutils.
  * Please also read the LICENSE file.
 */
-
+#include "handle_args.h"
+#include "mfu_flist.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <getopt.h>
@@ -1996,6 +1997,41 @@ int main(int argc, char **argv)
      *   3) file contents + items in #2 */
 
     int option_index = 0;
+   
+    /* Initialize statistics */
+    DCOPY_statistics.total_dirs  = 0;
+    DCOPY_statistics.total_files = 0;
+    DCOPY_statistics.total_links = 0;
+    DCOPY_statistics.total_size  = 0;
+    DCOPY_statistics.total_bytes_copied = 0;
+
+    /* Initialize file cache */
+    mfu_copy_src_cache.name = NULL;
+    mfu_copy_dst_cache.name = NULL;
+
+    /* By default, show info log messages. */
+    /* we back off a level on CIRCLE verbosity since its INFO is verbose */
+    CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
+    mfu_debug_level = MFU_LOG_INFO;
+
+    /* By default, sync option will preserve all attributes. */
+    DCOPY_user_opts.preserve = true;
+
+    /* By default, don't use O_DIRECT. */
+    DCOPY_user_opts.synchronous = false;
+
+    /* By default, don't use sparse file. */
+    DCOPY_user_opts.sparse = false;
+
+    /* Set default chunk size */
+    uint64_t chunk_size = (1*1024*1024);
+    DCOPY_user_opts.chunk_size = chunk_size ;
+
+    /* Set default block size */
+    DCOPY_user_opts.block_size = FD_BLOCK_SIZE;
+
+    /* By default, don't have iput file. */
+    DCOPY_user_opts.input_file = NULL;
     
     /* flag to check for sync option */
     int do_sync = 0;
