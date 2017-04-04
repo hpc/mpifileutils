@@ -53,7 +53,7 @@
 /* TODO: change globals to struct */
 static int verbose   = 0;
 static int walk_stat = 1;
-static int dir_perms = 0;
+static int dir_perm  = 0;
 
 /* keep stats during walk */
 uint64_t total_dirs    = 0;
@@ -1604,6 +1604,7 @@ int main(int argc, char** argv)
 
     /* initialize MPI */
     MPI_Init(&argc, &argv);
+    mfu_init();
 
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -1686,11 +1687,11 @@ int main(int argc, char** argv)
         paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
         /* process each path */
-        for (i = 0; i < numpaths; i++) {
-            const char* path = argv[optind];
-            mfu_param_path_set(path, &paths[i]);
-            optind++;
-        }
+        char** argpaths = &argv[optind];
+        mfu_param_path_set_all(numpaths, argpaths, paths);
+
+        /* advance to next set of options */
+        optind += numpaths;
 
         /* don't allow user to specify input file with walk */
         if (inputname != NULL) {
@@ -1705,6 +1706,7 @@ int main(int argc, char** argv)
         }
     }
 
+    /* print usage if we need to */
     if (usage) {
         if (rank == 0) {
             print_usage();
@@ -1719,82 +1721,18 @@ int main(int argc, char** argv)
     /* initialize our sorting library */
     DTCMP_Init();
 
-    uint64_t all_count = 0;
-    uint64_t walk_start, walk_end;
-
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
 
+    /* get our list of files, either by walking or reading an
+     * input file */
     if (walk) {
-        time_t walk_start_t = time(NULL);
-        if (walk_start_t == (time_t)-1) {
-            /* TODO: ERROR! */
-        }
-        walk_start = (uint64_t) walk_start_t;
-
-        /* report walk count, time, and rate */
-        double start_walk = MPI_Wtime();
-        for (i = 0; i < numpaths; i++) {
-            /* get path for this step */
-            const char* target = paths[i].path;
-
-            /* print message to user that we're starting */
-            if (verbose && rank == 0) {
-                char walk_s[30];
-                size_t rc = strftime(walk_s, sizeof(walk_s) - 1, "%FT%T", localtime(&walk_start_t));
-                if (rc == 0) {
-                    walk_s[0] = '\0';
-                }
-                printf("%s: Walking %s\n", walk_s, target);
-                fflush(stdout);
-            }
-
-            /* walk file tree and record stat data for each file */
-            mfu_flist_walk_path(target, flist, walk_stat, dir_perms);
-        }
-        double end_walk = MPI_Wtime();
-
-        time_t walk_end_t = time(NULL);
-        if (walk_end_t == (time_t)-1) {
-            /* TODO: ERROR! */
-        }
-        walk_end = (uint64_t) walk_end_t;
-
-        /* get total file count */
-        all_count = mfu_flist_global_size(flist);
-
-        /* report walk count, time, and rate */
-        if (verbose && rank == 0) {
-            double secs = end_walk - start_walk;
-            double rate = 0.0;
-            if (secs > 0.0) {
-                rate = ((double)all_count) / secs;
-            }
-            printf("Walked %lu files in %f seconds (%f files/sec)\n",
-                   all_count, secs, rate
-                  );
-        }
+        /* walk list of input paths */
+        mfu_param_path_walk(numpaths, paths, walk_stat, flist, dir_perm);
     }
     else {
-        /* read data from cache file */
-        double start_read = MPI_Wtime();
+        /* read list from file */
         mfu_flist_read_cache(inputname, flist);
-        double end_read = MPI_Wtime();
-
-        /* get total file count */
-        all_count = mfu_flist_global_size(flist);
-
-        /* report read count, time, and rate */
-        if (verbose && rank == 0) {
-            double secs = end_read - start_read;
-            double rate = 0.0;
-            if (secs > 0.0) {
-                rate = ((double)all_count) / secs;
-            }
-            printf("Read %lu files in %f seconds (%f files/sec)\n",
-                   all_count, secs, rate
-                  );
-        }
     }
 
     /* start process from the root directory */
@@ -1996,6 +1934,7 @@ int main(int argc, char** argv)
     mfu_free(&paths);
 
     /* shut down MPI */
+    mfu_finalize();
     MPI_Finalize();
 
     return 0;
