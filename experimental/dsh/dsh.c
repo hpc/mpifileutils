@@ -46,6 +46,7 @@
 #include "libcircle.h"
 #include "dtcmp.h"
 #include "mfu.h"
+#include "strmap.h"
 
 // getpwent getgrent to read user and group entries
 

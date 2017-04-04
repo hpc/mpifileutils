@@ -44,6 +44,9 @@
 /* whether to do directory walk with stat of every ite */
 static int walk_stat = 1;
 
+/* global variable to hold umask value */
+mode_t old_mask;
+
 /* we parse the mode string given by the user and build a linked list of
  * permissions operations, this defines one element in that list.  This
  * enables the user to specify a sequence of operations separated with
@@ -55,6 +58,7 @@ struct perms {
     int group;           /* set to 1 if group bits should be set (e.g. g+r) */
     int other;           /* set to 1 if other bits should be set (e.g. o+r) */
     int all;             /* set to 1 if all bits should be set (e.g. a+r) */
+    int assume_all;      /* if this flag is set umask is taken into account */
     int plus;            /* set to 1 if mode has plus, set to 0 for minus */
     int read;            /* set to 1 if 'r' is given */
     int write;           /* set to 1 if 'w' is given */
@@ -248,14 +252,14 @@ static int parse_plusminus(const char* str, struct perms* p)
 }
 
 /* parse target of user, group, or other */
-static int parse_uga(const char* str, struct perms* p)
+static int parse_ugoa(const char* str, struct perms* p)
 {
     /* assume the parse will succeed */
     int rc = 1;
 
     /* if no letter is given then assume "all" 
      * is being set (e.g +rw would be a+rw) */
-    int assume_all = 1;
+    p->assume_all = 1;
 
     /* intialize our fields */
     p->usr   = 0;
@@ -267,15 +271,15 @@ static int parse_uga(const char* str, struct perms* p)
     do {
         if (str[0] == 'u') {
             p->usr = 1;
-            assume_all = 0;
+            p->assume_all = 0;
         }
         else if (str[0] == 'g') {
             p->group = 1;
-            assume_all = 0;
+            p->assume_all = 0;
         }
         else if (str[0] == 'o') {
             p->other = 1;
-            assume_all = 0;
+            p->assume_all = 0;
         } 
         else if (str[0] == 'a') {
             p->all = 1;
@@ -291,7 +295,7 @@ static int parse_uga(const char* str, struct perms* p)
 
     /* if assume_all is set then no character
      * was given use p->all */
-    if (assume_all) {
+    if (p->assume_all) {
         p->all = 1;
     }
 
@@ -354,7 +358,7 @@ static int parse_modebits(char* modestr, struct perms** p_head)
                 p->octal = 0;
 
                 /* start parsing this 'token' of the input string */
-                rc = parse_uga(token, p);
+                rc = parse_ugoa(token, p);
 
                 /* if the tail is not null then point the tail at the latest struct/token */
                 if (tail != NULL) {
@@ -584,8 +588,10 @@ static void set_target_bits(const struct perms* p, int read, int write, int exec
  * strings like "ug+rX" */
 static void set_symbolic_bits(const struct perms* p, mfu_filetype type, mode_t* mode)
 {
-    /* set the bits based on flags set when parsing input string */
+    /* save the old mode in case assume_all flag is on */
+    mode_t old_mode = *mode;
 
+    /* set the bits based on flags set when parsing input string */
     /* this will handle things like u+r */
     if (p->usr || p->all) {
         if (p->plus) {
@@ -708,6 +714,21 @@ static void set_symbolic_bits(const struct perms* p, mfu_filetype type, mode_t* 
         }
     }
 
+    /* if assume_all flag is on then calculate the mode 
+     * based on the umask value */
+    if (p->assume_all) {
+        /* get set of bits in current mode that we won't change 
+         * because of umask */
+        old_mode &= old_mask;
+
+        /* mask out any bits of new mode that we shouldn't change 
+         * due to umask */
+        *mode &= ~old_mask;
+
+        /* merge in bits from previous mode that had been masked */
+        *mode |= old_mode;
+    }
+
     return;
 }
 
@@ -765,7 +786,7 @@ static void set_modebits(struct perms* head, mfu_filetype type, mode_t old_mode,
             }
             else {
                 /* if the assignment flag is not set then just use
-                 * regular symbolic notation to check if usr, group, or all is set, then
+                 * regular symbolic notation to check if usr, group, other, and/or all is being set, then
                  * plus/minus, and change new mode accordingly */
                 set_symbolic_bits(p, type, mode);
             }
@@ -797,9 +818,9 @@ static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* grn
                 if (mfu_lchown(dest_path, uid, gid) != 0) {
                     /* are there other EPERM conditions we do want to report? */
 
-                    /* since the user running dcp may not be the owner of the
+                    /* since the user running dchmod may not be the owner of the
                      * file, we could hit an EPERM error here, and the file
-                     * will be left with the effective uid and gid of the dcp
+                     * will be left with the effective uid and gid of the dchmod
                      * process, don't bother reporting an error for that case */
                     if (errno != EPERM) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
@@ -938,7 +959,7 @@ static void print_usage(void)
     printf("  -m, --mode    <string> - change mode\n");
     printf("      --exclude <regex>  - exclude a list of files from command\n");
     printf("      --match   <regex>  - match a list of files from command\n");
-    printf("      --name             - exclude a list of files from command\n");
+    printf("  -n, --name             - exclude a list of files from command\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
@@ -983,7 +1004,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:g:m:vh",
+                    argc, argv, "i:g:m:nlhv",
                     long_options, &option_index
                 );
 
@@ -1012,11 +1033,11 @@ int main(int argc, char** argv)
             case 'n':
                 name = 1;
                 break;
-            case 'v':
-                mfu_debug_level = MFU_LOG_VERBOSE;
-                break;
             case 'h':
                 usage = 1;
+                break;
+            case 'v':
+                mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
             case '?':
                 usage = 1;
@@ -1120,6 +1141,11 @@ int main(int argc, char** argv)
         /* update our source list to use the filtered list instead of the original */
         srclist = filtered_flist;
     }
+   
+    /* lookup current mask and set it back before 
+     * chmod call */
+    old_mask = umask(S_IWGRP | S_IWOTH);
+    umask(old_mask);
 
     /* change group and permissions */
     flist_chmod(srclist, groupname, head);

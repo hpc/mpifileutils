@@ -6,33 +6,57 @@ dstripe - restripe files on underlying storage
 
 # SYNOPSIS
 
-**dstripe STRIPE_COUNT STRIPE_SIZE SRC_FILE DEST_FILE**
+**dstripe [OPTION] PATH...**
 
 # DESCRIPTION
 
 Parallel MPI application to restripe a given file.
 
-This tool is in active development.  It will eventually report striping information and it will also support recursive operation on directories.  It currently only works on Lustre.
+This tool is in active development. It currently only works on Lustre.
 
-dstripe enables one to restripe a file across the underlying storage devices.  dstripe will make a full copy of the source file with the new striping parameters and write it to the destination file.
-
-One must specify the integer number of stripes as the first parameter in STRIPE_COUNT.  One can specify -1 to use all available stripes.  One must specify the stripe size in bytes in STRIPE_SIZE.  It is possible to use units like "MB" or "GB" after the number.  The units should come immediately after the number without spaces.  Then one must give the source file in SRC_FILE and the name for the new file in DEST_FILE.
+dstripe enables one to restripe a file across the underlying storage devices. One must specify a list of paths to recursively walk. By default, stripe size is 1MB and stripe count is -1 allowing dstripe to use all available stripes. 
 
 # OPTIONS
+
+-c, \--count STRIPE_COUNT
+:	The number of stripes to use during file restriping. If STRIPE_COUNT is -1, then all available stripes are used. If STRIPE_COUNT is 0, the lustre file system default is used. The default stripe count is -1.
+
+-s, \--size STRIPE_SIZE
+:	The stripe size to use during file restriping. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default stripe size is 1MB.
+
+-m, \--minsize SIZE
+:	The minimum size a file must be to be a candidate for restriping. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default minimum file size is 0MB.
+
+-r, \--report
+:	Display the stripe count and stripe size of all files found in PATH. No restriping is performed when using this option.
+
+-v, \--verbose
+: 	Run in verbose mode.
+
+-h, \--help
+: 	Print the command usage, and the list of options available.
 
 # EXAMPLES
 
 1. To stripe a file on all storage devices using a 1MB stripe size:
 
-mpirun -np 128 dstripe -1 1MB /path/to/file /path/to/file2
+mpirun -np 128 dstripe -s 1MB /path/to/file
 
 2. To stripe a file across 20 storage devices with a 1GB stripe size:
 
-mpirun -np 128 dstripe 20 2GBB /path/to/file /path/to/file2
+mpirun -np 128 dstripe -c 20 -s 1GB /path/to/file
 
-3. To read the current striping parameters of a file on Lustre:
+3. To restripe all files in /path/to/files/ that are at least 1GB in size:
 
-lfs getstripe /path/to/file
+mpirun -np 128 dstripe -m 1GB /path/to/files/
+
+4. To restripe all files in /path/to/files/ across 10 storage devices with 2MB stripe size:
+
+mpirun -np 128 dstripe -c 10 -s 2MB /path/to/files/
+
+5. To display the current stripe count and stripe size of all files in /path/to/files/:
+
+mpirun -np 128 dstripe -r /path/to/files/
 
 # SEE ALSO
 
