@@ -37,12 +37,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-/** Where we should store options specified by the user. */
-//DCOPY_options_t DCOPY_user_opts;
-
-static int num_src_params;
-static mfu_param_path* src_params;
-static mfu_param_path  dest_param;
+typedef struct mfu_copy_params{
+  int num_src_params; /* get number of src parameters */ 
+  mfu_param_path* src_params; /* pointer to the src_params */
+  mfu_param_path dest_param; /* dest param variable */
+} mfu_copy_params;
+static mfu_copy_params cp_params;
+static mfu_copy_params* params_ptr = &cp_params;
 
 /**
  * Determine if the destination path is a file or directory.
@@ -96,15 +97,15 @@ static void DCOPY_check_paths(void)
         /* count number of readable source paths */
         int i;
         int num_readable = 0;
-        for(i = 0; i < num_src_params; i++) {
-            char* path = src_params[i].path;
+        for(i = 0; i < params_ptr->num_src_params; i++) {
+            char* path = params_ptr->src_params[i].path;
             if(mfu_access(path, R_OK) == 0) {
                 num_readable++;
             }
             else {
                 /* found a source path that we can't read, not fatal,
                  * but print an error to notify user */
-                char* orig = src_params[i].orig;
+                char* orig = params_ptr->src_params[i].orig;
                 MFU_LOG(MFU_LOG_ERR, "Could not read `%s' errno=%d %s",
                     orig, errno, strerror(errno));
             }
@@ -132,35 +133,35 @@ static void DCOPY_check_paths(void)
         bool dest_required_to_be_dir = false;
 
         /* check whether dest exists, its type, and whether it's writable */
-        if(dest_param.path_stat_valid) {
+        if(params_ptr->dest_param.path_stat_valid) {
             /* we could stat dest path, so something is there */
             dest_exists = true;
 
             /* now determine its type */
-            if(S_ISDIR(dest_param.path_stat.st_mode)) {
+            if(S_ISDIR(params_ptr->dest_param.path_stat.st_mode)) {
                 /* dest is a directory */
                 dest_is_dir  = true;
             }
-            else if(S_ISREG(dest_param.path_stat.st_mode)) {
+            else if(S_ISREG(params_ptr->dest_param.path_stat.st_mode)) {
                 /* dest is a file */
                 dest_is_file = true;
             }
-            else if(S_ISLNK(dest_param.path_stat.st_mode)) {
+            else if(S_ISLNK(params_ptr->dest_param.path_stat.st_mode)) {
                 /* dest is a symlink, but to what? */
-                if (dest_param.target_stat_valid) {
+                if (params_ptr->dest_param.target_stat_valid) {
                     /* target of the symlink exists, determine what it is */
-                    if(S_ISDIR(dest_param.target_stat.st_mode)) {
+                    if(S_ISDIR(params_ptr->dest_param.target_stat.st_mode)) {
                         /* dest is link to a directory */
                         dest_is_link_to_dir = true;
                     }
-                    else if(S_ISREG(dest_param.target_stat.st_mode)) {
+                    else if(S_ISREG(params_ptr->dest_param.target_stat.st_mode)) {
                         /* dest is link to a file */
                         dest_is_link_to_file = true;
                     }
                     else {
                         /* unsupported type */
                         MFU_LOG(MFU_LOG_ERR, "Unsupported filetype `%s' --> `%s'",
-                            dest_param.orig, dest_param.target);
+                            params_ptr->dest_param.orig, params_ptr->dest_param.target);
                         valid = 0;
                         goto bcast;
                     }
@@ -169,7 +170,7 @@ static void DCOPY_check_paths(void)
                     /* dest is a link, but its target does not exist,
                      * consider this an error */
                     MFU_LOG(MFU_LOG_ERR, "Destination is broken symlink `%s'",
-                        dest_param.orig);
+                        params_ptr->dest_param.orig);
                     valid = 0;
                     goto bcast;
                 }
@@ -177,15 +178,15 @@ static void DCOPY_check_paths(void)
             else {
                 /* unsupported type */
                 MFU_LOG(MFU_LOG_ERR, "Unsupported filetype `%s'",
-                    dest_param.orig);
+                    params_ptr->dest_param.orig);
                 valid = 0;
                 goto bcast;
             }
 
             /* check that dest is writable */
-            if(mfu_access(dest_param.path, W_OK) < 0) {
+            if(mfu_access(params_ptr->dest_param.path, W_OK) < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Destination is not writable `%s'",
-                    dest_param.path);
+                    params_ptr->dest_param.path);
                 valid = 0;
                 goto bcast;
             }
@@ -195,7 +196,7 @@ static void DCOPY_check_paths(void)
              * check that its parent is writable */
 
             /* compute parent path */
-            mfu_path* parent = mfu_path_from_str(dest_param.path);
+            mfu_path* parent = mfu_path_from_str(params_ptr->dest_param.path);
             mfu_path_dirname(parent);
             char* parent_str = mfu_path_strdup(parent);
             mfu_path_delete(&parent);
@@ -217,7 +218,7 @@ static void DCOPY_check_paths(void)
 
         /* if caller specifies more than one source,
          * then dest has to be a directory */
-        if(num_src_params > 1) {
+        if(params_ptr->num_src_params > 1) {
             dest_required_to_be_dir = true;
         }
 
@@ -227,7 +228,7 @@ static void DCOPY_check_paths(void)
            (!dest_exists || (!dest_is_dir && !dest_is_link_to_dir)))
         {
             MFU_LOG(MFU_LOG_ERR, "Destination is not a directory `%s'",
-                dest_param.orig);
+                params_ptr->dest_param.orig);
             valid = 0;
             goto bcast;
         }
@@ -285,27 +286,27 @@ void DCOPY_parse_path_args(char** argv, \
     }
 
     /* determine number of source paths */
-    src_params = NULL;
-    num_src_params = last_arg_index - optind_local;
+    params_ptr->src_params = NULL;
+    params_ptr->num_src_params = last_arg_index - optind_local;
 
     /* allocate space to record info about each source */
-    size_t src_params_bytes = ((size_t) num_src_params) * sizeof(mfu_param_path);
-    src_params = (mfu_param_path*) MFU_MALLOC(src_params_bytes);
+    size_t src_params_bytes = ((size_t) params_ptr->num_src_params) * sizeof(mfu_param_path);
+    params_ptr->src_params = (mfu_param_path*) MFU_MALLOC(src_params_bytes);
 
     /* record standardized paths and stat info for each source */
     int opt_index;
     for(opt_index = optind_local; opt_index < last_arg_index; opt_index++) {
         char* path = argv[opt_index];
         int idx = opt_index - optind_local;
-        mfu_param_path_set(path, &src_params[idx]);
+        mfu_param_path_set(path, &(params_ptr->src_params[idx]));
     }
 
     /* standardize destination path */
     const char* dstpath = argv[last_arg_index];
-    mfu_param_path_set(dstpath, &dest_param);
+    mfu_param_path_set(dstpath, &(params_ptr->dest_param));
 
     /* copy the destination path to user opts structure */
-    DCOPY_user_opts.dest_path = MFU_STRDUP(dest_param.path);
+    DCOPY_user_opts.dest_path = MFU_STRDUP(params_ptr->dest_param.path);
 
     /* check that source and destinations are ok */
     DCOPY_check_paths();
@@ -318,9 +319,9 @@ void DCOPY_walk_paths(mfu_flist flist)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     int i;
-    for (i = 0; i < num_src_params; i++) {
+    for (i = 0; i < params_ptr->num_src_params; i++) {
         /* get path for step */
-        const char* target = src_params[i].path;
+        const char* target = params_ptr->src_params[i].path;
 
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Walking %s", target);
@@ -341,9 +342,9 @@ char* DCOPY_build_dest(const char* name)
     /* identify which source directory this came from */
     int i;
     int idx = -1;
-    for (i = 0; i < num_src_params; i++) {
+    for (i = 0; i < params_ptr->num_src_params; i++) {
         /* get path for step */
-        const char* path = src_params[i].path;
+        const char* path = params_ptr->src_params[i].path;
 
         /* get length of source path */
         size_t len = strlen(path);
@@ -365,7 +366,7 @@ char* DCOPY_build_dest(const char* name)
     mfu_path* item = mfu_path_from_str(name);
 
     /* get source directory */
-    mfu_path* src = mfu_path_from_str(src_params[i].path);
+    mfu_path* src = mfu_path_from_str(params_ptr->src_params[i].path);
 
     /* get number of components in item */
     int item_components = mfu_path_components(item);
@@ -387,7 +388,7 @@ char* DCOPY_build_dest(const char* name)
     mfu_path_slice(item, cut, keep);
 
     /* prepend destination path */
-    mfu_path_prepend_str(item, dest_param.path);
+    mfu_path_prepend_str(item, params_ptr->dest_param.path);
 
     /* convert to a NUL-terminated string */
     char* dest = mfu_path_strdup(item);
@@ -403,15 +404,15 @@ char* DCOPY_build_dest(const char* name)
 void DCOPY_free_path_args(void)
 {
     /* free memory associated with destination path */
-    mfu_param_path_free(&dest_param);
+    mfu_param_path_free(&params_ptr->dest_param);
 
     /* free memory associated with source paths */
     int i;
-    for(i = 0; i < num_src_params; i++) {
-        mfu_param_path_free(&src_params[i]);
+    for(i = 0; i < params_ptr->num_src_params; i++) {
+        mfu_param_path_free(&params_ptr->src_params[i]);
     }
-    num_src_params = 0;
-    mfu_free(&src_params);
+    params_ptr->num_src_params = 0;
+    mfu_free(&params_ptr->src_params);
 }
 
 int DCOPY_input_flist_skip(const char* name, void* args)
@@ -421,9 +422,9 @@ int DCOPY_input_flist_skip(const char* name, void* args)
 
     /* iterate over each source path */
     int i;
-    for (i = 0; i < num_src_params; i++) {
+    for (i = 0; i < params_ptr->num_src_params; i++) {
         /* create mfu_path of source path */
-        char* src_name = src_params[i].path;
+        char* src_name = params_ptr->src_params[i].path;
         const char* src_path = mfu_path_from_str(src_name);
 
         /* check whether path is contained within or equal to

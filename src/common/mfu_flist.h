@@ -144,9 +144,6 @@ typedef struct {
     int   fd;   /* file descriptor */
 } mfu_copy_file_cache_t;
 
-/** Cache most recent open file descriptors. */
-//mfu_copy_file_cache_t mfu_copy_file_cache;
-
 /** Cache most recent open file descriptor to avoid opening / closing the same file */
 extern mfu_copy_file_cache_t mfu_copy_src_cache;
 extern mfu_copy_file_cache_t mfu_copy_dst_cache;
