@@ -21,7 +21,20 @@
 #ifndef __DCOPY_HANDLE_ARGS_H
 #define __DCOPY_HANDLE_ARGS_H
 
-#include "common.h"
+/* Autotool defines. */
+#include "../../config.h"
+
+#include "mpi.h"
+
+#include "mfu.h"
+
+#include <libcircle.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <utime.h>
 
 void DCOPY_parse_path_args(char** argv, int optind, int argc);
 
