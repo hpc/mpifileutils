@@ -1,31 +1,31 @@
 #!/bin/bash
 
-#test to make sure all permissions are being set in octal mode on all files recurseively
+# test to make sure all permissions are being set in octal mode on all files recurseively
 
-#NOTE: need to figure out how to check all of the expected results when user read and write
+# TODO: need to figure out how to check all of the expected results when user read and write
 # bits are turned off because find gets a permission denied
 
-#generate random number between 700 - 777 to use for octal
+# generate random number between 700 - 777 to use for octal
 OCTAL="$(shuf -i700-777 -n1)"
 echo "OCTAL value generated is: $OCTAL"
 
-#make directories to test, maybe I should use more files/directories???
-#maybe generate longer file trees here eventually
+# TODO: directories to test, maybe I should use more files/directories???
+# TODO: generate longer file trees here eventually
 mkdir -p ~/tmp0/tmp1/tmp2
 
-#get directory where dchmod command is, set default to home directory if nothing passed in
+# get directory where dchmod command is, set default to home directory if nothing passed in
 if [ "$#" -eq 0 ]; then
-        DCHMOD=~/fileutils.git/install/bin/dchmod
+        echo "provide path to dchmod" 
 else 
         DCHMOD=$1
 fi
 
-#turn on permissions, then check all of the files/directories are set 
+# turn on permissions, then check all of the files/directories are set 
 $DCHMOD -v -m $OCTAL ~/tmp0
 
 EXPECTED_RESULT=$OCTAL
 
-#total count, and passed count variables to check that they match
+# total count, and passed count variables to check that they match
 TOTAL_FILE_COUNT=0
 PASSED_FILE_COUNT=0
 
