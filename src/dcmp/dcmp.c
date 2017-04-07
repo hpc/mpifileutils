@@ -862,6 +862,75 @@ static void dcmp_strmap_compare_data(
     return;
 }
 
+static void time_strmap_compare(mfu_flist src_list, double start_compare, 
+        double end_compare, uint64_t total_bytes_read) {
+    
+    /* if the verbose option is set print the timing data
+        report compare count, time, and rate */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+       /* find out how many files were compared */
+       uint64_t all_count = mfu_flist_global_size(src_list);
+
+       /* get the amount of time the compare function took */
+       double time_diff = end_compare - start_compare;
+
+       /* calculate byte and file rate */
+       double file_rate = 0.0;
+       double byte_rate = 0.0;
+       if (time_diff > 0.0) {
+           file_rate = ((double)all_count) / time_diff;
+           byte_rate = ((double)total_bytes_read) / time_diff;
+       }
+
+       /* convert uint64 to strings for printing to user */
+       char starttime_str[256];
+       char endtime_str[256];
+
+       /* snprintf takes in a char* restrict type as a first argument
+        * so convert to this type before passing it to avoid the 
+        * compiler warning */
+       snprintf(starttime_str, 256, "%f", start_compare);
+       snprintf(endtime_str, 256, "%f", end_compare);
+
+       /* convert time to time_t */
+       time_t start_rawtime = (time_t)start_compare;
+       time_t end_rawtime   = (time_t)end_compare;
+
+       /* format start & end time string I made copies of the localstart
+        * & localend because the next call to localtime was overriding
+        * the second call */
+       struct tm* localstart = localtime(&start_rawtime);
+       struct tm cp_localstart = *localstart;
+       struct tm* localend = localtime(&end_rawtime);
+       struct tm cp_localend = *localend;
+       strftime(starttime_str, 256, "%b-%d-%Y, %H:%M:%S", &cp_localstart);
+       strftime(endtime_str, 256, "%b-%d-%Y, %H:%M:%S", &cp_localend);
+
+       /* convert size to units */
+       double size_tmp;
+       const char* size_units;
+       mfu_format_bytes(total_bytes_read, &size_tmp, &size_units);
+
+       /* convert bandwidth to units */
+       double total_bytes_tmp;
+       const char* rate_units;
+       mfu_format_bw(byte_rate, &total_bytes_tmp, &rate_units);
+
+       MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
+       MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
+       MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", time_diff);
+       MFU_LOG(MFU_LOG_INFO, "  Files: %" PRId64, all_count);
+       MFU_LOG(MFU_LOG_INFO, "Bytes read: %.3lf %s (%" PRId64 " bytes)",
+            size_tmp, size_units, total_bytes_read);
+       MFU_LOG(MFU_LOG_INFO, "Byte Rate: %.3lf %s " \
+            "(%.3" PRId64 " bytes in %.3lf seconds)", \
+            total_bytes_tmp, rate_units, total_bytes_read, time_diff); 
+       MFU_LOG(MFU_LOG_INFO, "File Rate: %lu " \
+            "items in %f seconds (%f items/sec)", \
+            all_count, time_diff, file_rate);     
+    }
+}
+
 /* loop on the dest map to check for files only in the dst list 
  * and copy to a remove_list for the --sync option */
 static void dcmp_only_dst(strmap* src_map,
@@ -899,7 +968,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
                                 const char* dest_path)
 {
     /* wait for all tasks and start timer */
-    //MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
     double start_compare = MPI_Wtime();
 
     /* create compare_lists */
@@ -1030,7 +1099,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     }
 
     /* wait for all procs to finish before stopping timer */
-    //MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
     double end_compare = MPI_Wtime();
    
     /* initalize total_bytes_read to zero */
@@ -1041,70 +1110,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
         total_bytes_read = get_total_bytes_read(src_compare_list);
     }
 
-    /* if the verbose option is set print the timing data
-        report compare count, time, and rate */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-       /* find out how many files were compared */
-       uint64_t all_count = mfu_flist_global_size(src_list);
-
-       /* get the amount of time the compare function took */
-       double time_diff = end_compare - start_compare;
-
-       /* calculate byte and file rate */
-       double file_rate = 0.0;
-       double byte_rate = 0.0;
-       if (time_diff > 0.0) {
-           file_rate = ((double)all_count) / time_diff;
-           byte_rate = ((double)total_bytes_read) / time_diff;
-       }
-
-       /* convert uint64 to strings for printing to user */
-       char starttime_str[256];
-       char endtime_str[256];
-
-       /* snprintf takes in a char* restrict type as a first argument
-        * so convert to this type before passing it to avoid the 
-        * compiler warning */
-       snprintf(starttime_str, 256, "%f", start_compare);
-       snprintf(endtime_str, 256, "%f", end_compare);
-
-       /* convert time to time_t */
-       time_t start_rawtime = (time_t)start_compare;
-       time_t end_rawtime   = (time_t)end_compare;
-
-       /* format start & end time string I made copies of the localstart
-        * & localend because the next call to localtime was overriding
-        * the second call */
-       struct tm* localstart = localtime(&start_rawtime);
-       struct tm cp_localstart = *localstart;
-       struct tm* localend = localtime(&end_rawtime);
-       struct tm cp_localend = *localend;
-       strftime(starttime_str, 256, "%b-%d-%Y, %H:%M:%S", &cp_localstart);
-       strftime(endtime_str, 256, "%b-%d-%Y, %H:%M:%S", &cp_localend);
-
-       /* convert size to units */
-       double size_tmp;
-       const char* size_units;
-       mfu_format_bytes(total_bytes_read, &size_tmp, &size_units);
-
-       /* convert bandwidth to units */
-       double total_bytes_tmp;
-       const char* rate_units;
-       mfu_format_bw(byte_rate, &total_bytes_tmp, &rate_units);
-
-       MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
-       MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
-       MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", time_diff);
-       MFU_LOG(MFU_LOG_INFO, "  Files: %" PRId64, all_count);
-       MFU_LOG(MFU_LOG_INFO, "Bytes read: %.3lf %s (%" PRId64 " bytes)",
-            size_tmp, size_units, total_bytes_read);
-       MFU_LOG(MFU_LOG_INFO, "Byte Rate: %.3lf %s " \
-            "(%.3" PRId64 " bytes in %.3lf seconds)", \
-            total_bytes_tmp, rate_units, total_bytes_read, time_diff); 
-       MFU_LOG(MFU_LOG_INFO, "File Rate: %lu " \
-            "items in %f seconds (%f items/sec)", \
-            all_count, time_diff, file_rate);     
-    }
+    time_strmap_compare(src_list, start_compare, end_compare, total_bytes_read);
     
     /* if the sync option is on then we need to remove the files
      * from the destination list that are not in the src list. Then,
