@@ -1910,12 +1910,10 @@ int main(int argc, char** argv)
     /* free our path */
     mfu_path_delete(&path);
 
-#if 0
     /* write data to cache file */
     if (outputname != NULL) {
         mfu_flist_write_cache(outputname, flist);
     }
-#endif
 
     /* free users, groups, and files objects */
     mfu_flist_free(&flist);
