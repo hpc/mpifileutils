@@ -18,8 +18,6 @@
  * For details, see https://github.com/hpc/fileutils.
  * Please also read the LICENSE file.
 */
-#include "handle_args.h"
-#include "mfu_flist.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <getopt.h>
@@ -31,7 +29,9 @@
 #include <errno.h>
 #include <dtcmp.h>
 #include <inttypes.h>
-
+#define _XOPEN_SOURCE 600
+#include <fcntl.h>
+#include <string.h> 
 /* for bool type, true/false macros */
 #include <stdbool.h>
 #include <assert.h>
@@ -39,6 +39,8 @@
 #include "mfu.h"
 #include "strmap.h"
 #include "list.h"
+#include "handle_args.h"
+#include "mfu_flist.h"
 
 /* globals to hold user-input paths */
 static mfu_param_path param1;
@@ -896,7 +898,10 @@ static void dcmp_strmap_compare(mfu_flist src_list,
                                 strmap* src_map,
                                 mfu_flist dst_list,
                                 strmap* dst_map,
-                                size_t strlen_prefix, int do_sync)
+                                size_t strlen_prefix, 
+                                int do_sync,
+                                const char* src_path,
+                                const char* dest_path)
 {
     /* wait for all tasks and start timer */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -905,13 +910,15 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     /* create compare_lists */
     mfu_flist src_compare_list = mfu_flist_subset(src_list);
     mfu_flist dst_compare_list = mfu_flist_subset(dst_list);
-    
-    /* dst remove list for sync option */
+  
+    /* remove and copy lists for sync option */ 
     mfu_flist dst_remove_list;
-
+    mfu_flist src_cp_list; 
+    
     /* create dst remove list if sync option is on */
     if (do_sync) {
         dst_remove_list = mfu_flist_subset(dst_list);
+        src_cp_list = mfu_flist_subset(src_list);
     }
 
     /* iterate over each item in source map */
@@ -930,10 +937,17 @@ static void dcmp_strmap_compare(mfu_flist src_list,
         rc = dcmp_strmap_item_index(dst_map, key, &dst_index);
         if (rc) {
             dcmp_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_ONLY_SRC);
+            
+            /* copy items only in src directory into src copy list
+             * for sync option (will be later copied into dst dir) */ 
+            if (do_sync) { 
+                mfu_flist_file_copy(src_list, src_index, src_cp_list);
+            }
+            
             /* skip uncommon files, all other states are DCMPS_INIT */
             continue;
         }
-
+        
         dcmp_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_COMMON);
         dcmp_strmap_item_update(dst_map, key, DCMPF_EXIST, DCMPS_COMMON);
 
@@ -1014,10 +1028,13 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     mfu_flist_summarize(src_compare_list);
     mfu_flist_summarize(dst_compare_list);
 
-    /* if sync option was specified then check for dst/target files
-     * that are not in the src list, and summarize the list before
-     * removing it */
+    /* if the sync option is on then we need to remove the files
+     * from the destination list that are not in the src list. Then,
+     * we copy the files that are only in the src list into the 
+     * destination list.*/   
+    /* TODO: copy/replace bytes of the files that are both in src/dest */
     if (do_sync) {
+        
         /* returns 1 and copies the dst/target file to the remove list if
          * the file only exists in dst/target list */
         int rc = dcmp_only_dst(src_map, dst_map, dst_list, dst_remove_list);
@@ -1025,6 +1042,49 @@ static void dcmp_strmap_compare(mfu_flist src_list,
             mfu_flist_summarize(dst_remove_list);
             mfu_flist_unlink(dst_remove_list);
         }
+
+        /* allocate buffer to read/write files, aligned on 1MB boundaraies */
+        size_t alignment = 1024*1024;
+        DCOPY_user_opts.block_buf1 = (char*) MFU_MEMALIGN(
+        DCOPY_user_opts.block_size, alignment);
+        DCOPY_user_opts.block_buf2 = (char*) MFU_MEMALIGN(
+        DCOPY_user_opts.block_size, alignment); 
+      
+        /* summarize the src copy list for files 
+         * that need to be copied into dest directory */ 
+        mfu_flist_summarize(src_cp_list); 
+       
+        /* setup parameters for src and dest */
+        mfu_flist_copy(src_cp_list, 1, src_path, dest_path, 1, do_sync);
+        
+        /* split items in file list into sublists depending on their
+        * directory depth */
+        int levels, minlevel;
+        mfu_flist* lists;
+        mfu_flist_array_by_depth(src_cp_list, &levels, &minlevel, &lists);
+
+        /* TODO: filter out files that are bigger than 0 bytes if we can't read them */
+
+        /* create directories, from top down */
+        mfu_create_directories(levels, minlevel, lists);
+
+        /* create files and links */
+        mfu_create_files(levels, minlevel, lists);
+
+        /* copy data */
+        mfu_copy_files(src_cp_list, DCOPY_user_opts.chunk_size);
+
+        /* close files */
+        mfu_copy_close_file(&mfu_copy_src_cache);
+        mfu_copy_close_file(&mfu_copy_dst_cache);
+
+        /* set permissions, ownership, and timestamps if needed */
+        mfu_copy_set_metadata(levels, minlevel, lists);
+
+        /* free our lists of levels */
+        mfu_flist_array_free(levels, &lists);
+        mfu_flist_free(&src_cp_list);
+        mfu_flist_free(&dst_remove_list);
     }
 
     /* compare the contents of the files if we have anything in the compare list */
@@ -1110,11 +1170,6 @@ static void dcmp_strmap_compare(mfu_flist src_list,
             all_count, time_diff, file_rate);     
     }
     
-    /* free the dst_remove_list if sync option is on */
-    if (do_sync) {
-        mfu_flist_free(&dst_remove_list);
-    }
-
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
     mfu_flist_free(&src_compare_list); 
@@ -2155,10 +2210,10 @@ int main(int argc, char **argv)
     /* map each file name to its index and its comparison state */
     strmap* map1 = dcmp_strmap_creat(flist3, path1);
     strmap* map2 = dcmp_strmap_creat(flist4, path2);
-
+    
     /* compare files in map1 with those in map2 */
-    dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1), do_sync);
-
+    dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1), do_sync, usrpath1, usrpath2);
+    
     /* check the results are valid */
     if (options.debug) {
         dcmp_strmap_check(map1, map2);
@@ -2176,7 +2231,7 @@ int main(int argc, char **argv)
     mfu_flist_free(&flist2);
     mfu_flist_free(&flist3);
     mfu_flist_free(&flist4);
-
+    
     /* free source and dest params */
     mfu_param_path_free(&param1);
     mfu_param_path_free(&param2);

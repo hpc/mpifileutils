@@ -21,20 +21,12 @@
 #ifndef __DCOPY_HANDLE_ARGS_H
 #define __DCOPY_HANDLE_ARGS_H
 
-/* Autotool defines. */
-#include "../../config.h"
-
-#include "mpi.h"
-
 #include "mfu.h"
+#include "libcircle.h"
 
-#include <libcircle.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <utime.h>
+void mfu_flist_copy(mfu_flist flist, int num_src_paths,
+       const char* src_path, const char* dest_path,
+       int preserve, int do_sync); 
 
 void DCOPY_parse_path_args(char** argv, int optind, int argc);
 

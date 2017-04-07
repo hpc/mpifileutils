@@ -304,11 +304,12 @@ static void list_delete(flist_t* flist)
 static elem_t* list_get_elem(flist_t* flist, uint64_t idx)
 {
     uint64_t max = flist->list_count;
-
+    
     /* build index of list elements if we don't already have one */
     if (flist->list_index == NULL) {
         /* allocate array to record pointer to each element */
         size_t index_size = max * sizeof(elem_t*);
+        
         flist->list_index = (elem_t**) MFU_MALLOC(index_size);
 
         /* get pointer to each element */
@@ -1653,11 +1654,11 @@ void mfu_copy_files(mfu_flist list, uint64_t chunk_size)
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Copying data.");
     }
-
+    
     /* split file list into a linked list of file sections,
      * this evenly spreads the file sections across processes */
     mfu_file_chunk* p = mfu_file_chunk_list_alloc(list, chunk_size);
-
+    
     /* loop over and copy data for each file section we're responsible for */
     while (p != NULL) {
         /* get name of destination file */
@@ -1677,7 +1678,7 @@ void mfu_copy_files(mfu_flist list, uint64_t chunk_size)
         /* update pointer to next element */
         p = p->next;
     }
-
+    
     /* free the linked list */
     mfu_file_chunk_list_free(&p);
 }

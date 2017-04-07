@@ -41,6 +41,7 @@ typedef struct mfu_copy_params{
   int num_src_params; /* get number of src parameters */ 
   mfu_param_path* src_params; /* pointer to the src_params */
   mfu_param_path dest_param; /* dest param variable */
+  int do_sync;
 } mfu_copy_params;
 static mfu_copy_params cp_params;
 static mfu_copy_params* params_ptr = &cp_params;
@@ -258,6 +259,42 @@ bcast:
     MPI_Bcast(&DCOPY_user_opts.copy_into_dir, 1, MPI_INT, 0, MPI_COMM_WORLD);
 }
 
+/* set the src and dest path parameters, and pass in preserve
+ * perms flag to tell whether or not to preserve permissions
+ * and timestamps, etc */
+void mfu_flist_copy(mfu_flist flist, int num_src_paths,
+       const char* src_path, const char* dest_path,
+       int preserve, int do_sync) {
+    /* get current rank */  
+    int rank; 
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+   
+    if (preserve) {
+        DCOPY_user_opts.preserve = true;
+    }
+
+    /* set number of source paths */
+    params_ptr->src_params = NULL;
+    params_ptr->num_src_params = num_src_paths;
+    params_ptr->do_sync = 1;
+    
+    /* allocate space to record info about source */
+    size_t src_params_bytes = ((size_t) params_ptr->num_src_params) * sizeof(mfu_param_path);
+    params_ptr->src_params = (mfu_param_path*) MFU_MALLOC(src_params_bytes);
+
+    /* record standardized path and stat info for source */
+    mfu_param_path_set(src_path, &(params_ptr->src_params[0]));
+
+    /* standardize destination path */
+    mfu_param_path_set(dest_path, &(params_ptr->dest_param));
+
+    /* copy the destination path to user opts structure */
+    DCOPY_user_opts.dest_path = MFU_STRDUP(params_ptr->dest_param.path);
+
+    /* check that source and destinations are ok */
+    DCOPY_check_paths();
+} 
+
 /**
  * Parse the source and destination paths that the user has provided.
  */
@@ -378,7 +415,9 @@ char* DCOPY_build_dest(const char* name)
      * otherwise cut all components listed in source path */
     int cut = src_components;
     if (DCOPY_user_opts.copy_into_dir && cut > 0) {
-        cut--;
+        if (!params_ptr->do_sync) {
+            cut--;
+        }
     }
 
     /* compute number of components to keep */
