@@ -1113,8 +1113,8 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     /* TODO: copy/replace bytes of the files that are both in src/dest */
     if (do_sync) {
         
-        /* returns 1 and copies the dst/target file to the remove list if
-         * the file only exists in dst/target list */
+        /* copy files that are only in the destination directory,
+         * and then remove those files */
         dcmp_only_dst(src_map, dst_map, dst_list, dst_remove_list);
         mfu_flist_summarize(dst_remove_list);
         mfu_flist_unlink(dst_remove_list);
@@ -1133,8 +1133,11 @@ static void dcmp_strmap_compare(mfu_flist src_list,
         /* setup parameters for src and dest */
         mfu_flist_set_copy_params(1, src_path, dest_path, 1, do_sync);
         
+        /* copy the files only in the source direcory into
+         * the destination directory */ 
         mfu_flist_copy(src_cp_list, 1, do_sync);  
 
+        /* free the lists used for copying and removing files */
         mfu_flist_free(&src_cp_list);
         mfu_flist_free(&dst_remove_list);
     }
