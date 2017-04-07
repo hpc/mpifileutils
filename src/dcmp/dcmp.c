@@ -864,12 +864,9 @@ static void dcmp_strmap_compare_data(
 
 /* loop on the dest map to check for files only in the dst list 
  * and copy to a remove_list for the --sync option */
-static int dcmp_only_dst(strmap* src_map,
+static void dcmp_only_dst(strmap* src_map,
     strmap* dst_map, mfu_flist dst_list, mfu_flist dst_remove_list)
 {
-    /* variable to check if file is only in dst list */
-    int only_dest = 0;
-
     /* iterate over each item in dest map */
     const strmap_node* node;
     strmap_foreach(dst_map, node) {
@@ -886,11 +883,9 @@ static int dcmp_only_dst(strmap* src_map,
         ret = dcmp_strmap_item_index(src_map, key, &src_index);
         if (ret) {
             /* This file only exist in dest */
-            only_dest = 1;
             mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
         }
     }
-    return only_dest;
 }
 
 /* compare entries from src into dst */
@@ -904,7 +899,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
                                 const char* dest_path)
 {
     /* wait for all tasks and start timer */
-    MPI_Barrier(MPI_COMM_WORLD);
+    //MPI_Barrier(MPI_COMM_WORLD);
     double start_compare = MPI_Wtime();
 
     /* create compare_lists */
@@ -1027,42 +1022,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     /* summarize lists of files for which we need to compare data contents */
     mfu_flist_summarize(src_compare_list);
     mfu_flist_summarize(dst_compare_list);
-
-    /* if the sync option is on then we need to remove the files
-     * from the destination list that are not in the src list. Then,
-     * we copy the files that are only in the src list into the 
-     * destination list.*/   
-    /* TODO: copy/replace bytes of the files that are both in src/dest */
-    if (do_sync) {
-        
-        /* returns 1 and copies the dst/target file to the remove list if
-         * the file only exists in dst/target list */
-        int rc = dcmp_only_dst(src_map, dst_map, dst_list, dst_remove_list);
-        if (rc) {
-            mfu_flist_summarize(dst_remove_list);
-            mfu_flist_unlink(dst_remove_list);
-        }
-
-        /* allocate buffer to read/write files, aligned on 1MB boundaraies */
-        size_t alignment = 1024*1024;
-        DCOPY_user_opts.block_buf1 = (char*) MFU_MEMALIGN(
-        DCOPY_user_opts.block_size, alignment);
-        DCOPY_user_opts.block_buf2 = (char*) MFU_MEMALIGN(
-        DCOPY_user_opts.block_size, alignment); 
-      
-        /* summarize the src copy list for files 
-         * that need to be copied into dest directory */ 
-        mfu_flist_summarize(src_cp_list); 
-       
-        /* setup parameters for src and dest */
-        mfu_flist_set_copy_params(1, src_path, dest_path, 1, do_sync);
-        
-        mfu_flist_copy(src_cp_list, 1, do_sync);  
-
-        mfu_flist_free(&src_cp_list);
-        mfu_flist_free(&dst_remove_list);
-    }
-
+    
     /* compare the contents of the files if we have anything in the compare list */
     uint64_t cmp_global_size = mfu_flist_global_size(src_compare_list);
     if (cmp_global_size > 0) {
@@ -1070,7 +1030,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     }
 
     /* wait for all procs to finish before stopping timer */
-    MPI_Barrier(MPI_COMM_WORLD);
+    //MPI_Barrier(MPI_COMM_WORLD);
     double end_compare = MPI_Wtime();
    
     /* initalize total_bytes_read to zero */
@@ -1145,6 +1105,40 @@ static void dcmp_strmap_compare(mfu_flist src_list,
             "items in %f seconds (%f items/sec)", \
             all_count, time_diff, file_rate);     
     }
+    
+    /* if the sync option is on then we need to remove the files
+     * from the destination list that are not in the src list. Then,
+     * we copy the files that are only in the src list into the 
+     * destination list.*/   
+    /* TODO: copy/replace bytes of the files that are both in src/dest */
+    if (do_sync) {
+        
+        /* returns 1 and copies the dst/target file to the remove list if
+         * the file only exists in dst/target list */
+        dcmp_only_dst(src_map, dst_map, dst_list, dst_remove_list);
+        mfu_flist_summarize(dst_remove_list);
+        mfu_flist_unlink(dst_remove_list);
+        
+        /* allocate buffer to read/write files, aligned on 1MB boundaraies */
+        size_t alignment = 1024*1024;
+        DCOPY_user_opts.block_buf1 = (char*) MFU_MEMALIGN(
+        DCOPY_user_opts.block_size, alignment);
+        DCOPY_user_opts.block_buf2 = (char*) MFU_MEMALIGN(
+        DCOPY_user_opts.block_size, alignment); 
+      
+        /* summarize the src copy list for files 
+         * that need to be copied into dest directory */ 
+        mfu_flist_summarize(src_cp_list); 
+       
+        /* setup parameters for src and dest */
+        mfu_flist_set_copy_params(1, src_path, dest_path, 1, do_sync);
+        
+        mfu_flist_copy(src_cp_list, 1, do_sync);  
+
+        mfu_flist_free(&src_cp_list);
+        mfu_flist_free(&dst_remove_list);
+    }
+
     
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
