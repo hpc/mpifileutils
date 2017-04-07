@@ -957,6 +957,40 @@ static void dcmp_only_dst(strmap* src_map,
     }
 }
 
+static void dcmp_sync_files(strmap* src_map, strmap* dst_map,
+        const char* src_path, const char* dest_path, 
+        mfu_flist dst_list, mfu_flist dst_remove_list,
+        mfu_flist src_cp_list, int do_sync) {
+    
+    /* copy files that are only in the destination directory,
+     * and then remove those files */
+    dcmp_only_dst(src_map, dst_map, dst_list, dst_remove_list);
+    mfu_flist_summarize(dst_remove_list);
+    mfu_flist_unlink(dst_remove_list);
+        
+    /* allocate buffer to read/write files, aligned on 1MB boundaraies */
+    size_t alignment = 1024*1024;
+    DCOPY_user_opts.block_buf1 = (char*) MFU_MEMALIGN(
+    DCOPY_user_opts.block_size, alignment);
+    DCOPY_user_opts.block_buf2 = (char*) MFU_MEMALIGN(
+    DCOPY_user_opts.block_size, alignment); 
+    
+    /* summarize the src copy list for files 
+     * that need to be copied into dest directory */ 
+    mfu_flist_summarize(src_cp_list); 
+       
+    /* setup parameters for src and dest */
+    mfu_flist_set_copy_params(1, src_path, dest_path, 1, do_sync);
+        
+    /* copy the files only in the source direcory into
+     * the destination directory */ 
+    mfu_flist_copy(src_cp_list, 1, do_sync);  
+
+    /* free the lists used for copying and removing files */
+    mfu_flist_free(&src_cp_list);
+    mfu_flist_free(&dst_remove_list);
+}
+
 /* compare entries from src into dst */
 static void dcmp_strmap_compare(mfu_flist src_list,
                                 strmap* src_map,
@@ -1118,36 +1152,11 @@ static void dcmp_strmap_compare(mfu_flist src_list,
      * destination list.*/   
     /* TODO: copy/replace bytes of the files that are both in src/dest */
     if (do_sync) {
-        
-        /* copy files that are only in the destination directory,
-         * and then remove those files */
-        dcmp_only_dst(src_map, dst_map, dst_list, dst_remove_list);
-        mfu_flist_summarize(dst_remove_list);
-        mfu_flist_unlink(dst_remove_list);
-        
-        /* allocate buffer to read/write files, aligned on 1MB boundaraies */
-        size_t alignment = 1024*1024;
-        DCOPY_user_opts.block_buf1 = (char*) MFU_MEMALIGN(
-        DCOPY_user_opts.block_size, alignment);
-        DCOPY_user_opts.block_buf2 = (char*) MFU_MEMALIGN(
-        DCOPY_user_opts.block_size, alignment); 
-      
-        /* summarize the src copy list for files 
-         * that need to be copied into dest directory */ 
-        mfu_flist_summarize(src_cp_list); 
-       
-        /* setup parameters for src and dest */
-        mfu_flist_set_copy_params(1, src_path, dest_path, 1, do_sync);
-        
-        /* copy the files only in the source direcory into
-         * the destination directory */ 
-        mfu_flist_copy(src_cp_list, 1, do_sync);  
-
-        /* free the lists used for copying and removing files */
-        mfu_flist_free(&src_cp_list);
-        mfu_flist_free(&dst_remove_list);
+        /* sync the files that are in the source and destination
+         * directories */ 
+        dcmp_sync_files(src_map, dst_map, src_path, dest_path,
+                dst_list, dst_remove_list, src_cp_list, do_sync);
     }
-
     
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
