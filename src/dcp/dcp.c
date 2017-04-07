@@ -427,33 +427,9 @@ int main(int argc, \
         mfu_flist_free(&input_flist);
     }
 
-    /* split items in file list into sublists depending on their
-     * directory depth */
-    int levels, minlevel;
-    mfu_flist* lists;
-    mfu_flist_array_by_depth(flist, &levels, &minlevel, &lists);
-
-    /* TODO: filter out files that are bigger than 0 bytes if we can't read them */
-
-    /* create directories, from top down */
-    mfu_create_directories(levels, minlevel, lists);
-
-    /* create files and links */
-    mfu_create_files(levels, minlevel, lists);
-
-    /* copy data */
-    mfu_copy_files(flist, chunk_size);
-
-    /* close files */
-    mfu_copy_close_file(&mfu_copy_src_cache);
-    mfu_copy_close_file(&mfu_copy_dst_cache);
-
-    /* set permissions, ownership, and timestamps if needed */
-    mfu_copy_set_metadata(levels, minlevel, lists);
-
-    /* free our lists of levels */
-    mfu_flist_array_free(levels, &lists);
-
+    /* copy flist into destination */ 
+    mfu_flist_copy(flist, DCOPY_user_opts.preserve, 0); 
+    
     /* free our file lists */
     mfu_flist_free(&flist);
 

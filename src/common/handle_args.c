@@ -262,7 +262,7 @@ bcast:
 /* set the src and dest path parameters, and pass in preserve
  * perms flag to tell whether or not to preserve permissions
  * and timestamps, etc */
-void mfu_flist_copy(mfu_flist flist, int num_src_paths,
+void mfu_flist_set_copy_params(int num_src_paths,
        const char* src_path, const char* dest_path,
        int preserve, int do_sync) {
     /* get current rank */  
@@ -294,6 +294,36 @@ void mfu_flist_copy(mfu_flist flist, int num_src_paths,
     /* check that source and destinations are ok */
     DCOPY_check_paths();
 } 
+
+void mfu_flist_copy(mfu_flist src_cp_list, 
+        int preserve, int do_sync) {
+   /* split items in file list into sublists depending on their
+    * directory depth */
+    int levels, minlevel;
+    mfu_flist* lists;
+    mfu_flist_array_by_depth(src_cp_list, &levels, &minlevel, &lists);
+
+    /* TODO: filter out files that are bigger than 0 bytes if we can't read them */
+
+    /* create directories, from top down */
+    mfu_create_directories(levels, minlevel, lists);
+
+    /* create files and links */
+    mfu_create_files(levels, minlevel, lists);
+
+    /* copy data */
+    mfu_copy_files(src_cp_list, DCOPY_user_opts.chunk_size);
+
+    /* close files */
+    mfu_copy_close_file(&mfu_copy_src_cache);
+    mfu_copy_close_file(&mfu_copy_dst_cache);
+
+    /* set permissions, ownership, and timestamps if needed */
+    mfu_copy_set_metadata(levels, minlevel, lists);
+
+    /* free our lists of levels */
+    mfu_flist_array_free(levels, &lists);
+}
 
 /**
  * Parse the source and destination paths that the user has provided.
