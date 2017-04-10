@@ -1588,6 +1588,7 @@ static void print_usage(void)
     printf("Usage: dsh [options] <path> ...\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -f, --file <file>   - read list from file, and write processed list back to file\n");
     printf("  -i, --input <file>  - read list from file\n");
     printf("  -o, --output <file> - write processed list to file\n");
     printf("  -l, --lite          - walk file system without stat\n");
@@ -1628,6 +1629,7 @@ int main(int argc, char** argv)
 
     int option_index = 0;
     static struct option long_options[] = {
+        {"file",     1, 0, 'f'},
         {"input",    1, 0, 'i'},
         {"output",   1, 0, 'o'},
         {"lite",     0, 0, 'l'},
@@ -1639,7 +1641,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:lhv",
+                    argc, argv, "f:i:o:lhv",
                     long_options, &option_index
                 );
 
@@ -1648,6 +1650,11 @@ int main(int argc, char** argv)
         }
 
         switch (c) {
+            case 'f':
+                /* use the same file for input and output */
+                inputname  = MFU_STRDUP(optarg);
+                outputname = MFU_STRDUP(optarg);
+                break;
             case 'i':
                 inputname = MFU_STRDUP(optarg);
                 break;
