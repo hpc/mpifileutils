@@ -457,8 +457,10 @@ static int _dcmp_compare_data(
     int dst_fd,
     off_t offset,
     size_t size,
-    size_t buff_size)
+    size_t buff_size, 
+    int do_sync)
 {
+    printf("in _dcmp_compare_data function\n");
     /* assume we'll find that file contents are the same */
     int rc = 0;
 
@@ -476,9 +478,11 @@ static int _dcmp_compare_data(
     void* src_buf  = MFU_MALLOC(buff_size + 1);
     void* dest_buf = MFU_MALLOC(buff_size + 1);
 
+    int bytes_diff = 0;
+
     /* read and compare data from files */
     size_t total_bytes = 0;
-    while(size == 0 || total_bytes <= size) {
+    while(size == 0 || total_bytes < size) {
         /* determine number of bytes to read in this iteration */
         size_t left_to_read;
         if (size == 0) {
@@ -489,13 +493,13 @@ static int _dcmp_compare_data(
                 left_to_read = buff_size;
             }
         }
-
+        
         /* read data from source and destination */
         ssize_t src_read = mfu_read(src_name, src_fd, (ssize_t*)src_buf,
              left_to_read);
         ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf,
              left_to_read);
-
+        
         /* check for read errors */
         if (src_read < 0 || dst_read < 0) {
             /* hit a read error */
@@ -507,7 +511,9 @@ static int _dcmp_compare_data(
         if (src_read != dst_read) {
             /* one read came up shorter than the other */
             rc = 1;
-            break;
+            if (!do_sync) { 
+                break;
+            }
         }
 
         /* check for EOF */
@@ -520,8 +526,32 @@ static int _dcmp_compare_data(
         if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
             /* memory contents are different */
             rc = 1;
-            break;
+            
+            /* if memory contents are different and sync option is on, we want to 
+             * copy the src bytes to the destination file */ 
+            if (!do_sync) {
+                break;
+            } else {
+                bytes_diff = 1;
+            } 
         }
+       
+        /* if the bytes are different, and the sync option is on,
+         * then copy the bytes from the source into the destination
+         * TODO: need to handle case when the destination file
+         * is longer than the source file */ 
+        if (do_sync && bytes_diff) {
+            /* number of bytes to write */
+            size_t bytes_to_write = (size_t) src_read;
+
+            /* seek to position to write to in destination
+             * file */
+            mfu_lseek(dst_name, dst_fd, offset, SEEK_SET); 
+            
+            /* write data to destination file */
+            ssize_t num_of_bytes_written = mfu_write(dst_name, dst_fd, src_buf,
+                                      bytes_to_write);
+        } 
 
         /* add bytes to our total */
         total_bytes += (long unsigned int)src_read;
@@ -540,7 +570,8 @@ static int dcmp_compare_data(
     const char* dst_name,
     off_t offset,
     size_t length,
-    size_t buff_size)
+    size_t buff_size,
+    int do_sync)
 {
     /* open source file */
     int src_fd = mfu_open(src_name, O_RDONLY);
@@ -549,7 +580,7 @@ static int dcmp_compare_data(
     }
 
     /* open destination file */
-    int dst_fd = mfu_open(dst_name, O_RDONLY);
+    int dst_fd = mfu_open(dst_name, O_RDWR);
     if (dst_fd < 0) {
         mfu_close(src_name, src_fd);
         return -1;
@@ -561,7 +592,7 @@ static int dcmp_compare_data(
 
     /* compare file contents */
     int rc = _dcmp_compare_data(src_name, dst_name, src_fd, dst_fd,
-        offset, length, buff_size);
+        offset, length, buff_size, do_sync);
 
     /* close files */
     mfu_close(dst_name, dst_fd);
@@ -660,7 +691,8 @@ static void dcmp_strmap_compare_data(
     strmap* src_map,
     mfu_flist dst_compare_list,
     strmap* dst_map,
-    size_t strlen_prefix)
+    size_t strlen_prefix,
+    int do_sync)
 {
     /* get the largest filename */
     uint64_t max_name = mfu_flist_file_max_name(src_compare_list);
@@ -707,7 +739,8 @@ static void dcmp_strmap_compare_data(
         off_t length = (off_t)src_p->length;
         
         /* compare the contents of the files */
-        int rc = dcmp_compare_data(src_p->name, dst_p->name, offset, (size_t)length, 1048576);
+        int rc = dcmp_compare_data(src_p->name, dst_p->name, offset, 
+                (size_t)length, 1048576, do_sync);
 
         /* now record results of compare_data for sending to segmented scan */
         strncpy(name_ptr, src_p->name, max_name);
@@ -1060,7 +1093,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
              key);
         assert(rc >= 0);
 
-        if (!dcmp_option_need_compare(DCMPF_TYPE)) {
+        if (!dcmp_option_need_compare(DCMPF_TYPE) && !do_sync) {
             /*
              * Skip if no need to compare type.
              * All the following comparison depends on type.
@@ -1104,7 +1137,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
         dcmp_state state;
         rc = dcmp_strmap_item_state(src_map, key, DCMPF_SIZE, &state);
         assert(rc == 0);
-        if (state == DCMPS_DIFFER) {
+        if (state == DCMPS_DIFFER && !do_sync) {
             /* file size is different, their contents should be different */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
@@ -1129,7 +1162,8 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     /* compare the contents of the files if we have anything in the compare list */
     uint64_t cmp_global_size = mfu_flist_global_size(src_compare_list);
     if (cmp_global_size > 0) {
-        dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list, dst_map, strlen_prefix);
+        dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list, 
+                dst_map, strlen_prefix, do_sync);
     }
 
     /* wait for all procs to finish before stopping timer */
