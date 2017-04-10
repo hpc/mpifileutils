@@ -271,8 +271,8 @@ void mfu_format_bytes(uint64_t bytes, double* val, const char** units)
     return;
 }
 
-#define NUM_UNITS_BW (6)
-static const char* units_bw[] = {"B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s"};
+#define NUM_UNITS_BW (7)
+static const char* units_bw[] = {"B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s", "EB/s"};
 void mfu_format_bw(double bw, double* val, const char** units)
 {
     mfu_format_1024(bw, units_bw, NUM_UNITS_BW, val, units);
