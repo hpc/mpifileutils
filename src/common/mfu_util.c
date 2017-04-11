@@ -230,6 +230,42 @@ void mfu_bcast_strdup(const char* send, char** recv, int root, MPI_Comm comm)
     return;
 }
 
+static void mfu_format_1000(
+    double input,
+    const char** units_list,
+    int units_len,
+    double* val,
+    const char* units[])
+{
+    /* divide input by 1000 until it falls to less than 1000,
+     * increment units each time */
+    int idx = 0;
+    while (input / 1000.0 > 1.0) {
+        input /= 1000.0;
+        idx++;
+        if (idx == (units_len - 1)) {
+            /* we've gone as high as we can go */
+            break;
+        }
+    }
+
+    /* set output paramaters */
+    *val   = input;
+    *units = units_list[idx];
+
+    return;
+}
+
+/* given a number of items, return value converted to returned units */
+#define NUM_UNITS_COUNT (7)
+static const char* units_count[] = {"", "k", "m", "g", "t", "p", "e"};
+void mfu_format_count(uint64_t count, double* val, const char** units)
+{
+    double count_d = (double) count;
+    mfu_format_1000(count_d, units_count, NUM_UNITS_COUNT, val, units);
+    return;
+}
+
 static void mfu_format_1024(
     double input,
     const char** units_list,
@@ -261,6 +297,7 @@ static void mfu_format_1024(
 
     return;
 }
+
 /* given a number of bytes, return value converted to returned units */
 #define NUM_UNITS_BYTES (7)
 static const char* units_bytes[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB"};
