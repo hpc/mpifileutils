@@ -460,7 +460,6 @@ static int _dcmp_compare_data(
     size_t buff_size, 
     int do_sync)
 {
-    printf("in _dcmp_compare_data function\n");
     /* assume we'll find that file contents are the same */
     int rc = 0;
 
@@ -468,7 +467,7 @@ static int _dcmp_compare_data(
     if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
         return -1;
     }
-
+    
     /* seek to offset in destination file */
     if(mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
         return -1;
@@ -477,8 +476,6 @@ static int _dcmp_compare_data(
     /* allocate buffers to read file data */
     void* src_buf  = MFU_MALLOC(buff_size + 1);
     void* dest_buf = MFU_MALLOC(buff_size + 1);
-
-    int bytes_diff = 0;
 
     /* read and compare data from files */
     size_t total_bytes = 0;
@@ -531,16 +528,12 @@ static int _dcmp_compare_data(
              * copy the src bytes to the destination file */ 
             if (!do_sync) {
                 break;
-            } else {
-                bytes_diff = 1;
             } 
         }
        
         /* if the bytes are different, and the sync option is on,
-         * then copy the bytes from the source into the destination
-         * TODO: need to handle case when the destination file
-         * is longer than the source file */ 
-        if (do_sync && bytes_diff) {
+         * then copy the bytes from the source into the destination */
+        if (do_sync && rc == 1) {
             /* number of bytes to write */
             size_t bytes_to_write = (size_t) src_read;
 
@@ -556,7 +549,13 @@ static int _dcmp_compare_data(
         /* add bytes to our total */
         total_bytes += (long unsigned int)src_read;
     }
-
+    
+    /* make sure to truncate the file if dest is larger than the source
+     * when syncing files */ 
+    if (do_sync && rc == 1) {
+         truncate(dst_name, size);
+    }
+    
     /* free buffers */
     mfu_free(&dest_buf);
     mfu_free(&src_buf);
