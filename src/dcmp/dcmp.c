@@ -1000,13 +1000,6 @@ static void dcmp_sync_files(strmap* src_map, strmap* dst_map,
     mfu_flist_summarize(dst_remove_list);
     mfu_flist_unlink(dst_remove_list);
         
-    /* allocate buffer to read/write files, aligned on 1MB boundaraies */
-    size_t alignment = 1024*1024;
-    DCOPY_user_opts.block_buf1 = (char*) MFU_MEMALIGN(
-    DCOPY_user_opts.block_size, alignment);
-    DCOPY_user_opts.block_buf2 = (char*) MFU_MEMALIGN(
-    DCOPY_user_opts.block_size, alignment); 
-    
     /* summarize the src copy list for files 
      * that need to be copied into dest directory */ 
     mfu_flist_summarize(src_cp_list); 
@@ -2102,9 +2095,6 @@ int main(int argc, char **argv)
     /* Set default chunk size */
     uint64_t chunk_size = (1*1024*1024);
     DCOPY_user_opts.chunk_size = chunk_size ;
-
-    /* Set default block size */
-    DCOPY_user_opts.block_size = FD_BLOCK_SIZE;
 
     /* By default, don't have iput file. */
     DCOPY_user_opts.input_file = NULL;

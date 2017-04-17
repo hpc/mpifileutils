@@ -1293,8 +1293,19 @@ void mfu_copy_files(mfu_flist list, uint64_t chunk_size)
 
 void mfu_flist_copy(mfu_flist src_cp_list, int preserve, int do_sync)
 {
-   /* split items in file list into sublists depending on their
-    * directory depth */
+    /* TODO: consider file system striping params here */
+    /* hard code some configurables for now */
+
+    /* Set default block size */
+    DCOPY_user_opts.block_size = FD_BLOCK_SIZE;
+
+    /* allocate buffer to read/write files, aligned on 1MB boundaraies */
+    size_t alignment = 1024*1024;
+    DCOPY_user_opts.block_buf1 = (char*) MFU_MEMALIGN(DCOPY_user_opts.block_size, alignment);
+    DCOPY_user_opts.block_buf2 = (char*) MFU_MEMALIGN(DCOPY_user_opts.block_size, alignment);
+
+    /* split items in file list into sublists depending on their
+     * directory depth */
     int levels, minlevel;
     mfu_flist* lists;
     mfu_flist_array_by_depth(src_cp_list, &levels, &minlevel, &lists);
@@ -1319,4 +1330,10 @@ void mfu_flist_copy(mfu_flist src_cp_list, int preserve, int do_sync)
 
     /* free our lists of levels */
     mfu_flist_array_free(levels, &lists);
+
+    /* free buffers */
+    mfu_free(&DCOPY_user_opts.block_buf1);
+    mfu_free(&DCOPY_user_opts.block_buf2);
+
+    return;
 }

@@ -238,9 +238,6 @@ int main(int argc, \
     uint64_t chunk_size = (1*1024*1024);
     DCOPY_user_opts.chunk_size = chunk_size ;
 
-    /* Set default block size */
-    DCOPY_user_opts.block_size = FD_BLOCK_SIZE;
-
     /* By default, don't have iput file. */
     DCOPY_user_opts.input_file = NULL;
 
@@ -402,13 +399,6 @@ int main(int argc, \
 
     /** Parse the source and destination paths. */
     DCOPY_parse_path_args(argv, optind, argc);
-
-    /* allocate buffer to read/write files, aligned on 1MB boundaraies */
-    size_t alignment = 1024*1024;
-    DCOPY_user_opts.block_buf1 = (char*) MFU_MEMALIGN(
-        DCOPY_user_opts.block_size, alignment);
-    DCOPY_user_opts.block_buf2 = (char*) MFU_MEMALIGN(
-        DCOPY_user_opts.block_size, alignment);
 
     /* Grab a relative and actual start time for the epilogue. */
     time(&(DCOPY_statistics.time_started));
