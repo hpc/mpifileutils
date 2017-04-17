@@ -32,6 +32,7 @@ export LDFLAGS="-Wl,-rpath,${topdir}/install/lib -L${topdir}/install/lib -lcircl
   --prefix=$installdir \
   --disable-silent-rules \
   --with-dtcmp=$installdir && \
+make uninstall && \
 make VERBOSE=1 && \
 make VERBOSE=1 install
 if [ $? -ne 0 ] ; then
