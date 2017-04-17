@@ -100,11 +100,11 @@ typedef struct {
  * Define globals
  ***************************************/
 
-/** Where we should keep statistics related to this file copy. */
-static DCOPY_statistics_t DCOPY_statistics;
-
 /** Options specified by the user. */
 DCOPY_options_t DCOPY_user_opts;
+
+/** Where we should keep statistics related to this file copy. */
+static DCOPY_statistics_t DCOPY_statistics;
 
 /** Cache most recent open file descriptor to avoid opening / closing the same file */
 static mfu_copy_file_cache_t mfu_copy_src_cache;
@@ -419,7 +419,7 @@ static void DCOPY_copy_timestamps(
     return;
 }
 
-int mfu_copy_close_file(mfu_copy_file_cache_t* cache)
+static int mfu_copy_close_file(mfu_copy_file_cache_t* cache)
 {
     int rc = 0;
 
@@ -446,7 +446,7 @@ int mfu_copy_close_file(mfu_copy_file_cache_t* cache)
  * and permissions starting from deepest level and working upwards,
  * we go in this direction in case updating a file updates its
  * parent directory */
-void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists)
+static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists)
 {
     /* get current rank */
     int rank;
@@ -558,7 +558,7 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx)
 /* create directories, we work from shallowest level to the deepest
  * with a barrier in between levels, so that we don't try to create
  * a child directory until the parent exists */
-int mfu_create_directories(int levels, int minlevel, mfu_flist* lists)
+static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists)
 {
     /* get current rank */
     int rank;
@@ -769,7 +769,7 @@ static int mfu_create_file(mfu_flist list, uint64_t idx)
     return 0;
 }
 
-int mfu_create_files(int levels, int minlevel, mfu_flist* lists)
+static int mfu_create_files(int levels, int minlevel, mfu_flist* lists)
 {
     /* get current rank */
     int rank;
@@ -1268,7 +1268,7 @@ static int mfu_copy_file(
 /* After receiving all incoming chunks, process open and write their chunks 
  * to the files. The process which writes the last chunk to each file also 
  * truncates the file to correct size.  A 0-byte file still has one chunk. */
-void mfu_copy_files(mfu_flist list, uint64_t chunk_size)
+static void mfu_copy_files(mfu_flist list, uint64_t chunk_size)
 {
     /* get current rank */
     int rank;
