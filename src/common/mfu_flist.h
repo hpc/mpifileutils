@@ -393,6 +393,9 @@ mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args
 * to the caller */
 mfu_flist mfu_flist_spread(mfu_flist flist);
 
+/* copy items in list */
+void mfu_flist_copy(mfu_flist src_cp_list, int preserve, int do_sync);
+
 /* unlink all items in flist */
 void mfu_flist_unlink(mfu_flist flist);
 

@@ -28,9 +28,6 @@ void mfu_flist_set_copy_params(int num_src_paths,
        const char* src_path, const char* dest_path,
        int preserve, int do_sync); 
 
-void mfu_flist_copy(mfu_flist src_cp_list, 
-        int preserve, int do_sync);
-
 void DCOPY_parse_path_args(char** argv, int optind, int argc);
 
 /* walks each source path and adds entries to flist */
