@@ -83,6 +83,22 @@ static void DCOPY_reduce_fini(const void* buf, size_t size)
 }
 #endif
 
+/* called by single process upon detection of a problem */
+void DCOPY_abort(int code)
+{
+    MPI_Abort(MPI_COMM_WORLD, code);
+    exit(code);
+}
+
+/* called globally by all procs to exit */
+void DCOPY_exit(int code)
+{
+    /* CIRCLE_finalize or will this hang? */
+    mfu_finalize();
+    MPI_Finalize();
+    exit(code);
+}
+
 /**
  * Print a usage message.
  */
