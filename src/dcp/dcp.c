@@ -83,74 +83,6 @@ static void DCOPY_reduce_fini(const void* buf, size_t size)
 }
 #endif
 
-static int64_t DCOPY_sum_int64(int64_t val)
-{
-    long long val_ull = (long long) val;
-    long long sum;
-    MPI_Allreduce(&val_ull, &sum, 1, MPI_LONG_LONG, MPI_SUM, MPI_COMM_WORLD);
-    return (int64_t) sum;
-}
-
-/**
- * Print out information on the results of the file copy.
- */
-static void DCOPY_epilogue(int rank)
-{
-    double rel_time = DCOPY_statistics.wtime_ended - \
-                      DCOPY_statistics.wtime_started;
-    int64_t agg_dirs   = DCOPY_sum_int64(DCOPY_statistics.total_dirs);
-    int64_t agg_files  = DCOPY_sum_int64(DCOPY_statistics.total_files);
-    int64_t agg_links  = DCOPY_sum_int64(DCOPY_statistics.total_links);
-    int64_t agg_size   = DCOPY_sum_int64(DCOPY_statistics.total_size);
-    int64_t agg_copied = DCOPY_sum_int64(DCOPY_statistics.total_bytes_copied);
-    double agg_rate = (double)agg_copied / rel_time;
-
-    if(rank == 0) {
-        char starttime_str[256];
-        struct tm* localstart = localtime(&(DCOPY_statistics.time_started));
-        strftime(starttime_str, 256, "%b-%d-%Y,%H:%M:%S", localstart);
-
-        char endtime_str[256];
-        struct tm* localend = localtime(&(DCOPY_statistics.time_ended));
-        strftime(endtime_str, 256, "%b-%d-%Y,%H:%M:%S", localend);
-
-        int64_t agg_items = agg_dirs + agg_files + agg_links;
-
-        /* convert size to units */
-        double agg_size_tmp;
-        const char* agg_size_units;
-        mfu_format_bytes((uint64_t)agg_size, &agg_size_tmp, &agg_size_units);
-
-        /* convert bandwidth to units */
-        double agg_rate_tmp;
-        const char* agg_rate_units;
-        mfu_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
-
-        MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
-        MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
-        MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
-        MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
-        MFU_LOG(MFU_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
-        MFU_LOG(MFU_LOG_INFO, "  Files: %" PRId64, agg_files);
-        MFU_LOG(MFU_LOG_INFO, "  Links: %" PRId64, agg_links);
-        MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
-            agg_size_tmp, agg_size_units, agg_size);
-
-        MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
-            "(%.3" PRId64 " bytes in %.3lf seconds)", \
-            agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
-    }
-
-    /* free memory allocated to parse user params */
-    DCOPY_free_path_args();
-
-    /* free file I/O buffer */
-    mfu_free(&DCOPY_user_opts.block_buf2);
-    mfu_free(&DCOPY_user_opts.block_buf1);
-
-    return;
-}
-
 /**
  * Print a usage message.
  */
@@ -208,17 +140,6 @@ int main(int argc, \
     CIRCLE_cb_reduce_op(&DCOPY_reduce_op);
     CIRCLE_cb_reduce_fini(&DCOPY_reduce_fini);
 #endif
-
-    /* Initialize statistics */
-    DCOPY_statistics.total_dirs  = 0;
-    DCOPY_statistics.total_files = 0;
-    DCOPY_statistics.total_links = 0;
-    DCOPY_statistics.total_size  = 0;
-    DCOPY_statistics.total_bytes_copied = 0;
-
-    /* Initialize file cache */
-    mfu_copy_src_cache.name = NULL;
-    mfu_copy_dst_cache.name = NULL;
 
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
@@ -400,10 +321,6 @@ int main(int argc, \
     /** Parse the source and destination paths. */
     DCOPY_parse_path_args(argv, optind, argc);
 
-    /* Grab a relative and actual start time for the epilogue. */
-    time(&(DCOPY_statistics.time_started));
-    DCOPY_statistics.wtime_started = MPI_Wtime();
-
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
     if (DCOPY_user_opts.input_file == NULL) {
@@ -423,18 +340,12 @@ int main(int argc, \
     /* free our file lists */
     mfu_flist_free(&flist);
 
-    /* Determine the actual and relative end time for the epilogue. */
-    DCOPY_statistics.wtime_ended = MPI_Wtime();
-    time(&(DCOPY_statistics.time_ended));
+    /* free memory allocated to parse user params */
+    DCOPY_free_path_args();
 
-    /* force updates to disk */
-    if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Syncing updates to disk.");
-    }
-    sync();
-
-    /* Print the results to the user. */
-    DCOPY_epilogue(rank);
+    /* free file I/O buffer */
+    mfu_free(&DCOPY_user_opts.block_buf2);
+    mfu_free(&DCOPY_user_opts.block_buf1);
 
     DCOPY_exit(EXIT_SUCCESS);
 }

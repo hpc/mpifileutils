@@ -57,6 +57,9 @@
 #include <linux/fs.h>
 #include <linux/fiemap.h>
 
+/* define PRI64 */
+#include <inttypes.h>
+
 #include <libgen.h> /* dirname */
 #include "libcircle.h"
 #include "dtcmp.h"
@@ -69,14 +72,43 @@
 #include <sys/ioctl.h>
 #endif
 
+/****************************************
+ * Define types
+ ***************************************/
+
+typedef struct {
+    int64_t  total_dirs;         /* sum of all directories */
+    int64_t  total_files;        /* sum of all files */
+    int64_t  total_links;        /* sum of all symlinks */
+    int64_t  total_size;         /* sum of all file sizes */
+    int64_t  total_bytes_copied; /* total bytes written */
+    time_t   time_started;       /* time when dcp command started */
+    time_t   time_ended;         /* time when dcp command ended */
+    double   wtime_started;      /* time when dcp command started */
+    double   wtime_ended;        /* time when dcp command ended */
+} DCOPY_statistics_t;
+
+/* cache open file descriptor to avoid
+ * opening / closing the same file */
+typedef struct {
+    char* name; /* name of open file (NULL if none) */
+    int   read; /* whether file is open for read-only (1) or write (0) */
+    int   fd;   /* file descriptor */
+} mfu_copy_file_cache_t;
+
+/****************************************
+ * Define globals
+ ***************************************/
+
 /** Where we should keep statistics related to this file copy. */
-DCOPY_statistics_t DCOPY_statistics;
+static DCOPY_statistics_t DCOPY_statistics;
 
 /** Options specified by the user. */
 DCOPY_options_t DCOPY_user_opts;
 
-mfu_copy_file_cache_t mfu_copy_src_cache;
-mfu_copy_file_cache_t mfu_copy_dst_cache;
+/** Cache most recent open file descriptor to avoid opening / closing the same file */
+static mfu_copy_file_cache_t mfu_copy_src_cache;
+static mfu_copy_file_cache_t mfu_copy_dst_cache;
 
 static int DCOPY_open_file(const char* file, int read_flag, mfu_copy_file_cache_t* cache)
 {
@@ -1293,6 +1325,10 @@ void mfu_copy_files(mfu_flist list, uint64_t chunk_size)
 
 void mfu_flist_copy(mfu_flist src_cp_list, int preserve, int do_sync)
 {
+    /* get our rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
     /* TODO: consider file system striping params here */
     /* hard code some configurables for now */
 
@@ -1303,6 +1339,21 @@ void mfu_flist_copy(mfu_flist src_cp_list, int preserve, int do_sync)
     size_t alignment = 1024*1024;
     DCOPY_user_opts.block_buf1 = (char*) MFU_MEMALIGN(DCOPY_user_opts.block_size, alignment);
     DCOPY_user_opts.block_buf2 = (char*) MFU_MEMALIGN(DCOPY_user_opts.block_size, alignment);
+
+    /* Grab a relative and actual start time for the epilogue. */
+    time(&(DCOPY_statistics.time_started));
+    DCOPY_statistics.wtime_started = MPI_Wtime();
+
+    /* Initialize statistics */
+    DCOPY_statistics.total_dirs  = 0;
+    DCOPY_statistics.total_files = 0;
+    DCOPY_statistics.total_links = 0;
+    DCOPY_statistics.total_size  = 0;
+    DCOPY_statistics.total_bytes_copied = 0;
+
+    /* Initialize file cache */
+    mfu_copy_src_cache.name = NULL;
+    mfu_copy_dst_cache.name = NULL;
 
     /* split items in file list into sublists depending on their
      * directory depth */
@@ -1334,6 +1385,84 @@ void mfu_flist_copy(mfu_flist src_cp_list, int preserve, int do_sync)
     /* free buffers */
     mfu_free(&DCOPY_user_opts.block_buf1);
     mfu_free(&DCOPY_user_opts.block_buf2);
+
+    /* force updates to disk */
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Syncing updates to disk.");
+    }
+    sync();
+
+    /* Determine the actual and relative end time for the epilogue. */
+    DCOPY_statistics.wtime_ended = MPI_Wtime();
+    time(&(DCOPY_statistics.time_ended));
+
+    /* compute time */
+    double rel_time = DCOPY_statistics.wtime_ended - \
+                      DCOPY_statistics.wtime_started;
+
+    /* prep our values into buffer */
+    int64_t values[5];
+    values[0] = DCOPY_statistics.total_dirs;
+    values[1] = DCOPY_statistics.total_files;
+    values[2] = DCOPY_statistics.total_links;
+    values[3] = DCOPY_statistics.total_size;
+    values[4] = DCOPY_statistics.total_bytes_copied;
+
+    /* sum values across processes */
+    int64_t sums[5];
+    MPI_Allreduce(values, sums, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* extract results from allreduce */
+    int64_t agg_dirs   = sums[0];
+    int64_t agg_files  = sums[1];
+    int64_t agg_links  = sums[2];
+    int64_t agg_size   = sums[3];
+    int64_t agg_copied = sums[4];
+
+    /* compute rate of copy */
+    double agg_rate = (double)agg_copied / rel_time;
+    if (rel_time > 0.0) {
+        agg_rate = (double)agg_copied / rel_time;
+    }
+
+    if(rank == 0) {
+        /* format start time */
+        char starttime_str[256];
+        struct tm* localstart = localtime(&(DCOPY_statistics.time_started));
+        strftime(starttime_str, 256, "%b-%d-%Y,%H:%M:%S", localstart);
+
+        /* format end time */
+        char endtime_str[256];
+        struct tm* localend = localtime(&(DCOPY_statistics.time_ended));
+        strftime(endtime_str, 256, "%b-%d-%Y,%H:%M:%S", localend);
+
+        /* total number of items */
+        int64_t agg_items = agg_dirs + agg_files + agg_links;
+
+        /* convert size to units */
+        double agg_size_tmp;
+        const char* agg_size_units;
+        mfu_format_bytes((uint64_t)agg_size, &agg_size_tmp, &agg_size_units);
+
+        /* convert bandwidth to units */
+        double agg_rate_tmp;
+        const char* agg_rate_units;
+        mfu_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
+
+        MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
+        MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
+        MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
+        MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
+        MFU_LOG(MFU_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
+        MFU_LOG(MFU_LOG_INFO, "  Files: %" PRId64, agg_files);
+        MFU_LOG(MFU_LOG_INFO, "  Links: %" PRId64, agg_links);
+        MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
+            agg_size_tmp, agg_size_units, agg_size);
+
+        MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
+            "(%.3" PRId64 " bytes in %.3lf seconds)", \
+            agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
+    }
 
     return;
 }

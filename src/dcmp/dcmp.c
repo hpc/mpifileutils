@@ -2067,17 +2067,6 @@ int main(int argc, char **argv)
 
     int option_index = 0;
    
-    /* Initialize statistics */
-    DCOPY_statistics.total_dirs  = 0;
-    DCOPY_statistics.total_files = 0;
-    DCOPY_statistics.total_links = 0;
-    DCOPY_statistics.total_size  = 0;
-    DCOPY_statistics.total_bytes_copied = 0;
-
-    /* Initialize file cache */
-    mfu_copy_src_cache.name = NULL;
-    mfu_copy_dst_cache.name = NULL;
-
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;

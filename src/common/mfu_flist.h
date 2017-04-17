@@ -109,18 +109,6 @@ typedef enum mfu_filetypes_e {
 } mfu_filetype;
 
 typedef struct {
-    int64_t  total_dirs;         /* sum of all directories */
-    int64_t  total_files;        /* sum of all files */
-    int64_t  total_links;        /* sum of all symlinks */
-    int64_t  total_size;         /* sum of all file sizes */
-    int64_t  total_bytes_copied; /* total bytes written */
-    time_t   time_started;       /* time when dcp command started */
-    time_t   time_ended;         /* time when dcp command ended */
-    double   wtime_started;      /* time when dcp command started */
-    double   wtime_ended;        /* time when dcp command ended */
-} DCOPY_statistics_t;
-
-typedef struct {
     int    copy_into_dir; /* flag indicating whether copying into existing dir */
     char*  dest_path;     /* prefex of destination directory */
     char*  input_file;    /* file name of input list*/
@@ -135,21 +123,6 @@ typedef struct {
     int    grouplock_id;      /* Lustre grouplock ID */
 //#endif
 } DCOPY_options_t;
-
-/* cache open file descriptor to avoid
- * opening / closing the same file */
-typedef struct {
-    char* name; /* name of open file (NULL if none) */
-    int   read; /* whether file is open for read-only (1) or write (0) */
-    int   fd;   /* file descriptor */
-} mfu_copy_file_cache_t;
-
-/** Cache most recent open file descriptor to avoid opening / closing the same file */
-extern mfu_copy_file_cache_t mfu_copy_src_cache;
-extern mfu_copy_file_cache_t mfu_copy_dst_cache;
-
-/** Where we should keep statistics related to this file copy. */
-extern DCOPY_statistics_t DCOPY_statistics;
 
 /** Options specified by the user. */
 extern DCOPY_options_t DCOPY_user_opts;
@@ -232,46 +205,6 @@ void mfu_flist_write_cache(
 /* free resouces in file list */
 void mfu_flist_free(mfu_flist* flist);
 
-/* given an input list, split items into separate lists depending
- * on their depth, returns number of levels, minimum depth, and
- * array of lists as output */
-void mfu_flist_array_by_depth(
-    mfu_flist srclist,   /* IN  - input list */
-    int* outlevels,        /* OUT - number of depth levels */
-    int* outmin,           /* OUT - minimum depth number */
-    mfu_flist** outlists /* OUT - array of lists split by depth */
-);
-#if 0
-int DCOPY_open_file(
-    const char* file,
-    int read,
-    mfu_copy_file_cache_t* cache
-);
-
-void DCOPY_copy_xattrs(
-    mfu_flist flist,
-    uint64_t index,
-    const char* dest_path
-);
-
-void DCOPY_copy_ownership(
-    mfu_flist flist,
-    uint64_t index,
-    const char* dest_path
-);
-
-void DCOPY_copy_permissions(
-    mfu_flist flist,
-    uint64_t index,
-    const char* dest_path
-);
-
-void DCOPY_copy_timestamps(
-    mfu_flist flist,
-    uint64_t index,
-    const char* dest_path
-);
-#endif
 /* called by single process upon detection of a problem */
 void DCOPY_abort(
     int code
@@ -282,18 +215,15 @@ void DCOPY_exit(
     int code
 );
 
-int mfu_copy_close_file(mfu_copy_file_cache_t* cache);
-
-void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists);
-
-/* create directories, we work from shallowest level to the deepest
- * with a barrier in between levels, so that we don't try to create
- * a child directory until the parent exists */
-int mfu_create_directories(int levels, int minlevel, mfu_flist* lists);
-
-int mfu_create_files(int levels, int minlevel, mfu_flist* lists);
-
-void mfu_copy_files(mfu_flist list, uint64_t chunk_size);
+/* given an input list, split items into separate lists depending
+ * on their depth, returns number of levels, minimum depth, and
+ * array of lists as output */
+void mfu_flist_array_by_depth(
+    mfu_flist srclist,   /* IN  - input list */
+    int* outlevels,        /* OUT - number of depth levels */
+    int* outmin,           /* OUT - minimum depth number */
+    mfu_flist** outlists /* OUT - array of lists split by depth */
+);
 
 /* frees array of lists created in call to
  * mfu_flist_split_by_depth */
