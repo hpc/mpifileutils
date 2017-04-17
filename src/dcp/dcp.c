@@ -30,59 +30,6 @@
 #include <unistd.h>
 #include <errno.h>
 
-#if 0
-static void DCOPY_reduce_init(void)
-{
-    int64_t agg_dirs   = DCOPY_statistics.total_dirs;
-    int64_t agg_files  = DCOPY_statistics.total_files;
-    int64_t agg_links  = DCOPY_statistics.total_links;
-    int64_t agg_size   = DCOPY_statistics.total_size;
-    int64_t agg_copied = DCOPY_statistics.total_bytes_copied;
-
-    int64_t values[6];
-    values[0] = agg_dirs + agg_files + agg_links;
-    values[1] = agg_dirs;
-    values[2] = agg_files;
-    values[3] = agg_links;
-    values[4] = agg_size;
-    values[5] = agg_copied;
-
-    CIRCLE_reduce(&values, sizeof(values));
-}
-
-static void DCOPY_reduce_op(const void* buf1, size_t size1, const void* buf2, size_t size2)
-{
-    int64_t values[6];
-
-    const int64_t* a = (const int64_t*) buf1;
-    const int64_t* b = (const int64_t*) buf2;
-
-    int i;
-    for (i = 0; i < 6; i++) {
-        values[i] = a[i] + b[i];
-    }
-
-    CIRCLE_reduce(&values, sizeof(values));
-}
-
-static void DCOPY_reduce_fini(const void* buf, size_t size)
-{
-    const int64_t* a = (const int64_t*) buf;
-
-    /* convert size to units */
-    uint64_t agg_copied = (uint64_t) a[5];
-    double agg_copied_tmp;
-    const char* agg_copied_units;
-    mfu_format_bytes(agg_copied, &agg_copied_tmp, &agg_copied_units);
-
-    MFU_LOG(MFU_LOG_INFO,
-        "Items created %" PRId64 ", Data copied %.3lf %s ...",
-        a[0], agg_copied_tmp, agg_copied_units);
-//        "Items %" PRId64 ", Dirs %" PRId64 ", Files %" PRId64 ", Links %" PRId64 ", Bytes %.3lf %s",
-//        a[0], a[1], a[2], a[3], agg_size_tmp, agg_size_units);
-}
-#endif
-
 /* called by single process upon detection of a problem */
 void DCOPY_abort(int code)
 {
@@ -99,9 +46,7 @@ void DCOPY_exit(int code)
     exit(code);
 }
 
-/**
- * Print a usage message.
- */
+/** Print a usage message. */
 void DCOPY_print_usage(void)
 {
     /* The compare option isn't really effective because it often
@@ -136,26 +81,12 @@ int main(int argc, \
 {
     int c;
     int option_index = 0;
-    int rank;
 
     MPI_Init(&argc, &argv);
     mfu_init();
 
+    int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    /* Initialize our processing library and related callbacks. */
-    /* This is a bit of chicken-and-egg problem, because we'd like
-     * to have our rank to filter output messages below but we might
-     * also want to set different libcircle flags based on command line
-     * options -- for now just pass in the default flags */
-#if 0
-    DCOPY_global_rank = CIRCLE_init(argc, argv, CIRCLE_DEFAULT_FLAGS);
-    CIRCLE_cb_create(&DCOPY_add_objects);
-    CIRCLE_cb_process(&DCOPY_process_objects);
-    CIRCLE_cb_reduce_init(&DCOPY_reduce_init);
-    CIRCLE_cb_reduce_op(&DCOPY_reduce_op);
-    CIRCLE_cb_reduce_fini(&DCOPY_reduce_fini);
-#endif
 
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
