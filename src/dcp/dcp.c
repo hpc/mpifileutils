@@ -359,10 +359,6 @@ int main(int argc, \
     /* free memory allocated to parse user params */
     DCOPY_free_path_args();
 
-    /* free file I/O buffer */
-    mfu_free(&DCOPY_user_opts.block_buf2);
-    mfu_free(&DCOPY_user_opts.block_buf1);
-
     DCOPY_exit(EXIT_SUCCESS);
 }
 
