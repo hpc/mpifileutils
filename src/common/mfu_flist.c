@@ -37,6 +37,7 @@
 #include <getopt.h>
 #include <time.h> /* asctime / localtime */
 #include <regex.h>
+
 /* These headers are needed to query the Lustre MDS for stat
  * information.  This information may be incomplete, but it
  * is faster than a normal stat, which requires communication
@@ -63,7 +64,7 @@
 #include "mfu.h"
 #include "mfu_flist_internal.h"
 #include "strmap.h"
-//#include "handle_args.h"
+
 #ifdef LUSTRE_SUPPORT
 #include <lustre/lustre_user.h>
 #include <sys/ioctl.h>
