@@ -18,10 +18,7 @@
  * Please also read the LICENSE file.
 */
 
-#include "handle_args.h"
-
-#include "mfu_flist.h" 
-
+#include <stdio.h>
 #include <getopt.h>
 #include <string.h>
 #include <stdlib.h>
@@ -29,6 +26,10 @@
 #include <inttypes.h>
 #include <unistd.h>
 #include <errno.h>
+
+#include "mpi.h"
+#include "libcircle.h"
+#include "mfu.h" 
 
 /* called by single process upon detection of a problem */
 void DCOPY_abort(int code)

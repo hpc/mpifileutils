@@ -39,8 +39,6 @@
 #include "mfu.h"
 #include "strmap.h"
 #include "list.h"
-#include "handle_args.h"
-#include "mfu_flist.h"
 
 /* globals to hold user-input paths */
 static mfu_param_path param1;

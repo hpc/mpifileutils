@@ -15,8 +15,7 @@ include_HEADERS = \
     mfu_io.h \
     mfu_param_path.h \
     mfu_path.h \
-    mfu_util.h \
-    handle_args.h 
+    mfu_util.h
 
 libmfu_la_SOURCES = \
     mfu_flist.c \
@@ -31,8 +30,7 @@ libmfu_la_SOURCES = \
     mfu_param_path.c \
     mfu_path.c \
     mfu_util.c \
-    strmap.c \
-    handle_args.c 
+    strmap.c
 
 libmfu_la_CPPFLAGS = \
      $(MPI_CFLAGS) \
