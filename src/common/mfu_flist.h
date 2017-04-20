@@ -313,22 +313,6 @@ mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args
 * to the caller */
 mfu_flist mfu_flist_spread(mfu_flist flist);
 
-/* check that source and destination paths are valid */
-void DCOPY_check_paths(void);
-
-/**
- * Parse the source and destination paths that the user has provided.
- */
-void DCOPY_parse_path_args(char** argv, \
-                           int optind_local, \
-                           int argc);
-
-void DCOPY_free_path_args(void);
-
-void DCOPY_walk_paths(mfu_flist flist);
-
-int DCOPY_input_flist_skip(const char* name, void* args);
-
 /* call this before mfu_flist_copy to setup globals */
 void mfu_flist_set_copy_params(int num_src_paths,
        const char* src_path, const char* dest_path,

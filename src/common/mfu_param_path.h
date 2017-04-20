@@ -88,6 +88,13 @@ void mfu_param_path_free(mfu_param_path* param);
 /* given a list of param_paths, walk each one and add to flist */
 void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, int walk_stat, mfu_flist flist, int dir_perms);
 
+/* given a list of source param_paths and single destinaton path,
+ * identify whether sources can be copied to destination, returns
+ * valid=1 if copy is valid and returns copy_into_dir=1 if
+ * destination is a directory and items should be copied into
+ * it rather than on top of it */
+void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths, const mfu_param_path* destpath, int* flag_valid, int* flag_copy_into_dir);
+
 #endif /* MFU_PARAM_PATH_H */
 
 /* enable C++ codes to include this header directly */

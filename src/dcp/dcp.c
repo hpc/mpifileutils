@@ -31,24 +31,40 @@
 #include "libcircle.h"
 #include "mfu.h" 
 
-/* called by single process upon detection of a problem */
-void DCOPY_abort(int code)
+int DCOPY_input_flist_skip(const char* name, void* args)
 {
-    MPI_Abort(MPI_COMM_WORLD, code);
-    exit(code);
-}
+    /* create mfu_path from name */
+    mfu_path* path = mfu_path_from_str(name);
 
-/* called globally by all procs to exit */
-void DCOPY_exit(int code)
-{
-    /* CIRCLE_finalize or will this hang? */
-    mfu_finalize();
-    MPI_Finalize();
-    exit(code);
+    /* iterate over each source path */
+    int i;
+    for (i = 0; i < params_ptr->num_src_params; i++) {
+        /* create mfu_path of source path */
+        char* src_name = params_ptr->src_params[i].path;
+        const char* src_path = mfu_path_from_str(src_name);
+
+        /* check whether path is contained within or equal to
+         * source path and if so, we need to copy this file */
+        mfu_path_result result = mfu_path_cmp(path, src_path);
+        if (result == MFU_PATH_SRC_CHILD || result == MFU_PATH_EQUAL) {
+               MFU_LOG(MFU_LOG_INFO, "Need to copy %s because of %s.",
+                   name, src_name);
+            mfu_path_delete(&src_path);
+            mfu_path_delete(&path);
+            return 0;
+        }
+        mfu_path_delete(&src_path);
+    }
+
+    /* the path in name is not a child of any source paths,
+     * so skip this file */
+    MFU_LOG(MFU_LOG_INFO, "Skip %s.", name);
+    mfu_path_delete(&path);
+    return 1;
 }
 
 /** Print a usage message. */
-void DCOPY_print_usage(void)
+void print_usage(void)
 {
     /* The compare option isn't really effective because it often
      * reads from the page cache and not the disk, which gives a
@@ -80,12 +96,11 @@ void DCOPY_print_usage(void)
 int main(int argc, \
          char** argv)
 {
-    int c;
-    int option_index = 0;
-
+    /* initialize MPI */
     MPI_Init(&argc, &argv);
     mfu_init();
 
+    /* get our rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
@@ -94,22 +109,24 @@ int main(int argc, \
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
     mfu_debug_level = MFU_LOG_INFO;
 
-    /* By default, don't bother to preserve all attributes. */
-    DCOPY_user_opts.preserve = false;
-
-    /* By default, don't use O_DIRECT. */
-    DCOPY_user_opts.synchronous = false;
-
-    /* By default, don't use sparse file. */
-    DCOPY_user_opts.sparse = false;
-
     /* Set default chunk size */
     uint64_t chunk_size = (1*1024*1024);
     DCOPY_user_opts.chunk_size = chunk_size ;
 
     /* By default, don't have iput file. */
-    DCOPY_user_opts.input_file = NULL;
+    char* inputname = NULL;
+    int walk = 0;
 
+    /* By default, don't bother to preserve all attributes. */
+    int preserve = 0;
+
+    /* By default, don't use O_DIRECT. */
+    int synchronous = 0;
+
+    /* By default, don't use sparse file. */
+    int sparse = 0;
+
+    int option_index = 0;
     static struct option long_options[] = {
         {"debug"                , required_argument, 0, 'd'},
         {"grouplock"            , required_argument, 0, 'g'},
@@ -123,55 +140,53 @@ int main(int argc, \
     };
 
     /* Parse options */
-    while((c = getopt_long(argc, argv, "d:g:hi:pusSv", \
-                           long_options, &option_index)) != -1) {
-        switch(c) {
+    int usage = 0;
+    while(1) {
+        int c = getopt_long(
+                    argc, argv, "d:g:hi:pusSv",
+                    long_options, &option_index
+                );
 
+        if (c == -1) {
+            break;
+        }
+
+        switch(c) {
             case 'd':
                 if(strncmp(optarg, "fatal", 5) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_FATAL;
                     mfu_debug_level = MFU_LOG_FATAL;
-
                     if(rank == 0) {
                         MFU_LOG(MFU_LOG_INFO, "Debug level set to: fatal");
                     }
-
                 }
                 else if(strncmp(optarg, "err", 3) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_ERR;
                     mfu_debug_level = MFU_LOG_ERR;
-
                     if(rank == 0) {
                         MFU_LOG(MFU_LOG_INFO, "Debug level set to: errors");
                     }
-
                 }
                 else if(strncmp(optarg, "warn", 4) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_WARN;
                     mfu_debug_level = MFU_LOG_WARN;
-
                     if(rank == 0) {
                         MFU_LOG(MFU_LOG_INFO, "Debug level set to: warnings");
                     }
-
                 }
                 else if(strncmp(optarg, "info", 4) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_WARN; /* we back off a level on CIRCLE verbosity */
                     mfu_debug_level = MFU_LOG_INFO;
-
                     if(rank == 0) {
                         MFU_LOG(MFU_LOG_INFO, "Debug level set to: info");
                     }
-
                 }
                 else if(strncmp(optarg, "dbg", 3) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_DBG;
                     mfu_debug_level = MFU_LOG_DBG;
-
                     if(rank == 0) {
                         MFU_LOG(MFU_LOG_INFO, "Debug level set to: debug");
                     }
-
                 }
                 else {
                     if(rank == 0) {
@@ -179,105 +194,131 @@ int main(int argc, \
                             "Defaulting to `info'.", optarg);
                     }
                 }
-
                 break;
-
 #ifdef LUSTRE_SUPPORT
             case 'g':
                 DCOPY_user_opts.grouplock_id = atoi(optarg);
-
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "groulock ID: %d.",
                         DCOPY_user_opts.grouplock_id);
                 }
-
                 break;
 #endif
-
             case 'i':
-                DCOPY_user_opts.input_file = MFU_STRDUP(optarg);
+                inputname = MFU_STRDUP(optarg);
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Using input list.");
                 }
                 break;
-
             case 'p':
-                DCOPY_user_opts.preserve = true;
-
+                preserve = 1;
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Preserving file attributes.");
                 }
-
                 break;
-
             case 's':
-                DCOPY_user_opts.synchronous = true;
-
+                synchronous = 1;
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Using synchronous read/write (O_DIRECT)");
                 }
-
                 break;
-
             case 'S':
-                DCOPY_user_opts.sparse = true;
-
+                sparse = 1;
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Using sparse file");
                 }
-
                 break;
-
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
-
                 break;
-
             case 'h':
-                if(rank == 0) {
-                    DCOPY_print_usage();
-                }
-
-                DCOPY_exit(EXIT_SUCCESS);
+                usage = 1;
                 break;
-
             case '?':
+                usage = 1;
+                break;
             default:
                 if(rank == 0) {
-                    if(optopt == 'd') {
-                        DCOPY_print_usage();
-                        fprintf(stderr, "Option -%c requires an argument.\n", \
-                                optopt);
-                    }
-                    else if(isprint(optopt)) {
-                        DCOPY_print_usage();
-                        fprintf(stderr, "Unknown option `-%c'.\n", optopt);
-                    }
-                    else {
-                        DCOPY_print_usage();
-                        fprintf(stderr,
-                                "Unknown option character `\\x%x'.\n",
-                                optopt);
-                    }
+                    printf("?? getopt returned character code 0%o ??\n", c);
                 }
-
-                DCOPY_exit(EXIT_FAILURE);
-                break;
         }
     }
 
-    /** Parse the source and destination paths. */
-    DCOPY_parse_path_args(argv, optind, argc);
+    /* paths to walk come after the options */
+    int numpaths = 0;
+    mfu_param_path* paths = NULL;
+    if (optind < argc) {
+        /* got a path to walk */
+        walk = 1;
+
+        /* determine number of paths specified by user */
+        numpaths = argc - optind;
+
+        /* allocate space for each path */
+        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
+
+        /* process each path */
+        char** argpaths = &argv[optind];
+        mfu_param_path_set_all(numpaths, argpaths, paths);
+
+        /* advance to next set of options */
+        optind += numpaths;
+
+        /* don't allow input file and walk */
+        if (inputname != NULL) {
+            usage = 1;
+        }
+    }
+    else {
+        /* if we're not walking, we must be reading,
+         * and for that we need a file */
+        if (inputname == NULL) {
+            usage = 1;
+        }
+    }
+
+    /* last item in the list is the destination path */
+    const mfu_param_path* destpath = &paths[numpaths-1];
+
+    /* Parse the source and destination paths. */
+    int valid, copy_into_dir;
+    mfu_param_path_check_copy(numpaths-1, paths, destpath, &valid, &copy_into_dir);
+
+    /* exit job if we found a problem */
+    if(! valid) {
+        if(rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Exiting run");
+        }
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
+
+    /* print usage if we need to */
+    if (usage) {
+        if (rank == 0) {
+            print_usage();
+        }
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
+
+    /* the last path is the destination path, all others are source paths */
+    int numpaths_src = numpaths - 1;
 
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
-    if (DCOPY_user_opts.input_file == NULL) {
+
+    if (walk) {
         /* walk paths and fill in file list */
-        DCOPY_walk_paths(flist);
+        int walk_stat = 1;
+        int dir_perm  = 0;
+        mfu_param_path_walk(numpaths_src, paths, walk_stat, flist, dir_perm);
     } else {
         /* otherwise, read list of files from input, but then stat each one */
         mfu_flist input_flist = mfu_flist_new();
-        mfu_flist_read_cache(DCOPY_user_opts.input_file, input_flist);
+        mfu_flist_read_cache(inputname, input_flist);
         mfu_flist_stat(input_flist, flist, DCOPY_input_flist_skip, NULL);
         mfu_flist_free(&input_flist);
     }
@@ -285,13 +326,21 @@ int main(int argc, \
     /* copy flist into destination */ 
     mfu_flist_copy(flist, DCOPY_user_opts.preserve, 0); 
     
-    /* free our file lists */
+    /* free the file list */
     mfu_flist_free(&flist);
 
-    /* free memory allocated to parse user params */
-    DCOPY_free_path_args();
+    /* free the path parameters */
+    mfu_param_path_free_all(numpaths, paths);
 
-    DCOPY_exit(EXIT_SUCCESS);
+    /* free memory allocated to hold params */
+    mfu_free(&paths);
+
+    /* free the input file name */
+    mfu_free(&inputname);
+
+    /* shut down MPI */
+    mfu_finalize();
+    MPI_Finalize();
+
+    return 0;
 }
-
-/* EOF */
