@@ -319,10 +319,14 @@ void mfu_flist_set_copy_params(int num_src_paths,
        int preserve, int do_sync);
 
 /* copy items in list */
-void mfu_flist_copy(mfu_flist src_cp_list, int preserve, int do_sync);
+void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
+        void* paths, void* destpath, int copy_into_dir,
+        int preserve, int do_sync);
 
 /* unlink all items in flist */
 void mfu_flist_unlink(mfu_flist flist);
+
+int DCOPY_input_flist_skip(const char* name, void* args);
 
 /* sort flist by specified fields, given as common-delimitted list
  * precede field name with '-' character to reverse sort order:

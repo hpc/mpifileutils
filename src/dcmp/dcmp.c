@@ -1003,11 +1003,11 @@ static void dcmp_sync_files(strmap* src_map, strmap* dst_map,
     mfu_flist_summarize(src_cp_list); 
        
     /* setup parameters for src and dest */
-    mfu_flist_set_copy_params(1, src_path, dest_path, 1, do_sync);
+    //mfu_flist_set_copy_params(1, src_path, dest_path, 1, do_sync);
         
     /* copy the files only in the source direcory into
      * the destination directory */ 
-    mfu_flist_copy(src_cp_list, 1, do_sync);  
+    //mfu_flist_copy(src_cp_list, 1, do_sync);  
 
     /* free the lists used for copying and removing files */
     mfu_flist_free(&src_cp_list);

@@ -31,38 +31,6 @@
 #include "libcircle.h"
 #include "mfu.h" 
 
-int DCOPY_input_flist_skip(const char* name, void* args)
-{
-    /* create mfu_path from name */
-    mfu_path* path = mfu_path_from_str(name);
-
-    /* iterate over each source path */
-    int i;
-    for (i = 0; i < params_ptr->num_src_params; i++) {
-        /* create mfu_path of source path */
-        char* src_name = params_ptr->src_params[i].path;
-        const char* src_path = mfu_path_from_str(src_name);
-
-        /* check whether path is contained within or equal to
-         * source path and if so, we need to copy this file */
-        mfu_path_result result = mfu_path_cmp(path, src_path);
-        if (result == MFU_PATH_SRC_CHILD || result == MFU_PATH_EQUAL) {
-               MFU_LOG(MFU_LOG_INFO, "Need to copy %s because of %s.",
-                   name, src_name);
-            mfu_path_delete(&src_path);
-            mfu_path_delete(&path);
-            return 0;
-        }
-        mfu_path_delete(&src_path);
-    }
-
-    /* the path in name is not a child of any source paths,
-     * so skip this file */
-    MFU_LOG(MFU_LOG_INFO, "Skip %s.", name);
-    mfu_path_delete(&path);
-    return 1;
-}
-
 /** Print a usage message. */
 void print_usage(void)
 {
@@ -279,10 +247,12 @@ int main(int argc, \
 
     /* last item in the list is the destination path */
     const mfu_param_path* destpath = &paths[numpaths-1];
-
+    
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
-    mfu_param_path_check_copy(numpaths-1, paths, destpath, &valid, &copy_into_dir);
+    mfu_param_path_check_copy(numpaths, paths, destpath, &valid, &copy_into_dir);
+    
+    DCOPY_user_opts.copy_into_dir = copy_into_dir;
 
     /* exit job if we found a problem */
     if(! valid) {
@@ -324,7 +294,9 @@ int main(int argc, \
     }
 
     /* copy flist into destination */ 
-    mfu_flist_copy(flist, DCOPY_user_opts.preserve, 0); 
+    mfu_flist_copy(flist, numpaths, (mfu_param_path*)paths, 
+            (mfu_param_path*)destpath, copy_into_dir,
+            DCOPY_user_opts.preserve, 0); 
     
     /* free the file list */
     mfu_flist_free(&flist);

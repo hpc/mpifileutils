@@ -560,8 +560,79 @@ void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, int walk_st
  *   - Many file and many directory to single directory
  */
 
+/* given an item name, determine which source path this item
+ * is contained within, extract directory components from source
+ * path to this item and then prepend destination prefix. */
+char* mfu_param_path_copy_dest(const char* name, int numpaths,
+        mfu_param_path* paths, mfu_param_path* destpath, 
+        int copy_into_dir)
+{
+    /* identify which source directory this came from */
+    int i;
+    int idx = -1;
+    for (i = 0; i < numpaths; i++) {
+        /* get path for step */
+        const char* path = paths[i].path;
+
+        /* get length of source path */
+        size_t len = strlen(path);
+
+        /* see if name is a child of path */
+        if (strncmp(path, name, len) == 0) {
+            idx = i;
+            break;
+        }
+    }
+
+    /* this will happen if the named item is not a child of any
+     * source paths */
+    if (idx == -1) {
+        return NULL;
+    }
+
+    /* create path of item */
+    mfu_path* item = mfu_path_from_str(name);
+
+    /* get source directory */
+    mfu_path* src = mfu_path_from_str(paths[i].path);
+
+    /* get number of components in item */
+    int item_components = mfu_path_components(item);
+
+    /* get number of components in source path */
+    int src_components = mfu_path_components(src);
+
+    /* if copying into directory, keep last component,
+     * otherwise cut all components listed in source path */
+    int cut = src_components;
+    if (DCOPY_user_opts.copy_into_dir && cut > 0) {
+        //if (!params_ptr->do_sync) {
+            cut--;
+        //}
+    }
+
+    /* compute number of components to keep */
+    int keep = item_components - cut;
+
+    /* chop prefix from item */
+    mfu_path_slice(item, cut, keep);
+
+    /* prepend destination path */
+    mfu_path_prepend_str(item, destpath->path);
+
+    /* convert to a NUL-terminated string */
+    char* dest = mfu_path_strdup(item);
+
+    /* free our temporary paths */
+    mfu_path_delete(&src);
+    mfu_path_delete(&item);
+
+    return dest;
+}
+
 /* check that source and destination paths are valid */
-void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths, const mfu_param_path* dest, int* flag_valid, int* flag_copy_into_dir)
+void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths, 
+        const mfu_param_path* destpath, int* flag_valid, int* flag_copy_into_dir)
 {
     /* initialize output params */
     *flag_valid = 0;

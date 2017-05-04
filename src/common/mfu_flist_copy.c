@@ -120,70 +120,20 @@ static mfu_copy_file_cache_t mfu_copy_dst_cache;
 
 static mfu_copy_params cp_params;
 static mfu_copy_params* params_ptr = &cp_params;
-
-/**
- * Parse the source and destination paths that the user has provided.
- */
-void DCOPY_parse_path_args(char** argv, \
-                           int optind_local, \
-                           int argc)
-{
-    /* copy the destination path to user opts structure */
-    DCOPY_user_opts.dest_path = MFU_STRDUP(params_ptr->dest_param.path);
-
-    /* check that source and destinations are ok */
-    DCOPY_check_paths();
-}
-
-/* set the src and dest path parameters, and pass in preserve
- * perms flag to tell whether or not to preserve permissions
- * and timestamps, etc */
-void mfu_flist_set_copy_params(int num_src_paths,
-       const char* src_path, const char* dest_path,
-       int preserve, int do_sync)
-{
-    /* get current rank */  
-    int rank; 
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-   
-    if (preserve) {
-        DCOPY_user_opts.preserve = true;
-    }
-
-    /* set number of source paths */
-    params_ptr->src_params = NULL;
-    params_ptr->num_src_params = num_src_paths;
-    params_ptr->do_sync = 1;
-    
-    /* allocate space to record info about source */
-    size_t src_params_bytes = ((size_t) params_ptr->num_src_params) * sizeof(mfu_param_path);
-    params_ptr->src_params = (mfu_param_path*) MFU_MALLOC(src_params_bytes);
-
-    /* record standardized path and stat info for source */
-    mfu_param_path_set(src_path, &(params_ptr->src_params[0]));
-
-    /* standardize destination path */
-    mfu_param_path_set(dest_path, &(params_ptr->dest_param));
-
-    /* copy the destination path to user opts structure */
-    DCOPY_user_opts.dest_path = MFU_STRDUP(params_ptr->dest_param.path);
-
-    /* check that source and destinations are ok */
-    int valid, copy_into;
-    mfu_param_path_check_copy(1, &(params_ptr->src_params[0]), &(params_ptr->dest_param), &valid, &copy_into)
-}
-
+#if 0
 /* given an item name, determine which source path this item
  * is contained within, extract directory components from source
  * path to this item and then prepend destination prefix. */
-static char* DCOPY_build_dest(const char* name)
+static char* mfu_param_path_copy_dest(const char* name, int numpaths,
+        mfu_param_path* paths, mfu_param_path* destpath, 
+        int copy_into_dir)
 {
     /* identify which source directory this came from */
     int i;
     int idx = -1;
-    for (i = 0; i < params_ptr->num_src_params; i++) {
+    for (i = 0; i < numpaths; i++) {
         /* get path for step */
-        const char* path = params_ptr->src_params[i].path;
+        const char* path = paths[i].path;
 
         /* get length of source path */
         size_t len = strlen(path);
@@ -205,7 +155,7 @@ static char* DCOPY_build_dest(const char* name)
     mfu_path* item = mfu_path_from_str(name);
 
     /* get source directory */
-    mfu_path* src = mfu_path_from_str(params_ptr->src_params[i].path);
+    mfu_path* src = mfu_path_from_str(paths[i].path);
 
     /* get number of components in item */
     int item_components = mfu_path_components(item);
@@ -229,7 +179,7 @@ static char* DCOPY_build_dest(const char* name)
     mfu_path_slice(item, cut, keep);
 
     /* prepend destination path */
-    mfu_path_prepend_str(item, params_ptr->dest_param.path);
+    mfu_path_prepend_str(item, destpath->path);
 
     /* convert to a NUL-terminated string */
     char* dest = mfu_path_strdup(item);
@@ -239,6 +189,38 @@ static char* DCOPY_build_dest(const char* name)
     mfu_path_delete(&item);
 
     return dest;
+}
+#endif
+int DCOPY_input_flist_skip(const char* name, void* args)
+{
+    /* create mfu_path from name */
+    mfu_path* path = mfu_path_from_str(name);
+
+    /* iterate over each source path */
+    int i;
+    for (i = 0; i < params_ptr->num_src_params; i++) {
+        /* create mfu_path of source path */
+        char* src_name = params_ptr->src_params[i].path;
+        const char* src_path = mfu_path_from_str(src_name);
+
+        /* check whether path is contained within or equal to
+         * source path and if so, we need to copy this file */
+        mfu_path_result result = mfu_path_cmp(path, src_path);
+        if (result == MFU_PATH_SRC_CHILD || result == MFU_PATH_EQUAL) {
+               MFU_LOG(MFU_LOG_INFO, "Need to copy %s because of %s.",
+                   name, src_name);
+            mfu_path_delete(&src_path);
+            mfu_path_delete(&path);
+            return 0;
+        }
+        mfu_path_delete(&src_path);
+    }
+
+    /* the path in name is not a child of any source paths,
+     * so skip this file */
+    MFU_LOG(MFU_LOG_INFO, "Skip %s.", name);
+    mfu_path_delete(&path);
+    return 1;
 }
 
 static int DCOPY_open_file(const char* file, int read_flag, mfu_copy_file_cache_t* cache)
@@ -577,7 +559,9 @@ static int mfu_copy_close_file(mfu_copy_file_cache_t* cache)
  * and permissions starting from deepest level and working upwards,
  * we go in this direction in case updating a file updates its
  * parent directory */
-static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists)
+static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
+        int numpaths, mfu_param_path* paths, 
+        mfu_param_path* destpath, int copy_into_dir)
 {
     /* get current rank */
     int rank;
@@ -616,7 +600,8 @@ static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists)
 
             /* get destination name of item */
             const char* name = mfu_flist_file_get_name(list, idx);
-            char* dest = DCOPY_build_dest(name);
+            char* dest = mfu_param_path_copy_dest(name, numpaths, 
+                    paths, destpath, copy_into_dir);
 
             /* No need to copy it */
             if (dest == NULL) {
@@ -646,13 +631,16 @@ static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists)
     return;
 }
 
-static int mfu_create_directory(mfu_flist list, uint64_t idx)
+static int mfu_create_directory(mfu_flist list, uint64_t idx,
+        int numpaths, mfu_param_path* paths,
+        mfu_param_path* destpath, int copy_into_dir)
 {
     /* get name of directory */
     const char* name = mfu_flist_file_get_name(list, idx);
 
     /* get destination name */
-    char* dest_path = DCOPY_build_dest(name);
+    char* dest_path = mfu_param_path_copy_dest(name, numpaths, paths, 
+            destpath, copy_into_dir);
 
     /* No need to copy it */
     if (dest_path == NULL) {
@@ -689,7 +677,9 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx)
 /* create directories, we work from shallowest level to the deepest
  * with a barrier in between levels, so that we don't try to create
  * a child directory until the parent exists */
-static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists)
+static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
+        int numpaths, mfu_param_path* paths, 
+        mfu_param_path* destpath, int copy_into_dir)
 {
     /* get current rank */
     int rank;
@@ -726,7 +716,8 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists)
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
             if (type == MFU_TYPE_DIR) {
                 /* create the directory */
-                int tmp_rc = mfu_create_directory(list, idx);
+                int tmp_rc = mfu_create_directory(list, idx, numpaths, 
+                        paths, destpath, copy_into_dir);
                 if (tmp_rc != 0) {
                     rc = tmp_rc;
                 }
@@ -765,13 +756,16 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists)
     return rc;
 }
 
-static int mfu_create_link(mfu_flist list, uint64_t idx)
+static int mfu_create_link(mfu_flist list, uint64_t idx,
+        int numpaths, mfu_param_path* paths,
+        mfu_param_path* destpath, int copy_into_dir)
 {
     /* get source name */
     const char* src_path = mfu_flist_file_get_name(list, idx);
 
     /* get destination name */
-    const char* dest_path = DCOPY_build_dest(src_path);
+    const char* dest_path = mfu_param_path_copy_dest(src_path, numpaths, 
+           paths, destpath, copy_into_dir);
 
     /* No need to copy it */
     if (dest_path == NULL) {
@@ -822,13 +816,16 @@ static int mfu_create_link(mfu_flist list, uint64_t idx)
     return 0;
 }
 
-static int mfu_create_file(mfu_flist list, uint64_t idx)
+static int mfu_create_file(mfu_flist list, uint64_t idx,
+        int numpaths, mfu_param_path* paths, 
+        mfu_param_path* destpath, int copy_into_dir)
 {
     /* get source name */
     const char* src_path = mfu_flist_file_get_name(list, idx);
 
     /* get destination name */
-    const char* dest_path = DCOPY_build_dest(src_path);
+    const char* dest_path = mfu_param_path_copy_dest(src_path, numpaths,
+            paths, destpath, copy_into_dir);
 
     /* No need to copy it */
     if (dest_path == NULL) {
@@ -900,7 +897,9 @@ static int mfu_create_file(mfu_flist list, uint64_t idx)
     return 0;
 }
 
-static int mfu_create_files(int levels, int minlevel, mfu_flist* lists)
+static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
+        int numpaths, mfu_param_path* paths,
+        mfu_param_path* destpath, int copy_into_dir)
 {
     /* get current rank */
     int rank;
@@ -940,10 +939,12 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists)
             /* process files and links */
             if (type == MFU_TYPE_FILE) {
                 /* TODO: skip file if it's not readable */
-                mfu_create_file(list, idx);
+                mfu_create_file(list, idx, numpaths,
+                        paths, destpath, copy_into_dir);
                 count++;
             } else if (type == MFU_TYPE_LINK) {
-                mfu_create_link(list, idx);
+                mfu_create_link(list, idx, numpaths,
+                        paths, destpath, copy_into_dir);
                 count++;
             }
         }
@@ -1399,7 +1400,9 @@ static int mfu_copy_file(
 /* After receiving all incoming chunks, process open and write their chunks 
  * to the files. The process which writes the last chunk to each file also 
  * truncates the file to correct size.  A 0-byte file still has one chunk. */
-static void mfu_copy_files(mfu_flist list, uint64_t chunk_size)
+static void mfu_copy_files(mfu_flist list, uint64_t chunk_size, 
+        int numpaths, mfu_param_path* paths,
+        mfu_param_path* destpath, int copy_into_dir)
 {
     /* get current rank */
     int rank;
@@ -1417,7 +1420,8 @@ static void mfu_copy_files(mfu_flist list, uint64_t chunk_size)
     /* loop over and copy data for each file section we're responsible for */
     while (p != NULL) {
         /* get name of destination file */
-        char* dest_path = DCOPY_build_dest(p->name);
+        char* dest_path = mfu_param_path_copy_dest(p->name, numpaths,
+                paths, destpath, copy_into_dir);
 
         /* No need to copy it */
         if (dest_path == NULL) {
@@ -1438,12 +1442,27 @@ static void mfu_copy_files(mfu_flist list, uint64_t chunk_size)
     mfu_file_chunk_list_free(&p);
 }
 
-void mfu_flist_copy(mfu_flist src_cp_list, int preserve, int do_sync)
+void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
+        void* paths, void* destpath, int copy_into_dir,
+        int preserve, int do_sync)
 {
     /* get our rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    
+    /* cast void pointers to correct type (mfu_param_path*) */
+    mfu_param_path* src_paths = (mfu_param_path*)paths;
+    mfu_param_path* dest_path = (mfu_param_path*)destpath;
 
+    /* set number of source paths */
+    params_ptr->src_params = src_paths;
+    params_ptr->num_src_params = numpaths;
+    params_ptr->do_sync = do_sync;
+    params_ptr->dest_param = *dest_path;
+
+    /* copy the destination path to user opts structure */
+    DCOPY_user_opts.dest_path = MFU_STRDUP(params_ptr->dest_param.path);
+    
     /* TODO: consider file system striping params here */
     /* hard code some configurables for now */
 
@@ -1479,20 +1498,24 @@ void mfu_flist_copy(mfu_flist src_cp_list, int preserve, int do_sync)
     /* TODO: filter out files that are bigger than 0 bytes if we can't read them */
 
     /* create directories, from top down */
-    mfu_create_directories(levels, minlevel, lists);
+    mfu_create_directories(levels, minlevel, lists, numpaths,
+            src_paths, dest_path, copy_into_dir);
 
     /* create files and links */
-    mfu_create_files(levels, minlevel, lists);
+    mfu_create_files(levels, minlevel, lists, numpaths,
+            src_paths, dest_path, copy_into_dir);
 
     /* copy data */
-    mfu_copy_files(src_cp_list, DCOPY_user_opts.chunk_size);
+    mfu_copy_files(src_cp_list, DCOPY_user_opts.chunk_size, 
+            numpaths, src_paths, dest_path, copy_into_dir);
 
     /* close files */
     mfu_copy_close_file(&mfu_copy_src_cache);
     mfu_copy_close_file(&mfu_copy_dst_cache);
 
     /* set permissions, ownership, and timestamps if needed */
-    mfu_copy_set_metadata(levels, minlevel, lists);
+    mfu_copy_set_metadata(levels, minlevel, lists, numpaths,
+            src_paths, dest_path, copy_into_dir);
 
     /* free our lists of levels */
     mfu_flist_array_free(levels, &lists);

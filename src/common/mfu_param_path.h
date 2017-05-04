@@ -86,14 +86,23 @@ void mfu_param_path_set(const char* path, mfu_param_path* param);
 void mfu_param_path_free(mfu_param_path* param);
 
 /* given a list of param_paths, walk each one and add to flist */
-void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, int walk_stat, mfu_flist flist, int dir_perms);
+void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, 
+        int walk_stat, mfu_flist flist, int dir_perms);
+
+/* given an item name, determine which source path this item
+ * is contained within, extract directory components from source
+ * path to this item and then prepend destination prefix. */
+char* mfu_param_path_copy_dest(const char* name, int numpaths,
+        mfu_param_path* paths, mfu_param_path* destpath, 
+        int copy_into_dir);
 
 /* given a list of source param_paths and single destinaton path,
  * identify whether sources can be copied to destination, returns
  * valid=1 if copy is valid and returns copy_into_dir=1 if
  * destination is a directory and items should be copied into
  * it rather than on top of it */
-void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths, const mfu_param_path* destpath, int* flag_valid, int* flag_copy_into_dir);
+void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths, 
+        const mfu_param_path* destpath, int* flag_valid, int* flag_copy_into_dir);
 
 #endif /* MFU_PARAM_PATH_H */
 
