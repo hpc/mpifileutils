@@ -72,6 +72,10 @@ int main(int argc, \
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    /* pointer to mfu_copy opts */
+    mfu_copy_opts_t mfu_cp_opts; 
+    mfu_copy_opts_t* mfu_copy_opts = &mfu_cp_opts; 
+    
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
@@ -79,7 +83,7 @@ int main(int argc, \
 
     /* Set default chunk size */
     uint64_t chunk_size = (1*1024*1024);
-    DCOPY_user_opts.chunk_size = chunk_size ;
+    mfu_copy_opts->chunk_size = chunk_size ;
 
     /* By default, don't have iput file. */
     char* inputname = NULL;
@@ -87,12 +91,12 @@ int main(int argc, \
 
     /* By default, don't bother to preserve all attributes. */
     int preserve = 0;
-
+    /* Lustre grouplock ID */
+    int grouplock_id; 
     /* By default, don't use O_DIRECT. */
     int synchronous = 0;
-
     /* By default, don't use sparse file. */
-    int sparse = 0;
+    int sparse = 0; 
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -165,10 +169,10 @@ int main(int argc, \
                 break;
 #ifdef LUSTRE_SUPPORT
             case 'g':
-                DCOPY_user_opts.grouplock_id = atoi(optarg);
+                mfu_copy_opts->grouplock_id = atoi(optarg);
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "groulock ID: %d.",
-                        DCOPY_user_opts.grouplock_id);
+                        mfu_copy_opts->grouplock_id);
                 }
                 break;
 #endif
@@ -252,7 +256,8 @@ int main(int argc, \
     int valid, copy_into_dir;
     mfu_param_path_check_copy(numpaths, paths, destpath, &valid, &copy_into_dir);
     
-    DCOPY_user_opts.copy_into_dir = copy_into_dir;
+    mfu_copy_opts->copy_into_dir = copy_into_dir; 
+    printf("copy into dir: %d\n", mfu_copy_opts->copy_into_dir);
 
     /* exit job if we found a problem */
     if(! valid) {
@@ -289,14 +294,13 @@ int main(int argc, \
         /* otherwise, read list of files from input, but then stat each one */
         mfu_flist input_flist = mfu_flist_new();
         mfu_flist_read_cache(inputname, input_flist);
-        mfu_flist_stat(input_flist, flist, DCOPY_input_flist_skip, NULL);
+        mfu_flist_stat(input_flist, flist, mfu_input_flist_skip, NULL);
         mfu_flist_free(&input_flist);
     }
 
     /* copy flist into destination */ 
-    mfu_flist_copy(flist, numpaths, (mfu_param_path*)paths, 
-            (mfu_param_path*)destpath, copy_into_dir,
-            DCOPY_user_opts.preserve, 0); 
+    mfu_flist_copy(flist, numpaths, paths, 
+            destpath, mfu_copy_opts);
     
     /* free the file list */
     mfu_flist_free(&flist);

@@ -359,7 +359,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
         /* lookup the path */
         uint64_t path_idx = start + i;
         const char* path = paths[path_idx];
-
+        
         /* set param fields for path */
         if (path != NULL) {
             /* make a copy of original path */
@@ -423,7 +423,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
     for (i = 0; i < count; i++) {
         mfu_pack_param(&ptr, &p[i]);
     }
-
+    
     /* allgatherv to collect data */
     MPI_Allgatherv(sendbuf, sendcount, MPI_BYTE, recvbuf, recvcounts, recvdispls, MPI_BYTE, MPI_COMM_WORLD);
 
@@ -439,7 +439,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
     if (rank == 0) {
         for (i = 0; i < num; i++) {
             /* get pointer to param structure */
-            mfu_param_path* param = &p[i];
+            mfu_param_path* param = &params[i];
             if (param->path_stat_valid == 0) {
                 /* failed to find a file at this location, let user know (may be a typo) */
                 printf("Warning: `%s' does not exist\n", param->orig); 
@@ -460,79 +460,6 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
 
     return;
 }
-
-/* free resources allocated in call to mfu_param_path_set_all */
-void mfu_param_path_free_all(uint64_t num, mfu_param_path* params)
-{
-    /* make sure we got a valid pointer */
-    if (params != NULL) {
-        /* free memory for each param */
-        uint64_t i;
-        for (i = 0; i < num; i++) {
-            /* get pointer to param structure */
-            mfu_param_path* param = &params[i];
-
-            /* free memory and reinit */
-            if (param != NULL) {
-                /* free all mememory */
-                mfu_free(&param->orig);
-                mfu_free(&param->path);
-                mfu_free(&param->target);
-
-                /* initialize all fields */
-                mfu_param_path_init(param);
-            }
-        }
-    }
-    return;
-}
-
-/* set fields in param according to path */
-void mfu_param_path_set(const char* path, mfu_param_path* param)
-{
-    mfu_param_path_set_all(1, &path, param);
-    return;
-}
-
-/* free memory associated with param */
-void mfu_param_path_free(mfu_param_path* param)
-{
-    mfu_param_path_free_all(1, param);
-    return;
-}
-
-/* given a list of param_paths, walk each one and add to flist */
-void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, int walk_stat, mfu_flist flist, int dir_perms)
-{
-    /* allocate memory to hold a list of paths */
-    const char** path_list = (const char**) MFU_MALLOC(num * sizeof(char*));
-
-    /* fill list of paths and print each one */
-    uint64_t i;
-    for (i = 0; i < num; i++) {
-        /* get path for this step */
-        path_list[i] = params[i].path;
-    }
-
-    /* walk file tree and record stat data for each file */
-    mfu_flist_walk_paths((uint64_t) num, path_list, walk_stat, dir_perms, flist);
-
-    /* free the list */
-    mfu_free(&path_list);
-
-    return;
-}
-
-/**
- * Determine if the destination path is a file or directory.
- *
- * It does this by first checking to see if an object is actually at the
- * destination path. If an object isn't already at the destination path, we
- * examine the source path(s) to determine the type of what the destination
- * path will be.
- *
- * @return true if the destination should be a directory, false otherwise.
- */
 
 /**
  * Analyze all file path inputs and place on the work queue.
@@ -564,8 +491,8 @@ void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, int walk_st
  * is contained within, extract directory components from source
  * path to this item and then prepend destination prefix. */
 char* mfu_param_path_copy_dest(const char* name, int numpaths,
-        mfu_param_path* paths, mfu_param_path* destpath, 
-        int copy_into_dir)
+        const mfu_param_path* paths, const mfu_param_path* destpath, 
+        mfu_copy_opts_t* mfu_copy_opts)
 {
     /* identify which source directory this came from */
     int i;
@@ -605,10 +532,10 @@ char* mfu_param_path_copy_dest(const char* name, int numpaths,
     /* if copying into directory, keep last component,
      * otherwise cut all components listed in source path */
     int cut = src_components;
-    if (DCOPY_user_opts.copy_into_dir && cut > 0) {
-        //if (!params_ptr->do_sync) {
+    if (mfu_copy_opts->copy_into_dir && cut > 0) {
+        if (!mfu_copy_opts->do_sync) {
             cut--;
-        //}
+        }
     }
 
     /* compute number of components to keep */
@@ -653,7 +580,7 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
     /* just have rank 0 check */
     if(rank == 0) {
         /* count number of readable source paths */
-        int i;
+        uint64_t i;
         int num_readable = 0;
         for(i = 0; i < num; i++) {
             const char* path = paths[i].path;
@@ -812,3 +739,42 @@ bcast:
     return;
 }
 
+/* free resources allocated in call to mfu_param_path_set_all */
+void mfu_param_path_free_all(uint64_t num, mfu_param_path* params)
+{
+    /* make sure we got a valid pointer */
+    if (params != NULL) {
+        /* free memory for each param */
+        uint64_t i;
+        for (i = 0; i < num; i++) {
+            /* get pointer to param structure */
+            mfu_param_path* param = &params[i];
+
+            /* free memory and reinit */
+            if (param != NULL) {
+                /* free all mememory */
+                mfu_free(&param->orig);
+                mfu_free(&param->path);
+                mfu_free(&param->target);
+
+                /* initialize all fields */
+                mfu_param_path_init(param);
+            }
+        }
+    }
+    return;
+}
+
+/* set fields in param according to path */
+void mfu_param_path_set(const char* path, mfu_param_path* param)
+{
+    mfu_param_path_set_all(1, &path, param);
+    return;
+}
+
+/* free memory associated with param */
+void mfu_param_path_free(mfu_param_path* param)
+{
+    mfu_param_path_free_all(1, param);
+    return;
+}

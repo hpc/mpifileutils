@@ -108,25 +108,6 @@ typedef enum mfu_filetypes_e {
     MFU_TYPE_LINK    = 4,
 } mfu_filetype;
 
-typedef struct {
-    int    copy_into_dir; /* flag indicating whether copying into existing dir */
-    char*  dest_path;     /* prefex of destination directory */
-    char*  input_file;    /* file name of input list*/
-    bool   preserve;      /* wether to preserve timestamps, ownership, permissions, etc. */
-    bool   synchronous;   /* whether to use O_DIRECT */
-    bool   sparse;        /* whether to create sparse files */
-    size_t chunk_size;    /* size to chunk files by */
-    size_t block_size;    /* block size to read/write to file system */
-    char*  block_buf1;    /* buffer to read / write data */
-    char*  block_buf2;    /* another buffer to read / write data */
-//#ifdef LUSTRE_SUPPORT
-    int    grouplock_id;      /* Lustre grouplock ID */
-//#endif
-} DCOPY_options_t;
-
-/** Options specified by the user. */
-extern DCOPY_options_t DCOPY_user_opts;
-
 /* define handle type to a file list */
 typedef void* mfu_flist;
 
@@ -313,20 +294,20 @@ mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args
 * to the caller */
 mfu_flist mfu_flist_spread(mfu_flist flist);
 
-/* call this before mfu_flist_copy to setup globals */
-void mfu_flist_set_copy_params(int num_src_paths,
-       const char* src_path, const char* dest_path,
-       int preserve, int do_sync);
+/* given a list of param_paths, walk each one and add to flist */
+void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, 
+        int walk_stat, mfu_flist flist, int dir_perms);
 
 /* copy items in list */
 void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
-        void* paths, void* destpath, int copy_into_dir,
-        int preserve, int do_sync);
+        const mfu_param_path* paths, const mfu_param_path* destpath, 
+        mfu_copy_opts_t* mfu_copy_opts);
 
 /* unlink all items in flist */
 void mfu_flist_unlink(mfu_flist flist);
 
-int DCOPY_input_flist_skip(const char* name, void* args);
+int mfu_input_flist_skip(const char* name, int numpaths,
+        const mfu_param_path* paths);
 
 /* sort flist by specified fields, given as common-delimitted list
  * precede field name with '-' character to reverse sort order:

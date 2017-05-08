@@ -2070,21 +2070,24 @@ int main(int argc, char **argv)
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
     mfu_debug_level = MFU_LOG_INFO;
 
+    /* pointer to mfu_copy opts structure */
+    mfu_copy_opts_t* mfu_copy_opts;
+
     /* By default, sync option will preserve all attributes. */
-    DCOPY_user_opts.preserve = true;
+    mfu_copy_opts->preserve = true;
 
     /* By default, don't use O_DIRECT. */
-    DCOPY_user_opts.synchronous = false;
+    mfu_copy_opts->synchronous = false;
 
     /* By default, don't use sparse file. */
-    DCOPY_user_opts.sparse = false;
+    mfu_copy_opts->sparse = false;
 
     /* Set default chunk size */
     uint64_t chunk_size = (1*1024*1024);
-    DCOPY_user_opts.chunk_size = chunk_size ;
+    mfu_copy_opts->chunk_size = chunk_size ;
 
     /* By default, don't have iput file. */
-    DCOPY_user_opts.input_file = NULL;
+    mfu_copy_opts->input_file = NULL;
     
     /* flag to check for sync option */
     int do_sync = 0;
