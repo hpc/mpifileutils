@@ -87,7 +87,7 @@ typedef struct {
     time_t   time_ended;         /* time when dcp command ended */
     double   wtime_started;      /* time when dcp command started */
     double   wtime_ended;        /* time when dcp command ended */
-} DCOPY_statistics_t;
+} mfu_copy_stats_t;
 
 /* cache open file descriptor to avoid
  * opening / closing the same file */
@@ -102,7 +102,7 @@ typedef struct {
  ***************************************/
 
 /** Where we should keep statistics related to this file copy. */
-static DCOPY_statistics_t DCOPY_statistics;
+static mfu_copy_stats_t mfu_copy_stats;
 
 /** Cache most recent open file descriptor to avoid opening / closing the same file */
 static mfu_copy_file_cache_t mfu_copy_src_cache;
@@ -141,7 +141,7 @@ int mfu_input_flist_skip(const char* name, int numpaths,
     return 1;
 }
 
-static int DCOPY_open_file(const char* file, int read_flag, 
+static int mfu_copy_open_file(const char* file, int read_flag, 
         mfu_copy_file_cache_t* cache, mfu_copy_opts_t* mfu_copy_opts)
 {
     int newfd = -1;
@@ -207,7 +207,7 @@ static int DCOPY_open_file(const char* file, int read_flag,
 }
 
 /* copy all extended attributes from op->operand to dest_path */
-static void DCOPY_copy_xattrs(
+static void mfu_copy_xattrs(
     mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
@@ -341,7 +341,7 @@ static void DCOPY_copy_xattrs(
 #endif /* DCOPY_USE_XATTR */
 }
 
-static void DCOPY_copy_ownership(
+static void mfu_copy_ownership(
     mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
@@ -369,7 +369,7 @@ static void DCOPY_copy_ownership(
 }
 
 /* TODO: condionally set setuid and setgid bits? */
-static void DCOPY_copy_permissions(
+static void mfu_copy_permissions(
     mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
@@ -390,7 +390,7 @@ static void DCOPY_copy_permissions(
     return;
 }
 
-static void DCOPY_copy_timestamps(
+static void mfu_copy_timestamps(
     mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
@@ -528,14 +528,14 @@ static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
             }
 
             if(mfu_copy_opts->preserve) {
-                DCOPY_copy_ownership(list, idx, dest);
-                DCOPY_copy_permissions(list, idx, dest);
-                DCOPY_copy_timestamps(list, idx, dest);
+                mfu_copy_ownership(list, idx, dest);
+                mfu_copy_permissions(list, idx, dest);
+                mfu_copy_timestamps(list, idx, dest);
             }
             else {
                 /* TODO: set permissions based on source permissons
                  * masked by umask */
-                DCOPY_copy_permissions(list, idx, dest);
+                mfu_copy_permissions(list, idx, dest);
             }
 
             /* free destination item */
@@ -581,11 +581,11 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
 
     /* copy extended attributes on directory */
     if (mfu_copy_opts->preserve) {
-        DCOPY_copy_xattrs(list, idx, dest_path);
+        mfu_copy_xattrs(list, idx, dest_path);
     }
 
     /* increment our directory count by one */
-    DCOPY_statistics.total_dirs++;
+    mfu_copy_stats.total_dirs++;
 
     /* free the directory name */
     mfu_free(&dest_path);
@@ -721,16 +721,16 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
 
     /* set permissions on link */
     if (mfu_copy_opts->preserve) {
-        DCOPY_copy_xattrs(list, idx, dest_path);
-        DCOPY_copy_ownership(list, idx, dest_path);
-        DCOPY_copy_permissions(list, idx, dest_path);
+        mfu_copy_xattrs(list, idx, dest_path);
+        mfu_copy_ownership(list, idx, dest_path);
+        mfu_copy_permissions(list, idx, dest_path);
     }
 
     /* free destination path */
     mfu_free(&dest_path);
 
     /* increment our directory count by one */
-    DCOPY_statistics.total_links++;
+    mfu_copy_stats.total_links++;
 
     return 0;
 }
@@ -775,7 +775,7 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
      * writing data because some attributes tell file system how to
      * stripe data, e.g., Lustre */
     if (mfu_copy_opts->preserve) {
-        DCOPY_copy_xattrs(list, idx, dest_path);
+        mfu_copy_xattrs(list, idx, dest_path);
     }
 
     /* Truncate destination files to 0 bytes when sparse file is enabled,
@@ -811,7 +811,7 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
     mfu_free(&dest_path);
 
     /* increment our file count by one */
-    DCOPY_statistics.total_files++;
+    mfu_copy_stats.total_files++;
 
     return 0;
 }
@@ -1066,8 +1066,8 @@ static int mfu_copy_file_normal(
     }
 
     /* Increment the global counter. */
-    DCOPY_statistics.total_size += (int64_t) total_bytes;
-    DCOPY_statistics.total_bytes_copied += (int64_t) total_bytes;
+    mfu_copy_stats.total_size += (int64_t) total_bytes;
+    mfu_copy_stats.total_bytes_copied += (int64_t) total_bytes;
 
 #if 0
     /* force data to file system */
@@ -1246,7 +1246,7 @@ static int mfu_copy_file_fiemap(
             }
 
             ext_len -= (size_t)num_written;
-            DCOPY_statistics.total_bytes_copied += (int64_t) num_written;
+            mfu_copy_stats.total_bytes_copied += (int64_t) num_written;
         }
     }
 
@@ -1266,9 +1266,9 @@ static int mfu_copy_file_fiemap(
     }
 
     if (last_written >= file_size_offt) {
-        DCOPY_statistics.total_size += (int64_t) (file_size_offt - (off_t) offset);
+        mfu_copy_stats.total_size += (int64_t) (file_size_offt - (off_t) offset);
     } else {
-        DCOPY_statistics.total_size += (int64_t) last_byte;
+        mfu_copy_stats.total_size += (int64_t) last_byte;
     }
 
     free(fiemap);
@@ -1293,7 +1293,7 @@ static int mfu_copy_file(
     bool normal_copy_required;
 
     /* open the input file */
-    int in_fd = DCOPY_open_file(src, 1, &mfu_copy_src_cache, mfu_copy_opts);
+    int in_fd = mfu_copy_open_file(src, 1, &mfu_copy_src_cache, mfu_copy_opts);
     if (in_fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open input file `%s' errno=%d %s",
             src, errno, strerror(errno));
@@ -1301,7 +1301,7 @@ static int mfu_copy_file(
     }
 
     /* open the output file */
-    int out_fd = DCOPY_open_file(dest, 0, &mfu_copy_dst_cache, mfu_copy_opts);
+    int out_fd = mfu_copy_open_file(dest, 0, &mfu_copy_dst_cache, mfu_copy_opts);
     if (out_fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open output file `%s' errno=%d %s",
             dest, errno, strerror(errno));
@@ -1392,15 +1392,15 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     mfu_copy_opts->block_buf2 = (char*) MFU_MEMALIGN(mfu_copy_opts->block_size, alignment);
 
     /* Grab a relative and actual start time for the epilogue. */
-    time(&(DCOPY_statistics.time_started));
-    DCOPY_statistics.wtime_started = MPI_Wtime();
+    time(&(mfu_copy_stats.time_started));
+    mfu_copy_stats.wtime_started = MPI_Wtime();
 
     /* Initialize statistics */
-    DCOPY_statistics.total_dirs  = 0;
-    DCOPY_statistics.total_files = 0;
-    DCOPY_statistics.total_links = 0;
-    DCOPY_statistics.total_size  = 0;
-    DCOPY_statistics.total_bytes_copied = 0;
+    mfu_copy_stats.total_dirs  = 0;
+    mfu_copy_stats.total_files = 0;
+    mfu_copy_stats.total_links = 0;
+    mfu_copy_stats.total_size  = 0;
+    mfu_copy_stats.total_bytes_copied = 0;
 
     /* Initialize file cache */
     mfu_copy_src_cache.name = NULL;
@@ -1448,20 +1448,20 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     sync();
 
     /* Determine the actual and relative end time for the epilogue. */
-    DCOPY_statistics.wtime_ended = MPI_Wtime();
-    time(&(DCOPY_statistics.time_ended));
+    mfu_copy_stats.wtime_ended = MPI_Wtime();
+    time(&(mfu_copy_stats.time_ended));
 
     /* compute time */
-    double rel_time = DCOPY_statistics.wtime_ended - \
-                      DCOPY_statistics.wtime_started;
+    double rel_time = mfu_copy_stats.wtime_ended - \
+                      mfu_copy_stats.wtime_started;
 
     /* prep our values into buffer */
     int64_t values[5];
-    values[0] = DCOPY_statistics.total_dirs;
-    values[1] = DCOPY_statistics.total_files;
-    values[2] = DCOPY_statistics.total_links;
-    values[3] = DCOPY_statistics.total_size;
-    values[4] = DCOPY_statistics.total_bytes_copied;
+    values[0] = mfu_copy_stats.total_dirs;
+    values[1] = mfu_copy_stats.total_files;
+    values[2] = mfu_copy_stats.total_links;
+    values[3] = mfu_copy_stats.total_size;
+    values[4] = mfu_copy_stats.total_bytes_copied;
 
     /* sum values across processes */
     int64_t sums[5];
@@ -1483,12 +1483,12 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     if(rank == 0) {
         /* format start time */
         char starttime_str[256];
-        struct tm* localstart = localtime(&(DCOPY_statistics.time_started));
+        struct tm* localstart = localtime(&(mfu_copy_stats.time_started));
         strftime(starttime_str, 256, "%b-%d-%Y,%H:%M:%S", localstart);
 
         /* format end time */
         char endtime_str[256];
-        struct tm* localend = localtime(&(DCOPY_statistics.time_ended));
+        struct tm* localend = localtime(&(mfu_copy_stats.time_ended));
         strftime(endtime_str, 256, "%b-%d-%Y,%H:%M:%S", localend);
 
         /* total number of items */

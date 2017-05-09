@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <errno.h>
 
 /* initialize fields in param */
 static void mfu_param_path_init(mfu_param_path* param)
