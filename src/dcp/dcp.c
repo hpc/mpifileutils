@@ -257,7 +257,6 @@ int main(int argc, \
     mfu_param_path_check_copy(numpaths, paths, destpath, &valid, &copy_into_dir);
     
     mfu_copy_opts->copy_into_dir = copy_into_dir; 
-    printf("copy into dir: %d\n", mfu_copy_opts->copy_into_dir);
 
     /* exit job if we found a problem */
     if(! valid) {
