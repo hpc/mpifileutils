@@ -36,6 +36,9 @@
 #include <grp.h> /* for getgrent */
 #include <errno.h>
 
+#include <string.h>
+#include <regex.h>
+
 #if 0
 /* use readline for prompt processing */
 #include <stdio.h>
@@ -359,6 +362,67 @@ static void filter_files_path(mfu_flist flist, mfu_path* path, int inclusive, mf
 
     *out_eligible = eligible;
     *out_leftover = leftover;
+
+    return;
+}
+
+/* pick out all files that are contained within a given directory,
+ * and whose first component after the given directory matches
+ * the provided regex */
+static void filter_files_regex(mfu_flist flist, mfu_path* path, const char* regex, mfu_flist* out_eligible, mfu_flist* out_leftover)
+{
+    /* compile the regex */
+    regex_t re;
+    int rc = regcomp(&re, regex, REG_NOSUB);
+    if (rc != 0) {
+        printf("Error compiling regex for %s\n", regex);
+    }
+
+    /* the files that satisfy the filter are copied to eligible,
+     * while others are copied to leftover */
+    mfu_flist eligible = mfu_flist_subset(flist);
+    mfu_flist leftover = mfu_flist_subset(flist);
+
+    /* get number of components in current path */
+    int components = mfu_path_components(path);
+
+    uint64_t idx = 0;
+    uint64_t files = mfu_flist_size(flist);
+    while (idx < files) {
+        const char* filename = mfu_flist_file_get_name(flist, idx);
+        mfu_path* fpath = mfu_path_from_str(filename);
+
+        if (mfu_path_cmp(path, fpath) == MFU_PATH_DEST_CHILD) {
+            /* first check that we have an item in the current path */
+            /* get component of path immediately following path */
+            mfu_path_slice(fpath, components, 1);
+            const char* item = mfu_path_strdup(fpath);
+            rc = regexec(&re, item, 0, NULL, 0);
+            if (rc == 0) {
+                /* got a match */
+                mfu_flist_file_copy(flist, idx, eligible);
+            } else {
+                /* this file does not match the filter */
+                mfu_flist_file_copy(flist, idx, leftover);
+            }
+            mfu_free(&item);
+        } else {
+            /* this file does not match the filter */
+            mfu_flist_file_copy(flist, idx, leftover);
+        }
+
+        mfu_path_delete(&fpath);
+        idx++;
+    }
+
+    mfu_flist_summarize(eligible);
+    mfu_flist_summarize(leftover);
+
+    *out_eligible = eligible;
+    *out_leftover = leftover;
+
+    /* free the regular expression */
+    regfree(&re);
 
     return;
 }
@@ -1593,6 +1657,48 @@ static int invalid_sortfields(char* sortfields)
     return invalid;
 }
 
+/* given a string like foo*, convert to equivalent C-based regex,
+ * start string with ^, replace each "*" with ".*", end string with $ */
+static char* arg_to_regex(const char* arg)
+{
+    /* count number of bytes we need */
+    size_t count = 2; /* for ^ and $ at ends of regex */
+    char* str = arg;
+    char* tok = strchr(str, '*');
+    while (tok != NULL) {
+      count += tok - str; /* copy text leading up to * */
+      count += 2; /* replace each * with .* */
+      str = tok + 1;
+      tok = strchr(str, '*');
+    }
+    count += strlen(str);
+    count += 1; /* trailing NULL */
+
+    /* allocate memory for regex */
+    char* regex = MFU_MALLOC(count);
+
+    /* prepend ^ to match start of sequence */
+    strcpy(regex, "^");
+
+    /* replace each * with .* */
+    str = arg;
+    tok = strchr(str, '*');
+    while (tok != NULL) {
+      strncat(regex, str, tok - str);
+      strcat(regex, ".*");
+      str = tok + 1;
+      tok = strchr(str, '*');
+    }
+
+    /* remaining text */
+    strcat(regex, str);
+
+    /* append $ to match end of sequence */
+    strcat(regex, "$");
+
+    return regex;
+}
+
 static void print_usage(void)
 {
     printf("\n");
@@ -1761,6 +1867,7 @@ int main(int argc, char** argv)
     while (1) {
         int print = 0;
         char* sortfields = NULL;
+        char* regex      = NULL;
 
 // http://web.mit.edu/gnu/doc/html/rlman_2.html
 // http://sunsite.ualberta.ca/Documentation/Gnu/readline-4.1/html_node/readline_45.html
@@ -1848,6 +1955,8 @@ int main(int argc, char** argv)
             char ls_args[1024];
             int scan_rc = sscanf(line, "ls %s\n", ls_args);
             if (scan_rc == 1) {
+                regex = arg_to_regex(ls_args);
+#if 0
                 sortfields = MFU_STRDUP(ls_args);
                 if (invalid_sortfields(sortfields)) {
                     /* disable printing and sorting */
@@ -1862,6 +1971,7 @@ int main(int argc, char** argv)
                         fflush(stdout);
                     }
                 }
+#endif
             }
         } else if (strncmp(line, "rm", 2) == 0) {
             char subpath[1024];
@@ -1915,6 +2025,15 @@ int main(int argc, char** argv)
             mfu_flist filtered, leftover;
             filter_files_path(flist, path, inclusive, &filtered, &leftover);
 
+            /* filter items out by regex if we have one */
+            if (regex != NULL) {
+                mfu_flist filtered2, leftover2;
+                filter_files_regex(filtered, path, regex, &filtered2, &leftover2);
+                mfu_flist_free(&filtered);
+                mfu_flist_free(&leftover2);
+                filtered = filtered2;
+            }
+
             summarize_children(filtered, path);
 
             /* free the list */
@@ -1922,6 +2041,7 @@ int main(int argc, char** argv)
             mfu_flist_free(&leftover);
         }
 
+        mfu_free(&regex);
         mfu_free(&sortfields);
     }
 
