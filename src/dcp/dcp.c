@@ -79,16 +79,21 @@ int main(int argc, \
 
     /* By default, don't have iput file. */
     char* inputname = NULL;
+
+    /* flag to record whether we're walking directories */
     int walk = 0;
 
     /* By default, don't bother to preserve all attributes. */
-    int preserve = 0;
+    mfu_copy_opts->preserve = 0;
+
     /* Lustre grouplock ID */
-    int grouplock_id; 
+    mfu_copy_opts->grouplock_id; 
+
     /* By default, don't use O_DIRECT. */
-    int synchronous = 0;
+    mfu_copy_opts->synchronous = 0;
+
     /* By default, don't use sparse file. */
-    int sparse = 0; 
+    mfu_copy_opts->sparse = 0; 
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -175,19 +180,19 @@ int main(int argc, \
                 }
                 break;
             case 'p':
-                preserve = 1;
+                mfu_copy_opts->preserve = 1;
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Preserving file attributes.");
                 }
                 break;
             case 's':
-                synchronous = 1;
+                mfu_copy_opts->synchronous = 1;
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Using synchronous read/write (O_DIRECT)");
                 }
                 break;
             case 'S':
-                sparse = 1;
+                mfu_copy_opts->sparse = 1;
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Using sparse file");
                 }
