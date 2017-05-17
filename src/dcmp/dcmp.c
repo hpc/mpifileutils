@@ -760,8 +760,8 @@ static void dcmp_strmap_compare_data(
     /* execute segmented scan of comparison flags across file names */
     DTCMP_Segmented_exscan((int)list_count, keys, keytype, vals, ltr, rtl, MPI_INT, keyop, DTCMP_FLAG_NONE, MPI_LOR, MPI_COMM_WORLD);
     for (i = 0; i < list_count; i++) {
-      /* turn segmented exscan into scan by or'ing in our input */
-      ltr[i] |= vals[i];
+        /* turn segmented exscan into scan by or'ing in our input */
+        ltr[i] |= vals[i];
     }
     
     /* we're done with the MPI type and operation, free them */
@@ -994,7 +994,7 @@ static void dcmp_sync_files(strmap* src_map, strmap* dst_map,
     
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
-    mfu_param_path_check_copy(2, src_path, dest_path, &valid, &copy_into_dir);
+    mfu_param_path_check_copy(1, src_path, dest_path, &valid, &copy_into_dir);
     
     /* record copy_into_dir flag result from check_copy into 
      * mfu copy options structure */ 
@@ -1021,8 +1021,7 @@ static void dcmp_sync_files(strmap* src_map, strmap* dst_map,
     mfu_flist_summarize(src_cp_list); 
        
     /* copy flist into destination */ 
-    mfu_flist_copy(src_cp_list, 2, src_path, 
-            dest_path, mfu_copy_opts);
+    mfu_flist_copy(src_cp_list, 1, src_path, dest_path, mfu_copy_opts);
     
     /* free the lists used for copying and removing files */
     mfu_flist_free(&src_cp_list);
@@ -2081,8 +2080,6 @@ int main(int argc, char **argv)
      *   2) stat info + items in #1
      *   3) file contents + items in #2 */
 
-    int option_index = 0;
-    
     /* walk by default because there is no input file option */ 
     int walk = 1;
    
@@ -2109,6 +2106,8 @@ int main(int argc, char **argv)
     
     /* flag to check for sync option */
     mfu_copy_opts->do_sync = 0;
+
+    int option_index = 0;
     static struct option long_options[] = {
         {"sync",     0, 0, 's'} ,
         {"base",     0, 0, 'b'},
@@ -2139,10 +2138,10 @@ int main(int argc, char **argv)
             mfu_copy_opts->do_sync = 1;
             break;
         case 'b':
-            options.base ++;
+            options.base++;
             break;
         case 'd':
-            options.debug ++;
+            options.debug++;
             break;
         case 'o':
             ret = dcmp_option_output_parse(optarg, 0);
@@ -2151,7 +2150,7 @@ int main(int argc, char **argv)
             }
             break;
         case 'v':
-            options.verbose ++;
+            options.verbose++;
             mfu_debug_level = MFU_LOG_VERBOSE;
             break;
         case 'h':
@@ -2262,6 +2261,9 @@ int main(int argc, char **argv)
     
     /* free all param paths */
     mfu_param_path_free_all(numargs, paths);
+
+    /* free memory allocated to hold params */
+    mfu_free(&paths);
 
     dcmp_option_fini();
 
