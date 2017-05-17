@@ -34,19 +34,11 @@
 /** Print a usage message. */
 void print_usage(void)
 {
-    /* The compare option isn't really effective because it often
-     * reads from the page cache and not the disk, which gives a
-     * false sense of validation.  Also, it tends to thrash the
-     * metadata server with lots of extra open/close calls.  Plan
-     * is to delete it here, and rely on dcmp instead.  For now
-     * we just hide it as an option. */
-
     printf("\n");
     printf("Usage: dcp [options] source target\n");
     printf("       dcp [options] source ... target_dir\n");
     printf("\n");
     printf("Options:\n");
-    /* printf("  -c, --compare       - read data back after writing to compare\n"); */
     /* printf("  -d, --debug <level> - specify debug verbosity level (default info)\n"); */
 #ifdef LUSTRE_SUPPORT
     /* printf("  -g, --grouplock <id> - use Lustre grouplock when reading/writing file\n"); */
@@ -249,13 +241,15 @@ int main(int argc, \
         }
     }
 
+    /* the last path is the destination path, all others are source paths */
+    int numpaths_src = numpaths - 1;
+
     /* last item in the list is the destination path */
-    const mfu_param_path* destpath = &paths[numpaths-1];
+    const mfu_param_path* destpath = &paths[numpaths - 1];
     
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
-    mfu_param_path_check_copy(numpaths, paths, destpath, &valid, &copy_into_dir);
-    
+    mfu_param_path_check_copy(numpaths_src, paths, destpath, &valid, &copy_into_dir);
     mfu_copy_opts->copy_into_dir = copy_into_dir; 
 
     /* exit job if we found a problem */
@@ -278,9 +272,6 @@ int main(int argc, \
         return 1;
     }
 
-    /* the last path is the destination path, all others are source paths */
-    int numpaths_src = numpaths - 1;
-
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
 
@@ -288,7 +279,7 @@ int main(int argc, \
         /* walk paths and fill in file list */
         int walk_stat = 1;
         int dir_perm  = 0;
-        mfu_param_path_walk(numpaths_src, paths, walk_stat, flist, dir_perm);
+        mfu_flist_walk_param_paths(numpaths_src, paths, walk_stat, dir_perm, flist);
     } else {
         /* otherwise, read list of files from input, but then stat each one */
         mfu_flist input_flist = mfu_flist_new();
@@ -298,8 +289,7 @@ int main(int argc, \
     }
 
     /* copy flist into destination */ 
-    mfu_flist_copy(flist, numpaths, paths, 
-            destpath, mfu_copy_opts);
+    mfu_flist_copy(flist, numpaths_src, paths, destpath, mfu_copy_opts);
     
     /* free the file list */
     mfu_flist_free(&flist);

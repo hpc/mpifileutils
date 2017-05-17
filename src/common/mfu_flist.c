@@ -1402,28 +1402,3 @@ void mfu_flist_print(mfu_flist flist)
 
     return;
 }
-
-/* given a list of param_paths, walk each one and add to flist */
-void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, 
-        int walk_stat, mfu_flist flist, int dir_perms)
-{
-    /* allocate memory to hold a list of paths */
-    const char** path_list = (const char**) MFU_MALLOC(num * sizeof(char*));
-
-    /* fill list of paths and print each one */
-    uint64_t i;
-    for (i = 0; i < num; i++) {
-        /* get path for this step */
-        path_list[i] = params[i].path;
-    }
-
-    /* walk file tree and record stat data for each file */
-    mfu_flist_walk_paths((uint64_t) num, path_list, walk_stat, dir_perms, flist);
-
-    /* free the list */
-    mfu_free(&path_list);
-
-    return;
-}
-
-

@@ -2232,8 +2232,8 @@ int main(int argc, char **argv)
     /* walk src and dest paths and fill in file lists */
     int walk_stat = 1;
     int dir_perm  = 0;
-    mfu_param_path_walk(numpaths_src, paths, walk_stat, flist1, dir_perm);
-    mfu_param_path_walk(numargs - 1, destpath, walk_stat, flist2, dir_perm);
+    mfu_flist_walk_param_paths(numpaths_src,   paths, walk_stat, dir_perm, flist1);
+    mfu_flist_walk_param_paths(numargs - 1, destpath, walk_stat, dir_perm, flist2);
 
     /* store src and dest path strings */
     const char* path1 = paths[0].path;

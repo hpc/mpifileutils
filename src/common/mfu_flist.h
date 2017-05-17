@@ -156,6 +156,15 @@ void mfu_flist_walk_paths(
     mfu_flist flist
 );
 
+/* given a list of param_paths, walk each one and add to flist */
+void mfu_flist_walk_param_paths(
+    uint64_t num,
+    const mfu_param_path* params,
+    int use_stat,
+    int dir_perms,
+    mfu_flist flist
+);
+
 /* skip function pointer: given a path input, along with user-provided
  * arguments, compute whether to enqueue this file in output list of
  * mfu_flist_stat, return 1 if file should be skipped, 0 if not. */
@@ -293,10 +302,6 @@ mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args
 /* takes a list, spreads it out evenly, and then returns the newly created list 
 * to the caller */
 mfu_flist mfu_flist_spread(mfu_flist flist);
-
-/* given a list of param_paths, walk each one and add to flist */
-void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, 
-        int walk_stat, mfu_flist flist, int dir_perms);
 
 /* copy items in list */
 void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,

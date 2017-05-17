@@ -1122,7 +1122,7 @@ int main(int argc, char** argv)
             walk_stat = 0;
         }
         /* walk list of input paths */
-        mfu_param_path_walk(numpaths, paths, walk_stat, flist, dir_perms);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, dir_perms, flist);
     }
     else {
         /* read list from file */
