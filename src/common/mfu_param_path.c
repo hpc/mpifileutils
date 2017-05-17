@@ -567,7 +567,7 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
     *flag_copy_into_dir = 0;
 
     /* need at least two paths to have a shot at being valid */
-    if (num < 2) {
+    if (num < 1 || paths == NULL || destpath == NULL) {
         return;
     }
 
