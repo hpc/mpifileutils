@@ -2181,36 +2181,29 @@ int main(int argc, char **argv)
         }
     }
     
-    int numargs;
+    /* we should have two arguments left, source and dest paths */
+    int numargs = argc - optind;
+        
     /* if help flag was thrown, don't bother checking usage */
-    if (!help) {
-        
-        /* we should have two arguments left, source and dest paths */
-        numargs = argc - optind;
-        
-        if (numargs != 2) {
-            MFU_LOG(MFU_LOG_ERR,
-                "You must specify a source and destination path.");
-            usage = 1;
+    if (numargs != 2 && !help) {
+        MFU_LOG(MFU_LOG_ERR,
+            "You must specify a source and destination path.");
+        usage = 1;
+    }
+    
+    /* print usage and exit if necessary */
+    if (usage) {
+        if (rank == 0) {
+            print_usage();
         }
-        
-        /* print usage and exit if necessary */
-        if (usage) {
-            if (rank == 0) {
-                print_usage();
-            }
-            dcmp_option_fini();
-            mfu_finalize();
-            MPI_Finalize();
-            return 1;
-        }
+        dcmp_option_fini();
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
     }
 
-    /* pointer to input paths */
-    mfu_param_path* paths = NULL;
-            
     /* allocate space for each path */
-    paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
+    mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
             
     /* process each path */
     char** argpaths = &argv[optind];
@@ -2219,11 +2212,9 @@ int main(int argc, char **argv)
     /* advance to next set of options */
     optind += numargs;
 
-    /* last item in the list is the destination path */
-    const mfu_param_path* destpath = &paths[numargs-1];
-    
-    /* the last path is the destination path, all others are source paths */
-    int numpaths_src = numargs - 1;
+    /* first item is source and second is dest */
+    const mfu_param_path* srcpath  = &paths[0];
+    const mfu_param_path* destpath = &paths[1];
 
     /* create an empty file list */
     mfu_flist flist1 = mfu_flist_new();
@@ -2232,12 +2223,12 @@ int main(int argc, char **argv)
     /* walk src and dest paths and fill in file lists */
     int walk_stat = 1;
     int dir_perm  = 0;
-    mfu_flist_walk_param_paths(numpaths_src,   paths, walk_stat, dir_perm, flist1);
-    mfu_flist_walk_param_paths(numargs - 1, destpath, walk_stat, dir_perm, flist2);
+    mfu_flist_walk_param_paths(1,  srcpath, walk_stat, dir_perm, flist1);
+    mfu_flist_walk_param_paths(1, destpath, walk_stat, dir_perm, flist2);
 
     /* store src and dest path strings */
-    const char* path1 = paths[0].path;
-    const char* path2 = paths[1].path;
+    const char* path1 = srcpath->path;
+    const char* path2 = destpath->path;
     
     /* map files to ranks based on portion following prefix directory */
     mfu_flist flist3 = mfu_flist_remap(flist1, dcmp_map_fn, (const void*)path1);
@@ -2249,7 +2240,7 @@ int main(int argc, char **argv)
     
     /* compare files in map1 with those in map2 */
     dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1), 
-            mfu_copy_opts, paths, destpath);
+            mfu_copy_opts, srcpath, destpath);
     
     /* check the results are valid */
     if (options.debug) {
@@ -2273,6 +2264,7 @@ int main(int argc, char **argv)
     mfu_param_path_free_all(numargs, paths);
 
     dcmp_option_fini();
+
     /* shut down */
     mfu_finalize();
     MPI_Finalize();
