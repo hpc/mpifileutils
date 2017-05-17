@@ -600,22 +600,19 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
         int numpaths, const mfu_param_path* paths, 
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
+    int rc = 0;
+
+    /* determine whether we should print status messages */
+    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
+
     /* get current rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    int rc = 0;
-
-    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
 
     /* indicate to user what phase we're in */
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Creating directories.");
     }
-
-    /* get our rank and number of ranks in job */
-    int ranks;
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* work from shallowest level to deepest level */
     int level;
@@ -638,6 +635,7 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
                 int tmp_rc = mfu_create_directory(list, idx, numpaths, 
                         paths, destpath, mfu_copy_opts);
                 if (tmp_rc != 0) {
+                    /* set return code to most recent non-zero return code */
                     rc = tmp_rc;
                 }
 
@@ -820,22 +818,19 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
         int numpaths, const mfu_param_path* paths,
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
+    int rc = 0;
+
+    /* determine whether we should print status messages */
+    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
+
     /* get current rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    int rc = 0;
-
-    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
 
     /* indicate to user what phase we're in */
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Creating files.");
     }
-
-    /* get our rank and number of ranks in job */
-    int ranks;
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* TODO: we don't need to have a barrier between levels */
 
