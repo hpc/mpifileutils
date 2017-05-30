@@ -23,12 +23,12 @@ export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
 export CC=mpicc
 
 # hack to get things to build after common library
-export CFLAGS="-I${topdir}/src/common -DDCOPY_USE_XATTRS"
+export CFLAGS="-g -O0 -I${topdir}/src/common -DDCOPY_USE_XATTRS"
 export LDFLAGS="-Wl,-rpath,${topdir}/install/lib -L${topdir}/install/lib -lcircle"
 
-#  --enable-experimental \
 ../configure \
   --enable-lustre \
+  --enable-experimental \
   --prefix=$installdir \
   --disable-silent-rules \
   --with-dtcmp=$installdir && \

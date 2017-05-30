@@ -145,6 +145,9 @@ char* mfu_strdupf(const char* file, int line, const char* format, ...);
  * pointer to NULL */
 void mfu_free(void* p);
 
+/* given a number of items, return value converted to returned units */
+void mfu_format_count(uint64_t count, double* val, const char** units);
+
 /* given a number of bytes, return value converted to returned units */
 void mfu_format_bytes(uint64_t bytes, double* val, const char** units);
 
