@@ -7,8 +7,18 @@ set -x
 
 topdir=`pwd`
 installdir=$topdir/install
-
 export PATH="${topdir}/autotools/install/bin:$PATH"
+
+# if EA is set to true then add configure option
+EA=false
+build_type=""
+CC=mpicc
+if $EA ; then
+        # build line option required if building for EA systems
+        build_type="powerpc64le-redhat-linux-gnu"
+        CC=mpigcc
+        export CXX=mpig++
+fi
 
 ./autogen.sh
 
@@ -20,13 +30,14 @@ export PKG_CONFIG_PATH="${installdir}/lib/pkgconfig"
 
 # TODO: avoid this step
 # necessary so configure test of dtcmp links with MPI
-export CC=mpicc
+
+export CC=${CC} 
 
 # hack to get things to build after common library
 export CFLAGS="-g -O0 -I${topdir}/src/common -DDCOPY_USE_XATTRS"
 export LDFLAGS="-Wl,-rpath,${topdir}/install/lib -L${topdir}/install/lib -lcircle"
 
-../configure \
+../configure --build=${build_type} \
   --enable-lustre \
   --enable-experimental \
   --prefix=$installdir \
