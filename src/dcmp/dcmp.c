@@ -990,7 +990,7 @@ static void dcmp_sync_files(strmap* src_map, strmap* dst_map,
         return 1;
     }
     
-    /* copy files that are only in the destination directory,
+    /* get files that are only in the destination directory,
      * and then remove those files */
     dcmp_only_dst(src_map, dst_map, dst_list, dst_remove_list);
     mfu_flist_summarize(dst_remove_list);
@@ -1002,10 +1002,6 @@ static void dcmp_sync_files(strmap* src_map, strmap* dst_map,
        
     /* copy flist into destination */ 
     mfu_flist_copy(src_cp_list, 1, src_path, dest_path, mfu_copy_opts);
-    
-    /* free the lists used for copying and removing files */
-    mfu_flist_free(&src_cp_list);
-    mfu_flist_free(&dst_remove_list);
 }
 
 /* compare entries from src into dst */
@@ -1028,7 +1024,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
   
     /* remove and copy lists for sync option */ 
     mfu_flist dst_remove_list = MFU_FLIST_NULL;
-    mfu_flist src_cp_list = MFU_FLIST_NULL; 
+    mfu_flist src_cp_list     = MFU_FLIST_NULL; 
     
     /* create dst remove list if sync option is on */
     if (mfu_copy_opts->do_sync) {
@@ -1174,7 +1170,11 @@ static void dcmp_strmap_compare(mfu_flist src_list,
         dcmp_sync_files(src_map, dst_map, src_path, dest_path,
                 dst_list, dst_remove_list, src_cp_list, mfu_copy_opts);
     }
-    
+   
+    /* free lists used for copying and removing files in sync option */ 
+    mfu_flist_free(&src_cp_list);
+    mfu_flist_free(&dst_remove_list);
+
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
     mfu_flist_free(&src_compare_list); 
