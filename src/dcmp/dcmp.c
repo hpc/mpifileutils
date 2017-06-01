@@ -1027,8 +1027,8 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     mfu_flist dst_compare_list = mfu_flist_subset(dst_list);
   
     /* remove and copy lists for sync option */ 
-    mfu_flist dst_remove_list;
-    mfu_flist src_cp_list; 
+    mfu_flist dst_remove_list = MFU_FLIST_NULL;
+    mfu_flist src_cp_list = MFU_FLIST_NULL; 
     
     /* create dst remove list if sync option is on */
     if (mfu_copy_opts->do_sync) {
