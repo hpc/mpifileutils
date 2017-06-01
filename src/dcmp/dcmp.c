@@ -441,19 +441,32 @@ static strmap* dcmp_strmap_creat(mfu_flist list, const char* prefix)
     return map;
 }
 
-/* Seeks to specified offset in source and destination files, reads in
- * size bytes from each file, compares result.  Return -1 on read error,
- * 0 when equal, 1 when there is a difference */
-static int _dcmp_compare_data(
+/* Return -1 when error, return 0 when equal, return 1 when diff */
+static int dcmp_compare_data(
     const char* src_name,
     const char* dst_name,
-    int src_fd,
-    int dst_fd,
     off_t offset,
-    size_t size,
-    size_t buff_size, 
+    size_t length,
+    size_t buff_size,
     mfu_copy_opts_t* mfu_copy_opts)
 {
+    /* open source file */
+    int src_fd = mfu_open(src_name, O_RDONLY);
+    if (src_fd < 0) {
+        return -1;
+    }
+
+    /* open destination file */
+    int dst_fd = mfu_open(dst_name, O_RDWR);
+    if (dst_fd < 0) {
+        mfu_close(src_name, src_fd);
+        return -1;
+    }
+
+    /* hint that we'll read from file sequentially */
+    posix_fadvise(src_fd, offset, (off_t)length, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(dst_fd, offset, (off_t)length, POSIX_FADV_SEQUENTIAL);
+
     /* assume we'll find that file contents are the same */
     int rc = 0;
 
@@ -473,13 +486,13 @@ static int _dcmp_compare_data(
 
     /* read and compare data from files */
     size_t total_bytes = 0;
-    while(size == 0 || total_bytes < size) {
+    while(length == 0 || total_bytes < length) {
         /* determine number of bytes to read in this iteration */
         size_t left_to_read;
-        if (size == 0) {
+        if (length == 0) {
             left_to_read = buff_size;
         } else {
-            left_to_read = size - total_bytes;
+            left_to_read = length - total_bytes;
             if (left_to_read > buff_size) {
                 left_to_read = buff_size;
             }
@@ -547,45 +560,12 @@ static int _dcmp_compare_data(
     /* make sure to truncate the file if dest is larger than the source
      * when syncing files */ 
     if (mfu_copy_opts->do_sync && rc == 1) {
-         truncate(dst_name, size);
+         truncate(dst_name, length);
     }
     
     /* free buffers */
     mfu_free(&dest_buf);
     mfu_free(&src_buf);
-
-    return rc;
-}
-
-/* Return -1 when error, return 0 when equal, return 1 when diff */
-static int dcmp_compare_data(
-    const char* src_name,
-    const char* dst_name,
-    off_t offset,
-    size_t length,
-    size_t buff_size,
-    mfu_copy_opts_t* mfu_copy_opts)
-{
-    /* open source file */
-    int src_fd = mfu_open(src_name, O_RDONLY);
-    if (src_fd < 0) {
-        return -1;
-    }
-
-    /* open destination file */
-    int dst_fd = mfu_open(dst_name, O_RDWR);
-    if (dst_fd < 0) {
-        mfu_close(src_name, src_fd);
-        return -1;
-    }
-
-    /* hint that we'll read from file sequentially */
-    posix_fadvise(src_fd, offset, (off_t)length, POSIX_FADV_SEQUENTIAL);
-    posix_fadvise(dst_fd, offset, (off_t)length, POSIX_FADV_SEQUENTIAL);
-
-    /* compare file contents */
-    int rc = _dcmp_compare_data(src_name, dst_name, src_fd, dst_fd,
-        offset, length, buff_size, mfu_copy_opts);
 
     /* close files */
     mfu_close(dst_name, dst_fd);
