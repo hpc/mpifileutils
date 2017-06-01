@@ -36,6 +36,9 @@
 #include <grp.h> /* for getgrent */
 #include <errno.h>
 
+#include <string.h>
+#include <regex.h>
+
 #if 0
 /* use readline for prompt processing */
 #include <stdio.h>
@@ -46,13 +49,14 @@
 #include "libcircle.h"
 #include "dtcmp.h"
 #include "mfu.h"
+#include "strmap.h"
 
 // getpwent getgrent to read user and group entries
 
 /* TODO: change globals to struct */
 static int verbose   = 0;
 static int walk_stat = 1;
-static int dir_perms = 0;
+static int dir_perm  = 0;
 
 /* keep stats during walk */
 uint64_t total_dirs    = 0;
@@ -362,6 +366,67 @@ static void filter_files_path(mfu_flist flist, mfu_path* path, int inclusive, mf
     return;
 }
 
+/* pick out all files that are contained within a given directory,
+ * and whose first component after the given directory matches
+ * the provided regex */
+static void filter_files_regex(mfu_flist flist, mfu_path* path, const char* regex, mfu_flist* out_eligible, mfu_flist* out_leftover)
+{
+    /* compile the regex */
+    regex_t re;
+    int rc = regcomp(&re, regex, REG_NOSUB);
+    if (rc != 0) {
+        printf("Error compiling regex for %s\n", regex);
+    }
+
+    /* the files that satisfy the filter are copied to eligible,
+     * while others are copied to leftover */
+    mfu_flist eligible = mfu_flist_subset(flist);
+    mfu_flist leftover = mfu_flist_subset(flist);
+
+    /* get number of components in current path */
+    int components = mfu_path_components(path);
+
+    uint64_t idx = 0;
+    uint64_t files = mfu_flist_size(flist);
+    while (idx < files) {
+        const char* filename = mfu_flist_file_get_name(flist, idx);
+        mfu_path* fpath = mfu_path_from_str(filename);
+
+        if (mfu_path_cmp(path, fpath) == MFU_PATH_DEST_CHILD) {
+            /* first check that we have an item in the current path */
+            /* get component of path immediately following path */
+            mfu_path_slice(fpath, components, 1);
+            const char* item = mfu_path_strdup(fpath);
+            rc = regexec(&re, item, 0, NULL, 0);
+            if (rc == 0) {
+                /* got a match */
+                mfu_flist_file_copy(flist, idx, eligible);
+            } else {
+                /* this file does not match the filter */
+                mfu_flist_file_copy(flist, idx, leftover);
+            }
+            mfu_free(&item);
+        } else {
+            /* this file does not match the filter */
+            mfu_flist_file_copy(flist, idx, leftover);
+        }
+
+        mfu_path_delete(&fpath);
+        idx++;
+    }
+
+    mfu_flist_summarize(eligible);
+    mfu_flist_summarize(leftover);
+
+    *out_eligible = eligible;
+    *out_leftover = leftover;
+
+    /* free the regular expression */
+    regfree(&re);
+
+    return;
+}
+
 static void sum_child(mfu_flist flist, uint64_t idx, uint64_t* vals)
 {
     /* increase our item count by one */
@@ -457,11 +522,17 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
         const char* agg_size_units;
         mfu_format_bytes(allsum_bytes, &agg_size_tmp, &agg_size_units);
     
+        double allsum_tmp;
+        const char* allsum_units;
+        mfu_format_count(allsum_count, &allsum_tmp, &allsum_units);
+
         /* print header info */
         char* origpath_str = mfu_path_strdup(origpath);
         printf("--------------------------\n");
-        printf("    Bytes %*s Path\n", digits, "Items");
-        printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) allsum_count, origpath_str);
+        //printf("    Bytes %*s Path\n", digits, "Items");
+        //printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) allsum_count, origpath_str);
+        printf("    Bytes    Items Path\n");
+        printf("%6.2f %2s %6.2f %1s %s\n", agg_size_tmp, agg_size_units, allsum_tmp, allsum_units, origpath_str);
         printf("--------------------------\n");
         mfu_free(&origpath_str);
 
@@ -481,7 +552,12 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
             const char* agg_size_units;
             mfu_format_bytes(bytes, &agg_size_tmp, &agg_size_units);
     
-            printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) count, name);
+            double count_tmp;
+            const char* count_units;
+            mfu_format_count(count, &count_tmp, &count_units);
+    
+            //printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) count, name);
+            printf("%6.2f %2s %6.2f %1s %s\n", agg_size_tmp, agg_size_units, count_tmp, count_units, name);
         }
         fflush(stdout);
     }
@@ -1581,12 +1657,55 @@ static int invalid_sortfields(char* sortfields)
     return invalid;
 }
 
+/* given a string like foo*, convert to equivalent C-based regex,
+ * start string with ^, replace each "*" with ".*", end string with $ */
+static char* arg_to_regex(const char* arg)
+{
+    /* count number of bytes we need */
+    size_t count = 2; /* for ^ and $ at ends of regex */
+    char* str = arg;
+    char* tok = strchr(str, '*');
+    while (tok != NULL) {
+      count += tok - str; /* copy text leading up to * */
+      count += 2; /* replace each * with .* */
+      str = tok + 1;
+      tok = strchr(str, '*');
+    }
+    count += strlen(str);
+    count += 1; /* trailing NULL */
+
+    /* allocate memory for regex */
+    char* regex = MFU_MALLOC(count);
+
+    /* prepend ^ to match start of sequence */
+    strcpy(regex, "^");
+
+    /* replace each * with .* */
+    str = arg;
+    tok = strchr(str, '*');
+    while (tok != NULL) {
+      strncat(regex, str, tok - str);
+      strcat(regex, ".*");
+      str = tok + 1;
+      tok = strchr(str, '*');
+    }
+
+    /* remaining text */
+    strcat(regex, str);
+
+    /* append $ to match end of sequence */
+    strcat(regex, "$");
+
+    return regex;
+}
+
 static void print_usage(void)
 {
     printf("\n");
     printf("Usage: dsh [options] <path> ...\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -f, --file <file>   - read list from file, and write processed list back to file\n");
     printf("  -i, --input <file>  - read list from file\n");
     printf("  -o, --output <file> - write processed list to file\n");
     printf("  -l, --lite          - walk file system without stat\n");
@@ -1603,6 +1722,7 @@ int main(int argc, char** argv)
 
     /* initialize MPI */
     MPI_Init(&argc, &argv);
+    mfu_init();
 
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -1626,6 +1746,7 @@ int main(int argc, char** argv)
 
     int option_index = 0;
     static struct option long_options[] = {
+        {"file",     1, 0, 'f'},
         {"input",    1, 0, 'i'},
         {"output",   1, 0, 'o'},
         {"lite",     0, 0, 'l'},
@@ -1637,7 +1758,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:lhv",
+                    argc, argv, "f:i:o:lhv",
                     long_options, &option_index
                 );
 
@@ -1646,6 +1767,11 @@ int main(int argc, char** argv)
         }
 
         switch (c) {
+            case 'f':
+                /* use the same file for input and output */
+                inputname  = MFU_STRDUP(optarg);
+                outputname = MFU_STRDUP(optarg);
+                break;
             case 'i':
                 inputname = MFU_STRDUP(optarg);
                 break;
@@ -1685,11 +1811,11 @@ int main(int argc, char** argv)
         paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
         /* process each path */
-        for (i = 0; i < numpaths; i++) {
-            const char* path = argv[optind];
-            mfu_param_path_set(path, &paths[i]);
-            optind++;
-        }
+        char** argpaths = &argv[optind];
+        mfu_param_path_set_all(numpaths, argpaths, paths);
+
+        /* advance to next set of options */
+        optind += numpaths;
 
         /* don't allow user to specify input file with walk */
         if (inputname != NULL) {
@@ -1704,6 +1830,7 @@ int main(int argc, char** argv)
         }
     }
 
+    /* print usage if we need to */
     if (usage) {
         if (rank == 0) {
             print_usage();
@@ -1718,82 +1845,18 @@ int main(int argc, char** argv)
     /* initialize our sorting library */
     DTCMP_Init();
 
-    uint64_t all_count = 0;
-    uint64_t walk_start, walk_end;
-
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
 
+    /* get our list of files, either by walking or reading an
+     * input file */
     if (walk) {
-        time_t walk_start_t = time(NULL);
-        if (walk_start_t == (time_t)-1) {
-            /* TODO: ERROR! */
-        }
-        walk_start = (uint64_t) walk_start_t;
-
-        /* report walk count, time, and rate */
-        double start_walk = MPI_Wtime();
-        for (i = 0; i < numpaths; i++) {
-            /* get path for this step */
-            const char* target = paths[i].path;
-
-            /* print message to user that we're starting */
-            if (verbose && rank == 0) {
-                char walk_s[30];
-                size_t rc = strftime(walk_s, sizeof(walk_s) - 1, "%FT%T", localtime(&walk_start_t));
-                if (rc == 0) {
-                    walk_s[0] = '\0';
-                }
-                printf("%s: Walking %s\n", walk_s, target);
-                fflush(stdout);
-            }
-
-            /* walk file tree and record stat data for each file */
-            mfu_flist_walk_path(target, flist, walk_stat, dir_perms);
-        }
-        double end_walk = MPI_Wtime();
-
-        time_t walk_end_t = time(NULL);
-        if (walk_end_t == (time_t)-1) {
-            /* TODO: ERROR! */
-        }
-        walk_end = (uint64_t) walk_end_t;
-
-        /* get total file count */
-        all_count = mfu_flist_global_size(flist);
-
-        /* report walk count, time, and rate */
-        if (verbose && rank == 0) {
-            double secs = end_walk - start_walk;
-            double rate = 0.0;
-            if (secs > 0.0) {
-                rate = ((double)all_count) / secs;
-            }
-            printf("Walked %lu files in %f seconds (%f files/sec)\n",
-                   all_count, secs, rate
-                  );
-        }
+        /* walk list of input paths */
+        mfu_param_path_walk(numpaths, paths, walk_stat, flist, dir_perm);
     }
     else {
-        /* read data from cache file */
-        double start_read = MPI_Wtime();
+        /* read list from file */
         mfu_flist_read_cache(inputname, flist);
-        double end_read = MPI_Wtime();
-
-        /* get total file count */
-        all_count = mfu_flist_global_size(flist);
-
-        /* report read count, time, and rate */
-        if (verbose && rank == 0) {
-            double secs = end_read - start_read;
-            double rate = 0.0;
-            if (secs > 0.0) {
-                rate = ((double)all_count) / secs;
-            }
-            printf("Read %lu files in %f seconds (%f files/sec)\n",
-                   all_count, secs, rate
-                  );
-        }
     }
 
     /* start process from the root directory */
@@ -1804,6 +1867,7 @@ int main(int argc, char** argv)
     while (1) {
         int print = 0;
         char* sortfields = NULL;
+        char* regex      = NULL;
 
 // http://web.mit.edu/gnu/doc/html/rlman_2.html
 // http://sunsite.ualberta.ca/Documentation/Gnu/readline-4.1/html_node/readline_45.html
@@ -1891,6 +1955,8 @@ int main(int argc, char** argv)
             char ls_args[1024];
             int scan_rc = sscanf(line, "ls %s\n", ls_args);
             if (scan_rc == 1) {
+                regex = arg_to_regex(ls_args);
+#if 0
                 sortfields = MFU_STRDUP(ls_args);
                 if (invalid_sortfields(sortfields)) {
                     /* disable printing and sorting */
@@ -1905,6 +1971,7 @@ int main(int argc, char** argv)
                         fflush(stdout);
                     }
                 }
+#endif
             }
         } else if (strncmp(line, "rm", 2) == 0) {
             char subpath[1024];
@@ -1958,6 +2025,15 @@ int main(int argc, char** argv)
             mfu_flist filtered, leftover;
             filter_files_path(flist, path, inclusive, &filtered, &leftover);
 
+            /* filter items out by regex if we have one */
+            if (regex != NULL) {
+                mfu_flist filtered2, leftover2;
+                filter_files_regex(filtered, path, regex, &filtered2, &leftover2);
+                mfu_flist_free(&filtered);
+                mfu_flist_free(&leftover2);
+                filtered = filtered2;
+            }
+
             summarize_children(filtered, path);
 
             /* free the list */
@@ -1965,18 +2041,17 @@ int main(int argc, char** argv)
             mfu_flist_free(&leftover);
         }
 
+        mfu_free(&regex);
         mfu_free(&sortfields);
     }
 
     /* free our path */
     mfu_path_delete(&path);
 
-#if 0
     /* write data to cache file */
     if (outputname != NULL) {
         mfu_flist_write_cache(outputname, flist);
     }
-#endif
 
     /* free users, groups, and files objects */
     mfu_flist_free(&flist);
@@ -1995,6 +2070,7 @@ int main(int argc, char** argv)
     mfu_free(&paths);
 
     /* shut down MPI */
+    mfu_finalize();
     MPI_Finalize();
 
     return 0;

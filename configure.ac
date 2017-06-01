@@ -1,4 +1,4 @@
-AC_INIT([mpifileutils],[0.6],[mpifileutils-discuss@googlegroups.com],[mpifileutils],[http://fileutils.io])
+AC_INIT([mpifileutils],[0.7a],[mpifileutils-discuss@googlegroups.com],[mpifileutils],[http://fileutils.io])
 
 # Keep artifacts in directories as much as possible.
 AC_CONFIG_AUX_DIR(auxdir)
@@ -101,10 +101,7 @@ AC_CONFIG_FILES([Makefile                \
 X_AC_EXPERIMENTAL
 if test [EXPERIMENTAL_ENABLED]; then 
 AC_CONFIG_FILES([experimental/Makefile           \
-                 experimental/dfind/Makefile     \
-                 experimental/dgrep/Makefile     \
                  experimental/dparallel/Makefile \
-                 experimental/dtar/Makefile      \
                  experimental/dsh/Makefile       \
 ])
 fi

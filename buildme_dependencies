@@ -28,6 +28,14 @@ OPT="-g -O0"
 
 installdir=`pwd`/install
 
+# if EA is set to true then add configure option
+EA=false
+build_type=""
+if $EA ; then
+        # build line option required if building for EA systems
+        build_type="powerpc64le-redhat-linux-gnu"
+fi
+ 
 mkdir -p deps
 cd deps
 
@@ -57,7 +65,7 @@ rm -rf ${libcircle}
 tar -zxf ${libcircle}.tar.gz
 pushd ${libcircle}
   export CFLAGS=${OPT}
-  ./configure \
+  ./configure --build=${build_type} \
     --prefix=$installdir \
     --disable-silent-rules && \
   make VERBOSE=1 && \
@@ -72,7 +80,7 @@ rm -rf ${lwgrp}
 tar -zxf ${lwgrp}.tar.gz
 pushd ${lwgrp}
   export CFLAGS=${OPT}
-  ./configure \
+  ./configure --build=${build_type} \
     --prefix=${installdir} \
     --disable-silent-rules && \
   make && \
@@ -87,7 +95,7 @@ rm -rf ${dtcmp}
 tar -zxf ${dtcmp}.tar.gz
 pushd ${dtcmp}
   export CFLAGS=${OPT}
-  ./configure \
+  ./configure --build=${build_type} \
     --prefix=${installdir} \
     --disable-silent-rules \
     --with-lwgrp=${installdir} && \
@@ -103,7 +111,7 @@ rm -rf ${libarchive}
 tar zxvf ${libarchive}.tar.gz
 pushd ${libarchive}
   export CFLAGS=${OPT}
-  ./configure \
+  ./configure --build=${build_type} \
     --prefix=${installdir} && \
   make && \
   make install
