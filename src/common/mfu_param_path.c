@@ -534,7 +534,7 @@ char* mfu_param_path_copy_dest(const char* name, int numpaths,
      * otherwise cut all components listed in source path */
     int cut = src_components;
     if (mfu_copy_opts->copy_into_dir && cut > 0) {
-        if (!mfu_copy_opts->do_sync) {
+        if (mfu_copy_opts->do_sync != 1) {
             cut--;
         }
     }
