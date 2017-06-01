@@ -83,9 +83,7 @@ typedef struct {
     size_t block_size;    /* block size to read/write to file system */
     char*  block_buf1;    /* buffer to read / write data */
     char*  block_buf2;    /* another buffer to read / write data */
-#ifdef LUSTRE_SUPPORT
     int    grouplock_id;  /* Lustre grouplock ID */
-#endif
 } mfu_copy_opts_t;
 
 /* set fields in params according to paths,
