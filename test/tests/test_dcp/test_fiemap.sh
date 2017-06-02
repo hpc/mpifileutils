@@ -10,12 +10,12 @@
 # Turn on verbose output
 #set -x
 
-DCP_TEST_BIN=${DCP_TEST_BIN:-"/root/mpifileutils/install/bin/dcp"}
-DCP_MPIRUN_BIN=${DCP_MPIRUN_BIN:-"mpirun"}
-DCP_CMP_BIN=${DCP_CMP_BIN:-"diff"}
-DCP_SRC_DIR=${DCP_SRC_DIR:-"/mnt/lustre"}
-DCP_DEST_DIR=${DCP_DEST_DIR:-"/mnt/lustre2"}
-DCP_TMP_FILE=${DCP_TMP_FILE:-"file_test_fiemap_XXX"}
+DCP_TEST_BIN=${DCP_TEST_BIN:-${1}}
+DCP_MPIRUN_BIN=${DCP_MPIRUN_BIN:-${2}}
+DCP_CMP_BIN=${DCP_CMP_BIN:-${3}}
+DCP_SRC_DIR=${DCP_SRC_DIR:-${4}}
+DCP_DEST_DIR=${DCP_DEST_DIR:-${5}}
+DCP_TMP_FILE=${DCP_TMP_FILE:-${6}}
 
 echo "Using dcp1 binary at: $DCP_TEST_BIN"
 echo "Using mpirun binary at: $DCP_MPIRUN_BIN"
