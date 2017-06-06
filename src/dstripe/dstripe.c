@@ -528,7 +528,6 @@ int main(int argc, char* argv[])
 
     /* filter down our list to files which don't meet our striping requirements */
     mfu_flist filtered = filter_list(flist, stripes, stripe_size, min_size);
-    mfu_flist_free(&flist);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -539,6 +538,7 @@ int main(int argc, char* argv[])
 
         /* free the paths and our list */
         mfu_flist_free(&filtered);
+        mfu_flist_free(&flist);
         mfu_param_path_free_all(numpaths, paths);
         mfu_free(&paths);
 
@@ -567,11 +567,11 @@ int main(int argc, char* argv[])
         /* broadcast the random suffix to all ranks */
         MPI_Bcast(suffix, sizeof(suffix), MPI_CHAR, 0, MPI_COMM_WORLD);
 
-        /* check that the file doesn't already exist */
-        uint64_t size = mfu_flist_size(filtered);
+        /* check that the file doesn't already exist in the full file list */
+        uint64_t size = mfu_flist_size(flist);
         for (idx = 0; idx < size; idx++) {
             char temp_path[PATH_MAX];
-            strcpy(temp_path, mfu_flist_file_get_name(filtered, idx));
+            strcpy(temp_path, mfu_flist_file_get_name(flist, idx));
             strcat(temp_path, suffix);
             if(!mfu_access(temp_path, F_OK)) {
                 /* the file already exists */
@@ -583,6 +583,10 @@ int main(int argc, char* argv[])
         /* do a reduce to figure out if a rank has a file collision */
         MPI_Allreduce(&attempt, &retry, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
     } while(retry != 0);
+
+
+    /* full file list can be freed */
+    mfu_flist_free(&flist);
 
     uint64_t size = mfu_flist_size(filtered);
     /* create new files so we can restripe */
