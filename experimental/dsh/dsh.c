@@ -560,7 +560,7 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
             //printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) count, name);
             printf("%6.2f %2s %6.2f %1s %s\n", agg_size_tmp, agg_size_units, count_tmp, count_units, name);
         }
-        printf("\n\n(printed top %d  of %6.2f items)\n\n", print_default, allsum_tmp);
+        printf("\n\n(printed top %d of a total of%6.2f items)\n\n", print_default, allsum_tmp);
         fflush(stdout);
     }
 
