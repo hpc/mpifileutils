@@ -452,7 +452,8 @@ static uint64_t* decode_addr(const char* str)
 }
 
 /* gather data from procs to rank 0 */
-static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint64_t maxcount, uint64_t sum_bytes, uint64_t sum_count, MPI_Datatype dt, void* buf)
+static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint64_t maxcount, 
+        uint64_t sum_bytes, uint64_t sum_count, MPI_Datatype dt, void* buf, int print_default)
 {
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -538,7 +539,7 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
 
         uint64_t i;
         char* ptr = (char*) recvbuf;
-        for (i = 0; i < allcount; i++) {
+        for (i = 0; i < print_default; i++) {
             uint64_t bytes = * (uint64_t*) ptr;
             ptr += sizeof(uint64_t);
     
@@ -559,6 +560,7 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
             //printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) count, name);
             printf("%6.2f %2s %6.2f %1s %s\n", agg_size_tmp, agg_size_units, count_tmp, count_units, name);
         }
+        printf("\n\n(printed top %d  of %6.2f items)\n\n", print_default, allsum_tmp);
         fflush(stdout);
     }
 
@@ -572,7 +574,8 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
 /* here we sort all items by child name, execute scans to sum data
  * for a given name, and then finally resort and print values based
  * on those sums */
-static void sort_scan_sort(mfu_path* origpath, uint64_t allmax, uint64_t numchildren, strmap* children)
+static void sort_scan_sort(mfu_path* origpath, uint64_t allmax, 
+        uint64_t numchildren, strmap* children, int print_default)
 {
     /* get our rank */
     int rank;
@@ -760,7 +763,8 @@ static void sort_scan_sort(mfu_path* origpath, uint64_t allmax, uint64_t numchil
     );
 
     /* print sorted data */
-    print_sums(origpath, report_count, allmax, maxcount, sum_bytes, sum_count, report_keysat, sorted_reportbuf);
+    print_sums(origpath, report_count, allmax, maxcount, sum_bytes, 
+            sum_count, report_keysat, sorted_reportbuf, print_default);
 
     mfu_free(&sorted_reportbuf);
     mfu_free(&reportbuf);
@@ -795,7 +799,7 @@ static void sort_scan_sort(mfu_path* origpath, uint64_t allmax, uint64_t numchil
 
 /* given a list of files and a path, compute number of items and
  * bytes of each child item in path */
-static void summarize_children(mfu_flist flist, mfu_path* path)
+static void summarize_children(mfu_flist flist, mfu_path* path, int print_default)
 {
     /* get our rank */
     int rank;
@@ -867,7 +871,7 @@ static void summarize_children(mfu_flist flist, mfu_path* path)
 
     /* if we have a non-empty name, print it */
     if (allmax > 0) {
-        sort_scan_sort(path, allmax, numchildren, children);
+        sort_scan_sort(path, allmax, numchildren, children, print_default);
     }
 
     /* free data structure allocated for each child */
@@ -1743,6 +1747,8 @@ int main(int argc, char** argv)
     char* inputname  = NULL;
     char* outputname = NULL;
     int walk = 0;
+    /* set print default to 25 for now */
+    int print_default = 25;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -2034,7 +2040,7 @@ int main(int argc, char** argv)
                 filtered = filtered2;
             }
 
-            summarize_children(filtered, path);
+            summarize_children(filtered, path, print_default);
 
             /* free the list */
             mfu_flist_free(&filtered);
