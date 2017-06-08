@@ -47,9 +47,9 @@ static void print_usage(void)
     printf("Usage: dstripe [options] PATH...\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -c, --count            - stripe count (default -1)\n");
-    printf("  -s, --size             - stripe size in bytes (default 1MB)\n");
-    printf("  -m, --minsize          - minimum file size (default 0MB)\n");
+    printf("  -c, --count <COUNT>    - stripe count (default -1)\n");
+    printf("  -s, --size <SIZE>      - stripe size in bytes (default 1MB)\n");
+    printf("  -m, --minsize <SIZE>   - minimum file size (default 0MB)\n");
     printf("  -r, --report           - display file size and stripe info\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -h, --help             - print usage\n");
