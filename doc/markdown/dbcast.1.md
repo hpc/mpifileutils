@@ -6,29 +6,37 @@ dbcast - distributed broadcast
 
 # SYNOPSIS
 
-**dbcast CHUNK_SIZE SRC_FILE DEST_FILE**
+**dbcast [OPTION] SRC DEST**
 
 # DESCRIPTION
 
-Parallel MPI application to recursively broadcast a file from a global file system to node-local storage.
+Parallel MPI application to recursively broadcast a single file from a global file system to node-local storage.
 
-dbcast helps one copy a source file to node-local storage on each compute node.
-
-The file is logically sliced at chunk boundaries as specified by CHUNK_SIZE and collectively copied from a global file system to node-local storage.  The CHUNK_SIZE parameter should be specified in bytes, and one may use units like "MB" or "GB".  It is recommended to use the stripe size of a file if this is known.  The path to the source file should be given in SRC_FILE.  The source file should be in a path readable by all MPI processes.  The destination path is given in DEST_FILE.  The destination file should be a path to a node-local storage location, like ramdisk or an SSD.
+The file is logically sliced into chunks and collectively copied from a global file system to node-local storage.  The path to the source file is given as SRC.  The source file must be readable by all MPI processes.  The destination path is given in DEST.  The destination file should be a path to a node-local storage location, like ramdisk or an SSD.
 
 In its current implementation, the tool requires at least two MPI processes per compute node, and all compute nodes should have the same number of MPI processes.
 
 # OPTIONS
 
+-s, \--size SIZE
+:	The chunk size to segment files during the broadcast. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default size is 1MB.  It is recommended to use the stripe size of a file if this is known.
+
+-h, \--help
+: 	Print the command usage, and the list of options available.
+
 # EXAMPLES
 
-1. To broadcast a file to /ssd on each node slicing at 1MB chunks:
+1. To broadcast a file to /ssd on each node:
 
-mpirun -np 128 dbcast 1MB /global/path/to/filenane /ssd/filename
+mpirun -np 128 dbcast /global/path/to/filenane /ssd/filename
 
-2. To read the current striping parameters of a file on Lustre:
+2. Same thing, but slicing at 10MB chunks:
 
-lfs getstripe /path/to/file
+mpirun -np 128 dbcast -s 10MB /global/path/to/filenane /ssd/filename
+
+3. To read the current striping parameters of a file on Lustre:
+
+lfs getstripe /global/path/to/filename
 
 # SEE ALSO
 

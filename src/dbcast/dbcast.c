@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <time.h>
 #include <string.h>
+#include <getopt.h>
 
 #include <sys/vfs.h>
 
@@ -63,9 +64,6 @@ static void comm_split_str(MPI_Comm comm, const char* str, MPI_Comm* newcomm)
 
     /* use our group id as our color value*/
     int color = (int) group_id;
-
-    /* just use our existing rank for ordering */
-    int key = 0;
 
     /* split the communicator */
     MPI_Comm_split(comm, color, 0, newcomm);
@@ -439,6 +437,19 @@ void compute_offset_size(
     return;
 }
 
+static void print_usage(void)
+{
+    printf("\n");
+    printf("Usage: dbcast [options] <SRC> <DEST>\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -s, --size <SIZE>  - block size to divide files (default 1MB)\n");
+    printf("  -h, --help         - print usage\n");
+    printf("\n");
+    fflush(stdout);
+    return;
+}
+
 int main (int argc, char *argv[])
 {
     int in_file = -1;
@@ -465,31 +476,72 @@ int main (int argc, char *argv[])
     char hostname[HOST_NAME_MAX+1];
     gethostname(hostname, sizeof(hostname));
 
-    if (argc != 4) {
+    /* TODO: set this to size of lustre stripe of the file/system */
+    uint64_t stripe_size = 1024 * 1024;
+
+    /* process any options */
+    int option_index = 0;
+    static struct option long_options[] = {
+        {"size",         1, 0, 's'},
+        {"help",         0, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+
+    unsigned long long byte_val;
+    int usage = 0;
+    while (1) {
+        int c = getopt_long(
+                    argc, argv, "s:h",
+                    long_options, &option_index
+                );
+
+        if (c == -1) {
+            break;
+        }
+
+        switch (c) {
+            case 's':
+                /* parse stripe_size from command line */
+                if (mfu_abtoull(optarg, &byte_val) != MFU_SUCCESS) {
+                    if (rank == 0) {
+                        printf("ERROR: Failed to parse stripe size: %s\n", optarg);
+                        fflush(stdout);
+                    }
+                    usage = 1;
+                }
+                stripe_size = (uint64_t) byte_val;
+                break;
+            case 'h':
+                usage = 1;
+                break;
+            case '?':
+                usage = 1;
+                break;
+            default:
+                if (rank == 0) {
+                    printf("?? getopt returned character code 0%o ??\n", c);
+                }
+        }
+    }
+
+    /* need source and destination file names */
+    if (!usage && (argc - optind) < 2) {
+        printf("ERROR: Failed to find source and/or destination file names\n");
+        usage = 1;
+    }
+
+    /* print usage and exit if needed */
+    if (usage) {
         if (rank == 0) {
-            printf("\n");
-            printf("Broadcast a file from Lustre into node-local storage\n");
-            printf("\n");
-            printf("Usage: %s <stripesize> <infile> <outfile>\n", argv[0]);
-            printf("\n");
-            printf("Example: srun -n64 %s 64 1MB /lustre/dir/file /ssd/file\n", argv[0]);
-            printf("\n");
-            fflush(stdout);
+            print_usage();
         }
         MPI_Finalize();
         return 0;
     }
 
-    /* parse stripe_size from command line */
-    unsigned long long stripe_size_ull;
-    if (mfu_abtoull(argv[1], &stripe_size_ull) != MFU_SUCCESS) {
-        if (rank == 0) {
-            printf("ERROR: Failed to parse stripe size: %s\n", argv[2]);
-            fflush(stdout);
-        }
-        MPI_Finalize();
-        return 0;
-    }
+    /* get source and destination paths */
+    char* in_file_path  = argv[optind];
+    char* out_file_path = argv[optind + 1];
 
     /* put procs on same node into a subcommunicator */
     /* split on hostname */
@@ -550,13 +602,6 @@ int main (int argc, char *argv[])
         return 0;
     }
 
-    /* TODO: set this to size of lustre stripe */
-    uint64_t stripe_size = (uint64_t) stripe_size_ull;
-
-    /* get source and destination paths */
-    char* in_file_path  = argv[2];
-    char* out_file_path = argv[3];
-
     /* check that we can read the input from at least rank 0
      * to catch simple typos */
     int readable = 1;
@@ -574,6 +619,8 @@ int main (int argc, char *argv[])
         MPI_Finalize();
         return 0;
     }
+
+    /* TODO: create destination directory (if needed) */
 
     /* TODO: set this to a value which is efficient as a single read
      * from Lustre but small enough to send via MPI */
@@ -726,6 +773,8 @@ int main (int argc, char *argv[])
             file_bcast_exit();
         }
     }
+
+    /* TODO: if all writers failed, throw a more serious error */
 
     /* first phase: all tasks read data and write to their local file */
     MPI_Barrier(MPI_COMM_WORLD);
