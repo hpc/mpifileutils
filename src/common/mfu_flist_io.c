@@ -864,8 +864,12 @@ static void write_cache_readdir_variable(
     //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
 
-    /* no. of I/O devices for lustre striping */
-    MPI_Info_set(info, "striping_factor", "10");
+    /* change number of ranks to string to pass to MPI_Info */
+    char str_buf[12];
+    sprintf(str_buf, "%d", ranks);
+
+    /* no. of I/O devices for lustre striping is number of ranks */
+    MPI_Info_set(info, "striping_factor", str_buf);
 
     MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
 
@@ -1000,8 +1004,12 @@ static void write_cache_readdir(
     //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
 
-    /* no. of I/O devices for lustre striping */
-    MPI_Info_set(info, "striping_factor", "10");
+    /* change number of ranks to string to pass to MPI_Info */
+    char str_buf[12];
+    sprintf(str_buf, "%d", ranks);
+
+    /* no. of I/O devices for lustre striping is number of ranks */
+    MPI_Info_set(info, "striping_factor", str_buf);
 
     MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
 
@@ -1141,8 +1149,12 @@ static void write_cache_stat(
     //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
 
-    /* no. of I/O devices for lustre striping */
-    MPI_Info_set(info, "striping_factor", "10");
+    /* change number of ranks to string to pass to MPI_Info */
+    char str_buf[12];
+    sprintf(str_buf, "%d", ranks);
+
+    /* no. of I/O devices for lustre striping is number of ranks */
+    MPI_Info_set(info, "striping_factor", str_buf);
 
     MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
 
