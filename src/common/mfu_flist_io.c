@@ -829,9 +829,14 @@ static void write_cache_readdir_variable(
     const char* name,
     flist_t* flist)
 {
-    /* get our rank in job */
-    int rank;
+    /* get our rank in job & number of ranks */
+    int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* use mpi io hints to stripe across OSTs */
+    MPI_Info info;
+    MPI_Info_create(&info);
 
     /* walk the list to determine the number of bytes we'll write */
     uint64_t bytes = 0;
@@ -858,7 +863,15 @@ static void write_cache_readdir_variable(
     char datarep[] = "external32";
     //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
-    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
+
+    /* change number of ranks to string to pass to MPI_Info */
+    char str_buf[12];
+    sprintf(str_buf, "%d", ranks);
+
+    /* no. of I/O devices for lustre striping is number of ranks */
+    MPI_Info_set(info, "striping_factor", str_buf);
+
+    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
 
     /* truncate file to 0 bytes */
     MPI_File_set_size(fh, 0);
@@ -933,6 +946,9 @@ static void write_cache_readdir_variable(
 
     /* close file */
     MPI_File_close(&fh);
+        
+    /* free mpi info */
+    MPI_Info_free(&info);
 
     return;
 }
@@ -950,9 +966,14 @@ static void write_cache_readdir(
     uint64_t walk_end,
     flist_t* flist)
 {
-    /* get our rank in job */
-    int rank;
+    /* get our rank in job & number of ranks */
+    int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* use mpi io hints to stripe across OSTs */
+    MPI_Info info;
+    MPI_Info_create(&info);
 
     /* get number of items in our list and total file count */
     uint64_t count     = flist->list_count;
@@ -982,7 +1003,15 @@ static void write_cache_readdir(
     char datarep[] = "external32";
     //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
-    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
+
+    /* change number of ranks to string to pass to MPI_Info */
+    char str_buf[12];
+    sprintf(str_buf, "%d", ranks);
+
+    /* no. of I/O devices for lustre striping is number of ranks */
+    MPI_Info_set(info, "striping_factor", str_buf);
+
+    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
 
     /* truncate file to 0 bytes */
     MPI_File_set_size(fh, 0);
@@ -1067,6 +1096,9 @@ static void write_cache_readdir(
     /* free the datatype */
     MPI_Type_free(&dt);
 
+    /* free mpi info */
+    MPI_Info_free(&info);
+
     return;
 }
 
@@ -1079,9 +1111,14 @@ static void write_cache_stat(
     buf_t* users  = &flist->users;
     buf_t* groups = &flist->groups;
 
-    /* get our rank in job */
-    int rank;
+    /* get our rank in job & number of ranks */
+    int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* use mpi io hints to stripe across OSTs */
+    MPI_Info info;
+    MPI_Info_create(&info);
 
     /* get number of items in our list and total file count */
     uint64_t count     = flist->list_count;
@@ -1111,7 +1148,15 @@ static void write_cache_stat(
     char datarep[] = "external32";
     //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
-    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
+
+    /* change number of ranks to string to pass to MPI_Info */
+    char str_buf[12];
+    sprintf(str_buf, "%d", ranks);
+
+    /* no. of I/O devices for lustre striping is number of ranks */
+    MPI_Info_set(info, "striping_factor", str_buf);
+
+    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
 
     /* truncate file to 0 bytes */
     MPI_File_set_size(fh, 0);
@@ -1228,6 +1273,9 @@ static void write_cache_stat(
     /* free the datatype */
     MPI_Type_free(&dt);
 
+    /* free mpi info */
+    MPI_Info_free(&info);
+
     return;
 }
 
@@ -1270,6 +1318,5 @@ void mfu_flist_write_cache(
                all_count, secs, rate
               );
     }
-
     return;
 }
