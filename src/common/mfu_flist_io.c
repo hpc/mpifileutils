@@ -827,7 +827,8 @@ void mfu_flist_read_cache(
 /* write each record in ASCII format, terminated with newlines */
 static void write_cache_readdir_variable(
     const char* name,
-    flist_t* flist)
+    flist_t* flist, 
+    MPI_Info info)
 {
     /* get our rank in job */
     int rank;
@@ -858,6 +859,10 @@ static void write_cache_readdir_variable(
     char datarep[] = "external32";
     //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
+
+    /* no. of I/O devices for lustre striping */
+    MPI_Info_set(info, "striping_factor", "-1");
+
     MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
 
     /* truncate file to 0 bytes */
@@ -948,7 +953,8 @@ static void write_cache_readdir(
     const char* name,
     uint64_t walk_start,
     uint64_t walk_end,
-    flist_t* flist)
+    flist_t* flist,
+    MPI_Info info)
 {
     /* get our rank in job */
     int rank;
@@ -982,6 +988,10 @@ static void write_cache_readdir(
     char datarep[] = "external32";
     //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
+
+    /* no. of I/O devices for lustre striping */
+    MPI_Info_set(info, "striping_factor", "-1");
+
     MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
 
     /* truncate file to 0 bytes */
@@ -1074,7 +1084,8 @@ static void write_cache_stat(
     const char* name,
     uint64_t walk_start,
     uint64_t walk_end,
-    flist_t* flist)
+    flist_t* flist,
+    MPI_Info info)
 {
     buf_t* users  = &flist->users;
     buf_t* groups = &flist->groups;
@@ -1111,6 +1122,10 @@ static void write_cache_stat(
     char datarep[] = "external32";
     //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
+
+    /* no. of I/O devices for lustre striping */
+    MPI_Info_set(info, "striping_factor", "-1");
+
     MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
 
     /* truncate file to 0 bytes */
@@ -1235,6 +1250,10 @@ void mfu_flist_write_cache(
     const char* name,
     mfu_flist bflist)
 {
+    /* use mpi io hints to stripe across all OSTs */
+    MPI_Info info;
+    MPI_Info_create(&info);
+
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
 
@@ -1248,11 +1267,11 @@ void mfu_flist_write_cache(
     }
 
     if (flist->detail) {
-        write_cache_stat(name, 0, 0, flist);
+        write_cache_stat(name, 0, 0, flist, info);
     }
     else {
-        //write_cache_readdir(name, 0, 0, flist);
-        write_cache_readdir_variable(name, flist);
+        //write_cache_readdir(name, 0, 0, flist, info);
+        write_cache_readdir_variable(name, flist, info);
     }
 
     /* end timer */
@@ -1271,5 +1290,6 @@ void mfu_flist_write_cache(
               );
     }
 
+    MPI_Info_free(&info);
     return;
 }
