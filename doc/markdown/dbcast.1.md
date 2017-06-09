@@ -10,16 +10,16 @@ dbcast - distributed broadcast
 
 # DESCRIPTION
 
-Parallel MPI application to recursively broadcast a single file from a global file system to node-local storage.
+Parallel MPI application to recursively broadcast a single file from a global file system to node-local storage, like ramdisk or an SSD.
 
-The file is logically sliced into chunks and collectively copied from a global file system to node-local storage.  The path to the source file is given as SRC.  The source file must be readable by all MPI processes.  The destination path is given in DEST.  The destination file should be a path to a node-local storage location, like ramdisk or an SSD.  The parent directory for the destination file will be created as part of the broadcast, if needed.
+The file is logically sliced into chunks and collectively copied from a global file system to node-local storage.  The source file SRC must be readable by all MPI processes.  The destination file DEST should be the full path of the file in node-local storage.  If needed, parent directories for the destination file will be created as part of the broadcast.
 
-In its current implementation, the tool requires at least two MPI processes per compute node, and all compute nodes should have the same number of MPI processes.
+In the current implementation, dbcast requires at least two MPI processes per compute node, and all compute nodes must run an equal number of MPI processes.
 
 # OPTIONS
 
 -s, \--size SIZE
-:	The chunk size to segment files during the broadcast. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default size is 1MB.  It is recommended to use the stripe size of a file if this is known.
+:	The chunk size in bytes used to segment files during the broadcast. Units like "MB" and "GB" should be immediately follow the number without spaces (ex. 2MB). The default size is 1MB.  It is recommended to use the stripe size of a file if this is known.
 
 -h, \--help
 : 	Print the command usage, and the list of options available.

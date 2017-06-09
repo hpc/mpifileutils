@@ -12,13 +12,8 @@ drm - distributed remove
 
 Parallel MPI application to recursively delete a directory and its contents.
 
-drm is a tool for removing files recurseivly in parallel. 
-drm is similar to *rm(1)*, but unlike *rm(1)* there is no
-need to pass a recursive option as files will be removed
-from the top level directory to the bottom of the file tree
-by default.
-
-Be careful: it behaves like *rm -rf*, but it is much faster.  
+drm is a tool for removing files recursively in parallel. 
+Be careful: drm behaves like *rm -rf*, but it is much faster.  
 
 # OPTIONS
 
@@ -29,18 +24,17 @@ Be careful: it behaves like *rm -rf*, but it is much faster.
 :	Walk file system without stat.
 
 --exclude REGEX
-:       Do not remove items whose full path matches REGEX (regexec).
+:       Do not remove items whose full path matches REGEX, processed by regexec(3).
 
 --match REGEX
-:	Only remove items whose full path matches REGEX (regexec).
+:	Only remove items whose full path matches REGEX, processed by regexec(3).
 
 --name
 :	Change --exclude and --match to apply to item name rather than its full path.
 
 -d, \--dryrun
-:	Print out a list of files that **would** be deleted. This is useful
-        to check list of items satisfying --exclude or --match options
-        without deleting them.
+:	Print a list of files that **would** be deleted without deleting them. This is useful
+        to check list of items satisfying --exclude or --match options before actually deleting anything.
 
 -v, \--verbose
 :   Run in verbose mode.
@@ -58,7 +52,7 @@ mpirun -np 128 drm -v /dir/to/delete
 
 mpirun -np 128 drm --match '.core$' /dir/to/delete/from
 
-3. List items that would be deleted, without removing them:
+3. List items that would be deleted without removing them:
 
 mpirun -np 128 drm --dryrun --match '.core$' /dir/to/delete/from
 

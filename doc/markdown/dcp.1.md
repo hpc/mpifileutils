@@ -6,7 +6,7 @@ dcp - distributed copy
 
 # SYNOPSIS
 
-**dcp [OPTION] SOURCE DEST**
+**dcp [OPTION] SRC DEST**
 
 # DESCRIPTION
 
@@ -38,9 +38,9 @@ copying files that are located on a distributed parallel file system.
 
 # RESTRICTIONS
 
-If a long-running copy is interrupted, one should delete the partial copy and rerun dcp from the beginning.  One may use drm to quickly remove a partial copy of a large directory tree.
+If a long-running copy is interrupted, one should delete the partial copy and run dcp again from the beginning.  One may use drm to quickly remove a partial copy of a large directory tree.
 
-To ensure the copy was successful, one should run dcmp after dcp completes to verify the copy, especially if dcp was not run with the -s option.
+To ensure the copy is successful, one should run dcmp after dcp completes to verify the copy, especially if dcp was not run with the -s option.
 
 # EXAMPLES
 
@@ -62,9 +62,7 @@ mpirun -np 128 dcp -p /source/dir1/ /dest/dir2
 Using the -S option for sparse files does not work yet at LLNL. If you try
 to use it then dcp will default to a normal copy.
 
-The -g option is still being developed.
-
-The maximum supported filename length for any file transfered is approximately 4068 characters.  This may be less than the number of characters that your operating system supports.
+The maximum supported file name length for any file transferred is approximately 4068 characters.  This may be less than the number of characters that your operating system supports.
 
 # SEE ALSO
 

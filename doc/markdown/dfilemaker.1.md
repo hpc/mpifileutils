@@ -17,7 +17,7 @@ suitable for testing.
 **NOTE: I cannot find these options in the code. I am not sure that they actually exist? Unless there is another version of the code somewhere?**
 
 -d, \--depth=*min*-*max*
-:   Specify the depth of the filesystem tree to generate. The depth will be
+:   Specify the depth of the file system tree to generate. The depth will be
     selected at random within the bounds of min and max. The default depth
     is set to 10 min, 20 max.
 
@@ -43,7 +43,7 @@ suitable for testing.
     1MB to 5MB.
 
 -w, \--width=*min*-*max*
-:   Specify the width of the filesystem tree to generate. The width will be
+:   Specify the width of the file system tree to generate. The width will be
     selected at random within the bounds of min and max. The width of the
     tree is determined by counting directories. The default width is set to
     10 min, 20 max.
@@ -65,4 +65,4 @@ suitable for testing.
 `dwalk` (1).
 
 The mpiFileUtils source code and all documentation may be downloaded from
-<http://fileutils.io>
+<https://github.com/hpc/mpifileutils>

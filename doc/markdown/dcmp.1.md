@@ -4,13 +4,13 @@
 dcmp - distributed compare
 
 # SYNOPSIS
-**dcmp [OPTION] SOURCE DEST ** 
+**dcmp [OPTION] SRC DEST ** 
 
 # DESCRIPTION
 
-Parallel MPI application to compare two files or to recurseively compare files with same prefix path within two different directories. This tool is similar to *cmp(1)*. It reports how many files in two different directories are the same (or different).
+Parallel MPI application to compare two files or to recursively compare files with same relative paths within two different directories.
 
-dcmp provides functionality similar to a recursive *cmp(1)*.  
+dcmp provides functionality similar to a recursive *cmp(1)*.  It reports how many files in two different directories are the same (or different).
 
 # OPTIONS
 -b, \--base 

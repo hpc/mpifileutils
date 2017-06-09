@@ -33,4 +33,4 @@ dparallel ...
 `dwalk` (1).
 
 The mpiFileUtils source code and all documentation may be downloaded from
-<http://fileutils.io>
+<https://github.com/hpc/mpifileutils>

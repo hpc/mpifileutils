@@ -10,11 +10,11 @@ dstripe - restripe files on underlying storage
 
 # DESCRIPTION
 
-Parallel MPI application to restripe a given file.
+Parallel MPI application to restripe files.
 
 This tool is in active development. It currently only works on Lustre.
 
-dstripe enables one to restripe a file across the underlying storage devices. One must specify a list of paths to recursively walk. By default, stripe size is 1MB and stripe count is -1 allowing dstripe to use all available stripes. 
+dstripe enables one to restripe file(s) across the underlying storage devices. One must specify a list of paths. All files in those paths can be restriped.  By default, stripe size is 1MB and stripe count is -1 allowing dstripe to use all available stripes. 
 
 # OPTIONS
 
@@ -22,10 +22,10 @@ dstripe enables one to restripe a file across the underlying storage devices. On
 :	The number of stripes to use during file restriping. If STRIPE_COUNT is -1, then all available stripes are used. If STRIPE_COUNT is 0, the lustre file system default is used. The default stripe count is -1.
 
 -s, \--size STRIPE_SIZE
-:	The stripe size to use during file restriping. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default stripe size is 1MB.
+:	The stripe size to use during file restriping. Units like "MB" and "GB" can immediately follow the number without spaces (ex. 2MB). The default stripe size is 1MB.
 
 -m, \--minsize SIZE
-:	The minimum size a file must be to be a candidate for restriping. It is possible to use units like "MB" and "GB" after the number, which should be immediately follow the number without spaces (ex. 2MB). The default minimum file size is 0MB.
+:	The minimum size a file must be to be a candidate for restriping. Files smaller than SIZE will not be restriped.  Units like "MB" and "GB" can immediately follow the number without spaces (ex. 2MB). The default minimum file size is 0MB.
 
 -r, \--report
 :	Display the file size, stripe count, and stripe size of all files found in PATH. No restriping is performed when using this option.

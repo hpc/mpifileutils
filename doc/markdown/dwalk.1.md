@@ -8,13 +8,9 @@ dwalk - distributed walk and list
 
 Parallel MPI application to recursively walk and list contents in a directory.
 
-dwalk provides functionality similar to ls and du. Like du, the tool report a summary of the total number of files and bytes. Like ls, the tool sorts and prints information about individual files.
+dwalk provides functionality similar to *ls(1)* and *du(1)*. Like *du(1)*, the tool reports a summary of the total number of files and bytes. Like *ls(1)*, the tool sorts and prints information about individual files.
 
-dwalk can walk a file tree in parallel with various different options. You can sort the output of the distributed file walk based on different fields (i.e name, use, group, size, etc), or get a file list distribution that will put the amount of files you have of a certain size into bins specified by the user. For instance, if you wanted to know how many files in a large directory have 0 bytes then you would use the --distribution option. 
-
-It can save the list to a file or read input from a previously saved file. The file must be generated or read by a tool in the mpiFileUtils suite.
-
-# DESCRIPTION
+The output can be sorted on different fields (e.g, name, user, group, size, etc).  A histogram of file sizes can be computed listing the number of files that fall into user-defined bins.
 
 # OPTIONS
 
@@ -28,10 +24,10 @@ It can save the list to a file or read input from a previously saved file. The f
 :   Walk file system without stat.
 
 -s, \--sort FIELD
-:   Sort output by comma-delimited fields.
+:   Sort output by comma-delimited fields (see below).
 
 -d, \--distribution size:SEPARATORS 
-:   Print the file size distribution. For example, specifying size:0,80,100 will report the number of files that have size 0 bytes, between 1-80 bytes, between 81-99 bytes, and 100 bytes or greater. 
+:   Print the distribution of file sizes. For example, specifying size:0,80,100 will report the number of files that have size 0 bytes, between 1-80 bytes, between 81-99 bytes, and 100 bytes or greater. 
 
 -p, \--print
 :   Print files to the screen.
@@ -48,7 +44,9 @@ By default, the list of files dwalk captures is not sorted.  To sort the list, o
 
 name,user,group,uid,gid,atime,mtime,ctime,size
 
-A field name can be preceded with '-' to sort in reverse order.
+A field name can be preceded with '-' to sort by that field in reverse order.
+
+A lexicographic sort is executed if more than one field is given.
 
 # EXAMPLES
 

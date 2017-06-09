@@ -8,7 +8,7 @@ dchmod - distributed tool to set permissions and group
 
 # DESCRIPTION
 
-Parallel MPI application to recurseively change permissions and/or group from a top level directory. 
+Parallel MPI application to recursively change permissions and/or group from a top level directory. 
 
 dchmod provides functionality similar to *chmod(1)* and *chgrp(1)*. Like *chmod(1)*, the tool supports the use of octal or symbolic mode to change the permissions.
 
@@ -21,19 +21,19 @@ dchmod provides functionality similar to *chmod(1)* and *chgrp(1)*. Like *chmod(
 :   Change group to specified GROUP name. 
 
 -m, \--mode MODE
-:   The mode that you want the file or directory to be.  MODE may be octal or symbolic syntax similar to chmod(1).  In symbolic notation, "ugoa" are supported as are "rwxX".
+:   The mode to apply to each item.  MODE may be octal or symbolic syntax similar to chmod(1).  In symbolic notation, "ugoa" are supported as are "rwxX".  As with chmod, if no leading letter "ugoa" is provided, mode bits are combined with umask to determine the actual mode.
 
 --exclude REGEX
-:   Do not modify items whose full path matches REGEX (regexec).
+:   Do not modify items whose full path matches REGEX, processed by regexec(3).
 
 --match REGEX
-:   Only modify items whose full path matches REGEX (regexec).
+:   Only modify items whose full path matches REGEX, processed by regexec(3).
 
 --name 
 :   Change --exclude and --match to apply to item name rather than its full path.
 
 -v, \--verbose 
-: 	Run in verbose mode.  Prints a list of statistics/timing data for the command. How many files walked, how many levels there are in the tree, and how many files the command operated on. This option also prints the files/sec for each of those.
+: 	Run in verbose mode.  Prints a list of statistics including the number of files walked, the number of levels there are in the directory tree, and the number of files the command operated on, and the files/sec rate for each of those.
 
 -h, \--help 
 : 	Print the command usage, and the list of options available. 
@@ -44,11 +44,11 @@ dchmod provides functionality similar to *chmod(1)* and *chgrp(1)*. Like *chmod(
 
 mpirun -np 128 dchmod --mode 755 /directory
 
-2. Use symbolic mode to change permissions (you can list modes for user, group, etc if you separate them with a comma):
+2. Set group and mode in a single command using symbolic mode:
 
-mpirun -np 129 dchmod --group mygroup --mode u+r,g+rw /directory
+mpirun -np 128 dchmod --group mygroup --mode u+r,g+rw /directory
 
-3. Change permissions to u+rw on all files/directories EXCEPT those whose name match regex:
+3. Change permissions to u+rw on all items EXCEPT those whose name match regex:
 
 mpirun -np 128 dchmod --name --exclude 'afilename' --mode u+rw /directory
 
