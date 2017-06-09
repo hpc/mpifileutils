@@ -12,7 +12,7 @@ dbcast - distributed broadcast
 
 Parallel MPI application to recursively broadcast a single file from a global file system to node-local storage.
 
-The file is logically sliced into chunks and collectively copied from a global file system to node-local storage.  The path to the source file is given as SRC.  The source file must be readable by all MPI processes.  The destination path is given in DEST.  The destination file should be a path to a node-local storage location, like ramdisk or an SSD.
+The file is logically sliced into chunks and collectively copied from a global file system to node-local storage.  The path to the source file is given as SRC.  The source file must be readable by all MPI processes.  The destination path is given in DEST.  The destination file should be a path to a node-local storage location, like ramdisk or an SSD.  The parent directory for the destination file will be created as part of the broadcast, if needed.
 
 In its current implementation, the tool requires at least two MPI processes per compute node, and all compute nodes should have the same number of MPI processes.
 

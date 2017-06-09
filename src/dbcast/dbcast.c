@@ -45,6 +45,9 @@
         printf("%s: %s\n", time_string, s); \
     }
 
+static char error_msg[8192];
+static char hostname[HOST_NAME_MAX+1];
+
 #define GCS_SUCCESS (0)
 
 static int gcs_shm_file_key = MPI_KEYVAL_INVALID;
@@ -437,6 +440,49 @@ void compute_offset_size(
     return;
 }
 
+int mkdirp(const char* path)
+{
+    /* assume we'll succeed */
+    int rc = 0;
+
+    /* hardcode directory mode for now */
+    int mode = S_IRWXU;
+
+    /* get parent directory for file */
+    mfu_path* parent = mfu_path_from_str(path);
+    mfu_path_dirname(parent);
+    const char* parent_str = mfu_path_strdup(parent);
+
+    /* if we can read path then there's nothing to do,
+     * otherwise, try to create it */
+    if (mfu_access(parent_str, R_OK) < 0) {
+      rc = mkdirp(parent_str);
+    }
+  
+    /* if we can write to path, try to create subdir within path */
+    if (mfu_access(parent_str, W_OK) == 0 && rc == 0) {
+      int tmp_rc = mfu_mkdir(path, mode);
+      if (tmp_rc < 0) {
+        if (errno != EEXIST) {
+          /* don't complain about mkdir for a directory that already exists */
+          snprintf(error_msg, 8192, "%s: Failed to create directory %s", hostname, path);
+          perror(error_msg);
+          rc = tmp_rc;
+        }
+      }
+    } else {
+      snprintf(error_msg, 8192, "%s: Cannot write to directory %s", hostname, parent_str);
+      perror(error_msg);
+      rc = 1;
+    }
+
+    /* free parent directory */
+    mfu_free(&parent_str);
+    mfu_path_delete(&parent);
+
+    return rc;
+}
+
 static void print_usage(void)
 {
     printf("\n");
@@ -454,7 +500,6 @@ int main (int argc, char *argv[])
 {
     int in_file = -1;
     int out_file = -1;
-    char error_msg[8192];
 
     /* set this to one to write blocks to file if they are different */
     int file_exists = 0;
@@ -473,7 +518,6 @@ int main (int argc, char *argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     /* get our hostname for error reporting */
-    char hostname[HOST_NAME_MAX+1];
     gethostname(hostname, sizeof(hostname));
 
     /* TODO: set this to size of lustre stripe of the file/system */
@@ -540,8 +584,8 @@ int main (int argc, char *argv[])
     }
 
     /* get source and destination paths */
-    char* in_file_path  = argv[optind];
-    char* out_file_path = argv[optind + 1];
+    char* in_file_path  = mfu_path_strdup_abs_reduce_str(argv[optind]);
+    char* out_file_path = mfu_path_strdup_abs_reduce_str(argv[optind + 1]);
 
     /* put procs on same node into a subcommunicator */
     /* split on hostname */
@@ -589,6 +633,8 @@ int main (int argc, char *argv[])
             fflush(stdout);
         }
         MPI_Finalize();
+        mfu_free(&out_file_path);
+        mfu_free(&in_file_path);
         return 0;
     }
 
@@ -599,6 +645,8 @@ int main (int argc, char *argv[])
             fflush(stdout);
         }
         MPI_Finalize();
+        mfu_free(&out_file_path);
+        mfu_free(&in_file_path);
         return 0;
     }
 
@@ -617,10 +665,41 @@ int main (int argc, char *argv[])
             fflush(stdout);
         }
         MPI_Finalize();
+        mfu_free(&out_file_path);
+        mfu_free(&in_file_path);
         return 0;
     }
 
-    /* TODO: create destination directory (if needed) */
+    /* create destination directory (if needed) */
+    int mkdir_rc = 0;
+    if (rank == 0) {
+        printf("Creating destination directory for %s\n", out_file_path);
+        fflush(stdout);
+    }
+    if (node_rank == 0) {
+        /* define path to destination file */
+        mfu_path* parent_path = mfu_path_from_str(out_file_path);
+        mfu_path_dirname(parent_path);
+        const char* parent_path_str = mfu_path_strdup(parent_path);
+
+        /* make directory for this path */
+        mkdir_rc = mkdirp(parent_path_str);
+
+        /* free path data structures */
+        mfu_free(&parent_path_str);
+        mfu_path_delete(&parent_path);
+    }
+    if (gcs_anytrue((mkdir_rc != 0), MPI_COMM_WORLD)) {
+        /* someone failed to create the directory */
+        if (rank == 0) {
+            printf("ERROR: Failed to create directory for %s\n", out_file_path);
+        }
+        MPI_Finalize();
+        mfu_free(&out_file_path);
+        mfu_free(&in_file_path);
+        return 0;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     /* TODO: set this to a value which is efficient as a single read
      * from Lustre but small enough to send via MPI */
@@ -703,7 +782,7 @@ int main (int argc, char *argv[])
 
             /* get size of existing file */
             struct stat file_stat;
-            if (stat(out_file_path, &file_stat) < 0) {
+            if (mfu_lstat(out_file_path, &file_stat) < 0) {
                 /* can't measure free space so assume we have none */
                 snprintf(error_msg, 8192, "%s: Failed to stat file %s", hostname, out_file_path);
                 perror(error_msg);
@@ -1130,6 +1209,10 @@ if (node_rank == 0) {
     for (i = 0; i < bufcounts; i++) {
         GCS_Shmem_free(shmbuf_base[i], node_comm);
     }
+
+    /* free paths */
+    mfu_free(&out_file_path);
+    mfu_free(&in_file_path);
 
     /* free our node and level communicators */
     MPI_Comm_free(&level_comm);
