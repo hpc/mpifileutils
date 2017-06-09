@@ -575,12 +575,6 @@ static int dcmp_compare_data(
         total_bytes += (long unsigned int)src_read;
     }
     
-    /* make sure to truncate the file if dest is larger than the source
-     * when syncing files */ 
-    if (mfu_copy_opts->do_sync && rc == 1) {
-         truncate(dst_name, length);
-    }
-    
     /* free buffers */
     mfu_free(&dest_buf);
     mfu_free(&src_buf);
@@ -675,7 +669,7 @@ static uint64_t get_total_bytes_read(mfu_flist src_compare_list) {
 }
 
 /* given a list of source/destination files to compare, spread file
- * spread file sections to processes to compare in parallel, fill
+ * sections to processes to compare in parallel, fill
  * in comparison results in source and dest string maps */
 static void dcmp_strmap_compare_data(
     mfu_flist src_compare_list,
@@ -735,14 +729,16 @@ static void dcmp_strmap_compare_data(
         if (rc == -1) {
             /* we hit an error while reading, consider files to be different,
              * they could be the same, but we'll draw attention to them this way */
+            rc = 1;
             MFU_LOG(MFU_LOG_ERR,
                 "Failed to read %s and/or %s.  Asumming contents are different.", src_p->name, dst_p->name);
-            /* TODO: fall back more gracefully here */
+
+            /* consider this to a fatal error if syncing */
             if (mfu_copy_opts->do_sync) {
+                /* TODO: fall back more gracefully here, e.g., delete dest and overwrite */
                 MFU_LOG(MFU_LOG_ERR, "Files not synced, aborting.");
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
-            rc = 1;
         }
 
         /* now record results of compare_data for sending to segmented scan */
@@ -871,6 +867,15 @@ static void dcmp_strmap_compare_data(
             /* update to say contents of the files were found to be different */
             dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
+
+           /* make sure to truncate the file if we overwrote the dest, since
+            * the original may have been larger than the source
+            * (actually not sure this is true since we compare sizes before content) */
+           if (mfu_copy_opts->do_sync) {
+                //uint64_t src_size = mfu_flist_file_get_size(src_compare_list, idx);
+                // get file name of dest
+                //truncate(name, (size_t)src_size);
+           }
         } else {
             /* update to say contents of the files were found to be the same */
             dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
