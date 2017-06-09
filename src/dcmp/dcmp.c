@@ -538,17 +538,22 @@ static int dcmp_compare_data(
             break;
         }
 
-        /* check that buffers are the same */
-        if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
-            /* memory contents are different */
-            rc = 1;
-            copy_src_to_dst = 1;
-            
-            /* if memory contents are different and sync option is on, we want to 
-             * copy the src bytes to the destination file */ 
-            if (!mfu_copy_opts->do_sync) {
-                break;
-            } 
+        /* check that buffers are the same, only need to bother if bytes read are the
+         * same in both cases, since we already mark the difference above if the sizes
+         * are different */
+        if (src_read == dst_read) {
+            /* got same size buffers, let's check the contents */
+            if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
+                /* memory contents are different */
+                rc = 1;
+                copy_src_to_dst = 1;
+                
+                /* if memory contents are different and sync option is on, we want to 
+                 * copy the src bytes to the destination file */ 
+                if (!mfu_copy_opts->do_sync) {
+                    break;
+                } 
+            }
         }
        
         /* if the bytes are different, and the sync option is on,
