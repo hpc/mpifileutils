@@ -472,11 +472,15 @@ static int dcmp_compare_data(
 
     /* seek to offset in source file */
     if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
+        mfu_close(dst_name, dst_fd);
+        mfu_close(src_name, src_fd);
         return -1;
     }
     
     /* seek to offset in destination file */
     if(mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
+        mfu_close(dst_name, dst_fd);
+        mfu_close(src_name, src_fd);
         return -1;
     }
 
@@ -714,6 +718,18 @@ static void dcmp_strmap_compare_data(
         /* compare the contents of the files */
         int rc = dcmp_compare_data(src_p->name, dst_p->name, offset, 
                 (size_t)length, 1048576, mfu_copy_opts);
+        if (rc == -1) {
+            /* we hit an error while reading, consider files to be different,
+             * they could be the same, but we'll draw attention to them this way */
+            MFU_LOG(MFU_LOG_ERR,
+                "Failed to read %s and/or %s.  Asumming contents are different.", src_p->name, dst_p->name);
+            /* TODO: fall back more gracefully here */
+            if (mfu_copy_opts->do_sync) {
+                MFU_LOG(MFU_LOG_ERR, "Files not synced, aborting.");
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            rc = 1;
+        }
 
         /* now record results of compare_data for sending to segmented scan */
         strncpy(name_ptr, src_p->name, max_name);
