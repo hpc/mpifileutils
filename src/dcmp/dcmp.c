@@ -491,6 +491,9 @@ static int dcmp_compare_data(
     /* read and compare data from files */
     size_t total_bytes = 0;
     while(length == 0 || total_bytes < length) {
+        /* whether we should copy the source bytes to the destination as part of sync */
+        int copy_src_to_dst = 0;
+
         /* determine number of bytes to read in this iteration */
         size_t left_to_read;
         if (length == 0) {
@@ -515,10 +518,15 @@ static int dcmp_compare_data(
             break;
         }
 
+        /* TODO: could be a non-error short read, we could just adjust number
+         * of bytes we compare and update offset to shorter of the two values
+         * numread = min(src_read, dst_read) */
+
         /* check that we got the same number of bytes from each */
         if (src_read != dst_read) {
             /* one read came up shorter than the other */
             rc = 1;
+            copy_src_to_dst = 1;
             if (!mfu_copy_opts->do_sync) { 
                 break;
             }
@@ -526,7 +534,7 @@ static int dcmp_compare_data(
 
         /* check for EOF */
         if (src_read == 0) {
-            /* hit end of file in both */
+            /* hit end of source file */
             break;
         }
 
@@ -534,6 +542,7 @@ static int dcmp_compare_data(
         if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
             /* memory contents are different */
             rc = 1;
+            copy_src_to_dst = 1;
             
             /* if memory contents are different and sync option is on, we want to 
              * copy the src bytes to the destination file */ 
@@ -544,7 +553,7 @@ static int dcmp_compare_data(
        
         /* if the bytes are different, and the sync option is on,
          * then copy the bytes from the source into the destination */
-        if (mfu_copy_opts->do_sync && rc == 1) {
+        if (mfu_copy_opts->do_sync && copy_src_to_dst == 1) {
             /* number of bytes to write */
             size_t bytes_to_write = (size_t) src_read;
 
