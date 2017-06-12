@@ -867,15 +867,11 @@ static void dcmp_strmap_compare_data(
             /* update to say contents of the files were found to be different */
             dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
+            
+           /* Note: File does not need to be truncated for syncing because the size 
+            * of the dst and src will be the same. It is one of the checks in
+            * dcmp_strmap_compare */
 
-           /* make sure to truncate the file if we overwrote the dest, since
-            * the original may have been larger than the source
-            * (actually not sure this is true since we compare sizes before content) */
-           if (mfu_copy_opts->do_sync) {
-                //uint64_t src_size = mfu_flist_file_get_size(src_compare_list, idx);
-                // get file name of dest
-                //truncate(name, (size_t)src_size);
-           }
         } else {
             /* update to say contents of the files were found to be the same */
             dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
@@ -1108,7 +1104,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
              key);
         assert(rc >= 0);
 
-        if (!dcmp_option_need_compare(DCMPF_TYPE) && !mfu_copy_opts->do_sync) {
+        if (!dcmp_option_need_compare(DCMPF_TYPE)) {
             /*
              * Skip if no need to compare type.
              * All the following comparison depends on type.
@@ -1121,6 +1117,15 @@ static void dcmp_strmap_compare(mfu_flist src_list,
             /* file type is different, no need to go any futher */
             dcmp_strmap_item_update(src_map, key, DCMPF_TYPE, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, key, DCMPF_TYPE, DCMPS_DIFFER);
+
+            /* if the types are different we need to make sure we delete the
+             * file of the same name in the dst dir, and copy the type in 
+             * the src dir to the dst directory */
+
+            if (mfu_copy_opts->do_sync) { 
+                mfu_flist_file_copy(src_list, src_index, src_cp_list);
+                mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
+            }
 
             if (!dcmp_option_need_compare(DCMPF_CONTENT)) {
                 continue;
@@ -1140,7 +1145,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
             continue;
         }
 
-        /* for now, we can only compare contente of regular files */
+        /* for now, we can only compare content of regular files */
         /* TODO: add support for symlinks */
         if (! S_ISREG(dst_mode)) {
             /* not regular file, take them as common content */
@@ -1152,10 +1157,18 @@ static void dcmp_strmap_compare(mfu_flist src_list,
         dcmp_state state;
         rc = dcmp_strmap_item_state(src_map, key, DCMPF_SIZE, &state);
         assert(rc == 0);
-        if (state == DCMPS_DIFFER && !mfu_copy_opts->do_sync) {
+        if (state == DCMPS_DIFFER) {
             /* file size is different, their contents should be different */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
+
+            /* if the file sizes are different then we need to remove the file in
+             * the dst directory, and replace it with the one in the src directory */
+            if (mfu_copy_opts->do_sync) { 
+                mfu_flist_file_copy(src_list, src_index, src_cp_list);
+                mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
+            }
+
             continue;
         }
 
