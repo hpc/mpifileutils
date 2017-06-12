@@ -1121,7 +1121,6 @@ static void dcmp_strmap_compare(mfu_flist src_list,
             /* if the types are different we need to make sure we delete the
              * file of the same name in the dst dir, and copy the type in 
              * the src dir to the dst directory */
-
             if (mfu_copy_opts->do_sync) { 
                 mfu_flist_file_copy(src_list, src_index, src_cp_list);
                 mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
