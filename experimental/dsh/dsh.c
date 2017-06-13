@@ -518,10 +518,11 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
     }
     
     /* get the minimum value of print default and allcount to print 
-     * So, if print default is less than allcount and greater than 
-     * zero print that, but if not, then print what is in the list */
-    if (print_default < allcount && print_default >= 0) {
-        allcount = print_default;
+     * So, if print default is less than allcount and greater than or 
+     * equal zero print that, but if not, then print what is in the list */
+    uint64_t print_count = allcount;
+    if (print_default < print_count && print_default >= 0) {
+        print_count = print_default;
     }
 
     /* print sorted data */
@@ -546,7 +547,7 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
 
         uint64_t i;
         char* ptr = (char*) recvbuf;
-        for (i = 0; i < allcount; i++) {
+        for (i = 0; i < print_count; i++) {
             uint64_t bytes = * (uint64_t*) ptr;
             ptr += sizeof(uint64_t);
     
@@ -567,7 +568,8 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
             //printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) count, name);
             printf("%6.2f %2s %6.2f %1s %s\n", agg_size_tmp, agg_size_units, count_tmp, count_units, name);
         }
-        printf("\n(printed top %llu of a total of %llu lines)\n", (unsigned long long)allcount, (unsigned long long)allsum_count);
+        printf("\n(printed top %llu of a total of %llu lines)\n", (unsigned long long)print_count, 
+                (unsigned long long)allcount);
         fflush(stdout);
     }
 
