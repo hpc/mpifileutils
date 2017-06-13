@@ -567,7 +567,7 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
             //printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) count, name);
             printf("%6.2f %2s %6.2f %1s %s\n", agg_size_tmp, agg_size_units, count_tmp, count_units, name);
         }
-        printf("\n(printed top %llu of a total of %llu lines)\n", (unsigned long long)allcount, (unsigned long long)allsum_tmp);
+        printf("\n(printed top %llu of a total of %llu lines)\n", (unsigned long long)allcount, (unsigned long long)allsum_count);
         fflush(stdout);
     }
 
@@ -1755,7 +1755,7 @@ int main(int argc, char** argv)
     char* outputname = NULL;
     int walk = 0;
     /* set print default to 25 for now */
-    int print_default = -1;
+    int print_default = 100;
 
     int option_index = 0;
     static struct option long_options[] = {
