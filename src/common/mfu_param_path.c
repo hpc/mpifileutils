@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <errno.h>
 
 /* initialize fields in param */
 static void mfu_param_path_init(mfu_param_path* param)
@@ -359,7 +360,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
         /* lookup the path */
         uint64_t path_idx = start + i;
         const char* path = paths[path_idx];
-
+        
         /* set param fields for path */
         if (path != NULL) {
             /* make a copy of original path */
@@ -423,7 +424,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
     for (i = 0; i < count; i++) {
         mfu_pack_param(&ptr, &p[i]);
     }
-
+    
     /* allgatherv to collect data */
     MPI_Allgatherv(sendbuf, sendcount, MPI_BYTE, recvbuf, recvcounts, recvdispls, MPI_BYTE, MPI_COMM_WORLD);
 
@@ -439,7 +440,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
     if (rank == 0) {
         for (i = 0; i < num; i++) {
             /* get pointer to param structure */
-            mfu_param_path* param = &p[i];
+            mfu_param_path* param = &params[i];
             if (param->path_stat_valid == 0) {
                 /* failed to find a file at this location, let user know (may be a typo) */
                 printf("Warning: `%s' does not exist\n", param->orig); 
@@ -457,6 +458,284 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
 
     /* free temporary params */
     mfu_free(&p);
+
+    return;
+}
+
+/**
+ * Analyze all file path inputs and place on the work queue.
+ *
+ * We start off with all of the following potential options in mind and prune
+ * them until we figure out what situation we have.
+ *
+ * Libcircle only calls this function from rank 0, so there's no need to check
+ * the current rank here.
+ *
+ * Source must overwrite destination.
+ *   - Single file to single file
+ *
+ * Must return an error. Impossible condition.
+ *   - Single directory to single file
+ *   - Many file to single file
+ *   - Many directory to single file
+ *   - Many directory and many file to single file
+ *
+ * All Sources must be placed inside destination.
+ *   - Single file to single directory
+ *   - Single directory to single directory
+ *   - Many file to single directory
+ *   - Many directory to single directory
+ *   - Many file and many directory to single directory
+ */
+
+/* given an item name, determine which source path this item
+ * is contained within, extract directory components from source
+ * path to this item and then prepend destination prefix. */
+char* mfu_param_path_copy_dest(const char* name, int numpaths,
+        const mfu_param_path* paths, const mfu_param_path* destpath, 
+        mfu_copy_opts_t* mfu_copy_opts)
+{
+    /* identify which source directory this came from */
+    int i;
+    int idx = -1;
+    for (i = 0; i < numpaths; i++) {
+        /* get path for step */
+        const char* path = paths[i].path;
+
+        /* get length of source path */
+        size_t len = strlen(path);
+
+        /* see if name is a child of path */
+        if (strncmp(path, name, len) == 0) {
+            idx = i;
+            break;
+        }
+    }
+
+    /* this will happen if the named item is not a child of any
+     * source paths */
+    if (idx == -1) {
+        return NULL;
+    }
+
+    /* create path of item */
+    mfu_path* item = mfu_path_from_str(name);
+
+    /* get source directory */
+    mfu_path* src = mfu_path_from_str(paths[i].path);
+
+    /* get number of components in item */
+    int item_components = mfu_path_components(item);
+
+    /* get number of components in source path */
+    int src_components = mfu_path_components(src);
+
+    /* if copying into directory, keep last component,
+     * otherwise cut all components listed in source path */
+    int cut = src_components;
+    if (mfu_copy_opts->copy_into_dir && cut > 0) {
+        if (mfu_copy_opts->do_sync != 1) {
+            cut--;
+        }
+    }
+
+    /* compute number of components to keep */
+    int keep = item_components - cut;
+
+    /* chop prefix from item */
+    mfu_path_slice(item, cut, keep);
+
+    /* prepend destination path */
+    mfu_path_prepend_str(item, destpath->path);
+
+    /* convert to a NUL-terminated string */
+    char* dest = mfu_path_strdup(item);
+
+    /* free our temporary paths */
+    mfu_path_delete(&src);
+    mfu_path_delete(&item);
+
+    return dest;
+}
+
+/* check that source and destination paths are valid */
+void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths, 
+        const mfu_param_path* destpath, int* flag_valid, int* flag_copy_into_dir)
+{
+    /* initialize output params */
+    *flag_valid = 0;
+    *flag_copy_into_dir = 0;
+
+    /* need at least two paths to have a shot at being valid */
+    if (num < 1 || paths == NULL || destpath == NULL) {
+        return;
+    }
+
+    /* get current rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* assume path parameters are valid */
+    int valid = 1;
+
+    /* just have rank 0 check */
+    if(rank == 0) {
+        /* count number of readable source paths */
+        uint64_t i;
+        int num_readable = 0;
+        for(i = 0; i < num; i++) {
+            const char* path = paths[i].path;
+            if(mfu_access(path, R_OK) == 0) {
+                num_readable++;
+            }
+            else {
+                /* found a source path that we can't read, not fatal,
+                 * but print an error to notify user */
+                const char* orig = paths[i].orig;
+                MFU_LOG(MFU_LOG_ERR, "Could not read `%s' errno=%d %s",
+                    orig, errno, strerror(errno));
+            }
+        }
+
+        /* verify that we have at least one source path */
+        if(num_readable < 1) {
+            MFU_LOG(MFU_LOG_ERR, "At least one valid source must be specified");
+            valid = 0;
+            goto bcast;
+        }
+
+        /*
+         * First we need to determine if the last argument is a file or a directory.
+         * We first attempt to see if the last argument already exists on disk. If it
+         * doesn't, we then look at the sources to see if we can determine what the
+         * last argument should be.
+         */
+
+        bool dest_exists = false;
+        bool dest_is_dir = false;
+        bool dest_is_file = false;
+        bool dest_is_link_to_dir = false;
+        bool dest_is_link_to_file = false;
+        bool dest_required_to_be_dir = false;
+
+        /* check whether dest exists, its type, and whether it's writable */
+        if(destpath->path_stat_valid) {
+            /* we could stat dest path, so something is there */
+            dest_exists = true;
+
+            /* now determine its type */
+            if(S_ISDIR(destpath->path_stat.st_mode)) {
+                /* dest is a directory */
+                dest_is_dir  = true;
+            }
+            else if(S_ISREG(destpath->path_stat.st_mode)) {
+                /* dest is a file */
+                dest_is_file = true;
+            }
+            else if(S_ISLNK(destpath->path_stat.st_mode)) {
+                /* dest is a symlink, but to what? */
+                if (destpath->target_stat_valid) {
+                    /* target of the symlink exists, determine what it is */
+                    if(S_ISDIR(destpath->target_stat.st_mode)) {
+                        /* dest is link to a directory */
+                        dest_is_link_to_dir = true;
+                    }
+                    else if(S_ISREG(destpath->target_stat.st_mode)) {
+                        /* dest is link to a file */
+                        dest_is_link_to_file = true;
+                    }
+                    else {
+                        /* unsupported type */
+                        MFU_LOG(MFU_LOG_ERR, "Unsupported filetype `%s' --> `%s'",
+                            destpath->orig, destpath->target);
+                        valid = 0;
+                        goto bcast;
+                    }
+                }
+                else {
+                    /* dest is a link, but its target does not exist,
+                     * consider this an error */
+                    MFU_LOG(MFU_LOG_ERR, "Destination is broken symlink `%s'",
+                        destpath->orig);
+                    valid = 0;
+                    goto bcast;
+                }
+            }
+            else {
+                /* unsupported type */
+                MFU_LOG(MFU_LOG_ERR, "Unsupported filetype `%s'",
+                    destpath->orig);
+                valid = 0;
+                goto bcast;
+            }
+
+            /* check that dest is writable */
+            if(mfu_access(destpath->path, W_OK) < 0) {
+                MFU_LOG(MFU_LOG_ERR, "Destination is not writable `%s'",
+                    destpath->path);
+                valid = 0;
+                goto bcast;
+            }
+        }
+        else {
+            /* destination does not exist, so we'll be creating it,
+             * check that its parent is writable */
+
+            /* compute parent path */
+            mfu_path* parent = mfu_path_from_str(destpath->path);
+            mfu_path_dirname(parent);
+            char* parent_str = mfu_path_strdup(parent);
+            mfu_path_delete(&parent);
+
+            /* check that parent is writable */
+            if(mfu_access(parent_str, W_OK) < 0) {
+                MFU_LOG(MFU_LOG_ERR, "Destination parent directory is not writable `%s'",
+                    parent_str);
+                valid = 0;
+                mfu_free(&parent_str);
+                goto bcast;
+            }
+            mfu_free(&parent_str);
+        }
+
+        /* determine whether caller *requires* copy into dir */
+
+        /* TODO: if caller specifies dest/ or dest/. */
+
+        /* if caller specifies more than one source,
+         * then dest has to be a directory */
+        if(num > 1) {
+            dest_required_to_be_dir = true;
+        }
+
+        /* if caller requires dest to be a directory, and if dest does not
+         * exist or it does it exist but it's not a directory, then abort */
+        if(dest_required_to_be_dir &&
+           (!dest_exists || (!dest_is_dir && !dest_is_link_to_dir)))
+        {
+            MFU_LOG(MFU_LOG_ERR, "Destination is not a directory `%s'",
+                destpath->orig);
+            valid = 0;
+            goto bcast;
+        }
+
+        /* we copy into a directory if any of the following:
+         *   1) user specified more than one source
+         *   2) destination already exists and is a directory
+         *   3) destination already exists and is a link to a directory */
+        bool copy_into_dir = (dest_required_to_be_dir || dest_is_dir || dest_is_link_to_dir);
+        *flag_copy_into_dir = copy_into_dir ? 1 : 0;
+    }
+
+bcast:
+    /* get status from rank 0 */
+    MPI_Bcast(&valid, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    /* set valid flag */
+    *flag_valid = valid;
+
+    /* rank 0 broadcasts whether we're copying into a directory */
+    MPI_Bcast(flag_copy_into_dir, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
     return;
 }
@@ -498,27 +777,5 @@ void mfu_param_path_set(const char* path, mfu_param_path* param)
 void mfu_param_path_free(mfu_param_path* param)
 {
     mfu_param_path_free_all(1, param);
-    return;
-}
-
-/* given a list of param_paths, walk each one and add to flist */
-void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, int walk_stat, mfu_flist flist, int dir_perms)
-{
-    /* allocate memory to hold a list of paths */
-    const char** path_list = (const char**) MFU_MALLOC(num * sizeof(char*));
-
-    /* fill list of paths and print each one */
-    uint64_t i;
-    for (i = 0; i < num; i++) {
-        /* get path for this step */
-        path_list[i] = params[i].path;
-    }
-
-    /* walk file tree and record stat data for each file */
-    mfu_flist_walk_paths((uint64_t) num, path_list, walk_stat, dir_perms, flist);
-
-    /* free the list */
-    mfu_free(&path_list);
-
     return;
 }

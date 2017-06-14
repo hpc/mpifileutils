@@ -524,7 +524,7 @@ int main(int argc, char* argv[])
 
     /* walk list of input paths and stat as we walk */
     mfu_flist flist = mfu_flist_new();
-    mfu_param_path_walk(numpaths, paths, 1, flist, 0);
+    mfu_flist_walk_param_paths(numpaths, paths, 1, 0, flist);
 
     /* filter down our list to files which don't meet our striping requirements */
     mfu_flist filtered = filter_list(flist, stripes, stripe_size, min_size);

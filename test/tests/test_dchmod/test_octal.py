@@ -1,5 +1,9 @@
 #!/usr/bin/env python2
-from subprocess import call
+import subprocess 
+
+# chane your path here as necessary  
+mpifu_path  = "~/mpifileutils/test/tests/test_dchmod/test_octal.sh"
+dchmod_path = "~/mpifileutils/install/bin/dchmod" 
 
 def test_octal():
-        rc = call("~/fileutils.git/test/tests/test_dchmod/test_octal.sh", shell=True)
+        p = subprocess.Popen(["%s %s" % (mpifu_path, dchmod_path)], shell=True, executable="/bin/bash").communicate()

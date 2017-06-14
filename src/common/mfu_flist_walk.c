@@ -973,6 +973,28 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, 
     return;
 }
 
+/* given a list of param_paths, walk each one and add to flist */
+void mfu_flist_walk_param_paths(uint64_t num, const mfu_param_path* params, int walk_stat, int dir_perms, mfu_flist flist)
+{
+    /* allocate memory to hold a list of paths */
+    const char** path_list = (const char**) MFU_MALLOC(num * sizeof(char*));
+
+    /* fill list of paths and print each one */
+    uint64_t i;
+    for (i = 0; i < num; i++) {
+        /* get path for this step */
+        path_list[i] = params[i].path;
+    }
+
+    /* walk file tree and record stat data for each file */
+    mfu_flist_walk_paths((uint64_t) num, path_list, walk_stat, dir_perms, flist);
+
+    /* free the list */
+    mfu_free(&path_list);
+
+    return;
+}
+
 /* Given an input file list, stat each file and enqueue details
  * in output file list, skip entries excluded by skip function
  * and skip args */

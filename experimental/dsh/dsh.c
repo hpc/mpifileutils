@@ -1867,7 +1867,7 @@ int main(int argc, char** argv)
      * input file */
     if (walk) {
         /* walk list of input paths */
-        mfu_param_path_walk(numpaths, paths, walk_stat, flist, dir_perm);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, dir_perm, flist);
     }
     else {
         /* read list from file */
