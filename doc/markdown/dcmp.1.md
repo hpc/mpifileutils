@@ -16,9 +16,6 @@ dcmp provides functionality similar to a recursive *cmp(1)*.  It reports how man
 -b, \--base 
 : 	Do a base comparison.
 
--o, \--output <FIELD0=STATE0@FIELD1=STATE1,FIELD2=STATE2:FILE> 
-: 	write output fields and states to a file. 
-
 -v, \--verbose 
 : 	Run in verbose mode.  Prints a list of statistics/timing data for the command. Files walked, started, completed, seconds, files, bytes read, byte rate, and file rate. 
 
