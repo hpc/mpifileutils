@@ -1054,7 +1054,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     mfu_flist dst_compare_list = mfu_flist_subset(dst_list);
   
     /* remove and copy lists for sync option */ 
-    mfu_flist dst_remove_list = MFU_FLIST_NULL;
+    mfu_flist dst_remove_list = MFU_FLIST_NULL; 
     mfu_flist src_cp_list     = MFU_FLIST_NULL; 
     
     /* create dst remove list if sync option is on */
@@ -1219,8 +1219,14 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     }
    
     /* free lists used for copying and removing files in sync option */ 
-    mfu_flist_free(&src_cp_list);
-    mfu_flist_free(&dst_remove_list);
+    /* TODO: fix MFU_FLIST_NULL so that we don't have to do these NULL
+     * checks here */
+    if (src_cp_list != MFU_FLIST_NULL) {
+        mfu_flist_free(&src_cp_list);
+    }
+    if (dst_remove_list != MFU_FLIST_NULL) {
+        mfu_flist_free(&dst_remove_list);
+    }
 
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
