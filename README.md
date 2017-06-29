@@ -21,9 +21,10 @@ To enable experimental utilities, run configure with the enable experimental opt
  - [dtar](doc/markdown/dtar.1.md) - Create file tape archives (experimental).
 
 ## Build
-mpiFileUtils depends on several other libraries.  To simplify builds, there are two scripts: buildme\_dependencies and buildme.  The buildme\_dependencies script downloads and installs all the necessary libraries.  The buildme script builds mpiFileUtils assuming the libraries have been installed.  Both scripts require that mpicc is in your path, and that it is for an MPI library that supports at least v2.2 of the MPI standard.  Please review each buildme script, and edit if necessary.  Then run them in sequence:
+mpiFileUtils depends on several libraries.  To simplify builds, there are two scripts: buildme\_dependencies and buildme.  The buildme\_dependencies script downloads and installs all the necessary libraries.  The buildme script then builds mpiFileUtils assuming the libraries have been installed.  Both scripts require that mpicc is in your path, and that it is for an MPI library that supports at least v2.2 of the MPI standard.  Please review each buildme script, and edit if necessary.  Then run them in sequence:
 
   ./buildme\_dependencies
+
   ./buildme
 
 Alternatively, mpiFileUtils is available in [Spack](https://spack.io/), which simplifies the install to just:
