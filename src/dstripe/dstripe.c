@@ -78,7 +78,7 @@ static void generate_suffix(char *suffix, const int len)
 }
 
 /* uses the lustre api to obtain stripe count and stripe size of a file */
-static void get_file_stripe_info(const char *path, uint64_t *stripe_size, uint64_t *stripe_count)
+static int get_file_stripe_info(const char *path, uint64_t *stripe_size, uint64_t *stripe_count)
 {
 #ifdef LUSTRE_SUPPORT
     /* obtain the llapi_layout for a file by path */
@@ -86,9 +86,7 @@ static void get_file_stripe_info(const char *path, uint64_t *stripe_size, uint64
 
     /* if no llapi_layout is returned, then some problem occured */
     if (layout == NULL) {
-        printf("retrieving file stripe information for '%s' has failed, %s\n", path, strerror(errno));
-        fflush(stdout);
-        MPI_Abort(MPI_COMM_WORLD, 1);
+        return ENOENT;
     }
 
     /* obtain stripe count and stripe size */
@@ -98,6 +96,8 @@ static void get_file_stripe_info(const char *path, uint64_t *stripe_size, uint64
     /* free the alloced llapi_layout */
     llapi_layout_free(layout);
 #endif
+
+    return 0;
 }
 
 /* create a striped lustre file at the path provided with the specified stripe size and count */
@@ -177,8 +177,13 @@ static void stripe_info_report(mfu_flist list)
             char filesize[11];
             char stripesize[9];
 
-            /* get the striping info and print it out */
-            get_file_stripe_info(in_path, &stripe_size, &stripe_count);
+            /*
+             * attempt to get striping info and print it out,
+             * skip the file if we can't get the striping info we seek
+             */
+            if (get_file_stripe_info(in_path, &stripe_size, &stripe_count) != 0) {
+                continue;
+            }
 
             /* format it nicely */
             generate_pretty_size(filesize, sizeof(filesize), mfu_flist_file_get_size(list, idx));
@@ -186,7 +191,6 @@ static void stripe_info_report(mfu_flist list)
 
             /* print the row */
             printf("%10.10s %3" PRId64 " %8.8s %s\n", filesize, stripe_count, stripesize, in_path);
-
             fflush(stdout);
         }
     }
@@ -215,8 +219,13 @@ static mfu_flist filter_list(mfu_flist list, int stripe_count, uint64_t stripe_s
             uint64_t curr_stripe_size = 0;
             uint64_t curr_stripe_count = 0;
 
-            /* obtain the file's current stripe size and stripe count */
-            get_file_stripe_info(in_path, &curr_stripe_size, &curr_stripe_count);
+            /*
+             * attempt to get striping info,
+             * skip the file if we can't get the striping info we seek
+             */
+            if (get_file_stripe_info(in_path, &curr_stripe_size, &curr_stripe_count) != 0) {
+                continue;
+            }
 
             /* TODO: this should probably be better */
             /* if the current stripe size or stripe count doesn't match, then a restripe the file */
@@ -524,7 +533,7 @@ int main(int argc, char* argv[])
 
     /* walk list of input paths and stat as we walk */
     mfu_flist flist = mfu_flist_new();
-    mfu_param_path_walk(numpaths, paths, 1, flist, 0);
+    mfu_flist_walk_param_paths(numpaths, paths, 1, 0, flist);
 
     /* filter down our list to files which don't meet our striping requirements */
     mfu_flist filtered = filter_list(flist, stripes, stripe_size, min_size);

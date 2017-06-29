@@ -516,6 +516,14 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
     if (digits < 5) {
         digits = 5;
     }
+    
+    /* get the minimum value of print default and allcount to print 
+     * So, if print default is less than allcount and greater than or 
+     * equal zero print that, but if not, then print what is in the list */
+    uint64_t print_count = allcount;
+    if (print_default < print_count && print_default >= 0) {
+        print_count = print_default;
+    }
 
     /* print sorted data */
     if (rank == 0) {
@@ -539,7 +547,7 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
 
         uint64_t i;
         char* ptr = (char*) recvbuf;
-        for (i = 0; i < print_default; i++) {
+        for (i = 0; i < print_count; i++) {
             uint64_t bytes = * (uint64_t*) ptr;
             ptr += sizeof(uint64_t);
     
@@ -560,7 +568,8 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
             //printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) count, name);
             printf("%6.2f %2s %6.2f %1s %s\n", agg_size_tmp, agg_size_units, count_tmp, count_units, name);
         }
-        printf("\n(printed top %d of a total of %d lines)\n", print_default, (int)allsum_tmp);
+        printf("\n(printed top %llu of a total of %llu lines)\n", (unsigned long long)print_count, 
+                (unsigned long long)allcount);
         fflush(stdout);
     }
 
@@ -1748,7 +1757,7 @@ int main(int argc, char** argv)
     char* outputname = NULL;
     int walk = 0;
     /* set print default to 25 for now */
-    int print_default = 25;
+    int print_default = 100;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -1858,7 +1867,7 @@ int main(int argc, char** argv)
      * input file */
     if (walk) {
         /* walk list of input paths */
-        mfu_param_path_walk(numpaths, paths, walk_stat, flist, dir_perm);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, dir_perm, flist);
     }
     else {
         /* read list from file */

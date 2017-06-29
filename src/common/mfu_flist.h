@@ -29,12 +29,71 @@ extern "C" {
 #ifndef MFU_FLIST_H
 #define MFU_FLIST_H
 
+/* Make sure we're using 64 bit file handling. */
+#ifdef _FILE_OFFSET_BITS
+#undef _FILE_OFFSET_BITS
+#define _FILE_OFFSET_BITS 64
+#endif
+
+#ifndef _LARGEFILE64_SOURCE
+#define _LARGEFILE64_SOURCE 1
+#endif
+
+#ifndef __USE_LARGEFILE64
+#define __USE_LARGEFILE64
+#endif
+
+#ifndef _LARGEFILE_SOURCE
+#define _LARGEFILE_SOURCE
+#endif
+
+/* Enable posix extensions (popen). */
+#ifndef _BSD_SOURCE
+#define _BSD_SOURCE 1
+#endif
+
+/* For O_NOATIME support */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <ctype.h>
 #include <stdbool.h>
 #include "mpi.h"
+
+#if DCOPY_USE_XATTRS
+#include <attr/xattr.h>
+#endif /* DCOPY_USE_XATTRS */
+
+/* default mode to create new files or directories */
+#define DCOPY_DEF_PERMS_FILE (S_IRUSR | S_IWUSR)
+#define DCOPY_DEF_PERMS_DIR  (S_IRWXU)
+
+/* buffer size to read/write data to file system */
+#define FD_BLOCK_SIZE (1*1024*1024)
+
+/*
+ * FIXME: Is this description correct?
+ *
+ * This is the size of the buffer used to copy from the fd page cache to L1
+ * cache before the buffer is copied back down into the destination fd page
+ * cache.
+ */
+#define FD_PAGE_CACHE_SIZE (32768)
+
+#ifndef PATH_MAX
+#define PATH_MAX (4096)
+#endif
+
+#ifndef _POSIX_ARG_MAX
+#define MAX_ARGS 4096
+#else
+#define MAX_ARGS _POSIX_ARG_MAX
+#endif
+
 
 /****************************************
  * Define types
@@ -97,6 +156,15 @@ void mfu_flist_walk_paths(
     mfu_flist flist
 );
 
+/* given a list of param_paths, walk each one and add to flist */
+void mfu_flist_walk_param_paths(
+    uint64_t num,
+    const mfu_param_path* params,
+    int use_stat,
+    int dir_perms,
+    mfu_flist flist
+);
+
 /* skip function pointer: given a path input, along with user-provided
  * arguments, compute whether to enqueue this file in output list of
  * mfu_flist_stat, return 1 if file should be skipped, 0 if not. */
@@ -136,51 +204,6 @@ void mfu_flist_array_by_depth(
     int* outmin,           /* OUT - minimum depth number */
     mfu_flist** outlists /* OUT - array of lists split by depth */
 );
-
-int mfu_create_directory(mfu_flist list, uint64_t idx);
-
-/* create directories, we work from shallowest level to the deepest
- * with a barrier in between levels, so that we don't try to create
- * a child directory until the parent exists */
-int mfu_create_directories(int levels, int minlevel, mfu_flist* lists);
-
-int mfu_create_link(mfu_flist list, uint64_t idx);
-
-int mfu_create_file(mfu_flist list, uint64_t idx);
-
-int mfu_create_files(int levels, int minlevel, mfu_flist* lists);
-
-int mfu_is_all_null(const char* buf, uint64_t buf_size);
-
-int mfu_is_eof(const char* file, int fd);
-
-int mfu_copy_file_normal(
-    const char* src,
-    const char* dest,
-    const int in_fd,
-    const int out_fd,
-    off_t offset,
-    off_t length,
-    uint64_t file_size);
-
-int mfu_copy_file_fiemap(
-    const char* src,
-    const char* dest,
-    const int in_fd,
-    const int out_fd,
-    uint64_t offset,
-    uint64_t length,
-    uint64_t file_size,
-    bool* normal_copy_required);
-
-int mfu_copy_file(
-    const char* src,
-    const char* dest,
-    uint64_t offset,
-    uint64_t length,
-    uint64_t file_size);
-
-void mfu_copy_files(mfu_flist list);
 
 /* frees array of lists created in call to
  * mfu_flist_split_by_depth */
@@ -280,8 +303,16 @@ mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args
 * to the caller */
 mfu_flist mfu_flist_spread(mfu_flist flist);
 
+/* copy items in list */
+void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
+        const mfu_param_path* paths, const mfu_param_path* destpath, 
+        mfu_copy_opts_t* mfu_copy_opts);
+
 /* unlink all items in flist */
 void mfu_flist_unlink(mfu_flist flist);
+
+int mfu_input_flist_skip(const char* name, int numpaths,
+        const mfu_param_path* paths);
 
 /* sort flist by specified fields, given as common-delimitted list
  * precede field name with '-' character to reverse sort order:
@@ -312,7 +343,6 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size);
 
 /* free the linked list allocated with mfu_file_chunk_list_alloc */
 void mfu_file_chunk_list_free(mfu_file_chunk** phead);
-
 #endif /* MFU_FLIST_H */
 
 /* enable C++ codes to include this header directly */

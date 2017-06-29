@@ -44,8 +44,8 @@ extern "C" {
 #include "mfu_util.h"
 #include "mfu_path.h"
 #include "mfu_io.h"
-#include "mfu_flist.h"
 #include "mfu_param_path.h"
+#include "mfu_flist.h"
 
 #endif /* MFU_H */
 

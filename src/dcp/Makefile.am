@@ -2,9 +2,6 @@ include $(top_srcdir)/common.mk
 
 bin_PROGRAMS = dcp
 
-noinst_HEADERS = \
-    dcp.h 
-
 dcp_SOURCES = \
     dcp.c 
 

@@ -31,6 +31,7 @@ extern "C" {
 
 #include <stdlib.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include "mpi.h"
 
@@ -70,11 +71,41 @@ typedef struct mfu_param_path_t {
     struct stat target_stat; /* stat of target path */
 } mfu_param_path;
 
+typedef struct {
+    int    copy_into_dir; /* flag indicating whether copying into existing dir */
+    int    do_sync;       /* flag option to sync src dir with dest dir */ 
+    char*  dest_path;     /* prefex of destination directory */
+    char*  input_file;    /* file name of input list*/
+    bool   preserve;      /* whether to preserve timestamps, ownership, permissions, etc. */
+    bool   synchronous;   /* whether to use O_DIRECT */
+    bool   sparse;        /* whether to create sparse files */
+    size_t chunk_size;    /* size to chunk files by */
+    size_t block_size;    /* block size to read/write to file system */
+    char*  block_buf1;    /* buffer to read / write data */
+    char*  block_buf2;    /* another buffer to read / write data */
+    int    grouplock_id;  /* Lustre grouplock ID */
+} mfu_copy_opts_t;
+
 /* set fields in params according to paths,
  * the number of paths is specified in num,
  * paths is an array of char* of length num pointing to the input paths,
  * params is an array of length num to hold output */
 void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params);
+
+/* given a list of source param_paths and single destinaton path,
+ * identify whether sources can be copied to destination, returns
+ * valid=1 if copy is valid and returns copy_into_dir=1 if
+ * destination is a directory and items should be copied into
+ * it rather than on top of it */
+void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths, 
+        const mfu_param_path* destpath, int* flag_valid, int* flag_copy_into_dir);
+
+/* given an item name, determine which source path this item
+ * is contained within, extract directory components from source
+ * path to this item and then prepend destination prefix. */
+char* mfu_param_path_copy_dest(const char* name, int numpaths,
+        const mfu_param_path* paths, const mfu_param_path* destpath, 
+        mfu_copy_opts_t* mfu_copy_opts);
 
 /* free resources allocated in call to mfu_param_path_set_all */
 void mfu_param_path_free_all(uint64_t num, mfu_param_path* params);
@@ -84,9 +115,6 @@ void mfu_param_path_set(const char* path, mfu_param_path* param);
 
 /* free memory associated with param */
 void mfu_param_path_free(mfu_param_path* param);
-
-/* given a list of param_paths, walk each one and add to flist */
-void mfu_param_path_walk(uint64_t num, const mfu_param_path* params, int walk_stat, mfu_flist flist, int dir_perms);
 
 #endif /* MFU_PARAM_PATH_H */
 
