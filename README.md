@@ -36,4 +36,4 @@ or to enable all features:
   spack install mpifileutils +lustre +experimental
 
 ## Build Status
-The current status of the fileutils master branch is [![Build Status](https://travis-ci.org/hpc/mpifileutils.png?branch=master)](https://travis-ci.org/hpc/mpifileutils).
+The current status of the mpiFileUtils master branch is [![Build Status](https://travis-ci.org/hpc/mpifileutils.png?branch=master)](https://travis-ci.org/hpc/mpifileutils).
