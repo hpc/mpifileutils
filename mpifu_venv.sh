@@ -3,7 +3,7 @@
 # This script assumes you have at least python-2.7.10 installed
 # Pass in the top level directory of where you have the project downloaded
 MPIFU_DIR=$1
-echo MPIFU_DIR
+echo $MPIFU_DIR
 
 CONDA_BIN=${MPIFU_DIR}/miniconda2/bin
 ACTIVATE_VENV=${MPIFU_DIR}/miniconda2/envs/mpifu_venv
