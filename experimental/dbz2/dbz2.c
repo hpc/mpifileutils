@@ -38,7 +38,7 @@ static GOptionEntry entries[] = {
         {"blocksize",'b', 0, G_OPTION_ARG_INT, &opts_blocksize, "Block size", NULL},
        	{"memory limit", 'm', 0 , G_OPTION_ARG_INT, &opts_memory, "Memory limit in MB", NULL},
 	{"verbose", 'v', 0, G_OPTION_ARG_NONE, &opts_verbose, "Verbose output", NULL },
-        {"debug", 'd', 0, G_OPTION_ARG_NONE, &opts_debug, "Debug output", NULL},	
+        {"debug", 'y', 0, G_OPTION_ARG_NONE, &opts_debug, "Debug output", NULL},	
 	{ NULL }
 };
 

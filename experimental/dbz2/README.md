@@ -20,4 +20,4 @@ OPTIONS
 -b--------block size 1=100kB.......9=900kB. Optional. Default is 9
 -m--------optional limit to emory that can be used by a processs
 -v-------verbose.optional
--d------debug. optional
+-y------debug. optional
