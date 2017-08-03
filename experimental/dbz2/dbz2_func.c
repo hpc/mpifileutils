@@ -62,10 +62,10 @@ void find_wave_size(int b_size,int opts_memory)
 	int64_t wave_size_approx=mem_limit-(int64_t)info.totalram*2/100-8*block_size-400*1024-128-block_size;
 	int64_t comp_buff_size=1.01*block_size+600;
 	int64_t waves_blocks_approx=wave_size_approx/comp_buff_size;
-	int64_t wave_size=wave_size_approx-2*waves_blocks_approx*sizeof(struct block_info);
+	int64_t wave_size=wave_size_approx-2*tot_blocks*sizeof(struct block_info);
 	blocks_pn_pw=(int64_t)(0.4*wave_size/comp_buff_size);
-	if(blocks_pn_pw>1500)
-		blocks_pn_pw=1500;	
+	if(blocks_pn_pw>800)
+		blocks_pn_pw=800;	
 	//int blocks_n_w=(int)blocks_pn_pw;
 
 	MPI_Allreduce(&blocks_pn_pw,&wave_blocks,1,MPI_INT,MPI_MIN,MPI_COMM_WORLD);
@@ -146,6 +146,13 @@ void dbz2_compress(int b_size, char *fname, int opts_memory)
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	int rcount[size];
+	struct stat st;
+        stat(fname,&st);
+	block_size=(int64_t)b_size*100*1024;
+	if(st.st_size%block_size==0)
+                tot_blocks=(int64_t)(st.st_size)/block_size;
+        else
+                tot_blocks=(int64_t)(st.st_size)/block_size +1;
 	find_wave_size(b_size,opts_memory);
 	MFU_LOG(MFU_LOG_INFO,"The file name is:%s\n",fname);	
 	fd=open(fname,O_RDONLY | O_BINARY|O_LARGEFILE);
@@ -155,7 +162,6 @@ void dbz2_compress(int b_size, char *fname, int opts_memory)
 		MPI_Finalize();
 		exit(1);
 	}	
-	struct stat st;
 	stat(fname,&st);	
 
 	/*The file for output is opened and options set*/
