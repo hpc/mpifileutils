@@ -10,9 +10,13 @@ link_libraries(${GLIB2_LDFLAGS})
 
 pkg_check_modules(ARCHIVE REQUIRED libarchive)
 add_definitions(${ARCHIVE_CFLAGS})
-link_libraries(${ARCHIVE_LDFLAGS})
+link_libraries(${ARCHIVE_LDFLAGS} -lz -lbz2)
+
+pkg_check_modules(LWGRP REQUIRED liblwgrp)
+add_definitions(${LWGRP_CFLAGS})
+link_libraries(${LWGRP_LDFLAGS})
 
 set(dtar_src_files common.c handle_args.c dtar.c)
 
 add_executable(dtar ${dtar_src_files})
-target_link_libraries(dtar ${MPI_LIBRARIES} mfu circle)
+target_link_libraries(dtar ${MPI_LIBRARIES} mfu circle dtcmp lwgrp dbzip2 bz2)
