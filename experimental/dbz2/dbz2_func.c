@@ -296,6 +296,9 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
         }
         my_prev_blocks = my_tot_blocks;
         blocks_processed = 0;
+        for (int i = 0; i < blocks_for_wave; i++) {
+            free(a[i]);
+        }
         free(a);
     }
     MPI_Barrier(MPI_COMM_WORLD);

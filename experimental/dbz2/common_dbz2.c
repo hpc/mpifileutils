@@ -164,4 +164,6 @@ void DBz2_decompDequeue(CIRCLE_handle* handle)
     /*write result to correct offset in file*/
     lseek64(fd_out, in_offset, SEEK_SET);
     write(fd_out, obuf, outSize);
+    free(ibuf);
+    free(obuf);
 }

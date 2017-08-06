@@ -14,6 +14,7 @@ set(CMAKE_C_FLAGS_RELEASE       "-Wall -Werror -O3")
 
 find_package(PkgConfig)
 find_package(MPI REQUIRED)
+find_package(BZip2 REQUIRED)
 include_directories(${MPI_INCLUDE_PATH})
 
 pkg_check_modules(CIRCLE REQUIRED libcircle)
