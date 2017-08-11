@@ -60,7 +60,8 @@ void find_wave_size(int b_size, int opts_memory)
     if (opts_memory * 1024 * 1024 < mem_limit && opts_memory > 0)
     { mem_limit = (int64_t)opts_memory * 1024 * 1024; }
     int64_t wave_size_approx = mem_limit - (int64_t)info.totalram * 2 / 100 - 8 * block_size - 400 * 1024 - 128 - block_size;
-    int64_t comp_buff_size = 1.01 * block_size + 600;
+    /*memory is computed as the mem_limit is max memory for a process. We leave 2% of totalram free, then 8*block_size +400*1024 is the memory required to do compression, keep 128B for variables,etc. The block itself must be in memory before compression. */
+    int64_t comp_buff_size = 1.01 * block_size + 600; /*Compressed buffer size is the max size of a compressed block*/
     int64_t waves_blocks_approx = wave_size_approx / comp_buff_size;
     int64_t wave_size = wave_size_approx - 2 * tot_blocks * sizeof(struct block_info);
     blocks_pn_pw = (int64_t)(0.4 * wave_size / comp_buff_size);
