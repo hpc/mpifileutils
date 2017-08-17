@@ -35,6 +35,7 @@ int64_t wave_blocks;
 int64_t tot_blocks;
 int rank;
 char fname[50];
+char fname_out[50];
 int fd;
 int fd_out;
 int64_t my_tot_blocks = 0;
@@ -72,21 +73,21 @@ void find_wave_size(int b_size, int opts_memory)
     MPI_Allreduce(&blocks_pn_pw, &wave_blocks, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
     MFU_LOG(MFU_LOG_INFO, "The total number of blocks in a wave=%" PRId64 ",The number of blocks in this rank=%" PRId64 "Each wave size on this node=%" PRId64, wave_blocks, blocks_pn_pw, wave_size_approx);
 }
-
-void decompress(char* fname, char* fname_out)
+void decompress(char* fname, char* fname_op)
 {
     int size;
     char size_str[5];
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MFU_LOG(MFU_LOG_INFO, "The file name is:%s\n", fname);
-    fd = open(fname, O_RDONLY | O_BINARY | O_LARGEFILE);
+    fd = mfu_open(fname, O_RDONLY | O_BINARY | O_LARGEFILE);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading rank %d", rank);
         MPI_Finalize();
         exit(1);
     }
-    read(fd, (char*)size_str, 4 * sizeof(char));
+    strncpy(fname_out,fname_op,49);
+    mfu_read(fname,fd, (char*)size_str, 4 * sizeof(char));
     /*the 3rd character stored i nthe file gives the block size used for compression*/
     lseek64(fd, 0, SEEK_SET);
     int bc_size = size_str[3] - '0';
@@ -96,7 +97,7 @@ void decompress(char* fname, char* fname_out)
 
     /*Open file for wrting and change permissions*/
     if (rank == 0) {
-        fd_out = open(fname_out, O_CREAT | O_RDWR | O_TRUNC | O_BINARY | O_LARGEFILE, FILE_MODE);
+        fd_out = mfu_open(fname_out, O_CREAT | O_RDWR | O_TRUNC | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
             MPI_Finalize();
@@ -116,7 +117,7 @@ void decompress(char* fname, char* fname_out)
         exit(1);
     }
     if (rank != 0) {
-        fd_out = open(fname_out, O_RDWR | O_BINARY | O_LARGEFILE, FILE_MODE);
+        fd_out = mfu_open(fname_out, O_RDWR | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
             MPI_Finalize();
@@ -132,6 +133,8 @@ void decompress(char* fname, char* fname_out)
     CIRCLE_cb_process(&DBz2_decompDequeue);
     CIRCLE_begin();
     CIRCLE_finalize();
+    mfu_close(fname_out,fd_out);
+    mfu_close(fname,fd);
 }
 
 void dbz2_compress(int b_size, char* fname, int opts_memory)
@@ -150,18 +153,19 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
     { tot_blocks = (int64_t)(st.st_size) / block_size + 1; }
     find_wave_size(b_size, opts_memory);
     MFU_LOG(MFU_LOG_INFO, "The file name is:%s\n", fname);
-    fd = open(fname, O_RDONLY | O_BINARY | O_LARGEFILE);
+    fd = mfu_open(fname, O_RDONLY | O_BINARY | O_LARGEFILE);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading rank %d", rank);
         MPI_Finalize();
         exit(1);
     }
     stat(fname, &st);
-
+    strncpy(fname_out,fname,49);
+    strcat(fname_out,".bz2");
     /*The file for output is opened and options set*/
 
     if (rank == 0) {
-        fd_out = open(strcat(fname, ".bz2"), O_CREAT | O_RDWR | O_TRUNC | O_BINARY | O_LARGEFILE, FILE_MODE);
+        fd_out = mfu_open(fname_out, O_CREAT | O_RDWR | O_TRUNC | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
             MPI_Finalize();
@@ -181,7 +185,7 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
         exit(1);
     }
     if (rank != 0) {
-        fd_out = open(strcat(fname, ".bz2"), O_RDWR | O_BINARY | O_LARGEFILE, FILE_MODE);
+        fd_out = mfu_open(fname_out, O_RDWR | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
             MPI_Finalize();
@@ -293,7 +297,7 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
         for (int k = 0; k < blocks_processed; k++) {
             lseek64(fd_out, my_blocks[my_prev_blocks + k].offset, SEEK_SET);
             MFU_LOG(MFU_LOG_DBG, "Data to be written=%s,%u\n", a[k], my_blocks[my_prev_blocks + k].length);
-            write(fd_out, a[k], my_blocks[my_prev_blocks + k].length);
+            mfu_write(fname_out,fd_out, a[k], my_blocks[my_prev_blocks + k].length);
         }
         my_prev_blocks = my_tot_blocks;
         blocks_processed = 0;
@@ -315,17 +319,17 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
     for (int k = 0; k < my_tot_blocks; k++) {
         lseek64(fd_out, last_offset + my_blocks[k].sno * 8, SEEK_SET);
         int64_t this_offset = (int64_t)my_blocks[k].offset;
-        write(fd_out, &this_offset, 8);
+        mfu_write(fname_out,fd_out, &this_offset, 8);
     }
     /*root writes the locaion of trailer start to last 8 bytes of the file*/
     if (rank == 0) {
         lseek64(fd_out, last_offset + tot_blocks * 8, SEEK_SET);
         int64_t trailer_offset = (int64_t)last_offset;
-        write(fd_out, &trailer_offset, 8);
+        mfu_write(fname_out,fd_out, &trailer_offset, 8);
     }
     free(my_blocks);
-    close(fd);
-    close(fd_out);
+    mfu_close(fname,fd);
+    mfu_close(fname_out,fd_out);
 }
 /*int main(int argc , char ** argv)
 {

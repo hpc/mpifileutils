@@ -43,6 +43,7 @@ extern int64_t blocks_done;    /*Total number of blocks processed across previou
 extern int64_t wave_blocks;   /*Number of blocks that can be processed by all processes across a single wave*/
 extern int64_t tot_blocks;   /*Total number of blocks in the file*/
 extern char fname[50];       /*Name of input file*/
+extern char fname_out[50];
 extern int fd;                /*Input file descriptor*/
 extern int fd_out;           /*Output file descriptor*/
 extern int64_t my_tot_blocks;  /*The total number of blocks processed by me across all waves and upto the current point in thcurrent wave*/
