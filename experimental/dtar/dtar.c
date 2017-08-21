@@ -25,28 +25,38 @@
  *
  *
  */
+#include <string.h>
 #include "common.h"
 
 
 static gboolean opts_create = FALSE;
+static gboolean opts_compress = FALSE;
 static gboolean opts_verbose = FALSE;
 static gboolean opts_debug = FALSE;
 static gboolean opts_extract = FALSE;
 static gboolean opts_preserve = FALSE;
 static gchar*   opts_tarfile = NULL;
 static gint     opts_chunksize = 1;
+static gint	opts_blocksize=9;
+static gint 	opts_memory=-1;
 
 static GOptionEntry entries[] = {
         {"create", 'c', 0, G_OPTION_ARG_NONE, &opts_create, "Create archive", NULL  },
-        {"extract", 'x', 0, G_OPTION_ARG_NONE, &opts_extract, "Extract archive", NULL },
+        {"compress", 'j', 0, G_OPTION_ARG_NONE, &opts_compress, "Compress archive", NULL },
+	{"extract", 'x', 0, G_OPTION_ARG_NONE, &opts_extract, "Extract archive", NULL },
         {"verbose", 'v', 0, G_OPTION_ARG_NONE, &opts_verbose, "Verbose output", NULL },
         {"debug", 'd', 0, G_OPTION_ARG_NONE, &opts_debug, "Debug output", NULL},
         {"preserve", 'p', 0, G_OPTION_ARG_NONE, &opts_preserve, "Preserve attributes", NULL},
         {"chunksize",'s', 0, G_OPTION_ARG_INT, &opts_chunksize, "Chunk size", NULL},
         {"file", 'f', 0, G_OPTION_ARG_FILENAME, &opts_tarfile, "Target output file", NULL },
-        { NULL }
+       	{"blocksize",'b', 0, G_OPTION_ARG_INT, &opts_blocksize, "Block size", NULL},
+        {"memory limit", 'm', 0 , G_OPTION_ARG_INT, &opts_memory, "Memory limit in MB", NULL},
+	{ NULL }
 };
-
+/* The opts_blocksize option is optional and is used to specify a blocksize for compression. 
+The opts_memory option is optional and is used to specify memory limit for compression 
+for each process in compression. 
+The opts_compress option is used to specify whether compression/decompression should be used*/ 
 /* initialize */
 
 
@@ -95,13 +105,12 @@ static void update_offsets() {
 static void create_archive(char *filename) {
 
     DTAR_writer_init();
-
+    char** paths=(char**)malloc(sizeof(char*)*num_src_params);
     /* walk path to get stats info on all files */
     DTAR_flist = mfu_flist_new();
     for (int i = 0; i < num_src_params; i++) {
         mfu_flist_walk_path(src_params[i].path, 1, 0, DTAR_flist);
     }
-
     DTAR_count = mfu_flist_size(DTAR_flist);
 
     /* allocate memory for DTAR_fsizes */
@@ -243,7 +252,7 @@ extract_archive(const char *filename, bool verbose, int flags) {
 
     archive_read_close(a);
     archive_read_free(a);
-    exit(0);
+    /*exit(0);*/
 }
 
 int main(int argc, char **argv) {
@@ -252,7 +261,7 @@ int main(int argc, char **argv) {
     mfu_init();
 
     MPI_Comm_rank(MPI_COMM_WORLD, &DTAR_rank);
-    MPI_Comm_rank(MPI_COMM_WORLD, &DTAR_size);
+    MPI_Comm_size(MPI_COMM_WORLD, &DTAR_size);
 
 
     GError *error = NULL;
@@ -313,11 +322,48 @@ int main(int argc, char **argv) {
 
     time(&(DTAR_statistics.time_started));
     DTAR_statistics.wtime_started = MPI_Wtime();
-
-    if (opts_create) {
+    if (opts_compress && opts_create) {
+    	DTAR_parse_path_args(argc, argv, opts_tarfile);
+	struct stat st;
+	char fname[50];
+	char fname1[50];	
+	strncpy(fname1,opts_tarfile,50);	
+	strncpy(fname,opts_tarfile,50);	
+	if((stat(strcat(fname,".bz2"),&st)==0))
+        {
+                if(DTAR_rank==0) 
+			printf("Output file already exists\n");
+                 exit(0);
+        }	
+	create_archive( opts_tarfile);
+	dbz2_compress(opts_blocksize,opts_tarfile,opts_memory);
+   	remove(fname1); 
+    }
+    else if (opts_create) {
         DTAR_parse_path_args(argc, argv, opts_tarfile);
         create_archive( opts_tarfile );
-    } else if (opts_extract) {
+    } 
+    else if (opts_extract && opts_compress)
+    {
+     	char fname[50];
+	char fname_out[50];	
+	strncpy(fname,opts_tarfile,50);
+	strncpy(fname_out,opts_tarfile,50);	
+	int len=strlen(fname_out);
+        fname_out[len-4]='\0';
+        printf("The file name is:%s %s %d",fname, fname_out,len);
+        struct stat st;
+        if((stat(fname_out,&st)==0))
+        {
+                if(DTAR_rank==0)  	
+			printf("Output file already exists\n");
+ 		exit(0);
+        }
+        decompress(fname,fname_out);
+        remove(fname);	
+	extract_archive(fname_out, opts_verbose, DTAR_user_opts.flags); 
+     }
+     else if (opts_extract) {
         extract_archive(opts_tarfile, opts_verbose, DTAR_user_opts.flags);
     } else {
         if (DTAR_rank == 0) {
@@ -332,7 +378,7 @@ int main(int argc, char **argv) {
 
     /* free context */
     g_option_context_free(context);
-
+    MFU_LOG(MFU_LOG_ERR, "Rank %d before epilogue\n", DTAR_rank);
     DTAR_epilogue();
     DTAR_exit(EXIT_SUCCESS);
     return 0;

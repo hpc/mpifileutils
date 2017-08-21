@@ -25,6 +25,12 @@
  *      Author: fwang2
  */
 
+/*#define _GNU_SOURCE
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <string.h>
+#include <fcntl.h>*/
 #include "common.h"
 
 void DTAR_writer_init() {
@@ -94,7 +100,7 @@ void DTAR_write_header(struct archive *ar, uint64_t idx, uint64_t offset)
         MFU_LOG(MFU_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(ar));
     }
 
-    lseek64(DTAR_writer.fd_tar, offset, SEEK_SET);
+    lseek(DTAR_writer.fd_tar, offset, SEEK_SET);
 
     if (archive_write_header(dest, entry) != ARCHIVE_OK) {
         MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s", archive_error_string(ar));
@@ -144,7 +150,7 @@ void DTAR_perform_copy(CIRCLE_handle* handle) {
     DTAR_operation_t* op = DTAR_decode_operation(opstr);
 
     uint64_t in_offset = DTAR_user_opts.chunk_size * op->chunk_index;
-    int in_fd = open64(op->operand, O_RDONLY);
+    int in_fd = open(op->operand, O_RDONLY);
 
     ssize_t num_of_bytes_read = 0;
     ssize_t num_of_bytes_written = 0;
@@ -152,8 +158,8 @@ void DTAR_perform_copy(CIRCLE_handle* handle) {
 
     uint64_t out_offset = op->offset + in_offset;
 
-    lseek64(in_fd, in_offset, SEEK_SET);
-    lseek64(out_fd, out_offset, SEEK_SET);
+    lseek(in_fd, in_offset, SEEK_SET);
+    lseek(out_fd, out_offset, SEEK_SET);
 
     while (total_bytes_written < DTAR_user_opts.chunk_size) {
         num_of_bytes_read = read(in_fd, &iobuf[0], sizeof(iobuf));
@@ -169,7 +175,7 @@ void DTAR_perform_copy(CIRCLE_handle* handle) {
     /* handle last chunk */
     if (op->chunk_index == last_chunk) {
         int padding = 512 - op->file_size % 512;
-        if (padding > 0) {
+        if (padding > 0 && padding!=512) {
             char * buff = (char*) calloc(padding, sizeof(char));
             write(out_fd, buff, padding);
         }
