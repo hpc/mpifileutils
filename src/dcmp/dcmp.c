@@ -454,9 +454,9 @@ static int dcmp_compare_data(
     /* open source file */
     int src_fd = mfu_open(src_name, O_RDONLY);
     if (src_fd < 0) {
-       if (src_fd < 0) { 
-           *is_src_err = 1;
-       } 
+       /* set is_src_err in so we know the 
+        * open failure was on the src side */
+       *is_src_err = 1;
        return -1;
     }
 
@@ -478,6 +478,8 @@ static int dcmp_compare_data(
     if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
         mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
+
+        /* set is_src_err so we know lseek failure was on the src side */
         *is_src_err = 1;
         return -1;
     }
