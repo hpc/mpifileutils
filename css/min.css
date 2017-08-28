@@ -7216,10 +7216,12 @@ td.visible-print {
   padding: 60px 0 5px;
   text-align: center;
 }
-.demo-logo {
+.demo-logo .logo {
   font: 900 90px/100px "Helvetica Neue", Helvetica, Arial, sans-serif;
   letter-spacing: -2px;
   margin: 10px 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 /*
 .demo-logo .logo {
