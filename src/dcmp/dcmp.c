@@ -749,7 +749,7 @@ static void dcmp_strmap_compare_data(
              * they could be the same, but we'll draw attention to them this way */
             rc = 1;
             MFU_LOG(MFU_LOG_ERR,
-              "Failed to read.  Asumming contents are different.");
+              "Failed to open, lseek, or read.  Asumming contents are different.");
 
             /* consider this to be a fatal error if syncing */
             if (mfu_copy_opts->do_sync) {
