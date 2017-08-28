@@ -497,7 +497,6 @@ static int dcmp_compare_data(
         MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %x, error msg: %s",  
           dst_name, (unsigned int)offset, strerror(errno));
         mfu_close(dst_name, dst_fd);
-        mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
         return -1;
     }
