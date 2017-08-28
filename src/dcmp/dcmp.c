@@ -529,7 +529,11 @@ static int dcmp_compare_data(
              * src or dest, and print file */
             if (src_read < 0) { 
                 MFU_LOG(MFU_LOG_ERR, "Failed to read %s", src_name);
-            } else {
+            } 
+            /* added this extra check in case both are less 
+             * than zero -- we'd want both files read 
+             * errors reported */
+            if (dst_read < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to read %s", dst_name);
             } 
             rc = -1;
@@ -749,7 +753,8 @@ static void dcmp_strmap_compare_data(
              * they could be the same, but we'll draw attention to them this way */
             rc = 1;
             MFU_LOG(MFU_LOG_ERR,
-              "Failed to open, lseek, or read.  Asumming contents are different.");
+              "Failed to open, lseek, or read %s and/or %s. Assuming contents are different.",
+                 src_p->name, dst_p->name);
 
             /* consider this to be a fatal error if syncing */
             if (mfu_copy_opts->do_sync) {
