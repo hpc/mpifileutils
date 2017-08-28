@@ -455,7 +455,9 @@ static int dcmp_compare_data(
     if (src_fd < 0) {
        /* log error if there is an open failure on the 
         * src side */
-       MFU_LOG(MFU_LOG_ERR, "Failed to open %s", src_name);
+        MFU_LOG(MFU_LOG_ERR, "Failed to open %s, error msg: %s", 
+          src_name, strerror(errno));
+        mfu_close(src_name, src_fd);
        return -1;
     }
 
@@ -464,7 +466,8 @@ static int dcmp_compare_data(
     if (dst_fd < 0) {
        /* log error if there is an open failure on the 
         * dst side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to open %s", dst_name);
+        MFU_LOG(MFU_LOG_ERR, "Failed to open %s, error msg: %s", 
+          dst_name, strerror(errno));
         mfu_close(src_name, src_fd);
         return -1;
     }
@@ -480,7 +483,8 @@ static int dcmp_compare_data(
     if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
        /* log error if there is an lseek failure on the 
         * src side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s", src_name);
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %x, error msg: %s",
+          src_name, (unsigned int)offset, strerror(errno));
         mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
         return -1;
@@ -490,7 +494,9 @@ static int dcmp_compare_data(
     if(mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
        /* log error if there is an lseek failure on the 
         * dst side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s", dst_name);
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %x, error msg: %s",  
+          dst_name, (unsigned int)offset, strerror(errno));
+        mfu_close(dst_name, dst_fd);
         mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
         return -1;
@@ -528,13 +534,15 @@ static int dcmp_compare_data(
             /* hit a read error, now figure out if it was the 
              * src or dest, and print file */
             if (src_read < 0) { 
-                MFU_LOG(MFU_LOG_ERR, "Failed to read %s", src_name);
+                MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
+                  src_name, strerror(errno));
             } 
             /* added this extra check in case both are less 
              * than zero -- we'd want both files read 
              * errors reported */
             if (dst_read < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to read %s", dst_name);
+                MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
+                  dst_name, strerror(errno));
             } 
             rc = -1;
             break;
