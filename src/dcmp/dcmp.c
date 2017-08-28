@@ -448,21 +448,23 @@ static int dcmp_compare_data(
     off_t offset,
     size_t length,
     size_t buff_size,
-    mfu_copy_opts_t* mfu_copy_opts,
-    int* is_src_err)
+    mfu_copy_opts_t* mfu_copy_opts)
 {
     /* open source file */
     int src_fd = mfu_open(src_name, O_RDONLY);
     if (src_fd < 0) {
-       /* set is_src_err in so we know the 
-        * open failure was on the src side */
-       *is_src_err = 1;
+       /* log error if there is an open failure on the 
+        * src side */
+       MFU_LOG(MFU_LOG_ERR, "Failed to open %s", src_name);
        return -1;
     }
 
     /* open destination file */
     int dst_fd = mfu_open(dst_name, O_RDWR);
     if (dst_fd < 0) {
+       /* log error if there is an open failure on the 
+        * dst side */
+        MFU_LOG(MFU_LOG_ERR, "Failed to open %s", dst_name);
         mfu_close(src_name, src_fd);
         return -1;
     }
@@ -476,16 +478,19 @@ static int dcmp_compare_data(
 
     /* seek to offset in source file */
     if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
+       /* log error if there is an lseek failure on the 
+        * src side */
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s", src_name);
         mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
-
-        /* set is_src_err so we know lseek failure was on the src side */
-        *is_src_err = 1;
         return -1;
     }
     
     /* seek to offset in destination file */
     if(mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
+       /* log error if there is an lseek failure on the 
+        * dst side */
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s", dst_name);
         mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
         return -1;
@@ -521,9 +526,11 @@ static int dcmp_compare_data(
         /* check for read errors */
         if (src_read < 0 || dst_read < 0) {
             /* hit a read error, now figure out if it was the 
-             * src or dest file/dir with is_src_err */
+             * src or dest, and print file */
             if (src_read < 0) { 
-                *is_src_err = 1;
+                MFU_LOG(MFU_LOG_ERR, "Failed to read %s", src_name);
+            } else {
+                MFU_LOG(MFU_LOG_ERR, "Failed to read %s", dst_name);
             } 
             rc = -1;
             break;
@@ -722,11 +729,6 @@ static void dcmp_strmap_compare_data(
     int* ltr  = (int*) MFU_MALLOC(list_count * sizeof(int));
     int* rtl  = (int*) MFU_MALLOC(list_count * sizeof(int)); 
 
-    /* var to keep track of whether or not the error was on the 
-     * read or dest side, if it was the src then is_src_err
-     * will be equal to 1, and 0 means it was the dest dir/file */
-    int is_src_err = 0;
-
     /* compare bytes for each file section and set flag based on what we find */
     uint64_t i = 0;
     char* name_ptr = keys;
@@ -741,18 +743,13 @@ static void dcmp_strmap_compare_data(
         
         /* compare the contents of the files */
         int rc = dcmp_compare_data(src_p->name, dst_p->name, offset, 
-                (size_t)length, 1048576, mfu_copy_opts, &is_src_err);
+                (size_t)length, 1048576, mfu_copy_opts);
         if (rc == -1) {
             /* we hit an error while reading, consider files to be different,
              * they could be the same, but we'll draw attention to them this way */
             rc = 1;
-            if (is_src_err) {
-                MFU_LOG(MFU_LOG_ERR,
-                      "Failed to read %s.  Asumming contents are different.", src_p->name);
-            } else {
-                MFU_LOG(MFU_LOG_ERR,
-                      "Failed to read %s.  Asumming contents are different.", dst_p->name);
-            } 
+            MFU_LOG(MFU_LOG_ERR,
+              "Failed to read.  Asumming contents are different.");
 
             /* consider this to be a fatal error if syncing */
             if (mfu_copy_opts->do_sync) {
