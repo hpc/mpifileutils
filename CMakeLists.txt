@@ -24,7 +24,7 @@ add_definitions(${CIRCLE_CFLAGS})
 add_definitions(${DTCMP_CFLAGS})
 
 include_directories(src/common)
-
+include_directories(experimental/dbz2)
 add_subdirectory(src/common)
 add_subdirectory(experimental/dbz2)
 add_subdirectory(experimental/dtar)

@@ -6,13 +6,7 @@ void DBz2_Enqueue(CIRCLE_handle* handle)
     It simply puts the all the block numbers for the file in the queue.*/
     char* newop;
     for (int i = 0; i < wave_blocks; i++) {
-        newop = (char*)malloc(sizeof(char) * 10);
-        if (newop == NULL) {
-            MFU_LOG(MFU_LOG_ERR, "Enqueue: memory allocation failed");
-            MPI_Finalize();
-            exit(1);
-        }
-
+        newop = (char*)MFU_MALLOC(sizeof(char) * 10);
         int64_t block_no = (int64_t)i + (int64_t)blocks_done;
         if (block_no >= tot_blocks)
         { break; }
@@ -32,12 +26,7 @@ void DBz2_Dequeue(CIRCLE_handle* handle)
     int64_t block_no;
     sscanf(newop, "%" PRId64, &block_no);
     lseek64(fd, block_no * block_size, SEEK_SET);
-    char* ibuf = (char*)malloc(sizeof(char) * block_size); /*Input buffer*/
-    if (ibuf == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "Dequeue: memory allocation failed");
-        MPI_Finalize();
-        exit(1);
-    }
+    char* ibuf = (char*)MFU_MALLOC(sizeof(char) * block_size); /*Input buffer*/
     /*read block from input file*/
     int inSize = mfu_read(fname,fd, (char*)ibuf, (size_t)block_size);
 
@@ -52,8 +41,7 @@ void DBz2_Dequeue(CIRCLE_handle* handle)
 
     if (ret != 0) {
         MFU_LOG(MFU_LOG_ERR, "Error in compression for rank %d", rank);
-        MPI_Finalize();
-        exit(1);
+        MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
     /*set metadata for the compressed block*/
@@ -63,7 +51,7 @@ void DBz2_Dequeue(CIRCLE_handle* handle)
     blocks_processed++;
     my_tot_blocks++;
     MFU_LOG(MFU_LOG_INFO, "Processed block %" PRId64 ",num processed=%" PRId64 ",rank=%d, blocks per wave=%" PRId64 "\n", block_no, blocks_processed, rank, blocks_pn_pw);
-    free(ibuf);
+    mfu_free(&ibuf);
 }
 void DBz2_decompEnqueue(CIRCLE_handle* handle)
 {
@@ -91,12 +79,7 @@ void DBz2_decompEnqueue(CIRCLE_handle* handle)
         {
             break;
         }
-        newop = (char*)malloc(sizeof(char) * 50);
-        if (newop == NULL) {
-            MFU_LOG(MFU_LOG_ERR, "Enqueue: memory allocation failed");
-            MPI_Finalize();
-            exit(1);
-        }
+        newop = (char*)MFU_MALLOC(sizeof(char) * 50);
         mfu_read(fname,fd, &end, 8);
         MFU_LOG(MFU_LOG_DBG, "Start and End at:%" PRId64 "%" PRId64 "\n", start, end);
         sprintf(newop, "%"PRId64":%" PRId64 ":%" PRId64, block_num, start, end);
@@ -134,14 +117,8 @@ void DBz2_decompDequeue(CIRCLE_handle* handle)
     MFU_LOG(MFU_LOG_INFO, "Block size=%" PRId64 "\n", block_size);
 
     /*create input and output buffers*/
-    obuf = malloc(sizeof(char) * outSize);
-    char* ibuf = (char*)malloc(sizeof(char) * length);
-
-    if (ibuf == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "Dequeue: memory allocation failed");
-        MPI_Finalize();
-        exit(1);
-    }
+    obuf = MFU_MALLOC(sizeof(char) * outSize);
+    char* ibuf = (char*)MFU_MALLOC(sizeof(char) * length);
     MFU_LOG(MFU_LOG_INFO, "Block specs:block_no=%" PRId64 "offset=%" PRId64 "next_offset%" PRId64 "length %u\n", block_num, offset, next_offset, length);
 
 
@@ -164,6 +141,6 @@ void DBz2_decompDequeue(CIRCLE_handle* handle)
     /*write result to correct offset in file*/
     lseek64(fd_out, in_offset, SEEK_SET);
     mfu_write(fname_out,fd_out, obuf, outSize);
-    free(ibuf);
-    free(obuf);
+    mfu_free(&ibuf);
+    mfu_free(&obuf);
 }

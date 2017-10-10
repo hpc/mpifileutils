@@ -48,9 +48,9 @@
 #include <libcircle.h>
 #include <archive.h>
 #include <archive_entry.h>
-
+#include <string.h>
 #include "mfu.h"
-
+#include "dbz2.h"
 
 #define DTAR_HDR_LENGTH 1536
 #define FD_BLOCK_SIZE (1024*1024)

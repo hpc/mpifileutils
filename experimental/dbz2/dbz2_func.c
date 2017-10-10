@@ -83,8 +83,7 @@ void decompress(char* fname, char* fname_op)
     fd = mfu_open(fname, O_RDONLY | O_BINARY | O_LARGEFILE);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading rank %d", rank);
-        MPI_Finalize();
-        exit(1);
+        MPI_Abort(MPI_COMM_WORLD, 1);
     }
     strncpy(fname_out,fname_op,49);
     mfu_read(fname,fd, (char*)size_str, 4 * sizeof(char));
@@ -100,8 +99,7 @@ void decompress(char* fname, char* fname_op)
         fd_out = mfu_open(fname_out, O_CREAT | O_RDWR | O_TRUNC | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
-            MPI_Finalize();
-            exit(1);
+	    MPI_Abort(MPI_COMM_WORLD, 1);
         }
         struct utimbuf uTimBuf;
         uTimBuf.actime = st.st_atime;
@@ -113,15 +111,13 @@ void decompress(char* fname, char* fname_op)
     int bret = MPI_Barrier(MPI_COMM_WORLD);
     if (bret != MPI_SUCCESS) {
         MFU_LOG(MFU_LOG_ERR, "Barrier error\n");
-        MPI_Finalize();
-        exit(1);
+	MPI_Abort(MPI_COMM_WORLD, 1);
     }
     if (rank != 0) {
         fd_out = mfu_open(fname_out, O_RDWR | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
-            MPI_Finalize();
-            exit(1);
+	    MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
     block_size = bc_size * 100 * 1024;
@@ -156,8 +152,7 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
     fd = mfu_open(fname, O_RDONLY | O_BINARY | O_LARGEFILE);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading rank %d", rank);
-        MPI_Finalize();
-        exit(1);
+	MPI_Abort(MPI_COMM_WORLD, 1);
     }
     stat(fname, &st);
     strncpy(fname_out,fname,49);
@@ -168,8 +163,7 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
         fd_out = mfu_open(fname_out, O_CREAT | O_RDWR | O_TRUNC | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
-            MPI_Finalize();
-            exit(1);
+	    MPI_Abort(MPI_COMM_WORLD, 1);
         }
         struct utimbuf uTimBuf;
         uTimBuf.actime = st.st_atime;
@@ -181,16 +175,14 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
     int bret = MPI_Barrier(MPI_COMM_WORLD);
     if (bret != MPI_SUCCESS) {
         MFU_LOG(MFU_LOG_ERR, "Barrier error\n");
-        MPI_Finalize();
-        exit(1);
+    	MPI_Abort(MPI_COMM_WORLD, 1);
     }
     if (rank != 0) {
         fd_out = mfu_open(fname_out, O_RDWR | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
-            MPI_Finalize();
-            exit(1);
-        }
+            MPI_Abort(MPI_COMM_WORLD, 1);
+	}
     }
     blocks_processed = 0;
     my_prev_blocks = 0;
@@ -207,14 +199,9 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
     else
     { num_waves = tot_blocks / wave_blocks + 1; }
     /*stores metadata of all blocks processed by this process*/
-    my_blocks = (struct block_info*)malloc(sizeof(struct block_info) * blocks_pn_pw * num_waves);
-    if (my_blocks == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "Metadata: memory allocation failed");
-        MPI_Finalize();
-        exit(1);
-    }
+    my_blocks = (struct block_info*)MFU_MALLOC(sizeof(struct block_info) * blocks_pn_pw * num_waves);
     int64_t last_offset = 0;
-    struct block_info** this_wave_blocks = (struct block_info**)malloc(sizeof(struct block_info*)*wave_blocks);
+    struct block_info** this_wave_blocks = (struct block_info**)MFU_MALLOC(sizeof(struct block_info*)*wave_blocks);
     MPI_Datatype metatype, oldtypes[3];
     MPI_Aint offsets[3], extent;
     int blockcounts[3];
@@ -240,20 +227,10 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
         { blocks_for_wave = tot_blocks - blocks_done; }
         else
         { blocks_for_wave = wave_blocks; }
-        a = (char**)malloc(sizeof(char*)*blocks_for_wave);
-        if (a == NULL) {
-            MFU_LOG(MFU_LOG_ERR, "Initial allocation: memory allocation failed");
-            MPI_Finalize();
-            exit(1);
-        }
+        a = (char**)MFU_MALLOC(sizeof(char*)*blocks_for_wave);
         for (int i = 0; i < blocks_for_wave; i++) {
-            a[i] = (char*)malloc(comp_buff_size * sizeof(char));
+            a[i] = (char*)MFU_MALLOC(comp_buff_size * sizeof(char));
             //memset(a[i],1,comp_buff_size*sizeof(char));
-            if (a[i] == NULL) {
-                MFU_LOG(MFU_LOG_ERR, "Out of memory\n");
-                MPI_Finalize();
-                exit(1);
-            }
         }
         CIRCLE_init(0, NULL, CIRCLE_DEFAULT_FLAGS);
         CIRCLE_cb_create(&DBz2_Enqueue);
@@ -277,8 +254,7 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
         MPI_Barrier(MPI_COMM_WORLD);
         if (bret != MPI_SUCCESS) {
             MFU_LOG(MFU_LOG_ERR, "Barrier error\n");
-            MPI_Finalize();
-            exit(1);
+	    MPI_Abort(MPI_COMM_WORLD, 1);
         }
         /*compute the offset of all blocks processed in current wave*/
         if (rank == 0) {
@@ -302,15 +278,14 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
         my_prev_blocks = my_tot_blocks;
         blocks_processed = 0;
         for (int i = 0; i < blocks_for_wave; i++) {
-            free(a[i]);
+            mfu_free(&a[i]);
         }
-        free(a);
+        mfu_free(&a);
     }
     MPI_Barrier(MPI_COMM_WORLD);
     if (bret != MPI_SUCCESS) {
         MFU_LOG(MFU_LOG_ERR, "Barrier error\n");
-        MPI_Finalize();
-        exit(1);
+	MPI_Abort(MPI_COMM_WORLD, 1);
     }
     /*End of all waves*/
     /*Broadcast offset of start of trailer*/
@@ -327,7 +302,7 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
         int64_t trailer_offset = (int64_t)last_offset;
         mfu_write(fname_out,fd_out, &trailer_offset, 8);
     }
-    free(my_blocks);
+    mfu_free(&my_blocks);
     mfu_close(fname,fd);
     mfu_close(fname_out,fd_out);
 }
