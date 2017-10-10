@@ -10,7 +10,7 @@
  *   DE-AC05-00OR22725 with the Department of Energy.
  *
  * Copyright (c) 2015, DataDirect Networks, Inc.
- * 
+ *
  * All rights reserved.
  *
  * This file is part of mpiFileUtils.
@@ -31,15 +31,17 @@ mfu_param_path* src_params;
 mfu_param_path dest_param;
 int num_src_params;
 
-static void DTAR_check_paths() {
+static void DTAR_check_paths()
+{
     int valid = 1;
     int i;
     int num_readable = 0;
     for (i = 0; i < num_src_params; i++) {
-        char * path = src_params[i].path;
+        char* path = src_params[i].path;
         if (mfu_access(path, R_OK) == 0) {
             num_readable++;
-        } else {
+        }
+        else {
             /* not readable */
             char* orig = src_params[i].orig;
             MFU_LOG(MFU_LOG_ERR, "Could not read '%s' errno=%d %s",
@@ -59,8 +61,9 @@ static void DTAR_check_paths() {
     /* check destination */
     if (dest_param.path_stat_valid) {
         if (DTAR_rank == 0)
-            MFU_LOG(MFU_LOG_WARN, "Destination target exists, we will overwrite");
-    } else {
+        { MFU_LOG(MFU_LOG_WARN, "Destination target exists, we will overwrite"); }
+    }
+    else {
         mfu_path* parent = mfu_path_from_str(dest_param.path);
         mfu_path_dirname(parent);
         char* parent_str = mfu_path_strdup(parent);
@@ -94,7 +97,8 @@ bcast:
     }
 
 }
-void DTAR_parse_path_args(int argc, char **argv, const char * dstfile) {
+void DTAR_parse_path_args(int argc, char** argv, const char* dstfile)
+{
 
     if (argv == NULL || argc < 2) {
         if (DTAR_global_rank == 0) {
@@ -107,10 +111,10 @@ void DTAR_parse_path_args(int argc, char **argv, const char * dstfile) {
     src_params = NULL;
     num_src_params = argc - 1;
     size_t src_params_bytes = ((size_t) num_src_params) * sizeof(mfu_param_path);
-    src_params = (mfu_param_path *) MFU_MALLOC(src_params_bytes);
+    src_params = (mfu_param_path*) MFU_MALLOC(src_params_bytes);
 
     int idx;
-    for (idx = 1; idx < argc; idx++ ) {
+    for (idx = 1; idx < argc; idx++) {
         char* path = argv[idx];
         mfu_param_path_set(path, &src_params[idx - 1]);
     }

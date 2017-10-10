@@ -28,7 +28,7 @@ void DBz2_Dequeue(CIRCLE_handle* handle)
     lseek64(fd, block_no * block_size, SEEK_SET);
     char* ibuf = (char*)MFU_MALLOC(sizeof(char) * block_size); /*Input buffer*/
     /*read block from input file*/
-    int inSize = mfu_read(fname,fd, (char*)ibuf, (size_t)block_size);
+    int inSize = mfu_read(fname, fd, (char*)ibuf, (size_t)block_size);
 
     /*Guaranteed max output size*/
     unsigned int outSize = (unsigned int)((block_size * 1.01) + 600);
@@ -68,10 +68,10 @@ void DBz2_decompEnqueue(CIRCLE_handle* handle)
     block_num = 0;
     int64_t last_offset = (int64_t)lseek64(fd, -8, SEEK_END);
     /*The last 8 bytes of the trailer stores the location or offset of the start of the trailer*/
-    mfu_read(fname,fd, &trailer_begin, 8);
+    mfu_read(fname, fd, &trailer_begin, 8);
     MFU_LOG(MFU_LOG_INFO, "trailer begins at:%" PRId64 "\n", trailer_begin);
     lseek64(fd, trailer_begin, SEEK_SET);
-    int x =  mfu_read(fname,fd, &start, 8);
+    int x =  mfu_read(fname, fd, &start, 8);
     end = -1;
     while (1) {
         if (end == trailer_begin)
@@ -80,7 +80,7 @@ void DBz2_decompEnqueue(CIRCLE_handle* handle)
             break;
         }
         newop = (char*)MFU_MALLOC(sizeof(char) * 50);
-        mfu_read(fname,fd, &end, 8);
+        mfu_read(fname, fd, &end, 8);
         MFU_LOG(MFU_LOG_DBG, "Start and End at:%" PRId64 "%" PRId64 "\n", start, end);
         sprintf(newop, "%"PRId64":%" PRId64 ":%" PRId64, block_num, start, end);
         MFU_LOG(MFU_LOG_INFO, "The queued item is:%s\n", newop);
@@ -124,7 +124,7 @@ void DBz2_decompDequeue(CIRCLE_handle* handle)
 
     /*Read from correct position of compressed file*/
     lseek64(fd, offset, SEEK_SET);
-    int inSize = mfu_read(fname,fd, (char*)ibuf, length);
+    int inSize = mfu_read(fname, fd, (char*)ibuf, length);
 
     int ret;
     MFU_LOG(MFU_LOG_DBG, "The string is=%s\n", ibuf);
@@ -140,7 +140,7 @@ void DBz2_decompDequeue(CIRCLE_handle* handle)
             }    */
     /*write result to correct offset in file*/
     lseek64(fd_out, in_offset, SEEK_SET);
-    mfu_write(fname_out,fd_out, obuf, outSize);
+    mfu_write(fname_out, fd_out, obuf, outSize);
     mfu_free(&ibuf);
     mfu_free(&obuf);
 }

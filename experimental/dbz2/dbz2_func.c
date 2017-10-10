@@ -85,8 +85,8 @@ void decompress(char* fname, char* fname_op)
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading rank %d", rank);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
-    strncpy(fname_out,fname_op,49);
-    mfu_read(fname,fd, (char*)size_str, 4 * sizeof(char));
+    strncpy(fname_out, fname_op, 49);
+    mfu_read(fname, fd, (char*)size_str, 4 * sizeof(char));
     /*the 3rd character stored i nthe file gives the block size used for compression*/
     lseek64(fd, 0, SEEK_SET);
     int bc_size = size_str[3] - '0';
@@ -99,7 +99,7 @@ void decompress(char* fname, char* fname_op)
         fd_out = mfu_open(fname_out, O_CREAT | O_RDWR | O_TRUNC | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
-	    MPI_Abort(MPI_COMM_WORLD, 1);
+            MPI_Abort(MPI_COMM_WORLD, 1);
         }
         struct utimbuf uTimBuf;
         uTimBuf.actime = st.st_atime;
@@ -111,13 +111,13 @@ void decompress(char* fname, char* fname_op)
     int bret = MPI_Barrier(MPI_COMM_WORLD);
     if (bret != MPI_SUCCESS) {
         MFU_LOG(MFU_LOG_ERR, "Barrier error\n");
-	MPI_Abort(MPI_COMM_WORLD, 1);
+        MPI_Abort(MPI_COMM_WORLD, 1);
     }
     if (rank != 0) {
         fd_out = mfu_open(fname_out, O_RDWR | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
-	    MPI_Abort(MPI_COMM_WORLD, 1);
+            MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
     block_size = bc_size * 100 * 1024;
@@ -129,8 +129,8 @@ void decompress(char* fname, char* fname_op)
     CIRCLE_cb_process(&DBz2_decompDequeue);
     CIRCLE_begin();
     CIRCLE_finalize();
-    mfu_close(fname_out,fd_out);
-    mfu_close(fname,fd);
+    mfu_close(fname_out, fd_out);
+    mfu_close(fname, fd);
 }
 
 void dbz2_compress(int b_size, char* fname, int opts_memory)
@@ -152,18 +152,18 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
     fd = mfu_open(fname, O_RDONLY | O_BINARY | O_LARGEFILE);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading rank %d", rank);
-	MPI_Abort(MPI_COMM_WORLD, 1);
+        MPI_Abort(MPI_COMM_WORLD, 1);
     }
     stat(fname, &st);
-    strncpy(fname_out,fname,49);
-    strcat(fname_out,".bz2");
+    strncpy(fname_out, fname, 49);
+    strcat(fname_out, ".bz2");
     /*The file for output is opened and options set*/
 
     if (rank == 0) {
         fd_out = mfu_open(fname_out, O_CREAT | O_RDWR | O_TRUNC | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
-	    MPI_Abort(MPI_COMM_WORLD, 1);
+            MPI_Abort(MPI_COMM_WORLD, 1);
         }
         struct utimbuf uTimBuf;
         uTimBuf.actime = st.st_atime;
@@ -175,14 +175,14 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
     int bret = MPI_Barrier(MPI_COMM_WORLD);
     if (bret != MPI_SUCCESS) {
         MFU_LOG(MFU_LOG_ERR, "Barrier error\n");
-    	MPI_Abort(MPI_COMM_WORLD, 1);
+        MPI_Abort(MPI_COMM_WORLD, 1);
     }
     if (rank != 0) {
         fd_out = mfu_open(fname_out, O_RDWR | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
             MPI_Abort(MPI_COMM_WORLD, 1);
-	}
+        }
     }
     blocks_processed = 0;
     my_prev_blocks = 0;
@@ -254,7 +254,7 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
         MPI_Barrier(MPI_COMM_WORLD);
         if (bret != MPI_SUCCESS) {
             MFU_LOG(MFU_LOG_ERR, "Barrier error\n");
-	    MPI_Abort(MPI_COMM_WORLD, 1);
+            MPI_Abort(MPI_COMM_WORLD, 1);
         }
         /*compute the offset of all blocks processed in current wave*/
         if (rank == 0) {
@@ -273,7 +273,7 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
         for (int k = 0; k < blocks_processed; k++) {
             lseek64(fd_out, my_blocks[my_prev_blocks + k].offset, SEEK_SET);
             MFU_LOG(MFU_LOG_DBG, "Data to be written=%s,%u\n", a[k], my_blocks[my_prev_blocks + k].length);
-            mfu_write(fname_out,fd_out, a[k], my_blocks[my_prev_blocks + k].length);
+            mfu_write(fname_out, fd_out, a[k], my_blocks[my_prev_blocks + k].length);
         }
         my_prev_blocks = my_tot_blocks;
         blocks_processed = 0;
@@ -285,7 +285,7 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
     MPI_Barrier(MPI_COMM_WORLD);
     if (bret != MPI_SUCCESS) {
         MFU_LOG(MFU_LOG_ERR, "Barrier error\n");
-	MPI_Abort(MPI_COMM_WORLD, 1);
+        MPI_Abort(MPI_COMM_WORLD, 1);
     }
     /*End of all waves*/
     /*Broadcast offset of start of trailer*/
@@ -294,17 +294,17 @@ void dbz2_compress(int b_size, char* fname, int opts_memory)
     for (int k = 0; k < my_tot_blocks; k++) {
         lseek64(fd_out, last_offset + my_blocks[k].sno * 8, SEEK_SET);
         int64_t this_offset = (int64_t)my_blocks[k].offset;
-        mfu_write(fname_out,fd_out, &this_offset, 8);
+        mfu_write(fname_out, fd_out, &this_offset, 8);
     }
     /*root writes the locaion of trailer start to last 8 bytes of the file*/
     if (rank == 0) {
         lseek64(fd_out, last_offset + tot_blocks * 8, SEEK_SET);
         int64_t trailer_offset = (int64_t)last_offset;
-        mfu_write(fname_out,fd_out, &trailer_offset, 8);
+        mfu_write(fname_out, fd_out, &trailer_offset, 8);
     }
     mfu_free(&my_blocks);
-    mfu_close(fname,fd);
-    mfu_close(fname_out,fd_out);
+    mfu_close(fname, fd);
+    mfu_close(fname_out, fd_out);
 }
 /*int main(int argc , char ** argv)
 {
