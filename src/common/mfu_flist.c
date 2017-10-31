@@ -678,6 +678,12 @@ uint64_t mfu_flist_file_get_mode(mfu_flist bflist, uint64_t idx)
     return mode;
 }
 
+uint64_t mfu_flist_file_get_perm(mfu_flist bflist, uint64_t idx) {
+    uint64_t mode = mfu_flist_file_get_mode(bflist, idx);
+
+    return mode & (S_IRWXU | S_IRWXG | S_IRWXO);
+}
+
 uint64_t mfu_flist_file_get_uid(mfu_flist bflist, uint64_t idx)
 {
     uint64_t ret = (uint64_t) - 1;

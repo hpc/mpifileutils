@@ -93,6 +93,7 @@ typedef enum _dcmp_field {
     DCMPF_ATIME,     /* both have the same atime */
     DCMPF_MTIME,     /* both have the same mtime */
     DCMPF_CTIME,     /* both have the same ctime */
+    DCMPF_PERM,      /* both have the same permission */
     DCMPF_CONTENT,   /* both have the same data */
     DCMPF_MAX,
 } dcmp_field;
@@ -105,6 +106,7 @@ typedef enum _dcmp_field {
 #define DCMPF_ATIME_DEPEND   (DCMPF_EXIST_DEPEND | (1 << DCMPF_ATIME))
 #define DCMPF_MTIME_DEPEND   (DCMPF_EXIST_DEPEND | (1 << DCMPF_MTIME))
 #define DCMPF_CTIME_DEPEND   (DCMPF_EXIST_DEPEND | (1 << DCMPF_CTIME))
+#define DCMPF_PERM_DEPEND    (DCMPF_EXIST_DEPEND | (1 << DCMPF_PERM))
 #define DCMPF_CONTENT_DEPEND (DCMPF_SIZE_DEPEND | (1 << DCMPF_CONTENT))
 
 uint64_t dcmp_field_depend[] = {
@@ -116,6 +118,7 @@ uint64_t dcmp_field_depend[] = {
     [DCMPF_ATIME]   = DCMPF_ATIME_DEPEND,
     [DCMPF_MTIME]   = DCMPF_MTIME_DEPEND,
     [DCMPF_CTIME]   = DCMPF_CTIME_DEPEND,
+    [DCMPF_PERM]   = DCMPF_PERM_DEPEND,
     [DCMPF_CONTENT] = DCMPF_CONTENT_DEPEND,
 };
 
@@ -226,6 +229,13 @@ static const char* dcmp_field_to_string(dcmp_field field, int simple)
             return "CTIME";
         } else {
             return "change time";
+        }
+        break;
+    case DCMPF_PERM:
+        if (simple) {
+            return "PERM";
+        } else {
+            return "permission";
         }
         break;
     case DCMPF_CONTENT:
@@ -664,6 +674,9 @@ static int dcmp_compare_metadata(
     }
     if (dcmp_option_need_compare(DCMPF_CTIME)) {
         dcmp_compare_field(ctime, DCMPF_CTIME);
+    }
+    if (dcmp_option_need_compare(DCMPF_PERM)) {
+        dcmp_compare_field(ctime, DCMPF_PERM);
     }
 
     return diff;
