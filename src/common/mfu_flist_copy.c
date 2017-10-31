@@ -108,17 +108,24 @@ static mfu_copy_stats_t mfu_copy_stats;
 static mfu_copy_file_cache_t mfu_copy_src_cache;
 static mfu_copy_file_cache_t mfu_copy_dst_cache;
 
-int mfu_input_flist_skip(const char* name, int numpaths,
-        const mfu_param_path* paths)
+int mfu_input_flist_skip(const char* name, void *args)
 {
+    struct mfu_flist_skip_args *sk_args;
     /* create mfu_path from name */
     const mfu_path* path = mfu_path_from_str(name);
 
+    if (args == NULL) {
+        MFU_LOG(MFU_LOG_INFO, "Skip %s.", name);
+        return 1;
+    }
+
+    sk_args =  (struct mfu_flist_skip_args *)args;
+
     /* iterate over each source path */
     int i;
-    for (i = 0; i < numpaths; i++) {
+    for (i = 0; i < sk_args->numpaths; i++) {
         /* create mfu_path of source path */
-        const char* src_name = paths[i].path;
+        const char* src_name = sk_args->paths[i].path;
         const mfu_path* src_path = mfu_path_from_str(src_name);
 
         /* check whether path is contained within or equal to

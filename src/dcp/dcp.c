@@ -80,9 +80,6 @@ int main(int argc, \
     /* By default, don't have iput file. */
     char* inputname = NULL;
 
-    /* flag to record whether we're walking directories */
-    int walk = 0;
-
     /* By default, don't bother to preserve all attributes. */
     mfu_copy_opts->preserve = 0;
 
@@ -215,11 +212,9 @@ int main(int argc, \
 
     /* paths to walk come after the options */
     int numpaths = 0;
+    int numpaths_src = 0;
     mfu_param_path* paths = NULL;
     if (optind < argc) {
-        /* got a path to walk */
-        walk = 1;
-
         /* determine number of paths specified by user */
         numpaths = argc - optind;
 
@@ -232,22 +227,23 @@ int main(int argc, \
 
         /* advance to next set of options */
         optind += numpaths;
-
-        /* don't allow input file and walk */
-        if (inputname != NULL) {
-            usage = 1;
-        }
-    }
-    else {
-        /* if we're not walking, we must be reading,
-         * and for that we need a file */
-        if (inputname == NULL) {
-            usage = 1;
-        }
+    
+        /* the last path is the destination path, all others are source paths */
+        numpaths_src = numpaths - 1;
     }
 
-    /* the last path is the destination path, all others are source paths */
-    int numpaths_src = numpaths - 1;
+    if (numpaths_src == 0) {
+        if(rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "No source path found, at least one");
+            print_usage();
+        }
+
+        mfu_param_path_free_all(numpaths, paths);
+        mfu_free(&paths);
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
 
     /* last item in the list is the destination path */
     const mfu_param_path* destpath = &paths[numpaths - 1];
@@ -256,22 +252,13 @@ int main(int argc, \
     int valid, copy_into_dir;
     mfu_param_path_check_copy(numpaths_src, paths, destpath, &valid, &copy_into_dir);
     mfu_copy_opts->copy_into_dir = copy_into_dir; 
-
     /* exit job if we found a problem */
-    if(! valid) {
+    if(!valid) {
         if(rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Exiting run");
         }
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
-
-    /* print usage if we need to */
-    if (usage) {
-        if (rank == 0) {
-            print_usage();
-        }
+        mfu_param_path_free_all(numpaths, paths);
+        mfu_free(&paths);
         mfu_finalize();
         MPI_Finalize();
         return 1;
@@ -280,16 +267,22 @@ int main(int argc, \
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
 
-    if (walk) {
+    if (inputname == NULL) {
         /* walk paths and fill in file list */
         int walk_stat = 1;
         int dir_perm  = 0;
+
         mfu_flist_walk_param_paths(numpaths_src, paths, walk_stat, dir_perm, flist);
     } else {
+        struct mfu_flist_skip_args skip_args;
+
         /* otherwise, read list of files from input, but then stat each one */
         mfu_flist input_flist = mfu_flist_new();
         mfu_flist_read_cache(inputname, input_flist);
-        mfu_flist_stat(input_flist, flist, mfu_input_flist_skip, NULL);
+
+        skip_args.numpaths = numpaths_src;
+        skip_args.paths = paths;
+        mfu_flist_stat(input_flist, flist, mfu_input_flist_skip, (void *)&skip_args);
         mfu_flist_free(&input_flist);
     }
 

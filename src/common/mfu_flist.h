@@ -168,7 +168,13 @@ void mfu_flist_walk_param_paths(
 /* skip function pointer: given a path input, along with user-provided
  * arguments, compute whether to enqueue this file in output list of
  * mfu_flist_stat, return 1 if file should be skipped, 0 if not. */
-typedef int (*mfu_flist_skip_fn) (const char* path, void* args);
+typedef int (*mfu_flist_skip_fn) (const char* path, void *args);
+
+/* skip function args */
+struct mfu_flist_skip_args {
+    int numpaths;
+    const mfu_param_path* paths;
+};
 
 /* Given an input file list, stat each file and enqueue details
  * in output file list, skip entries excluded by skip function
@@ -311,8 +317,7 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
 /* unlink all items in flist */
 void mfu_flist_unlink(mfu_flist flist);
 
-int mfu_input_flist_skip(const char* name, int numpaths,
-        const mfu_param_path* paths);
+int mfu_input_flist_skip(const char* name, void *args);
 
 /* sort flist by specified fields, given as common-delimitted list
  * precede field name with '-' character to reverse sort order:
