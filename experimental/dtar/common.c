@@ -10,7 +10,7 @@
  *   DE-AC05-00OR22725 with the Department of Energy.
  *
  * Copyright (c) 2015, DataDirect Networks, Inc.
- * 
+ *
  * All rights reserved.
  *
  * This file is part of mpiFileUtils.
@@ -25,33 +25,43 @@
  *      Author: fwang2
  */
 
+/*#define _GNU_SOURCE
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <string.h>
+#include <fcntl.h>*/
 #include "common.h"
 
-void DTAR_writer_init() {
-    char * filename = DTAR_user_opts.dest_path;
+void DTAR_writer_init()
+{
+    char* filename = DTAR_user_opts.dest_path;
     DTAR_writer.name = filename;
     DTAR_writer.flags = O_WRONLY | O_CREAT | O_CLOEXEC | O_LARGEFILE;
     DTAR_writer.fd_tar = open(filename, DTAR_writer.flags, 0664);
 
 }
 
-void DTAR_abort(int code) {
+void DTAR_abort(int code)
+{
     MPI_Abort(MPI_COMM_WORLD, code);
     exit(code);
 }
 
-void DTAR_exit(int code) {
+void DTAR_exit(int code)
+{
     mfu_finalize();
     MPI_Finalize();
     exit(code);
 }
 
 
-struct archive * DTAR_new_archive() {
-    struct archive *a = archive_write_new();
+struct archive* DTAR_new_archive()
+{
+    struct archive* a = archive_write_new();
     archive_write_set_format_pax(a);
     int r = archive_write_open_fd(a, DTAR_writer.fd_tar);
-    if ( r != ARCHIVE_OK) {
+    if (r != ARCHIVE_OK) {
         MFU_LOG(MFU_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(a));
         return NULL;
     }
@@ -59,24 +69,25 @@ struct archive * DTAR_new_archive() {
     return a;
 }
 
-void DTAR_write_header(struct archive *ar, uint64_t idx, uint64_t offset)
+void DTAR_write_header(struct archive* ar, uint64_t idx, uint64_t offset)
 {
 
-    const char * fname = mfu_flist_file_get_name(DTAR_flist, idx);
+    const char* fname = mfu_flist_file_get_name(DTAR_flist, idx);
 
     /* fill up entry, FIXME: the uglyness of removing leading slash */
-    struct archive_entry *entry = archive_entry_new();
+    struct archive_entry* entry = archive_entry_new();
     archive_entry_copy_pathname(entry, &fname[1]);
 
     if (DTAR_user_opts.preserve) {
-        struct archive * source = archive_read_disk_new();
+        struct archive* source = archive_read_disk_new();
         archive_read_disk_set_standard_lookup(source);
         int fd = open(fname, O_RDONLY);
         if (archive_read_disk_entry_from_file(source, entry, fd, NULL) != ARCHIVE_OK) {
             MFU_LOG(MFU_LOG_ERR, "archive_read_disk_entry_from_file(): %s", archive_error_string(ar));
         }
         archive_read_free(source);
-    } else {
+    }
+    else {
         /* read stat info from mfu_flist */
         struct stat stbuf;
         mfu_lstat(fname, &stbuf);
@@ -94,7 +105,7 @@ void DTAR_write_header(struct archive *ar, uint64_t idx, uint64_t offset)
         MFU_LOG(MFU_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(ar));
     }
 
-    lseek64(DTAR_writer.fd_tar, offset, SEEK_SET);
+    lseek(DTAR_writer.fd_tar, offset, SEEK_SET);
 
     if (archive_write_header(dest, entry) != ARCHIVE_OK) {
         MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s", archive_error_string(ar));
@@ -104,20 +115,21 @@ void DTAR_write_header(struct archive *ar, uint64_t idx, uint64_t offset)
 
 }
 
-void DTAR_enqueue_copy(CIRCLE_handle *handle) {
+void DTAR_enqueue_copy(CIRCLE_handle* handle)
+{
     for (uint64_t idx = 0; idx < DTAR_count; idx++) {
         mfu_filetype type = mfu_flist_file_get_type(DTAR_flist, idx);
         /* add copy work only for files */
         if (type == MFU_TYPE_FILE) {
             uint64_t dataoffset = DTAR_offsets[idx] + DTAR_HDR_LENGTH;
-            const char * name = mfu_flist_file_get_name(DTAR_flist, idx);
+            const char* name = mfu_flist_file_get_name(DTAR_flist, idx);
             uint64_t size = mfu_flist_file_get_size(DTAR_flist, idx);
 
             /* compute number of chunks */
             uint64_t num_chunks = size / DTAR_user_opts.chunk_size;
             for (uint64_t chunk_idx = 0; chunk_idx < num_chunks; chunk_idx++) {
                 char* newop = DTAR_encode_operation(
-                        COPY_DATA, name, size, chunk_idx, dataoffset);
+                                  COPY_DATA, name, size, chunk_idx, dataoffset);
                 handle->enqueue(newop);
                 mfu_free(&newop);
 
@@ -126,7 +138,7 @@ void DTAR_enqueue_copy(CIRCLE_handle *handle) {
             /* create copy work for possibly last item */
             if (num_chunks * DTAR_user_opts.chunk_size < size || num_chunks == 0) {
                 char* newop = DTAR_encode_operation(
-                        COPY_DATA, name, size, num_chunks, dataoffset);
+                                  COPY_DATA, name, size, num_chunks, dataoffset);
                 handle->enqueue(newop);
                 mfu_free(&newop);
             }
@@ -134,7 +146,8 @@ void DTAR_enqueue_copy(CIRCLE_handle *handle) {
     }
 }
 
-void DTAR_perform_copy(CIRCLE_handle* handle) {
+void DTAR_perform_copy(CIRCLE_handle* handle)
+{
     char opstr[CIRCLE_MAX_STRING_LEN];
     char iobuf[FD_BLOCK_SIZE];
 
@@ -144,7 +157,7 @@ void DTAR_perform_copy(CIRCLE_handle* handle) {
     DTAR_operation_t* op = DTAR_decode_operation(opstr);
 
     uint64_t in_offset = DTAR_user_opts.chunk_size * op->chunk_index;
-    int in_fd = open64(op->operand, O_RDONLY);
+    int in_fd = open(op->operand, O_RDONLY);
 
     ssize_t num_of_bytes_read = 0;
     ssize_t num_of_bytes_written = 0;
@@ -152,25 +165,25 @@ void DTAR_perform_copy(CIRCLE_handle* handle) {
 
     uint64_t out_offset = op->offset + in_offset;
 
-    lseek64(in_fd, in_offset, SEEK_SET);
-    lseek64(out_fd, out_offset, SEEK_SET);
+    lseek(in_fd, in_offset, SEEK_SET);
+    lseek(out_fd, out_offset, SEEK_SET);
 
     while (total_bytes_written < DTAR_user_opts.chunk_size) {
         num_of_bytes_read = read(in_fd, &iobuf[0], sizeof(iobuf));
-        if (!num_of_bytes_read) break;
+        if (!num_of_bytes_read) { break; }
         num_of_bytes_written = write(out_fd, &iobuf[0], num_of_bytes_read);
         total_bytes_written += num_of_bytes_written;
     }
 
     int num_chunks = op->file_size / DTAR_user_opts.chunk_size;
     int rem = op->file_size - DTAR_user_opts.chunk_size * num_chunks;
-    int last_chunk = (rem)? num_chunks : num_chunks - 1;
+    int last_chunk = (rem) ? num_chunks : num_chunks - 1;
 
     /* handle last chunk */
     if (op->chunk_index == last_chunk) {
         int padding = 512 - op->file_size % 512;
-        if (padding > 0) {
-            char * buff = (char*) calloc(padding, sizeof(char));
+        if (padding > 0 && padding != 512) {
+            char* buff = (char*) calloc(padding, sizeof(char));
             write(out_fd, buff, padding);
         }
     }
@@ -180,8 +193,8 @@ void DTAR_perform_copy(CIRCLE_handle* handle) {
 }
 
 
-char * DTAR_encode_operation( DTAR_operation_code_t code, const char* operand,
-        uint64_t fsize, uint64_t chunk_idx, uint64_t offset)
+char* DTAR_encode_operation(DTAR_operation_code_t code, const char* operand,
+                            uint64_t fsize, uint64_t chunk_idx, uint64_t offset)
 {
 
     size_t opsize = (size_t) CIRCLE_MAX_STRING_LEN;
@@ -189,8 +202,8 @@ char * DTAR_encode_operation( DTAR_operation_code_t code, const char* operand,
     size_t len = strlen(operand);
 
     int written = snprintf(op, opsize,
-            "%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%d:%d:%s",
-            fsize, chunk_idx, offset, code, (int) len, operand);
+                           "%" PRIu64 ":%" PRIu64 ":%" PRIu64 ":%d:%d:%s",
+                           fsize, chunk_idx, offset, code, (int) len, operand);
 
     if (written >= opsize) {
         MFU_LOG(MFU_LOG_ERR, "Exceed libcirlce message size");
@@ -201,10 +214,11 @@ char * DTAR_encode_operation( DTAR_operation_code_t code, const char* operand,
 
 }
 
-DTAR_operation_t* DTAR_decode_operation(char *op) {
+DTAR_operation_t* DTAR_decode_operation(char* op)
+{
 
     DTAR_operation_t* ret = (DTAR_operation_t*) MFU_MALLOC(
-            sizeof(DTAR_operation_t));
+                                sizeof(DTAR_operation_t));
 
     if (sscanf(strtok(op, ":"), "%" SCNu64, &(ret->file_size)) != 1) {
         MFU_LOG(MFU_LOG_ERR, "Could not decode file size attribute.");
@@ -221,7 +235,7 @@ DTAR_operation_t* DTAR_decode_operation(char *op) {
         DTAR_abort(EXIT_FAILURE);
     }
 
-    if (sscanf(strtok(NULL, ":"), "%d", (int*) &(ret->code)) != 1) {
+    if (sscanf(strtok(NULL, ":"), "%d", (int*) & (ret->code)) != 1) {
         MFU_LOG(MFU_LOG_ERR, "Could not decode stage code attribute.");
         DTAR_abort(EXIT_FAILURE);
     }
@@ -242,7 +256,8 @@ DTAR_operation_t* DTAR_decode_operation(char *op) {
     return ret;
 }
 
-void DTAR_epilogue() {
+void DTAR_epilogue()
+{
     double rel_time = DTAR_statistics.wtime_ended - \
                       DTAR_statistics.wtime_started;
     if (DTAR_rank == 0) {
@@ -255,7 +270,7 @@ void DTAR_epilogue() {
         strftime(endtime_str, 256, "%b-%d-%Y, %H:%M:%S", localend);
 
         /* add two 512 blocks at the end */
-        DTAR_statistics.total_size += 512*2;
+        DTAR_statistics.total_size += 512 * 2;
 
 
         /* convert bandwidth to unit */

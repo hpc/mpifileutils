@@ -10,7 +10,7 @@
  *   DE-AC05-00OR22725 with the Department of Energy.
  *
  * Copyright (c) 2015, DataDirect Networks, Inc.
- * 
+ *
  * All rights reserved.
  *
  * This file is part of mpiFileUtils.
@@ -48,9 +48,9 @@
 #include <libcircle.h>
 #include <archive.h>
 #include <archive_entry.h>
-
+#include <string.h>
 #include "mfu.h"
-
+#include "dbz2.h"
 
 #define DTAR_HDR_LENGTH 1536
 #define FD_BLOCK_SIZE (1024*1024)
@@ -120,16 +120,16 @@ extern int DTAR_size;
 
 void DTAR_abort(int code);
 void DTAR_exit(int code);
-void DTAR_parse_path_args(int, char **, const char *);
+void DTAR_parse_path_args(int, char**, const char*);
 void DTAR_writer_init();
 void DTAR_epilogue();
 
 struct archive* DTAR_new_archive();
-void DTAR_write_header(struct archive * a, uint64_t idx, uint64_t offset);
+void DTAR_write_header(struct archive* a, uint64_t idx, uint64_t offset);
 
-DTAR_operation_t* DTAR_decode_operation(char *op);
-char * DTAR_encode_operation( DTAR_operation_code_t code,
-        const char* operand, uint64_t fsize, uint64_t chunk, uint64_t offset);
+DTAR_operation_t* DTAR_decode_operation(char* op);
+char* DTAR_encode_operation(DTAR_operation_code_t code,
+                            const char* operand, uint64_t fsize, uint64_t chunk, uint64_t offset);
 
 void DTAR_enqueue_copy(CIRCLE_handle* handle);
 void DTAR_perform_copy(CIRCLE_handle* handle);

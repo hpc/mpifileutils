@@ -29,6 +29,11 @@
 #include <errno.h>
 #include <limits.h>
 
+#ifndef ULLONG_MAX 
+#define ULLONG_MAX (__LONG_LONG_MAX__ * 2UL + 1UL)
+#endif
+
+
 int mfu_initialized = 0;
 
 /* set globals */
