@@ -1432,6 +1432,10 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     mfu_copy_close_file(&mfu_copy_src_cache);
     mfu_copy_close_file(&mfu_copy_dst_cache);
 
+    /* force the copy to backend, to avoid the following metadata
+     * setting mismatch, which may happen on lustre */
+    sync();
+
     /* set permissions, ownership, and timestamps if needed */
     mfu_copy_set_metadata(levels, minlevel, lists, numpaths,
             paths, destpath, mfu_copy_opts);
