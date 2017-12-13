@@ -676,7 +676,7 @@ static int dcmp_compare_metadata(
         dcmp_compare_field(ctime, DCMPF_CTIME);
     }
     if (dcmp_option_need_compare(DCMPF_PERM)) {
-        dcmp_compare_field(ctime, DCMPF_PERM);
+        dcmp_compare_field(perm, DCMPF_PERM);
     }
 
     return diff;
