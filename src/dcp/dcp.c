@@ -47,6 +47,7 @@ void print_usage(void)
     printf("  -p, --preserve      - preserve permissions, ownership, timestamps, extended attributes\n");
     printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
     printf("  -S, --sparse        - create sparse files when possible\n");
+    printf("  -P, --pure          - pure mode, don't create additional directory level at the destination\n");
     printf("  -v, --verbose       - verbose output\n");
     printf("  -h, --help          - print usage\n");
     printf("\n");
@@ -100,6 +101,7 @@ int main(int argc, \
         {"preserve"             , no_argument      , 0, 'p'},
         {"synchronous"          , no_argument      , 0, 's'},
         {"sparse"               , no_argument      , 0, 'S'},
+        {"pure"                 , no_argument      , 0, 'P'},
         {"verbose"              , no_argument      , 0, 'v'},
         {"help"                 , no_argument      , 0, 'h'},
         {0                      , 0                , 0, 0  }
@@ -109,7 +111,7 @@ int main(int argc, \
     int usage = 0;
     while(1) {
         int c = getopt_long(
-                    argc, argv, "d:g:hi:pusSv",
+                    argc, argv, "d:g:hi:pPusSv",
                     long_options, &option_index
                 );
 
@@ -192,6 +194,12 @@ int main(int argc, \
                 mfu_copy_opts->sparse = 1;
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Using sparse file");
+                }
+                break;
+            case 'P':
+                mfu_copy_opts->do_sync = 1;
+                if(rank == 0) {
+                    MFU_LOG(MFU_LOG_INFO, "Using pure mode");
                 }
                 break;
             case 'v':
