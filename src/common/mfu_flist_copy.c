@@ -573,6 +573,12 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
         return 0;
     }
 
+    /* Skipping the destination directory */
+    if (strncmp(dest_path, destpath->path, strlen(dest_path)) == 0) {
+        mfu_free(&dest_path);
+        return 0;
+    }
+
    /* create the destination directory */
     MFU_LOG(MFU_LOG_DBG, "Creating directory `%s'", dest_path);
     int rc = mfu_mkdir(dest_path, DCOPY_DEF_PERMS_DIR);
