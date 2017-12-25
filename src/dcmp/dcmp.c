@@ -946,7 +946,8 @@ static void dcmp_strmap_compare_data(
 }
 
 static void time_strmap_compare(mfu_flist src_list, double start_compare, 
-        double end_compare, uint64_t total_bytes_read) {
+                                double end_compare, time_t *time_started,
+                                time_t *time_ended, uint64_t total_bytes_read) {
     
     /* if the verbose option is set print the timing data
         report compare count, time, and rate */
@@ -969,23 +970,11 @@ static void time_strmap_compare(mfu_flist src_list, double start_compare,
        char starttime_str[256];
        char endtime_str[256];
 
-       /* snprintf takes in a char* restrict type as a first argument
-        * so convert to this type before passing it to avoid the 
-        * compiler warning */
-       snprintf(starttime_str, 256, "%f", start_compare);
-       snprintf(endtime_str, 256, "%f", end_compare);
-
-       /* convert time to time_t */
-       time_t start_rawtime = (time_t)start_compare;
-       time_t end_rawtime   = (time_t)end_compare;
-
-       /* format start & end time string I made copies of the localstart
-        * & localend because the next call to localtime was overriding
-        * the second call */
-       struct tm* localstart = localtime(&start_rawtime);
+       struct tm* localstart = localtime(time_started);
        struct tm cp_localstart = *localstart;
-       struct tm* localend = localtime(&end_rawtime);
+       struct tm* localend = localtime(time_ended);
        struct tm cp_localend = *localend;
+
        strftime(starttime_str, 256, "%b-%d-%Y, %H:%M:%S", &cp_localstart);
        strftime(endtime_str, 256, "%b-%d-%Y, %H:%M:%S", &cp_localend);
 
@@ -1093,7 +1082,12 @@ static void dcmp_strmap_compare(mfu_flist src_list,
 {
     /* wait for all tasks and start timer */
     MPI_Barrier(MPI_COMM_WORLD);
+
+    time_t   time_started;
+    time_t   time_ended;
+
     double start_compare = MPI_Wtime();
+    time(&time_started);
 
     /* create compare_lists */
     mfu_flist src_compare_list = mfu_flist_subset(src_list);
@@ -1242,6 +1236,7 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     /* wait for all procs to finish before stopping timer */
     MPI_Barrier(MPI_COMM_WORLD);
     double end_compare = MPI_Wtime();
+    time(&time_ended);
    
     /* initalize total_bytes_read to zero */
     uint64_t total_bytes_read = 0;
@@ -1251,7 +1246,8 @@ static void dcmp_strmap_compare(mfu_flist src_list,
         total_bytes_read = get_total_bytes_read(src_compare_list);
     }
 
-    time_strmap_compare(src_list, start_compare, end_compare, total_bytes_read);
+    time_strmap_compare(src_list, start_compare, end_compare, &time_started,
+                        &time_ended, total_bytes_read);
     
     /* if the sync option is on then we need to remove the files
      * from the destination list that are not in the src list. Then,
