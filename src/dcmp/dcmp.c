@@ -133,12 +133,15 @@ struct dcmp_expression {
 
 struct dcmp_conjunction {
     struct list_head linkage;      /* linkage to struct dcmp_disjunction */
-    struct list_head expressions; /* list of logical conjunction */
+    struct list_head expressions;  /* list of logical conjunction */
+    mfu_flist src_matched_list;    /* matched src items in this conjunction */
+    mfu_flist dst_matched_list;    /* matched dst items in this conjunction */
 };
 
 struct dcmp_disjunction {
     struct list_head linkage;      /* linkage to struct dcmp_output */
     struct list_head conjunctions; /* list of logical conjunction */
+    unsigned count;		   /* logical conjunctions count */
 };
 
 struct dcmp_output {
@@ -1626,6 +1629,8 @@ static struct dcmp_conjunction* dcmp_conjunction_alloc(void)
         MFU_MALLOC(sizeof(struct dcmp_conjunction));
     INIT_LIST_HEAD(&conjunction->linkage);
     INIT_LIST_HEAD(&conjunction->expressions);
+    conjunction->src_matched_list = mfu_flist_new();
+    conjunction->dst_matched_list = mfu_flist_new();
 
     return conjunction;
 }
@@ -1652,6 +1657,8 @@ static void dcmp_conjunction_free(struct dcmp_conjunction *conjunction)
         dcmp_expression_free(expression);
     }
     assert(list_empty(&conjunction->expressions));
+    mfu_flist_free(&conjunction->src_matched_list);
+    mfu_flist_free(&conjunction->dst_matched_list);
     mfu_free(&conjunction);
 }
 
@@ -1709,6 +1716,7 @@ static struct dcmp_disjunction* dcmp_disjunction_alloc(void)
         MFU_MALLOC(sizeof(struct dcmp_disjunction));
     INIT_LIST_HEAD(&disjunction->linkage);
     INIT_LIST_HEAD(&disjunction->conjunctions);
+    disjunction->count = 0;
 
     return disjunction;
 }
@@ -1719,6 +1727,7 @@ static void dcmp_disjunction_add_conjunction(
 {
     assert(list_empty(&conjunction->linkage));
     list_add_tail(&conjunction->linkage, &disjunction->conjunctions);
+    disjunction->count++;
 }
 
 static void dcmp_disjunction_free(struct dcmp_disjunction* disjunction)
@@ -1749,7 +1758,11 @@ static void dcmp_disjunction_print(
                         &disjunction->conjunctions,
                         linkage) {
         dcmp_conjunction_print(conjunction, simple);
+
+        printf(": [%lu/%lu]", mfu_flist_global_size(conjunction->src_matched_list),
+                              mfu_flist_global_size(conjunction->dst_matched_list));
         if (conjunction->linkage.next != &disjunction->conjunctions) {
+
             if (simple) {
                 printf("||");
             } else {
@@ -1767,7 +1780,8 @@ static void dcmp_disjunction_print(
 static int dcmp_disjunction_match(
     struct dcmp_disjunction* disjunction,
     strmap* map,
-    const char* key)
+    const char* key,
+    int is_src)
 {
     struct dcmp_conjunction *conjunction;
     int matched;
@@ -1777,6 +1791,10 @@ static int dcmp_disjunction_match(
                         linkage) {
         matched = dcmp_conjunction_match(conjunction, map, key);
         if (matched) {
+            if (is_src)
+                mfu_flist_increase(&conjunction->src_matched_list);
+            else
+                mfu_flist_increase(&conjunction->dst_matched_list);
             return 1;
         }
     }
@@ -1855,11 +1873,12 @@ static int dcmp_output_flist_match(
     strmap* map,
     mfu_flist flist,
     mfu_flist new_flist,
-    uint64_t *number)
+    mfu_flist *matched_flist,
+    int is_src)
 {
     const strmap_node* node;
+    struct dcmp_conjunction *conjunction;
 
-    *number = 0;
     /* iterate over each item in map */
     strmap_foreach(map, node) {
         /* get file name */
@@ -1870,11 +1889,22 @@ static int dcmp_output_flist_match(
         int ret = dcmp_strmap_item_index(map, key, &idx);
         assert(ret == 0);
 
-        if (dcmp_disjunction_match(output->disjunction, map, key)) {
-            (*number)++;
+        if (dcmp_disjunction_match(output->disjunction, map, key, is_src)) {
+            mfu_flist_increase(matched_flist);
             mfu_flist_file_copy(flist, idx, new_flist);
         }
     }
+
+    list_for_each_entry(conjunction,
+                        &output->disjunction->conjunctions,
+                        linkage) {
+        if (is_src) {
+            mfu_flist_summarize(conjunction->src_matched_list);
+        } else {
+            mfu_flist_summarize(conjunction->dst_matched_list);
+        }
+    }
+
     return 0;
 }
 
@@ -1891,29 +1921,23 @@ static int dcmp_output_write(
     mfu_flist new_flist = mfu_flist_subset(src_flist);
 
     /* find matched file in source map */
-    uint64_t src_matched = 0;
+    mfu_flist src_matched = mfu_flist_new();
     ret = dcmp_output_flist_match(output, src_map, src_flist,
-                                  new_flist, &src_matched);
+                                  new_flist, &src_matched, 1);
     assert(ret == 0);
 
     /* find matched file in dest map */
-    uint64_t dst_matched = 0;
+    mfu_flist dst_matched = mfu_flist_new();
     ret = dcmp_output_flist_match(output, dst_map, dst_flist,
-                                  new_flist, &dst_matched);
+                                  new_flist, &dst_matched, 0);
     assert(ret == 0);
 
     mfu_flist_summarize(new_flist);
+    mfu_flist_summarize(src_matched);
+    mfu_flist_summarize(dst_matched);
     if (output->file_name != NULL) {
         mfu_flist_write_cache(output->file_name, new_flist);
     }
-
-    uint64_t src_matched_total;
-    MPI_Allreduce(&src_matched, &src_matched_total, 1,
-                  MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-    uint64_t dst_matched_total;
-    MPI_Allreduce(&dst_matched, &dst_matched_total, 1,
-                  MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -1921,9 +1945,12 @@ static int dcmp_output_write(
         printf(DCMP_OUTPUT_PREFIX);
         dcmp_disjunction_print(output->disjunction, 0,
                                strlen(DCMP_OUTPUT_PREFIX));
-        printf(", number: %lu/%lu",
-               src_matched_total,
-               dst_matched_total);
+
+        if (output->disjunction->count > 1)
+            printf(", total number: %lu/%lu",
+                   mfu_flist_global_size(src_matched),
+                   mfu_flist_global_size(dst_matched));
+
         if (output->file_name != NULL) {
             printf(", dumped to \"%s\"",
                    output->file_name);
@@ -1931,6 +1958,8 @@ static int dcmp_output_write(
         printf("\n");
     }
     mfu_flist_free(&new_flist);
+    mfu_flist_free(&src_matched);
+    mfu_flist_free(&dst_matched);
 
     return 0;
 }
