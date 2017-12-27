@@ -582,11 +582,19 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
    /* create the destination directory */
     MFU_LOG(MFU_LOG_DBG, "Creating directory `%s'", dest_path);
     int rc = mfu_mkdir(dest_path, DCOPY_DEF_PERMS_DIR);
-    if(rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to create directory `%s' (errno=%d %s)", \
-            dest_path, errno, strerror(errno));
-        mfu_free(&dest_path);
-        return -1;
+    if(rc < 0) {
+        if(errno == EEXIST) {
+            MFU_LOG(MFU_LOG_WARN,
+                    "Original directory exists, skip the creation: `%s' (errno=%d %s)",
+                    dest_path, errno, strerror(errno));
+
+        } else {
+            MFU_LOG(MFU_LOG_ERR, "Create `%s' mkdir() failed, errno=%d %s",
+                    dest_path, errno, strerror(errno)
+            );
+            mfu_free(&dest_path);
+            return -1;
+        }
     }
 
     /* we do this now in case there are Lustre attributes for
@@ -721,11 +729,17 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
     int symrc = mfu_symlink(path, dest_path);
 
     if(symrc < 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to create link `%s' symlink() errno=%d %s",
-            dest_path, errno, strerror(errno)
-        );
-        mfu_free(&dest_path);
-        return -1;
+        if(errno == EEXIST) {
+            MFU_LOG(MFU_LOG_WARN,
+                    "Original link exists, skip the creation: `%s' (errno=%d %s)",
+                    dest_path, errno, strerror(errno));
+        } else {
+            MFU_LOG(MFU_LOG_ERR, "Create `%s' symlink() failed, errno=%d %s",
+                    dest_path, errno, strerror(errno)
+            );
+            mfu_free(&dest_path);
+            return -1;
+        }
     }
 
     /* TODO: why not do this later? */
@@ -774,12 +788,16 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
 
     if(mknod_rc < 0) {
         if(errno == EEXIST) {
-            /* TODO: should we unlink and mknod again in this case? */
+            MFU_LOG(MFU_LOG_WARN,
+                    "Original file exists, skip the creation: `%s' (errno=%d %s)",
+                    dest_path, errno, strerror(errno));
+        } else {
+            MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() failed, errno=%d %s",
+                    dest_path, errno, strerror(errno)
+            );
+            mfu_free(&dest_path);
+            return -1;
         }
-
-        MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() errno=%d %s",
-            dest_path, errno, strerror(errno)
-        );
     }
 
     /* copy extended attributes, important to do this first before
