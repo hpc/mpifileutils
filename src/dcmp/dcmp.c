@@ -51,6 +51,9 @@ static void print_usage(void)
     printf("  -b, --base  - do base comparison\n");
     printf("  -o, --output field0=state0@field1=state1,field2=state2:file "
     	   "- write list to file\n");
+    printf("       multiple output files supports, e.g.\n");
+    printf("       -o EXIST=ONLY_SRC,TYPE=DIFFER,PERM=DIFFER,MTIME=DIFFER:"
+           "fileA -o MTIME=DIFFER:fileB\n");
     printf("  -v, --verbose\n");
     printf("  -h, --help  - print usage\n");
     printf("\n");
