@@ -1289,18 +1289,23 @@ void mfu_flist_write_cache(
     /* start timer */
     double start_write = MPI_Wtime();
 
+    /* total list items */
+    uint64_t all_count = mfu_flist_global_size(flist);
+
     /* report the filename we're writing to */
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
         printf("Writing to output file: %s\n", name);
         fflush(stdout);
     }
 
-    if (flist->detail) {
-        write_cache_stat(name, 0, 0, flist);
-    }
-    else {
-        //write_cache_readdir(name, 0, 0, flist);
-        write_cache_readdir_variable(name, flist);
+    if (all_count > 0) {
+        if (flist->detail) {
+            write_cache_stat(name, 0, 0, flist);
+        }
+        else {
+            //write_cache_readdir(name, 0, 0, flist);
+            write_cache_readdir_variable(name, flist);
+        }
     }
 
     /* end timer */
@@ -1308,7 +1313,6 @@ void mfu_flist_write_cache(
 
     /* report write count, time, and rate */
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        uint64_t all_count = mfu_flist_global_size(flist);
         double secs = end_write - start_write;
         double rate = 0.0;
         if (secs > 0.0) {
