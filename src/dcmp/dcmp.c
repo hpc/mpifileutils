@@ -97,6 +97,7 @@ typedef enum _dcmp_field {
     DCMPF_MTIME,     /* both have the same mtime */
     DCMPF_CTIME,     /* both have the same ctime */
     DCMPF_PERM,      /* both have the same permission */
+    DCMPF_ACL,       /* both have the same ACLs */
     DCMPF_CONTENT,   /* both have the same data */
     DCMPF_MAX,
 } dcmp_field;
@@ -110,6 +111,7 @@ typedef enum _dcmp_field {
 #define DCMPF_MTIME_DEPEND   (DCMPF_EXIST_DEPEND | (1 << DCMPF_MTIME))
 #define DCMPF_CTIME_DEPEND   (DCMPF_EXIST_DEPEND | (1 << DCMPF_CTIME))
 #define DCMPF_PERM_DEPEND    (DCMPF_EXIST_DEPEND | (1 << DCMPF_PERM))
+#define DCMPF_ACL_DEPEND     (DCMPF_EXIST_DEPEND | (1 << DCMPF_ACL))
 #define DCMPF_CONTENT_DEPEND (DCMPF_SIZE_DEPEND | (1 << DCMPF_CONTENT))
 
 uint64_t dcmp_field_depend[] = {
@@ -121,7 +123,8 @@ uint64_t dcmp_field_depend[] = {
     [DCMPF_ATIME]   = DCMPF_ATIME_DEPEND,
     [DCMPF_MTIME]   = DCMPF_MTIME_DEPEND,
     [DCMPF_CTIME]   = DCMPF_CTIME_DEPEND,
-    [DCMPF_PERM]   = DCMPF_PERM_DEPEND,
+    [DCMPF_PERM]    = DCMPF_PERM_DEPEND,
+    [DCMPF_ACL]     = DCMPF_ACL_DEPEND,
     [DCMPF_CONTENT] = DCMPF_CONTENT_DEPEND,
 };
 
@@ -242,6 +245,13 @@ static const char* dcmp_field_to_string(dcmp_field field, int simple)
             return "PERM";
         } else {
             return "permission";
+        }
+        break;
+    case DCMPF_ACL:
+        if (simple) {
+            return "ACL";
+        } else {
+            return "Access Control Lists";
         }
         break;
     case DCMPF_CONTENT:
@@ -646,6 +656,76 @@ do {                                                                         \
     }                                                                        \
 } while(0)
 
+static void dcmp_compare_acl(
+    const char *key,
+    mfu_flist src_list,
+    uint64_t src_index,
+    mfu_flist dst_list,
+    uint64_t dst_index,
+    strmap* src_map,
+    strmap* dst_map,
+    int *diff)
+{
+    void *src_val, *dst_val;
+    ssize_t src_size, dst_size;
+    bool is_same = true;
+
+#if DCOPY_USE_XATTRS
+    src_val = mfu_flist_file_get_acl(src_list, src_index, &src_size,
+                                     "system.posix_acl_access");
+    dst_val = mfu_flist_file_get_acl(dst_list, dst_index, &dst_size,
+                                     "system.posix_acl_access");
+
+    if (src_size == dst_size) {
+        if (src_size > 0) {
+            if (memcmp(src_val, dst_val, src_size)) {
+                is_same = false;
+                goto out;
+            }
+        }
+    } else {
+        is_same = false;
+        goto out;
+    }
+
+    mfu_filetype type = mfu_flist_file_get_type(src_list, src_index);
+    if (type == MFU_TYPE_DIR) {
+        mfu_free(&src_val);
+        mfu_free(&dst_val);
+
+        src_val = mfu_flist_file_get_acl(src_list, src_index, &src_size,
+                                         "system.posix_acl_default");
+        dst_val = mfu_flist_file_get_acl(dst_list, dst_index, &dst_size,
+                                         "system.posix_acl_default");
+
+        if (src_size == dst_size) {
+            if (src_size > 0) {
+                if (memcmp(src_val, dst_val, src_size)) {
+                    is_same = false;
+                    goto out;
+                }
+            }
+        } else {
+            is_same = false;
+            goto out;
+        }
+    }
+
+out:
+    mfu_free(&src_val);
+    mfu_free(&dst_val);
+
+#endif
+    if (is_same) {
+        dcmp_strmap_item_update(src_map, key, DCMPF_ACL, DCMPS_COMMON);
+        dcmp_strmap_item_update(dst_map, key, DCMPF_ACL, DCMPS_COMMON);
+    } else {
+        dcmp_strmap_item_update(src_map, key, DCMPF_ACL, DCMPS_DIFFER);
+        dcmp_strmap_item_update(dst_map, key, DCMPF_ACL, DCMPS_DIFFER);
+        (*diff)++;
+    }
+}
+
 static int dcmp_option_need_compare(dcmp_field field)
 {
     return options.need_compare[field];
@@ -689,6 +769,11 @@ static int dcmp_compare_metadata(
     }
     if (dcmp_option_need_compare(DCMPF_PERM)) {
         dcmp_compare_field(perm, DCMPF_PERM);
+    }
+    if (dcmp_option_need_compare(DCMPF_ACL)) {
+        dcmp_compare_acl(key, src_list,src_index,
+                         dst_list, dst_index,
+                         src_map, dst_map, &diff);
     }
 
     return diff;
