@@ -7,18 +7,20 @@ AC_DEFUN([X_AC_LUSTRE], [
                 [], [enable_lustre="no"])
   AC_MSG_RESULT([$enable_lustre])
 
-  AC_MSG_CHECKING([for Lustre])
-  AS_IF([test -e "/usr/include/lustre/lustre_user.h" && test -e "/usr/include/lustre/lustreapi.h"],
-        [enable_lustre="yes"],
-        [enable_lustre="no"])
-  AC_MSG_RESULT([$enable_lustre])
+  if [[ "x$enable_lustre" == xyes ]]; then
+    AC_MSG_CHECKING([for Lustre])
+    AS_IF([test -e "/usr/include/lustre/lustre_user.h" && test -e "/usr/include/lustre/lustreapi.h"],
+          [lustre_available="yes"],
+          [lustre_available="no"])
+    AC_MSG_RESULT([$lustre_available])
 
-#  AC_SEARCH_LIBS([llapi_file_create], [lustreapi], [], [
-#    AC_MSG_ERROR([couldn't find liblustreapi])], [])
+  #  AC_SEARCH_LIBS([llapi_file_create], [lustreapi], [], [
+  #    AC_MSG_ERROR([couldn't find liblustreapi])], [])
 
-  AS_IF([test "x$enable_lustre" = xyes], [
-    AC_DEFINE(LUSTRE_SUPPORT, 1, [enable Lustre support])
-    LUSTRE_LIBS="-llustreapi"
-    AC_SUBST(LUSTRE_LIBS)
-  ])
+    AS_IF([test "x$lustre_available" = xyes], [
+      AC_DEFINE(LUSTRE_SUPPORT, 1, [enable Lustre support])
+      LUSTRE_LIBS="-llustreapi"
+      AC_SUBST(LUSTRE_LIBS)
+    ])
+  fi
 ])
