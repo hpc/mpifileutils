@@ -566,7 +566,7 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
 /* alltoallv to exchange data */
 /* pt2pt with left and right neighbors to determine if they have the same dirname */
 /* delete what we can witout waiting */
-/* if my right neighbor has same dirname, send him msg when we're done */
+/* if my right neighbor has same dirname, send it msg when we're done */
 /* if my left neighbor has same dirname, wait for msg */
 
 /*****************************
