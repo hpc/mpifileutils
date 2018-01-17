@@ -664,7 +664,13 @@ static int dcmp_compare_metadata(
     int diff = 0;
 
     if (dcmp_option_need_compare(DCMPF_SIZE)) {
-        dcmp_compare_field(size, DCMPF_SIZE);
+        mfu_filetype type = mfu_flist_file_get_type(src_list, src_index);
+        if (type != MFU_TYPE_DIR) {
+            dcmp_compare_field(size, DCMPF_SIZE);
+        } else {
+            dcmp_strmap_item_update(src_map, key, DCMPF_SIZE, DCMPS_COMMON);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_SIZE, DCMPS_COMMON);
+        }
     }
     if (dcmp_option_need_compare(DCMPF_GID)) {
         dcmp_compare_field(gid, DCMPF_GID);
