@@ -97,6 +97,14 @@ typedef struct {
     int   fd;   /* file descriptor */
 } mfu_copy_file_cache_t;
 
+typedef struct {
+    char *dest_path;
+    char *name;
+    uint64_t offset;
+    uint64_t len;
+    uint64_t size;
+} mfu_cp_data_t;
+
 /****************************************
  * Define globals
  ***************************************/
@@ -107,6 +115,13 @@ static mfu_copy_stats_t mfu_copy_stats;
 /** Cache most recent open file descriptor to avoid opening / closing the same file */
 static mfu_copy_file_cache_t mfu_copy_src_cache;
 static mfu_copy_file_cache_t mfu_copy_dst_cache;
+
+static int CUR_NUMPATHS;
+static mfu_param_path* CUR_PATHS;
+static mfu_param_path* CUR_DESTPATH;
+static mfu_copy_opts_t* CUR_OPTS;
+static mfu_file_chunk* CUR_CHUNK;
+static uint64_t CUR_TOTAL_FILES;
 
 int mfu_input_flist_skip(const char* name, void *args)
 {
@@ -1347,6 +1362,145 @@ static int mfu_copy_file(
             offset, length, file_size, mfu_copy_opts);
 }
 
+/****************************************
+ * Global counter and callbacks for LIBCIRCLE reductions
+ ***************************************/
+
+static uint64_t reduce_items;
+
+static void reduce_init(void)
+{
+    CIRCLE_reduce(&reduce_items, sizeof(uint64_t));
+}
+
+static void reduce_exec(const void* buf1, size_t size1, const void* buf2, size_t size2)
+{
+    const uint64_t* a = (const uint64_t*) buf1;
+    const uint64_t* b = (const uint64_t*) buf2;
+    uint64_t val = a[0] + b[0];
+    CIRCLE_reduce(&val, sizeof(uint64_t));
+}
+
+static void reduce_fini(const void* buf, size_t size)
+{
+    /* get current time */
+    time_t copy_start_t = time(NULL);
+    if (copy_start_t == (time_t) - 1) {
+        /* TODO: ERROR! */
+    }
+
+    /* format timestamp string */
+    char copy_s[30];
+    size_t rc = strftime(copy_s, sizeof(copy_s) - 1, "%F %T", localtime(&copy_start_t));
+    if (rc == 0) {
+        copy_s[0] = '\0';
+    }
+
+    /* get result of reduction */
+    const uint64_t* a = (const uint64_t*) buf;
+    unsigned long long val = (unsigned long long) a[0];
+
+    /* print status to stdout */
+    printf("%s: files copied \033[0;32;32m%-3.2f%%..[%llu/%llu]\033[m...\n",
+           copy_s, ((double)val/(double)CUR_TOTAL_FILES)*100.00,
+           val, CUR_TOTAL_FILES);
+    fflush(stdout);
+}
+
+char *mfu_cp_data_to_str(mfu_cp_data_t *dt)
+{
+    /* get lenght of string required to hold struct values */
+    size_t len = 0;
+    char *dtstr;
+
+    len = snprintf(NULL, len, "%s|%s|%lu|%lu|%lu",
+                   dt->dest_path, dt->name, dt->offset,
+                   dt->len, dt->size);
+
+    dtstr = MFU_MALLOC(len + 1);
+    memset(dtstr, 0, len + 1);
+
+    snprintf(dtstr, len + 1, "%s|%s|%lu|%lu|%lu",
+             dt->dest_path, dt->name, dt->offset,
+             dt->len, dt->size);
+
+    return dtstr;
+}
+
+void str_to_mfu_cp_data(char *dtstr, mfu_cp_data_t *dt)
+{
+    char *p;
+    const char *delim = "|";
+
+    p = strtok(dtstr, delim);
+    dt->dest_path = MFU_STRDUP(p);
+
+    p = strtok(NULL, delim);
+    dt->name = MFU_STRDUP(p);
+
+    p = strtok(NULL, delim);
+    dt->offset = strtoul(p, NULL, 10);
+
+    p = strtok(NULL, delim);
+    dt->len = strtoul(p, NULL, 10);
+
+    p = strtok(NULL, delim);
+    dt->size = strtoul(p, NULL, 10);
+}
+
+static void mfu_copy_files_create(CIRCLE_handle* handle)
+{
+    /* loop over and copy data for each file section we're responsible for */
+    while (CUR_CHUNK != NULL) {
+        /* get name of destination file */
+        char* dest_path = mfu_param_path_copy_dest(CUR_CHUNK->name, CUR_NUMPATHS,
+                                                   CUR_PATHS, CUR_DESTPATH,
+                                                   CUR_OPTS);
+
+        /* No need to copy it */
+        if (dest_path == NULL) {
+            continue;
+        }
+
+        mfu_cp_data_t dt;
+
+        dt.name = CUR_CHUNK->name;
+        dt.dest_path = dest_path;
+        dt.offset = (uint64_t)CUR_CHUNK->offset;
+        dt.len = (uint64_t)CUR_CHUNK->length;
+        dt.size = (uint64_t)CUR_CHUNK->file_size;
+
+        char *dt_p = mfu_cp_data_to_str(&dt);
+
+        handle->enqueue(dt_p);
+
+        mfu_free(&dt_p);
+        /* update pointer to next element */
+        CUR_CHUNK = CUR_CHUNK->next;
+    }
+
+    return;
+}
+
+static void mfu_copy_files_process(CIRCLE_handle* handle)
+{
+    char dt_p[1024];
+    mfu_cp_data_t dt;
+
+    handle->dequeue(dt_p);
+    
+    str_to_mfu_cp_data(dt_p, &dt);
+
+    /* call copy_file for each element of the copy_elem linked list of structs */
+    mfu_copy_file(dt.name, dt.dest_path, dt.offset, dt.len, dt.size, CUR_OPTS);
+
+    reduce_items++;
+
+    mfu_free(&dt.name);
+    mfu_free(&dt.dest_path);
+
+    return;
+}
 /* After receiving all incoming chunks, process open and write their chunks 
  * to the files. The process which writes the last chunk to each file also 
  * truncates the file to correct size.  A 0-byte file still has one chunk. */
@@ -1362,35 +1516,64 @@ static void mfu_copy_files(mfu_flist list, uint64_t chunk_size,
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Copying data.");
     }
-    
+    uint64_t total_dirs, total_items; 
+    MPI_Allreduce(&mfu_copy_stats.total_dirs, &total_dirs, 1,
+                  MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+    total_items = mfu_flist_global_size(list);
+
     /* split file list into a linked list of file sections,
      * this evenly spreads the file sections across processes */
     mfu_file_chunk* p = mfu_file_chunk_list_alloc(list, chunk_size);
-    
-    /* loop over and copy data for each file section we're responsible for */
-    while (p != NULL) {
-        /* get name of destination file */
-        char* dest_path = mfu_param_path_copy_dest(p->name, numpaths,
-                paths, destpath, mfu_copy_opts);
 
-        /* No need to copy it */
-        if (dest_path == NULL) {
-            continue;
+    /* initialize libcircle */
+    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
+
+    /* set libcircle verbosity level */
+    enum CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
+    CIRCLE_enable_logging(loglevel);
+
+    CIRCLE_cb_create(&mfu_copy_files_create);
+    CIRCLE_cb_process(&mfu_copy_files_process);
+    /* set some global variables to do the file copy */
+    CUR_NUMPATHS = numpaths;
+    CUR_PATHS = paths;
+    CUR_DESTPATH = destpath;
+    CUR_OPTS = mfu_copy_opts;
+    CUR_CHUNK = p;
+    CUR_TOTAL_FILES = total_items - total_dirs;
+    
+    /* prepare callbacks and initialize variables for reductions */
+    reduce_items = 0;
+    CIRCLE_cb_reduce_init(&reduce_init);
+    CIRCLE_cb_reduce_op(&reduce_exec);
+    CIRCLE_cb_reduce_fini(&reduce_fini);
+
+    /* run the libcircle job */
+    CIRCLE_begin();
+    CIRCLE_finalize();
+
+    if (rank == 0 ){
+        /* get current time */
+        time_t copy_start_t = time(NULL);
+        if (copy_start_t == (time_t) - 1) {
+            /* TODO: ERROR! */
         }
 
-        /* call copy_file for each element of the copy_elem linked list of structs */
-        mfu_copy_file(p->name, dest_path, (uint64_t)p->offset, 
-                (uint64_t)p->length, (uint64_t)p->file_size, mfu_copy_opts);
+        /* format timestamp string */
+        char copy_s[30];
+        size_t rc = strftime(copy_s, sizeof(copy_s) - 1, "%F %T", localtime(&copy_start_t));
+        if (rc == 0) {
+            copy_s[0] = '\0';
+        }
 
-        /* free the dest name */
-        mfu_free(&dest_path);
-
-        /* update pointer to next element */
-        p = p->next;
+        /* print status to stdout */
+        printf("%s: files copied \033[0;32;32m%3.2f%%..[%llu/%llu]\033[m...\n",
+               copy_s, 100.00, CUR_TOTAL_FILES, CUR_TOTAL_FILES);
+        fflush(stdout);
     }
-    
+
     /* free the linked list */
-    mfu_file_chunk_list_free(&p);
+    mfu_file_chunk_list_free(&CUR_CHUNK);
 }
 
 void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
