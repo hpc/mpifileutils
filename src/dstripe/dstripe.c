@@ -80,7 +80,7 @@ static void generate_suffix(char *suffix, const int len)
 /* uses the lustre api to obtain stripe count and stripe size of a file */
 static int get_file_stripe_info(const char *path, uint64_t *stripe_size, uint64_t *stripe_count)
 {
-#ifdef LUSTRE_SUPPORT
+#ifdef HAVE_LLAPI_LAYOUT
     /* obtain the llapi_layout for a file by path */
     struct llapi_layout *layout = llapi_layout_get_by_path(path, 0);
 
@@ -103,7 +103,7 @@ static int get_file_stripe_info(const char *path, uint64_t *stripe_size, uint64_
 /* create a striped lustre file at the path provided with the specified stripe size and count */
 static void create_striped_file(const char *path, uint64_t stripe_size, int stripe_count)
 {
-#ifdef LUSTRE_SUPPORT
+#ifdef HAVE_LLAPI_LAYOUT
     /* create a new llapi_layout for file creation */
     struct llapi_layout *layout = llapi_layout_alloc();
     int fd = -1;
@@ -502,7 +502,17 @@ int main(int argc, char* argv[])
     /* nothing to do if lustre support is disabled */
 #ifndef LUSTRE_SUPPORT
     if (rank == 0) {
-        printf("Lustre support is disabled\n");
+        printf("Lustre support is disabled.\n");
+        fflush(stdout);
+    }
+
+    MPI_Abort(MPI_COMM_WORLD, 1);
+#endif
+
+#ifndef HAVE_LLAPI_LAYOUT
+    /* nothing to do if lustre doesn't support llapi_layouts */
+    if (rank == 0) {
+        printf("dstripe requires Lustre 2.7 and above.\n");
         fflush(stdout);
     }
 
