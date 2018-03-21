@@ -34,6 +34,20 @@ AC_DEFUN([X_AC_LUSTRE], [
 			    [AC_DEFINE([HAVE_LLAPI_LAYOUT], [1],
 			        [Define to 1 if llapi_layout can be used.])],
 			    [], [])
+
+			AC_CHECK_LIB(
+			    [lustreapi],
+			    [llapi_file_create],
+			    [AC_DEFINE([HAVE_LLAPI_FILE_CREATE], [1],
+			        [Define to 1 if llapi_file_create can be used.])],
+			    [], [])
+
+			AC_CHECK_LIB(
+			    [lustreapi],
+			    [llapi_file_get_stripe],
+			    [AC_DEFINE([HAVE_LLAPI_FILE_GET_STRIPE], [1],
+			        [Define to 1 if llapi_file_get_stripe can be used.])],
+			    [], [])
 		fi
 	fi
 

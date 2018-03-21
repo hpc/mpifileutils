@@ -80,7 +80,8 @@ static void generate_suffix(char *suffix, const int len)
 /* uses the lustre api to obtain stripe count and stripe size of a file */
 static int get_file_stripe_info(const char *path, uint64_t *stripe_size, uint64_t *stripe_count)
 {
-#ifdef HAVE_LLAPI_LAYOUT
+#ifdef LUSTRE_SUPPORT
+#if defined(HAVE_LLAPI_LAYOUT)
     /* obtain the llapi_layout for a file by path */
     struct llapi_layout *layout = llapi_layout_get_by_path(path, 0);
 
@@ -95,6 +96,31 @@ static int get_file_stripe_info(const char *path, uint64_t *stripe_size, uint64_
 
     /* free the alloced llapi_layout */
     llapi_layout_free(layout);
+
+    return 0;
+#elif defined(HAVE_LLAPI_FILE_GET_STRIPE)
+    int rc;
+    int lumsz = lov_user_md_size(LOV_MAX_STRIPE_COUNT, LOV_USER_MAGIC_V3);
+    struct lov_user_md *lum = malloc(lumsz);
+    if (lum == NULL)
+        return ENOMEM;
+
+    rc = llapi_file_get_stripe(path, lum);
+    if (rc) {
+        free(lum);
+        return rc;
+    }
+
+    *stripe_size = lum->lmm_stripe_size;
+    *stripe_count = lum->lmm_stripe_count;
+    free(lum);
+
+    return 0;
+#else
+    fprintf(stderr, "Unexpected Lustre version.\n");
+    fflush(stderr);
+    MPI_Abort(MPI_COMM_WORLD, 1);
+#endif
 #endif
 
     return 0;
@@ -103,7 +129,8 @@ static int get_file_stripe_info(const char *path, uint64_t *stripe_size, uint64_
 /* create a striped lustre file at the path provided with the specified stripe size and count */
 static void create_striped_file(const char *path, uint64_t stripe_size, int stripe_count)
 {
-#ifdef HAVE_LLAPI_LAYOUT
+#ifdef LUSTRE_SUPPORT
+#if defined(HAVE_LLAPI_LAYOUT)
     /* create a new llapi_layout for file creation */
     struct llapi_layout *layout = llapi_layout_alloc();
     int fd = -1;
@@ -126,13 +153,25 @@ static void create_striped_file(const char *path, uint64_t stripe_size, int stri
     fd = llapi_layout_file_create(path, 0, 0644, layout);
     if (fd < 0) {
         fprintf(stderr, "cannot create %s: %s\n", path, strerror(errno));
-        fflush(stdout);
+        fflush(stderr);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
     close(fd);
 
     /* free our alloced llapi_layout */
     llapi_layout_free(layout);
+#elif defined(HAVE_LLAPI_FILE_CREATE)
+    int rc = llapi_file_create(path, stripe_size, 0, stripe_count, LOV_PATTERN_RAID0);
+    if (rc < 0) {
+        fprintf(stderr, "cannot create %s: %s\n", path, strerror(-rc));
+        fflush(stderr);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+#else
+    fprintf(stderr, "Unexpected Lustre version.\n");
+    fflush(stderr);
+    MPI_Abort(MPI_COMM_WORLD, 1);
+#endif
 #endif
 }
 
@@ -503,16 +542,6 @@ int main(int argc, char* argv[])
 #ifndef LUSTRE_SUPPORT
     if (rank == 0) {
         printf("Lustre support is disabled.\n");
-        fflush(stdout);
-    }
-
-    MPI_Abort(MPI_COMM_WORLD, 1);
-#endif
-
-#ifndef HAVE_LLAPI_LAYOUT
-    /* nothing to do if lustre doesn't support llapi_layouts */
-    if (rank == 0) {
-        printf("dstripe requires Lustre 2.7 and above.\n");
         fflush(stdout);
     }
 
