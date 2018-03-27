@@ -565,7 +565,7 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
     const char* name = mfu_flist_file_get_name(list, idx);
 
     /* get destination name */
-    char* dest_path = mfu_param_path_copy_dest(name, numpaths, paths, 
+    char* dest_path = mfu_param_path_copy_dest(name, numpaths, paths,
             destpath, mfu_copy_opts);
 
     /* No need to copy it */
@@ -573,8 +573,20 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
         return 0;
     }
 
-    /* Skipping the destination directory */
-    if (strncmp(dest_path, destpath->path, strlen(dest_path)) == 0) {
+    /* Skipping the destination directory ONLY if it already exists.
+     * If we are doing a dsync operation it is safe to assume that
+     * the destination directory already exists. The reason that
+     * the dest_path and the destpath->path are compared is because
+     * if we are syncing two directories we want the tree to have the
+     * same number of levels. If dsync is on then only the contents of
+     * the top level source directory will be copied (if necessary) into
+     * the target directory. So, the top level src directory is removed
+     * from the destination path. This path slicing based on whether or
+     * not dsync is on happens prior to this in
+     * mfu_param_path_copy_dest. */
+
+    if ((mfu_copy_opts->do_sync) &&
+        (strncmp(dest_path, destpath->path, strlen(dest_path)) == 0)) {
         mfu_free(&dest_path);
         return 0;
     }
