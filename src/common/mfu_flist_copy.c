@@ -804,9 +804,9 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
                     "Original file exists, skip the creation: `%s' (errno=%d %s)",
                     dest_path, errno, strerror(errno));
         } else {
-            MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() failed, errno=%d %s",
-                    dest_path, errno, strerror(errno)
-            );
+            //MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() failed, errno=%d %s",
+             //       dest_path, errno, strerror(errno)
+            //);
             mfu_free(&dest_path);
             return -1;
         }

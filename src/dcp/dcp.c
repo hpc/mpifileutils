@@ -92,6 +92,8 @@ int main(int argc, \
     /* By default, don't use sparse file. */
     mfu_copy_opts->sparse = 0; 
 
+    mfu_copy_opts->do_sync = 0;
+
     int option_index = 0;
     static struct option long_options[] = {
         {"debug"                , required_argument, 0, 'd'},
