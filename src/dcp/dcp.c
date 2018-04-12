@@ -26,6 +26,7 @@
 #include <inttypes.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdbool.h>
 
 #include "mpi.h"
 #include "libcircle.h"
@@ -65,9 +66,9 @@ int main(int argc, \
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     /* pointer to mfu_copy opts */
-    mfu_copy_opts_t mfu_cp_opts; 
-    mfu_copy_opts_t* mfu_copy_opts = &mfu_cp_opts; 
-    
+    mfu_copy_opts_t mfu_cp_opts;
+    mfu_copy_opts_t* mfu_copy_opts = &mfu_cp_opts;
+
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
@@ -84,13 +85,16 @@ int main(int argc, \
     mfu_copy_opts->preserve = 0;
 
     /* Lustre grouplock ID */
-    mfu_copy_opts->grouplock_id; 
+    mfu_copy_opts->grouplock_id;
 
     /* By default, don't use O_DIRECT. */
     mfu_copy_opts->synchronous = 0;
 
     /* By default, don't use sparse file. */
-    mfu_copy_opts->sparse = 0; 
+    mfu_copy_opts->sparse = false;
+
+    /* By default, we want the sync option off */
+    mfu_copy_opts->do_sync = 0;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -227,7 +231,7 @@ int main(int argc, \
 
         /* advance to next set of options */
         optind += numpaths;
-    
+
         /* the last path is the destination path, all others are source paths */
         numpaths_src = numpaths - 1;
     }
@@ -247,7 +251,7 @@ int main(int argc, \
 
     /* last item in the list is the destination path */
     const mfu_param_path* destpath = &paths[numpaths - 1];
-    
+
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
     mfu_param_path_check_copy(numpaths_src, paths, destpath, &valid, &copy_into_dir);
@@ -288,7 +292,7 @@ int main(int argc, \
 
     /* copy flist into destination */ 
     mfu_flist_copy(flist, numpaths_src, paths, destpath, mfu_copy_opts);
-    
+
     /* free the file list */
     mfu_flist_free(&flist);
 
