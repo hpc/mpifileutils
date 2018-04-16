@@ -64,3 +64,6 @@ Makefile.in
 # Vagrant/Ansible artifacts
 /devops/vagrant_ansible_inventory_*
 /devops/.vagrant
+
+# documentation build
+doc/build
