@@ -51,9 +51,6 @@ AC_CHECK_FUNCS([endgrent endpwent getcwd lchown memset mkdir realpath rmdir strc
 AC_PROG_LIBTOOL
 
 # Check for nose test program.
-X_AC_PANDOC
-
-# Check for nose test program.
 X_AC_NOSETESTS
 
 # Check for libarchive (FIXME: should eventually remove this)
@@ -91,15 +88,11 @@ AC_CONFIG_FILES([Makefile                \
                  src/drm/Makefile        \
                  src/dstripe/Makefile    \
                  src/dwalk/Makefile      \
-                 doc/Makefile            \
-                 doc/man/Makefile        \
-                 doc/man/man1/Makefile   \
 ])
-#                 doc/html/Makefile       \
 
 # Check if we should build the experimental utilities.
 X_AC_EXPERIMENTAL
-if test [EXPERIMENTAL_ENABLED]; then 
+if test [EXPERIMENTAL_ENABLED]; then
 AC_CONFIG_FILES([experimental/Makefile           \
                  experimental/dparallel/Makefile \
                  experimental/dsh/Makefile       \

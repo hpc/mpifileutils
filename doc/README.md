@@ -1,3 +1,5 @@
-# Documentation Note
+# Documentation
 
-Please edit only markdown files and use autotools to regenerate the html files and man pages.
+Edits should be made to the `.rst` files.
+The documentation can be built with `make html` or `make man`.
+The generated files will be found in the `build` directory.

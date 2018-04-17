@@ -1,0 +1,30 @@
+.. mpiFileUtils documentation master file, created by
+   sphinx-quickstart on Fri Apr 13 11:47:51 2018.
+   You can adapt this file completely to your liking, but it should at least
+   contain the root `toctree` directive.
+
+Documentation for mpiFileUtils
+==============================
+
+.. toctree::
+   :maxdepth: 1
+
+   dbcast.1
+   dcmp.1
+   dfilemaker.1
+   dgrep.1
+   drm.1
+   dtar.1
+   dchmod.1
+   dcp.1
+   dfind.1
+   dparallel.1
+   dstripe.1
+   dwalk.1
+
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`search`
