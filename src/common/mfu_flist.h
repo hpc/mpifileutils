@@ -201,6 +201,9 @@ void mfu_flist_write_cache(
 /* free resouces in file list */
 void mfu_flist_free(mfu_flist* flist);
 
+/* fake insert, just increase the count, used for counting */
+void mfu_flist_increase(mfu_flist* pblist);
+
 /* given an input list, split items into separate lists depending
  * on their depth, returns number of levels, minimum depth, and
  * array of lists as output */

@@ -217,6 +217,18 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
     return bytes;
 }
 
+/* fake insert, just increase the count, used for counting */
+void mfu_flist_increase(mfu_flist* pbflist)
+{
+    /* convert handle to flist_t */
+    flist_t* flist = *(flist_t**)pbflist;
+
+    /* increase list count by one */
+    flist->list_count++;
+
+    return;
+}
+
 /* append element to tail of linked list */
 void mfu_flist_insert_elem(flist_t* flist, elem_t* elem)
 {
