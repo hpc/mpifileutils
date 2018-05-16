@@ -696,6 +696,49 @@ uint64_t mfu_flist_file_get_perm(mfu_flist bflist, uint64_t idx) {
     return mode & (S_IRWXU | S_IRWXG | S_IRWXO);
 }
 
+#if DCOPY_USE_XATTRS
+void *mfu_flist_file_get_acl(mfu_flist bflist, uint64_t idx, ssize_t *acl_size, char *type)
+{
+    flist_t* flist = (flist_t*) bflist;
+    const char* filename = mfu_flist_file_get_name(flist, idx);
+    size_t val_bufsize = 1024;
+    void* val = (void*) MFU_MALLOC(val_bufsize);
+    ssize_t val_size;
+    int retries = 0;
+
+    *acl_size = 0;
+
+    while(retries < 3) {
+        val_size = lgetxattr(filename, type, val, val_bufsize);
+        if(val_size < 0) {
+            if(errno == ERANGE) {
+                mfu_free(&val);
+                val_bufsize = 0;
+                retries++;
+            } else if(errno == ENOATTR) {
+                break;
+            } else {
+                /* this is a real error */
+                MFU_LOG(MFU_LOG_ERR, "Failed to get value for name=%s on %s lgetxattr() errno=%d %s",
+                    type, filename, errno, strerror(errno)
+                   );
+                break;
+            }
+        } else {
+            if(val_size > 0 && val_bufsize == 0) {
+                val_bufsize = (size_t) val_size;
+                val = (void*) MFU_MALLOC(val_bufsize);
+            } else {
+                *acl_size = val_size;
+                break;
+            }
+        }
+    }
+
+    return val;
+}
+#endif
+
 uint64_t mfu_flist_file_get_uid(mfu_flist bflist, uint64_t idx)
 {
     uint64_t ret = (uint64_t) - 1;
