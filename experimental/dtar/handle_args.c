@@ -31,7 +31,7 @@ mfu_param_path* src_params;
 mfu_param_path dest_param;
 int num_src_params;
 
-static void DTAR_check_paths()
+static void DTAR_check_paths(void)
 {
     int valid = 1;
     int i;
@@ -56,7 +56,6 @@ static void DTAR_check_paths()
         valid = 0;
         goto bcast;
     }
-
 
     /* check destination */
     if (dest_param.path_stat_valid) {
@@ -95,11 +94,10 @@ bcast:
         MPI_Barrier(MPI_COMM_WORLD);
         DTAR_exit(EXIT_FAILURE);
     }
-
 }
+
 void DTAR_parse_path_args(int argc, char** argv, const char* dstfile)
 {
-
     if (argv == NULL || argc < 2) {
         if (DTAR_global_rank == 0) {
             fprintf(stderr, "\nYou must provide at least one source file or directory\n");
@@ -127,5 +125,4 @@ void DTAR_parse_path_args(int argc, char** argv, const char* dstfile)
 
     /* check that source and destination are okay */
     DTAR_check_paths();
-
 }

@@ -44,16 +44,13 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <mpi.h>
-#include <glib.h>
 #include <libcircle.h>
 #include <archive.h>
 #include <archive_entry.h>
 #include <string.h>
 #include "mfu.h"
-#include "dbz2.h"
 
 #define DTAR_HDR_LENGTH 1536
-#define FD_BLOCK_SIZE (1024*1024)
 
 typedef enum {
     COPY_DATA
@@ -121,10 +118,10 @@ extern int DTAR_size;
 void DTAR_abort(int code);
 void DTAR_exit(int code);
 void DTAR_parse_path_args(int, char**, const char*);
-void DTAR_writer_init();
-void DTAR_epilogue();
+void DTAR_writer_init(void);
+void DTAR_epilogue(void);
 
-struct archive* DTAR_new_archive();
+struct archive* DTAR_new_archive(void);
 void DTAR_write_header(struct archive* a, uint64_t idx, uint64_t offset);
 
 DTAR_operation_t* DTAR_decode_operation(char* op);
