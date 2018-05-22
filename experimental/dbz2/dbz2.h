@@ -42,18 +42,18 @@ extern int64_t block_size;    /*Block size for compressin in bytes*/
 extern int64_t blocks_done;    /*Total number of blocks processed across previous waves by all processes*/
 extern int64_t wave_blocks;   /*Number of blocks that can be processed by all processes across a single wave*/
 extern int64_t tot_blocks;   /*Total number of blocks in the file*/
-extern char fname[50];       /*Name of input file*/
-extern char fname_out[50];
 extern int fd;                /*Input file descriptor*/
 extern int fd_out;           /*Output file descriptor*/
 extern int64_t my_tot_blocks;  /*The total number of blocks processed by me across all waves and upto the current point in thcurrent wave*/
 
+extern char fname[50];
+extern char fname_out[50];
 extern int rank;
 
 void DBz2_Enqueue(CIRCLE_handle* handle); /*create callback function for compress*/
 void DBz2_Dequeue(CIRCLE_handle* handle);  /*process callback function for compress*/
 void DBz2_decompEnqueue(CIRCLE_handle* handle); /*create callback function for decompress*/
 void DBz2_decompDequeue(CIRCLE_handle* handle);  /*process callback function for decompress*/
-void dbz2_compress(int b_size, char* fname, int opts_memory);
-void decompress(char* fname, char* fname_out);
+void dbz2_compress(int b_size, const char* fname, ssize_t opts_memory);
+void decompress(const char* fname, const char* fname_out);
 #endif
