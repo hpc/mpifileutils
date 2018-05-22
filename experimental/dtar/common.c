@@ -39,7 +39,6 @@ void DTAR_writer_init()
     DTAR_writer.name = filename;
     DTAR_writer.flags = O_WRONLY | O_CREAT | O_CLOEXEC | O_LARGEFILE;
     DTAR_writer.fd_tar = open(filename, DTAR_writer.flags, 0664);
-
 }
 
 void DTAR_abort(int code)
@@ -54,7 +53,6 @@ void DTAR_exit(int code)
     MPI_Finalize();
     exit(code);
 }
-
 
 struct archive* DTAR_new_archive()
 {
@@ -71,7 +69,6 @@ struct archive* DTAR_new_archive()
 
 void DTAR_write_header(struct archive* ar, uint64_t idx, uint64_t offset)
 {
-
     const char* fname = mfu_flist_file_get_name(DTAR_flist, idx);
 
     /* fill up entry, FIXME: the uglyness of removing leading slash */
@@ -112,7 +109,6 @@ void DTAR_write_header(struct archive* ar, uint64_t idx, uint64_t offset)
     }
     archive_entry_free(entry);
     archive_write_free(dest);
-
 }
 
 void DTAR_enqueue_copy(CIRCLE_handle* handle)
@@ -175,13 +171,13 @@ void DTAR_perform_copy(CIRCLE_handle* handle)
         total_bytes_written += num_of_bytes_written;
     }
 
-    int num_chunks = op->file_size / DTAR_user_opts.chunk_size;
-    int rem = op->file_size - DTAR_user_opts.chunk_size * num_chunks;
-    int last_chunk = (rem) ? num_chunks : num_chunks - 1;
+    uint64_t num_chunks = op->file_size / DTAR_user_opts.chunk_size;
+    uint64_t rem = op->file_size - DTAR_user_opts.chunk_size * num_chunks;
+    uint64_t last_chunk = (rem) ? num_chunks : num_chunks - 1;
 
     /* handle last chunk */
     if (op->chunk_index == last_chunk) {
-        int padding = 512 - op->file_size % 512;
+        int padding = 512 - (int) (op->file_size % 512);
         if (padding > 0 && padding != 512) {
             char* buff = (char*) calloc(padding, sizeof(char));
             write(out_fd, buff, padding);
@@ -196,7 +192,6 @@ void DTAR_perform_copy(CIRCLE_handle* handle)
 char* DTAR_encode_operation(DTAR_operation_code_t code, const char* operand,
                             uint64_t fsize, uint64_t chunk_idx, uint64_t offset)
 {
-
     size_t opsize = (size_t) CIRCLE_MAX_STRING_LEN;
     char* op = (char*) MFU_MALLOC(opsize);
     size_t len = strlen(operand);
@@ -211,12 +206,10 @@ char* DTAR_encode_operation(DTAR_operation_code_t code, const char* operand,
     }
 
     return op;
-
 }
 
 DTAR_operation_t* DTAR_decode_operation(char* op)
 {
-
     DTAR_operation_t* ret = (DTAR_operation_t*) MFU_MALLOC(
                                 sizeof(DTAR_operation_t));
 
