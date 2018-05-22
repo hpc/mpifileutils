@@ -1,103 +1,192 @@
-#include<unistd.h>
-#include<stdio.h>
-#include<stdlib.h>
-#include<sys/sysinfo.h>
-#include<string.h>
-#include<sys/time.h>
-#include<sys/resource.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/sysinfo.h>
+#include <string.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 #include "mpi.h"
-#include<unistd.h>
-#include<stdint.h>
+#include <unistd.h>
+#include <stdint.h>
 #include <fcntl.h>
-#include<sys/stat.h>
-#include<utime.h>
+#include <sys/stat.h>
+#include <utime.h>
+#include <getopt.h>
+
 #include "dbz2.h"
-#include <glib.h>
 #include "mfu.h"
 
-#define FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
-#ifndef O_BINARY
-#define O_BINARY 0
-#endif
+/* All the options available */
 
-/*All the options available*/
+static int opts_decompress = 0;
+static int opts_compress   = 0;
+static int opts_keep       = 0;
+static int opts_force      = 0;
+static ssize_t opts_memory = -1;
+static int opts_blocksize  = 9;
+static int opts_verbose    = 0;
+static int opts_debug      = 0;
 
-static gboolean opts_decompress = FALSE;
-static gboolean opts_compress = FALSE;
-static gboolean opts_keep = FALSE;
-static gboolean opts_force = FALSE;
-static gint opts_memory = -1;
-static gint     opts_blocksize = 9;
-static gboolean opts_verbose;
-static gboolean opts_debug;
-static GOptionEntry entries[] = {
-    {"decompress", 'd', 0, G_OPTION_ARG_NONE, &opts_decompress, "Decompress file", NULL  },
-    {"compress", 'z', 0, G_OPTION_ARG_NONE, &opts_compress, "Compress file", NULL },
-    {"keep", 'k', 0, G_OPTION_ARG_NONE, &opts_keep, "Keep existing input file", NULL },
-    {"force", 'f', 0, G_OPTION_ARG_NONE, &opts_force, "Overwrite output file", NULL },
-    {"blocksize", 'b', 0, G_OPTION_ARG_INT, &opts_blocksize, "Block size", NULL},
-    {"memory limit", 'm', 0, G_OPTION_ARG_INT, &opts_memory, "Memory limit in MB", NULL},
-    {"verbose", 'v', 0, G_OPTION_ARG_NONE, &opts_verbose, "Verbose output", NULL },
-    {"debug", 'y', 0, G_OPTION_ARG_NONE, &opts_debug, "Debug output", NULL},
-    { NULL }
-};
+static void print_usage(void)
+{
+    printf("\n");
+    printf("Usage: dbz2 [options] <source> <destination>\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -c, --compress         - compress file\n");
+    printf("  -d, --decompress       - decompress file\n");
+    printf("  -k, --keep             - keep existing input file(s)\n");
+    printf("  -f, --force            - overwrite output file\n");
+    printf("  -b, --blocksize <num>  - block size (1-9)\n");
+    printf("  -m, --memory <size>    - memory limit in bytes\n");
+    printf("  -v, --verbose          - verbose output\n");
+    printf("      --debug            - debug output\n");
+    printf("  -h, --help             - print usage\n");
+    printf("\n");
+    fflush(stdout);
+    return;
+}
 
 int main(int argc, char** argv)
 {
-    GError* error = NULL;
-    GOptionContext* context = NULL;
-    context = g_option_context_new(" [sources ... ] [destination file]");
-    g_option_context_add_main_entries(context, entries, NULL);
-    if (!g_option_context_parse(context, &argc, &argv, &error)) {
-        g_option_context_get_help(context, TRUE, NULL);
-        exit(1);
+    /* initialize MPI */
+    MPI_Init(&argc, &argv);
+    mfu_init();
 
+    /* get our rank and the size of comm_world */
+    int ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    int option_index = 0;
+    static struct option long_options[] = {
+        {"compress",   0, 0, 'c'},
+        {"decompress", 0, 0, 'd'},
+        {"keep",       0, 0, 'k'},
+        {"force",      0, 0, 'f'},
+        {"blocksize",  1, 0, 'b'},        
+        {"memory",     1, 0, 'm'},
+        {"verbose",    0, 0, 'v'},
+        {"debug",      0, 0, 'y'},
+        {"help",       0, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+
+    int usage = 0;
+    while (1) {
+        int c = getopt_long(
+                    argc, argv, "cdkfb:m:vyh",
+                    long_options, &option_index
+                );
+
+        if (c == -1) {
+            break;
+        }
+
+        unsigned long long bytes;
+        switch (c) {
+            case 'c':
+                opts_compress = 1;
+                break;
+            case 'd':
+                opts_decompress = 1;
+                break;
+            case 'k':
+                opts_keep = 1;
+                break;
+            case 'f':
+                opts_force = 1;
+                break;
+            case 'b':
+                opts_blocksize = atoi(optarg);
+                break;
+            case 'm':
+                mfu_abtoull(optarg, &bytes);
+                opts_memory = (ssize_t) bytes;
+                break;            
+            case 'v':
+                opts_verbose = 1;
+                break;
+            case 'y':
+                opts_debug = 1;
+                break;
+            case 'h':
+                usage = 1;
+                break;
+            case '?':
+                usage = 1;
+                break;
+            default:
+                if (rank == 0) {
+                    printf("?? getopt returned character code 0%o ??\n", c);
+                }
+        }
     }
-    /*Set the log level to control the messages that will be printed*/
-    if (opts_debug)
-    { mfu_debug_level = MFU_LOG_DBG; }
-    else if (opts_verbose)
-    { mfu_debug_level = MFU_LOG_INFO; }
-    else
-    { mfu_debug_level = MFU_LOG_ERR; }
 
-    char fname[50]; /*stores input file name*/
-    char fname_out[50];/*stores output file name*/
+    /* Set the log level to control the messages that will be printed */
+    if (opts_debug) {
+        mfu_debug_level = MFU_LOG_DBG;
+    } else if (opts_verbose) {
+        mfu_debug_level = MFU_LOG_INFO;
+    } else {
+        mfu_debug_level = MFU_LOG_ERR;
+    }
+
+    /* print usage if we need to */
+    if (usage) {
+        if (rank == 0) {
+            print_usage();
+        }
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
+
+    strncpy(fname,     argv[1], 50);
     strncpy(fname_out, argv[1], 50);
-    strncpy(fname, argv[1], 50);
+
     if (opts_compress) {
-        int b_size = (int)opts_blocksize;
+        /* If file exists and we are not supposed to overwrite */
         struct stat st;
-        /*If file exists and we are not supposed to overwrite*/
-        if ((stat(strcat(argv[1], ".bz2"), &st) == 0) && (!opts_force)) {
+        if ((stat(strcat(argv[1], ".bz2"), &st) == 0) && (! opts_force)) {
             MFU_LOG(MFU_LOG_ERR, "Output file already exists\n");
             exit(0);
         }
-        MPI_Init(&argc, &argv);
+
+        int b_size = (int)opts_blocksize;
         dbz2_compress(b_size, fname_out, opts_memory);
-        MPI_Finalize();
-        /*If we are to remove the input file*/
-        if (!opts_keep)
-        { remove(fname); }
-    }
-    else if (opts_decompress) {
-        int len = strlen(fname_out);
-        fname_out[len - 4] = '\0'; /*removes the trailing .bz2 from the string*/
-        MFU_LOG(MFU_LOG_INFO, "The file name is:%s %s %d", fname, fname_out, len);
+
+        /* If we are to remove the input file */
+        if (! opts_keep) {
+            remove(fname);
+        }
+    } else if (opts_decompress) {
+        /* remove the trailing .bz2 from the string */
+        size_t len = strlen(fname_out);
+        fname_out[len - 4] = '\0';
+        MFU_LOG(MFU_LOG_INFO, "The file name is:%s %s %d", fname, fname_out, (int)len);
+
+        /* If file exists and we are not supposed to overwrite */
         struct stat st;
-        /*If file exists and we are not supposed to overwrite*/
-        if ((stat(fname_out, &st) == 0) && (!opts_force)) {
+        if ((stat(fname_out, &st) == 0) && (! opts_force)) {
             MFU_LOG(MFU_LOG_ERR, "Output file already exisis\n");
             exit(0);
         }
-        MPI_Init(&argc, &argv);
-        decompress(fname, fname_out);
-        MPI_Finalize();
-        /*If we are to remove the input file*/
-        if (!opts_keep)
-        { remove(fname); }
-    }
-    else
-    { MFU_LOG(MFU_LOG_ERR, "Must use either compression or decompression\n"); }
-}
 
+        decompress(fname, fname_out);
+
+        /* If we are to remove the input file */
+        if (! opts_keep) {
+            remove(fname);
+        }
+    } else {
+        MFU_LOG(MFU_LOG_ERR, "Must use either compression or decompression\n");
+        return 1;
+    }
+
+    /* shut down MPI */
+    mfu_finalize();
+    MPI_Finalize();
+
+    return 0;
+}
