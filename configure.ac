@@ -98,6 +98,7 @@ AC_CONFIG_FILES([experimental/Makefile           \
                  experimental/dparallel/Makefile \
                  experimental/dsh/Makefile       \
                  experimental/dbz2/Makefile      \
+                 experimental/dtar/Makefile      \
 ])
 fi
 
