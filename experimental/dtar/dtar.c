@@ -168,6 +168,13 @@ static void DTAR_write_header(struct archive* ar, uint64_t idx, uint64_t offset)
         archive_entry_set_gname(entry, gname);
     }
 
+    /* TODO: Seems to be a bug here potentially leading to corrupted
+     * archive files.  archive_write_free also writes two blocks of
+     * NULL bytes at the end of an archive file, however, each rank
+     * will have a different view of the length of the file, so one
+     * rank may write its NULL blocks over top of the actual data
+     * written by another rank */
+
     /* write entry info to archive */
     struct archive* dest = archive_write_new();
     archive_write_set_format_pax(dest);
@@ -503,6 +510,8 @@ static int copy_data(struct archive* ar, struct archive* aw)
 static void extract_archive(const char* filename, bool verbose, int flags)
 {
     int r;
+
+    /* TODO: this needs to be parallelized */
 
     /* initiate archive object for reading */
     struct archive* a = archive_read_new();
