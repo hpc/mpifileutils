@@ -13,8 +13,8 @@
 #include <utime.h>
 #include <getopt.h>
 
-#include "dbz2.h"
 #include "mfu.h"
+#include "mfu_bz2.h"
 
 /* All the options available */
 
@@ -54,7 +54,7 @@ int main(int argc, char** argv)
     mfu_init();
 
     /* get our rank and the size of comm_world */
-    int ranks;
+    int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
@@ -142,6 +142,8 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    char fname[50];
+    char fname_out[50];
     strncpy(fname,     argv[1], 50);
     strncpy(fname_out, argv[1], 50);
 
@@ -154,11 +156,11 @@ int main(int argc, char** argv)
         }
 
         int b_size = (int)opts_blocksize;
-        dbz2_compress(b_size, fname_out, opts_memory);
+        mfu_compress_bz2(b_size, fname_out, opts_memory);
 
         /* If we are to remove the input file */
         if (! opts_keep) {
-            remove(fname);
+            mfu_unlink(fname);
         }
     } else if (opts_decompress) {
         /* remove the trailing .bz2 from the string */
@@ -173,11 +175,11 @@ int main(int argc, char** argv)
             exit(0);
         }
 
-        decompress(fname, fname_out);
+        mfu_decompress_bz2(fname, fname_out);
 
         /* If we are to remove the input file */
         if (! opts_keep) {
-            remove(fname);
+            mfu_unlink(fname);
         }
     } else {
         MFU_LOG(MFU_LOG_ERR, "Must use either compression or decompression\n");
