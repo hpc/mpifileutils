@@ -230,6 +230,9 @@ size_t mfu_flist_file_pack(void* buf, mfu_flist flist, uint64_t index);
 /* unpack file from buf and insert into list, return number of bytes read */
 size_t mfu_flist_file_unpack(const void* buf, mfu_flist flist);
 
+/* create a new empty entry in the file list and return its index */
+uint64_t mfu_flist_file_create(mfu_flist flist);
+
 /* run this to enable query functions on list after adding elements */
 int mfu_flist_summarize(mfu_flist flist);
 
@@ -267,6 +270,9 @@ int mfu_flist_max_depth(mfu_flist flist);
 /* determines which properties are readable */
 int mfu_flist_have_detail(mfu_flist flist);
 
+/* set flist deatils flag */
+int mfu_flist_set_detail(mfu_flist flist, int detail);
+
 /* always set */
 const char* mfu_flist_file_get_name(mfu_flist flist, uint64_t index);
 int mfu_flist_file_get_depth(mfu_flist flist, uint64_t index);
@@ -289,6 +295,24 @@ void *mfu_flist_file_get_acl(mfu_flist bflist, uint64_t idx, ssize_t *acl_size, 
 #endif
 const char* mfu_flist_file_get_username(mfu_flist flist, uint64_t index);
 const char* mfu_flist_file_get_groupname(mfu_flist flist, uint64_t index);
+
+void mfu_flist_file_set_name(mfu_flist flist, uint64_t index, const char* name);
+void mfu_flist_file_set_type(mfu_flist flist, uint64_t index, mfu_filetype type);
+void mfu_flist_file_set_detail(mfu_flist flist, uint64_t index, int detail);
+void mfu_flist_file_set_mode(mfu_flist flist, uint64_t index, uint64_t mode);
+void mfu_flist_file_set_uid(mfu_flist flist, uint64_t index, uint64_t uid);
+void mfu_flist_file_set_gid(mfu_flist flist, uint64_t index, uint64_t gid);
+void mfu_flist_file_set_atime(mfu_flist flist, uint64_t index, uint64_t atime);
+void mfu_flist_file_set_atime_nsec(mfu_flist flist, uint64_t index, uint64_t atime_nsec);
+void mfu_flist_file_set_mtime(mfu_flist flist, uint64_t index, uint64_t mtime);
+void mfu_flist_file_set_mtime_nsec(mfu_flist flist, uint64_t index, uint64_t mtime_nsec);
+void mfu_flist_file_set_ctime(mfu_flist flist, uint64_t index, uint64_t ctime);
+void mfu_flist_file_set_ctime_nsec(mfu_flist flist, uint64_t index, uint64_t ctime_nsec);
+void mfu_flist_file_set_size(mfu_flist flist, uint64_t index, uint64_t size);
+#if DCOPY_USE_XATTRS
+//void *mfu_flist_file_set_acl(mfu_flist bflist, uint64_t idx, ssize_t *acl_size, char *type);
+#endif
+
 
 /* Encode the file into a buffer, if the buffer is NULL, return the needed size */
 typedef size_t (*mfu_flist_name_encode_fn)(char* buf, mfu_flist flist, uint64_t index, void* args);
