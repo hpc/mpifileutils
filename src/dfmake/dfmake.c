@@ -8,199 +8,6 @@
 #define FILE_PERMS (S_IRUSR | S_IWUSR)
 #define DIR_PERMS  (S_IRWXU)
 
-/*--------------------------------------*/
-/* Define types                         */
-/*--------------------------------------*/
-/* linked list element of stat data used during walk */
-typedef struct list_elem {
-    char* file;             /* file name (strdup'd) */
-    int depth;              /* depth within directory tree */
-    mfu_filetype type;    /* type of file object */
-    int detail;             /* flag to indicate whether we have stat data */
-    uint64_t mode;          /* stat mode */
-    uint64_t uid;           /* user id */
-    uint64_t gid;           /* group id */
-    uint64_t atime;         /* access time */
-    uint64_t atime_nsec;    /* access time nanoseconds */
-    uint64_t mtime;         /* modify time */
-    uint64_t mtime_nsec;    /* modify time nanoseconds */
-    uint64_t ctime;         /* create time */
-    uint64_t ctime_nsec;    /* create time nanoseconds */
-    uint64_t size;          /* file size in bytes */
-    struct list_elem* next; /* pointer to next item */
-} elem_t;
-/*--------------------------------------------------------*/
-/* holds an array of objects: users, groups, or file data */
-/*--------------------------------------------------------*/
-typedef struct {
-    void* buf;       /* pointer to memory buffer holding data */
-    size_t bufsize;  /* number of bytes in buffer */
-    uint64_t count;  /* number of items */
-    uint64_t chars;  /* max name of item */
-    MPI_Datatype dt; /* MPI datatype for sending/receiving/writing to file */
-} buf_t;
-/*---------------------------------------*/
-/* abstraction for distributed file list */
-/*---------------------------------------*/
-typedef struct flist {
-    int detail;              /* set to 1 if we have stat, 0 if just file name */
-    uint64_t offset;         /* global offset of our file across all procs */
-    uint64_t total_files;    /* total file count in list across all procs */
-    uint64_t total_users;    /* number of users (valid if detail is 1) */
-    uint64_t total_groups;   /* number of groups (valid if detail is 1) */
-    uint64_t max_file_name;  /* maximum filename strlen()+1 in global list */
-    uint64_t max_user_name;  /* maximum username strlen()+1 */
-    uint64_t max_group_name; /* maximum groupname strlen()+1 */
-    int min_depth;           /* minimum file depth */
-    int max_depth;           /* maximum file depth */
-
-    /* variables to track linked list of stat data during walk */
-    uint64_t list_count; /* number of items in list */
-    elem_t*  list_head;  /* points to item at head of list */
-    elem_t*  list_tail;  /* points to item at tail of list */
-    elem_t** list_index; /* an array with pointers to each item in list */
-
-    /* buffers of users, groups, and files */
-    buf_t users;
-    buf_t groups;
-    int have_users;        /* set to 1 if user map is valid */
-    int have_groups;       /* set to 1 if group map is valid */
-    strmap* user_id2name;  /* map linux uid to user name */
-    strmap* group_id2name; /* map linux gid to group name */
-} flist_t;
-
-
-/* append element to tail of linked list */
-static void list_insert_elem(flist_t* flist, elem_t* elem)
-{
-    /* set head if this is the first item */
-    if (flist->list_head == NULL) {
-        flist->list_head = elem;
-    }
-
-    /* update last element to point to this new element */
-    elem_t* tail = flist->list_tail;
-    if (tail != NULL) {
-        tail->next = elem;
-    }
-
-    /* make this element the new tail */
-    flist->list_tail = elem;
-    elem->next = NULL;
-
-    /* increase list count by one */
-    flist->list_count++;
-
-    /* delete the index if we have one, it's out of date */
-    mfu_free(&flist->list_index);
-
-    return;
-}
-static int get_depth(const char* path)
-/*------------------------------------------------------*/
-/* given path, return level within directory tree,      */
-/* counts '/' characters assuming path is standardized  */
-/* and absolute                                         */
-/*------------------------------------------------------*/
-{
-    const char* c;
-    int depth = 0;
-    for (c = path; *c != '\0'; c++) {
-        if (*c == '/') {
-            depth++;
-        }
-    }
-    return depth;
-}
-static void list_compute_summary(flist_t* flist)
-{
-    /* initialize summary values */
-    flist->max_file_name  = 0;
-    flist->max_user_name  = 0;
-    flist->max_group_name = 0;
-    flist->min_depth      = 0;
-    flist->max_depth      = 0;
-    flist->total_files    = 0;
-    flist->offset         = 0;
-
-    /* get our rank and the size of comm_world */
-    int rank, ranks;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-    /* get total number of files in list */
-    uint64_t total;
-    uint64_t count = flist->list_count;
-    MPI_Allreduce(&count, &total, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    flist->total_files = total;
-
-    /* bail out early if no one has anything */
-    if (total <= 0) {
-        return;
-    }
-
-    /* compute the global offset of our first item */
-    uint64_t offset;
-    MPI_Exscan(&count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    if (rank == 0) {
-        offset = 0;
-    }
-    flist->offset = offset;
-
-    /* compute local min/max values */
-    int min_depth = -1;
-    int max_depth = -1;
-    uint64_t max_name = 0;
-    elem_t* current = flist->list_head;
-    while (current != NULL) {
-        uint64_t len = (uint64_t)(strlen(current->file) + 1);
-        if (len > max_name) {
-            max_name = len;
-        }
-
-        int depth = current->depth;
-        if (depth < min_depth || min_depth == -1) {
-            min_depth = depth;
-        }
-        if (depth > max_depth || max_depth == -1) {
-            max_depth = depth;
-        }
-
-        /* go to next item */
-        current = current->next;
-    }
-
-    /* get global maximums */
-    int global_max_depth;
-    MPI_Allreduce(&max_depth, &global_max_depth, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-
-    uint64_t global_max_name;
-    MPI_Allreduce(&max_name, &global_max_name, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-
-    /* since at least one rank has an item and max will be -1 on ranks
-     * without an item, set our min to global max if we have no items,
-     * this will ensure that our contribution is >= true global min */
-    int global_min_depth;
-    if (count == 0) {
-        min_depth = global_max_depth;
-    }
-    MPI_Allreduce(&min_depth, &global_min_depth, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
-
-    /* set summary values */
-    flist->max_file_name = global_max_name;
-    flist->min_depth = global_min_depth;
-    flist->max_depth = global_max_depth;
-
-    /* set summary on users and groups */
-    if (flist->detail) {
-        flist->total_users    = flist->users.count;
-        flist->total_groups   = flist->groups.count;
-        flist->max_user_name  = flist->users.chars;
-        flist->max_group_name = flist->groups.chars;
-    }
-
-    return;
-}
 /* keep stats during walk */
 uint64_t total_dirs    = 0;
 uint64_t total_files   = 0;
@@ -217,7 +24,6 @@ static void print_summary(mfu_flist flist)
     /* step through and print data */
     uint64_t idx = 0;
     uint64_t max = mfu_flist_size(flist);
-    //if (rank == 0) printf("From print_summary: mfu_flist_have_detail(flist) = %li\n",mfu_flist_have_detail(flist));
     while (idx < max) {
         if (mfu_flist_have_detail(flist)) {
             /* get mode */
@@ -301,7 +107,6 @@ static void print_summary(mfu_flist flist)
     return;
 }
 
-
 /*-----------------------*/
 /*   create a directory  */
 /*-----------------------*/
@@ -313,11 +118,11 @@ static int create_directory_jl(mfu_flist list, uint64_t idx)
     /* get destination name */
      const char* dest_path = name;
 
-   /* create the destination directory */
+    /* create the destination directory */
     MFU_LOG(MFU_LOG_DBG, "Creating directory `%s'", dest_path);
     int rc = mfu_mkdir(dest_path, DIR_PERMS);
-    if(rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to create directory `%s' (errno=%d %s)", \
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to create directory `%s' (errno=%d %s)",
             dest_path, errno, strerror(errno));
         return -1;
     }
@@ -330,12 +135,13 @@ static int create_directory_jl(mfu_flist list, uint64_t idx)
 
     return 0;
 }
-static int create_directories_jl(int levels, int minlevel, mfu_flist* lists)
+
 /*--------------------------------------------------------------------*/
 /* create directories, we work from shallowest level to the deepest   */
 /* with a barrier in between levels, so that we don't try to create   */
 /* a child directory until the parent exists                          */
 /*--------------------------------------------------------------------*/
+static int create_directories_jl(int levels, int minlevel, mfu_flist* lists)
 {
     int rc = 0;
 
@@ -350,6 +156,7 @@ static int create_directories_jl(int levels, int minlevel, mfu_flist* lists)
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Creating directories.");
     }
+
     /* work from shallowest level to deepest level */
     int level;
     for (level = 0; level < levels; level++) {
@@ -406,10 +213,11 @@ static int create_directories_jl(int levels, int minlevel, mfu_flist* lists)
 
     return rc;
 }
-static int create_file(mfu_flist list, uint64_t idx)
+
 /*--------------------*/
 /* create file node   */
 /*--------------------*/
+static int create_file(mfu_flist list, uint64_t idx)
 {
     /* get source name */
     const char* src_path = mfu_flist_file_get_name(list, idx);
@@ -422,8 +230,8 @@ static int create_file(mfu_flist list, uint64_t idx)
      * we first create it with mknod and then set xattrs */
 
     /* create file with mknod
-    * for regular files, dev argument is supposed to be ignored,
-    * see makedev() to create valid dev */
+     * for regular files, dev argument is supposed to be ignored,
+     * see makedev() to create valid dev */
     dev_t dev;
     memset(&dev, 0, sizeof(dev_t));
     int mknod_rc = mfu_mknod(dest_path, FILE_PERMS | S_IFREG, dev);
@@ -438,13 +246,13 @@ static int create_file(mfu_flist list, uint64_t idx)
         );
     }
 
-
     return 0;
 }
-static int create_files(int levels, int minlevel, mfu_flist* lists)
+
 /*-------------------------------------*/
 /* create file nodes in directory      */
 /*-------------------------------------*/
+static int create_files(int levels, int minlevel, mfu_flist* lists)
 {
     int rc = 0;
 
@@ -499,7 +307,7 @@ static int create_files(int levels, int minlevel, mfu_flist* lists)
             double rate = 0.0;
             double secs = end - start;
             if (secs > 0.0) {
-              rate = (double)sum / secs;
+                rate = (double)sum / secs;
             }
             if (rank == 0) {
                 printf("  level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
@@ -513,48 +321,40 @@ static int create_files(int levels, int minlevel, mfu_flist* lists)
     return rc;
 }
 
-void fillelem(elem_t *element,char* fname,int depthval,long int flen,long int ftype)
 /*--------------------------------------*/
 /* write specified info to list element */
 /*--------------------------------------*/
+void fillelem(mfu_flist flist, uint64_t index, char* fname, long int flen, mfu_filetype ftype)
 {
-     long int fmode;
-     //-----------------------------------------------------------
-     // the following numbers are from /usr/include/bits/stats.h
-     //-----------------------------------------------------------
-     if (ftype==MFU_TYPE_DIR)  fmode = 0040000;        // _S_IFDIR
-     else if (ftype==MFU_TYPE_FILE) fmode = 0100000;   // _S_IFREG
-     else if (ftype==MFU_TYPE_LINK) fmode= 0120000;    // _S_IFLNK
-     else  
-     {
-          printf("from fillelem ftype = %d is not legal value\n",ftype);
-          exit(0);
-     }
+    //-----------------------------------------------------------
+    // the following numbers are from /usr/include/bits/stats.h
+    //-----------------------------------------------------------
+    long int fmode;
+    if (ftype==MFU_TYPE_DIR)  fmode = 0040000;        // _S_IFDIR
+    else if (ftype==MFU_TYPE_FILE) fmode = 0100000;   // _S_IFREG
+    else if (ftype==MFU_TYPE_LINK) fmode= 0120000;    // _S_IFLNK
+    else  
+    {
+         printf("from fillelem ftype = %ld is not legal value\n",ftype);
+         exit(0);
+    }
+
     //----------------------------------
     // fill element with information
     //----------------------------------
-    element->file = MFU_STRDUP(fname); // char* file;            /* file name (strdup'd) */
-    element->depth=depthval;             // int depth;             /* depth within directory tree */
-    element->type=ftype;                 // mfu_filetype type;   /* type of file object */
-    element->detail=1;                   // int detail;            /* flag to indicate whether we have stat data */
-    element->mode = fmode;               // uint64_t mode;         /* stat mode */
-    element->uid=getuid();               // uint64_t uid;          /* user id */
-    element->gid=getgid();               // uint64_t gid;          /* group id */
-    element->atime=0;                    // uint64_t atime;        /* access time */
-    element->atime_nsec=0;               // uint64_t atime_nsec;   /* access time nanoseconds */
-    element->mtime=0;                    // uint64_t mtime;        /* modify time */
-    element->mtime_nsec=0;               // uint64_t mtime_nsec;   /* modify time nanoseconds */
-    element->ctime=0;                    // uint64_t ctime;        /* create time */
-    element->ctime_nsec=0;               // uint64_t ctime_nsec;   /* create time nanoseconds */
-    element->size=flen;                  // uint64_t size;         /* file size in bytes */
-    element->next=NULL;                  //struct list_elem* next; /* pointer to next item */
+    mfu_flist_file_set_name(flist,   index, fname);
+    mfu_flist_file_set_type(flist,   index, ftype);
+    mfu_flist_file_set_detail(flist, index, 1);
+    mfu_flist_file_set_mode(flist,   index, (uint64_t) fmode);
+    mfu_flist_file_set_size(flist,   index, (uint64_t) flen);
 }
 
 static int numfile=0,numdir=0,numlink=0;
-void setname(char* aname,unsigned long int ftype,int n,const char* path)
+
 //--------------------------------------
 // set name and type of flist item
 //--------------------------------------
+void setname(char* aname,unsigned long int ftype,int n,const char* path)
 {
    switch (ftype)
    {
@@ -582,91 +382,92 @@ void setname(char* aname,unsigned long int ftype,int n,const char* path)
    }
 }
 
-int getnum(const char* fname)
 //------------------------------
 // get number from file name
 //------------------------------
+int getnum(const char* fname)
 {
      const char* cp;
      cp = strrchr(fname,'_');
      return atoi(cp+1);
 }
 
-void fillbuff(int* ibuff,int nwds)
 //-----------------------------------
 // put nwds random ints into buffer
 //------------------------------------
+void fillbuff(int* ibuff,int nwds)
 {
     int i;
     for (i=0;i<nwds;i++) ibuff[i]=rand();
 }
+
 size_t bufsize = 1024*1024;
 char* buf;
 size_t size,isize;
 int nnum;
 
-static int write_file(mfu_flist list, uint64_t idx)
 /*----------------------------------------------*/
 /* add content to a node created by create_file */
 /*----------------------------------------------*/
- {
-     int rc=0;  
+static int write_file(mfu_flist list, uint64_t idx)
+{
+    int rc=0;  
  
-     /* get destination name */
-     const char* dest_path = mfu_flist_file_get_name(list, idx);
-     uint64_t fsize =  mfu_flist_file_get_size(list, idx);
-     size = fsize;
-     isize = (size+1)/2;
-     //printf("writing file %s, fsize = %li, size = %li\n",dest_path,fsize,size);
-     nnum = getnum(dest_path);
-     srand(nnum);    
-     fillbuff((int*)buf,isize);
+    /* get destination name */
+    const char* dest_path = mfu_flist_file_get_name(list, idx);
+    uint64_t fsize =  mfu_flist_file_get_size(list, idx);
+    size = fsize;
+    isize = (size+1)/2;
+    //printf("writing file %s, fsize = %li, size = %li\n",dest_path,fsize,size);
+    nnum = getnum(dest_path);
+    srand(nnum);    
+    fillbuff((int*)buf,isize);
  
-     /* open file */
-     int fd = mfu_open(dest_path,  O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
+    /* open file */
+    int fd = mfu_open(dest_path,  O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
  
-     /*  write stuff to destination file  */
-     if (fd != -1) {
-       /* we opened the file, now start writing */
-       size_t written = 0;
-       char* ptr = (char*) buf;
-       while (written < (size_t) size) {
-           /* determine amount to write */
-           size_t left = fsize;
-           size_t remaining = size - written;
-           if (remaining < fsize) { left = remaining; }
+    /*  write stuff to destination file  */
+    if (fd != -1) {
+      /* we opened the file, now start writing */
+      size_t written = 0;
+      char* ptr = (char*) buf;
+      while (written < (size_t) size) {
+          /* determine amount to write */
+          size_t left = fsize;
+          size_t remaining = size - written;
+          if (remaining < fsize) { left = remaining; }
  
-           /* write data to file */
-           ssize_t n = mfu_write(dest_path, fd, ptr, left);
-           if (n == -1) {
-             printf("Failed to write to file: dest_path=%s errno=%d (%s)\n", dest_path, errno, strerror(errno));
-             rc = 1;
-             break;
-           }
+          /* write data to file */
+          ssize_t n = mfu_write(dest_path, fd, ptr, left);
+          if (n == -1) {
+            printf("Failed to write to file: dest_path=%s errno=%d (%s)\n", dest_path, errno, strerror(errno));
+            rc = 1;
+            break;
+          }
  
-           /* update amount written */
-           written += (size_t) n;
-       }
+          /* update amount written */
+          written += (size_t) n;
+      }
  
-       /* sync output to disk and close the file */
-       mfu_fsync(dest_path, fd);
-       mfu_close(dest_path, fd);
-     } else {
-       /* failed to open the file */
-       printf("Failed to open file: dest_path=%s errno=%d (%s)\n", dest_path, errno, strerror(errno));
-       rc = 1;
-     }
+      /* sync output to disk and close the file */
+      mfu_fsync(dest_path, fd);
+      mfu_close(dest_path, fd);
+    } else {
+      /* failed to open the file */
+      printf("Failed to open file: dest_path=%s errno=%d (%s)\n", dest_path, errno, strerror(errno));
+      rc = 1;
+    }
  
-     /* free destination path */
-     mfu_free(&dest_path);
+    /* free destination path */
+    mfu_free(&dest_path);
  
-     return rc;
- }
+    return rc;
+}
 
-static int write_files(int levels, int minlevel, mfu_flist *lists)
 /*----------------------------------------------*/
 /* add content to nodes created by create_files */
 /*----------------------------------------------*/
+static int write_files(int levels, int minlevel, mfu_flist *lists)
 {
     int rc = 0;
     int i;
@@ -726,7 +527,7 @@ static int write_files(int levels, int minlevel, mfu_flist *lists)
             double rate = 0.0;
             double secs = end - start;
             if (secs > 0.0) {
-              rate = (double)sum / secs;
+                rate = (double)sum / secs;
             }
             if (rank == 0) {
                 printf("  level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
@@ -740,10 +541,10 @@ static int write_files(int levels, int minlevel, mfu_flist *lists)
     return rc;
 }
 
-static void create_targets(int nlevels, int linktot, int* nfiles,uint64_t *targIDs, char **tnames, char** tarray)
 //------------------------------------------------------
 // get targets for links from list of target IDs
 //-------------------------------------------------------
+static void create_targets(int nlevels, int linktot, int* nfiles,uint64_t *targIDs, char **tnames, char** tarray)
 {
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -776,10 +577,11 @@ static void create_targets(int nlevels, int linktot, int* nfiles,uint64_t *targI
         strcpy(tarray[i],tnames[ilev]+j*tnamlen);
     }
 }
-static void write_links(int nlink, char* linknames, char* targnames)
+
 //-------------------------------------------------------------
 // writes links to file, dirs, and other links for one proc
 //--------------------------------------------------------------
+static void write_links(int nlink, char* linknames, char* targnames)
 {
     /* get our rank and number of ranks in job */
     int rank, ranks;
@@ -801,10 +603,11 @@ static void write_links(int nlink, char* linknames, char* targnames)
     return;
      
 }
-void dnamsort(char **buff,int nitems)
+
 //----------------------------------------
 // sort directories by base (last) name
 //----------------------------------------
+void dnamsort(char **buff,int nitems)
 {
    int i,j;
    char *cp1,*cp2,*cptemp;
@@ -823,10 +626,11 @@ void dnamsort(char **buff,int nitems)
       }
    }
 }
-void tnamsort(char **buff,int nitems)
+
 //----------------------------------------
 // sort targets by number at end of name
 //----------------------------------------
+void tnamsort(char **buff,int nitems)
 {
    int i,j;
    char *cp1,*cp2,*cptemp;
@@ -845,11 +649,12 @@ void tnamsort(char **buff,int nitems)
       }
    }
 }
-void lnamsort(char **buff,int nitems,int* lind)
+
 //----------------------------------------
 // sort links by base (last) name
 // and an order index lind with them
 //----------------------------------------
+void lnamsort(char **buff,int nitems,int* lind)
 {
    int i,j,ltemp;
    char *cp1,*cp2,*cptemp;
@@ -871,11 +676,12 @@ void lnamsort(char **buff,int nitems,int* lind)
       }
    }
 }
-void lnamunsort(char **buff,char** tarray,int* lind,int nitems)
+
 //----------------------------------------
 //  unsort link names and targIDs
 //  with order index to restore order
 //----------------------------------------
+void lnamunsort(char **buff,char** tarray,int* lind,int nitems)
 {
    int i,j;
    int tempi;
@@ -902,25 +708,23 @@ void lnamunsort(char **buff,char** tarray,int* lind,int nitems)
 }
 
 
-main(int narg, char **arg)
 /*****************************************************************
-/*
-/*  Create trees of directories, files, links
-/*  Usage: dfmake <numitems> <relmaxdepth> <maxflength>
-/*         where 
-/*         numitems    = total number of dirs, files, links
-/*         relmaxdepth = maximum directory depth rel to start
-/*         maxflength  = maximum length of any regular file
-/*
-/****************************************************************/
+ *
+ *  Create trees of directories, files, links
+ *  Usage: dfmake <numitems> <relmaxdepth> <maxflength>
+ *         where 
+ *         numitems    = total number of dirs, files, links
+ *         relmaxdepth = maximum directory depth rel to start
+ *         maxflength  = maximum length of any regular file
+ *
+ ****************************************************************/
+int main(int narg, char **arg)
 {
     char *cbuff;
     uint64_t i,j,ifst,ilst;
     int namlen;
     long int *ftypes,*flens;
     long int maxflen=1024L;
-    elem_t ***element; // elements at top level, second level down
-    elem_t *elmout;
     int ifrac,*nfiles;  // nfiles is number of files at levels from 0 top
     int ntotal;
     int nfsum=0;
@@ -928,7 +732,6 @@ main(int narg, char **arg)
     int outlevels,outmin;
     mfu_flist* outlists;
     char *cp;
-    int homedepth;
     char *dirname;
     unsigned int iseed=1;
     uint64_t idx; 
@@ -964,8 +767,8 @@ main(int narg, char **arg)
     int initsum,noff;
 
     /*--------------------------
-    /* initialize mfu and MPI 
-    /*--------------------------*/
+     * initialize mfu and MPI 
+     *--------------------------*/
     MPI_Init(&narg, &arg);
     mfu_init();
     mfu_debug_level = MFU_LOG_VERBOSE;
@@ -975,8 +778,8 @@ main(int narg, char **arg)
     MPI_Comm_size(MPI_COMM_WORLD, &nrank);
 
     /*----------------------------------------------
-    /* get nfiles = number of files to create basic
-    /*----------------------------------------------*/
+     * get nfiles = number of files to create basic
+     *----------------------------------------------*/
     if (narg < 4)
     {
        if (rank == 0) printf("Usage: dfmake <nfiles> <nlevels> <maxflen>\n");
@@ -988,9 +791,9 @@ main(int narg, char **arg)
     maxflen = atoi(arg[3]);
 
     /*-------------------------------------------------------
-    /* each level has nfiles[0] more than the one above
-    /* on this first pass
-    /*-------------------------------------------------------*/
+     * each level has nfiles[0] more than the one above
+     * on this first pass
+     *-------------------------------------------------------*/
     nsum = nlevels*(nlevels+1)/2;
     nfiles = (int *)MFU_MALLOC(nlevels*sizeof(int));
     nfiles[0] = ntotal/nsum; 
@@ -1022,11 +825,6 @@ main(int narg, char **arg)
        }
     }
 
-    //-------------------------------------
-    // instantiate highest level element
-    //------------------------------------- 
-    element = (elem_t ***)MFU_MALLOC(nlevels*sizeof(elem_t **));
-
     //-----------------------
     // fill buff with stuff
     //-----------------------
@@ -1038,16 +836,12 @@ main(int narg, char **arg)
     ifrac = (nfiles[0]+nrank-1)/nrank;
     dirname = (char*)MFU_MALLOC(PATH_MAX+1);
     mfu_getcwd(dirname,PATH_MAX);
-    homedepth=get_depth(dirname);
-    if (rank == 0)  printf("depth of home = %d\n", homedepth);
 
     //---------------------------------------------------
     // instantiate flist and elements of flist top level
     //---------------------------------------------------
-    element[0] = (elem_t**)MFU_MALLOC(nfiles[0]*sizeof(elem_t*));
     mfu_flist mybflist = mfu_flist_new();
-    flist_t* flist = (flist_t*) mybflist; // for next line
-    flist->detail=1;                      // important to set this
+    mfu_flist_set_detail(mybflist, 1);
     ifst = rank*ifrac;
     ilst = (rank+1)*ifrac;
     if (nfiles[0]<ilst) ilst=nfiles[0];
@@ -1067,23 +861,21 @@ main(int narg, char **arg)
 
     for (i=ifst;i<ilst;i++) 
     {
-          setname(cbuff,ftypes[i],i,dirname);
-          element[0][i] = (elem_t*)MFU_MALLOC(sizeof(elem_t));
-          fillelem(element[0][i],cbuff,homedepth+1,flens[i],ftypes[i]);
-          list_insert_elem(mybflist, element[0][i]);
+          setname(cbuff, ftypes[i], i, dirname);
+          uint64_t index = mfu_flist_file_create(mybflist);
+          fillelem(mybflist, index, cbuff, flens[i], ftypes[i]);
     }
 
     //----------------------------
     // generate summary of flist
     //-----------------------------
     MPI_Barrier(MPI_COMM_WORLD);
-    list_compute_summary(mybflist);
+    mfu_flist_summarize(mybflist);
     print_summary(mybflist);
     MPI_Barrier(MPI_COMM_WORLD);
     free(ftypes);
     free(flens);
     free(cbuff);
-
 
 //**********************************************************************************************************
     const char* directory_name=(char*)MFU_MALLOC(PATH_MAX+1);
@@ -1166,8 +958,7 @@ main(int narg, char **arg)
        dnamsort(darray,dirtot);
        for (i=0;i<dirtot;i++) strncpy(dnames+i*dnamlen,darray[i],dnamlen);
        // if (rank==0) for (i=0;i<dirtot;i++) printf("%s\n",dnames+i*dnamlen);
-       
-       
+
        //-----------------------------------------------------------
        // get first and last dir for this processor at this level
        // randomly selected indices stored in randir
@@ -1200,18 +991,14 @@ main(int narg, char **arg)
        //------------------------------------------------------------------------
        namlen = strlen(directory_name)+20*sizeof(char);
        cbuff=(char*)MFU_MALLOC(namlen);
-       element[ilev] = (elem_t**)MFU_MALLOC(nfiles[ilev]*sizeof(elem_t*));
        for (i=0;i<nfiles[ilev];i++) if (randir[i]>=dfirst && randir[i]<dlast)
        {
            strcpy(dir_name,dnames+randir[i]*dnamlen);
            //printf("dir_name = %s\n",dir_name);
-           homedepth=get_depth(dir_name);
-           // printf("depth = %d, ftypes[%d] = %li\n",homedepth,i,ftypes[i]);
            setname(cbuff,ftypes[i],i+nfsum,dir_name);
            //printf("cbuff = %s\n",cbuff);
-           element[ilev][i] = (elem_t*)MFU_MALLOC(sizeof(elem_t));
-           fillelem(element[ilev][i],cbuff,homedepth+1,flens[i],ftypes[i]);
-           list_insert_elem(mybflist, element[ilev][i]);
+           uint64_t index = mfu_flist_file_create(mybflist);
+           fillelem(mybflist, index, cbuff, flens[i], ftypes[i]);
        }
        free(cbuff);
 
@@ -1228,7 +1015,7 @@ main(int narg, char **arg)
        total_links   = 0;
        total_unknown = 0;
        total_bytes   = 0;
-       list_compute_summary(mybflist);
+       mfu_flist_summarize(mybflist);
        print_summary(mybflist);
        MPI_Barrier(MPI_COMM_WORLD);
        free(randir);
@@ -1480,12 +1267,11 @@ main(int narg, char **arg)
    } /* end of ilev loop for links */
    free(tnames);
 
-
 //****************************************************************************************************
 
     /*------------
-    /*  delete
-    /*------------*/
+     *  delete
+     *------------*/
     if (rank == 0 ) printf("about to free mybflist\n");
     mfu_flist_free((void**)&mybflist);
 
