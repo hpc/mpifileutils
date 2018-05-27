@@ -646,6 +646,13 @@ int mfu_flist_have_detail(mfu_flist bflist)
     return val;
 }
 
+void mfu_flist_set_detail (mfu_flist bflist, int detail)
+{
+    flist_t* flist = (flist_t*) bflist;
+    flist->detail = detail;
+    return;
+}
+
 const char* mfu_flist_file_get_name(mfu_flist bflist, uint64_t idx)
 {
     const char* name = NULL;
@@ -860,6 +867,141 @@ const char* mfu_flist_file_get_groupname(mfu_flist bflist, uint64_t idx)
     return ret;
 }
 
+void mfu_flist_file_set_name(mfu_flist bflist, uint64_t idx, const char* name)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        /* free existing name if there is one */
+        mfu_free(&elem->file);
+
+        /* set new name and compute depth */
+        elem->file = MFU_STRDUP(name);
+        elem->depth = mfu_flist_compute_depth(name);
+    }
+    return;
+}
+
+void mfu_flist_file_set_type(mfu_flist bflist, uint64_t idx, mfu_filetype type)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->type = type;
+    }
+    return;
+}
+
+void mfu_flist_file_set_detail(mfu_flist bflist, uint64_t idx, int detail)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->detail = detail;
+    }
+    return;
+}
+
+void mfu_flist_file_set_mode(mfu_flist bflist, uint64_t idx, uint64_t mode)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->mode = mode;
+    }
+    return;
+}
+
+void mfu_flist_file_set_uid(mfu_flist bflist, uint64_t idx, uint64_t uid)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->uid = uid;
+    }
+    return;
+}
+
+void mfu_flist_file_set_gid(mfu_flist bflist, uint64_t idx, uint64_t gid)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->gid = gid;
+    }
+    return;
+}
+
+void mfu_flist_file_set_atime(mfu_flist bflist, uint64_t idx, uint64_t atime)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->atime = atime;
+    }
+    return;
+}
+
+void mfu_flist_file_set_atime_nsec(mfu_flist bflist, uint64_t idx, uint64_t atime_nsec)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->atime_nsec = atime_nsec;
+    }
+    return;
+}
+
+void mfu_flist_file_set_mtime(mfu_flist bflist, uint64_t idx, uint64_t mtime)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->mtime = mtime;
+    }
+    return;
+}
+
+void mfu_flist_file_set_mtime_nsec(mfu_flist bflist, uint64_t idx, uint64_t mtime_nsec)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->mtime_nsec = mtime_nsec;
+    }
+    return;
+}
+
+void mfu_flist_file_set_ctime(mfu_flist bflist, uint64_t idx, uint64_t ctime)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->ctime = ctime;
+    }
+    return;
+}
+
+void mfu_flist_file_set_ctime_nsec(mfu_flist bflist, uint64_t idx, uint64_t ctime_nsec)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->ctime_nsec = ctime_nsec;
+    }
+    return;
+}
+
+void mfu_flist_file_set_size(mfu_flist bflist, uint64_t idx, uint64_t size)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->size = size;
+    }
+    return;
+}
+
 mfu_flist mfu_flist_subset(mfu_flist src)
 {
     /* allocate a new file list */
@@ -989,6 +1131,39 @@ size_t mfu_flist_file_unpack(const void* buf, mfu_flist bflist)
     size_t size = list_elem_unpack2(buf, elem);
     mfu_flist_insert_elem(flist, elem);
     return size;
+}
+
+/* insert an empty element into the list and return its index */
+uint64_t mfu_flist_file_create(mfu_flist bflist)
+{
+    /* convert handle to flist_t */
+    flist_t* flist = (flist_t*) bflist;
+
+    elem_t* elem = (elem_t*) MFU_MALLOC(sizeof(elem_t));
+
+    /* initialize all fields */
+    elem->file       = NULL;
+    elem->depth      = -1;
+    elem->type       = MFU_TYPE_NULL;
+
+    elem->detail     = 0;
+    elem->mode       = 0;
+    elem->uid        = getuid();
+    elem->gid        = getgid();
+    elem->atime      = 0;
+    elem->atime_nsec = 0;
+    elem->mtime      = 0;
+    elem->mtime_nsec = 0;
+    elem->ctime      = 0;
+    elem->ctime_nsec = 0;
+    elem->size       = 0;
+
+    /* append element to tail of linked list */
+    mfu_flist_insert_elem(flist, elem);
+
+    /* return index to element we just added */
+    uint64_t index = flist->list_count - 1;
+    return index;
 }
 
 int mfu_flist_summarize(mfu_flist bflist)
