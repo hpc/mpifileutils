@@ -284,6 +284,70 @@ static void list_insert_copy(flist_t* flist, elem_t* src)
     return;
 }
 
+/* insert a file given its mode and optional stat data */
+void mfu_flist_insert_stat(flist_t* flist, const char* fpath, mode_t mode, const struct stat* sb)
+{
+    /* create new element to record file path, file type, and stat info */
+    elem_t* elem = (elem_t*) MFU_MALLOC(sizeof(elem_t));
+
+    /* copy path */
+    elem->file = MFU_STRDUP(fpath);
+
+    /* set depth */
+    elem->depth = mfu_flist_compute_depth(fpath);
+
+    /* set file type */
+    elem->type = mfu_flist_mode_to_filetype(mode);
+
+    /* copy stat info */
+    if (sb != NULL) {
+        elem->detail = 1;
+        elem->mode  = (uint64_t) sb->st_mode;
+        elem->uid   = (uint64_t) sb->st_uid;
+        elem->gid   = (uint64_t) sb->st_gid;
+        elem->atime = (uint64_t) sb->st_atime;
+        elem->mtime = (uint64_t) sb->st_mtime;
+        elem->ctime = (uint64_t) sb->st_ctime;
+        elem->size  = (uint64_t) sb->st_size;
+
+#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+        elem->atime_nsec = (uint64_t) sb->st_atimespec.tv_nsec;
+        elem->ctime_nsec = (uint64_t) sb->st_ctimespec.tv_nsec;
+        elem->mtime_nsec = (uint64_t) sb->st_mtimespec.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+        elem->atime_nsec = (uint64_t) sb->st_atim.tv_nsec;
+        elem->ctime_nsec = (uint64_t) sb->st_ctim.tv_nsec;
+        elem->mtime_nsec = (uint64_t) sb->st_mtim.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIME_N
+        elem->atime_nsec = (uint64_t) sb->st_atime_n;
+        elem->ctime_nsec = (uint64_t) sb->st_ctime_n;
+        elem->mtime_nsec = (uint64_t) sb->st_mtime_n;
+#elif HAVE_STRUCT_STAT_ST_UMTIME
+        elem->atime_nsec = (uint64_t) sb->st_uatime * 1000;
+        elem->ctime_nsec = (uint64_t) sb->st_uctime * 1000;
+        elem->mtime_nsec = (uint64_t) sb->st_umtime * 1000;
+#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
+        elem->atime_nsec = (uint64_t) sb->st_atime_usec * 1000;
+        elem->ctime_nsec = (uint64_t) sb->st_ctime_usec * 1000;
+        elem->mtime_nsec = (uint64_t) sb->st_mtime_usec * 1000;
+#else
+        elem->atime_nsec = 0;
+        elem->ctime_nsec = 0;
+        elem->mtime_nsec = 0;
+#endif
+
+        /* TODO: link to user and group names? */
+    }
+    else {
+        elem->detail = 0;
+    }
+
+    /* append element to tail of linked list */
+    mfu_flist_insert_elem(flist, elem);
+
+    return;
+}
+
 /* delete linked list of stat items */
 static void list_delete(flist_t* flist)
 {

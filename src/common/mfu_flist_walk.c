@@ -71,137 +71,6 @@ static flist_t* CURRENT_LIST;
 static int SET_DIR_PERMS;
 
 /****************************************
- * Functions on types
- ***************************************/
-
-/* given a mode_t from stat, return the corresponding MFU filetype */
-static mfu_filetype get_mfu_filetype(mode_t mode)
-{
-    /* set file type */
-    mfu_filetype type;
-    if (S_ISDIR(mode)) {
-        type = MFU_TYPE_DIR;
-    }
-    else if (S_ISREG(mode)) {
-        type = MFU_TYPE_FILE;
-    }
-    else if (S_ISLNK(mode)) {
-        type = MFU_TYPE_LINK;
-    }
-    else {
-        /* unknown file type */
-        type = MFU_TYPE_UNKNOWN;
-    }
-    return type;
-}
-
-/* given path, return level within directory tree,
- * counts '/' characters assuming path is standardized
- * and absolute */
-static int get_depth(const char* path)
-{
-    const char* c;
-    int depth = 0;
-    for (c = path; *c != '\0'; c++) {
-        if (*c == '/') {
-            depth++;
-        }
-    }
-    return depth;
-}
-
-/* append element to tail of linked list */
-static void list_insert_elem(flist_t* flist, elem_t* elem)
-{
-    /* set head if this is the first item */
-    if (flist->list_head == NULL) {
-        flist->list_head = elem;
-    }
-
-    /* update last element to point to this new element */
-    elem_t* tail = flist->list_tail;
-    if (tail != NULL) {
-        tail->next = elem;
-    }
-
-    /* make this element the new tail */
-    flist->list_tail = elem;
-    elem->next = NULL;
-
-    /* increase list count by one */
-    flist->list_count++;
-
-    /* delete the index if we have one, it's out of date */
-    mfu_free(&flist->list_index);
-
-    return;
-}
-
-/* insert a file given its mode and optional stat data */
-static void list_insert_stat(flist_t* flist, const char* fpath, mode_t mode, const struct stat* sb)
-{
-    /* create new element to record file path, file type, and stat info */
-    elem_t* elem = (elem_t*) MFU_MALLOC(sizeof(elem_t));
-
-    /* copy path */
-    elem->file = MFU_STRDUP(fpath);
-
-    /* set depth */
-    elem->depth = get_depth(fpath);
-
-    /* set file type */
-    elem->type = get_mfu_filetype(mode);
-
-    /* copy stat info */
-    if (sb != NULL) {
-        elem->detail = 1;
-        elem->mode  = (uint64_t) sb->st_mode;
-        elem->uid   = (uint64_t) sb->st_uid;
-        elem->gid   = (uint64_t) sb->st_gid;
-        elem->atime = (uint64_t) sb->st_atime;
-        elem->mtime = (uint64_t) sb->st_mtime;
-        elem->ctime = (uint64_t) sb->st_ctime;
-        elem->size  = (uint64_t) sb->st_size;
-
-#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
-        elem->atime_nsec = (uint64_t) sb->st_atimespec.tv_nsec;
-        elem->ctime_nsec = (uint64_t) sb->st_ctimespec.tv_nsec;
-        elem->mtime_nsec = (uint64_t) sb->st_mtimespec.tv_nsec;
-#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
-        elem->atime_nsec = (uint64_t) sb->st_atim.tv_nsec;
-        elem->ctime_nsec = (uint64_t) sb->st_ctim.tv_nsec;
-        elem->mtime_nsec = (uint64_t) sb->st_mtim.tv_nsec;
-#elif HAVE_STRUCT_STAT_ST_MTIME_N
-        elem->atime_nsec = (uint64_t) sb->st_atime_n;
-        elem->ctime_nsec = (uint64_t) sb->st_ctime_n;
-        elem->mtime_nsec = (uint64_t) sb->st_mtime_n;
-#elif HAVE_STRUCT_STAT_ST_UMTIME
-        elem->atime_nsec = (uint64_t) sb->st_uatime * 1000;
-        elem->ctime_nsec = (uint64_t) sb->st_uctime * 1000;
-        elem->mtime_nsec = (uint64_t) sb->st_umtime * 1000;
-#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
-        elem->atime_nsec = (uint64_t) sb->st_atime_usec * 1000;
-        elem->ctime_nsec = (uint64_t) sb->st_ctime_usec * 1000;
-        elem->mtime_nsec = (uint64_t) sb->st_mtime_usec * 1000;
-#else
-        elem->atime_nsec = 0;
-        elem->ctime_nsec = 0;
-        elem->mtime_nsec = 0;
-#endif
-
-        /* TODO: link to user and group names? */
-    }
-    else {
-        elem->detail = 0;
-    }
-
-    /* append element to tail of linked list */
-    list_insert_elem(flist, elem);
-
-    return;
-}
-
-/****************************************
  * Global counter and callbacks for LIBCIRCLE reductions
  ***************************************/
 
@@ -378,7 +247,7 @@ static void walk_lustrestat_process_dir(char* dir, CIRCLE_handle* handle)
                     if (status != -1) {
                         have_mode = 1;
                         mode = st.st_mode;
-                        list_insert_stat(CURRENT_LIST, newpath, mode, &st);
+                        mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, &st);
                     }
                     else {
                         /* error */
@@ -427,7 +296,7 @@ static void walk_lustrestat_create(CIRCLE_handle* handle)
         reduce_items++;
 
         /* record item info */
-        list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+        mfu_flist_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
 
         /* recurse into directory */
         if (S_ISDIR(st.st_mode)) {
@@ -540,7 +409,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
                     }
 
                     /* insert a record for this item into our list */
-                    list_insert_stat(CURRENT_LIST, newpath, mode, NULL);
+                    mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, NULL);
 
                     /* increment our item count */
                     reduce_items++;
@@ -584,7 +453,7 @@ static void walk_getdents_create(CIRCLE_handle* handle)
         reduce_items++;
 
         /* record item info */
-        list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+        mfu_flist_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
 
         /* recurse into directory */
         if (S_ISDIR(st.st_mode)) {
@@ -665,7 +534,7 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
                         /* we can read object type from directory entry */
                         have_mode = 1;
                         mode = DTTOIF(entry->d_type);
-                        list_insert_stat(CURRENT_LIST, newpath, mode, NULL);
+                        mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, NULL);
                     }
                     else {
                         /* type is unknown, we need to stat it */
@@ -674,7 +543,7 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
                         if (status == 0) {
                             have_mode = 1;
                             mode = st.st_mode;
-                            list_insert_stat(CURRENT_LIST, newpath, mode, &st);
+                            mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, &st);
                         }
                         else {
                             /* error */
@@ -724,7 +593,7 @@ static void walk_readdir_create(CIRCLE_handle* handle)
         reduce_items++;
 
         /* record item info */
-        list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+        mfu_flist_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
 
         /* recurse into directory */
         if (S_ISDIR(st.st_mode)) {
@@ -827,7 +696,7 @@ static void walk_stat_process(CIRCLE_handle* handle)
     /* TODO: filter items by stat info */
 
     /* record info for item in list */
-    list_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+    mfu_flist_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
 
     /* recurse into directory */
     if (S_ISDIR(st.st_mode)) {
@@ -1042,7 +911,7 @@ void mfu_flist_stat(
         }
 
         /* insert item into output list */
-        list_insert_stat(flist, name, st.st_mode, &st);
+        mfu_flist_insert_stat(flist, name, st.st_mode, &st);
     }
 
     /* compute global summary */
