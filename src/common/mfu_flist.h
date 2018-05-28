@@ -271,7 +271,7 @@ int mfu_flist_max_depth(mfu_flist flist);
 int mfu_flist_have_detail(mfu_flist flist);
 
 /* set flist deatils flag */
-int mfu_flist_set_detail(mfu_flist flist, int detail);
+void mfu_flist_set_detail(mfu_flist flist, int detail);
 
 /* always set */
 const char* mfu_flist_file_get_name(mfu_flist flist, uint64_t index);

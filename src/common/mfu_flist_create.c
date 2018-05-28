@@ -56,7 +56,7 @@ static int create_directory(mfu_flist list, uint64_t idx)
 /* create directories, we work from shallowest level to the deepest
  * with a barrier in between levels, so that we don't try to create
  * a child directory until the parent exists */
-int mfu_flist_mkdir(mfu_flist flist)
+void mfu_flist_mkdir(mfu_flist flist)
 {
     int rc = 0;
 
@@ -136,7 +136,7 @@ int mfu_flist_mkdir(mfu_flist flist)
     /* free our lists of levels */
     mfu_flist_array_free(levels, &lists);
 
-    return rc;
+    return;
 }
 
 static int create_file(mfu_flist list, uint64_t idx)
@@ -176,7 +176,7 @@ static int create_file(mfu_flist list, uint64_t idx)
 }
 
 /* create inodes for all regular files in flist, assumes directories exist */
-int mfu_flist_mknod(mfu_flist flist)
+void mfu_flist_mknod(mfu_flist flist)
 {
     int rc = 0;
 
@@ -242,5 +242,5 @@ int mfu_flist_mknod(mfu_flist flist)
         }
     }
 
-    return rc;
+    return;
 }
