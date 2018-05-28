@@ -345,6 +345,12 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
         const mfu_param_path* paths, const mfu_param_path* destpath, 
         mfu_copy_opts_t* mfu_copy_opts);
 
+/* create all directories in flist */
+void mfu_flist_mkdir(mfu_flist flist);
+
+/* create inodes for all regular files in flist, assumes directories exist */
+void mfu_flist_mknod(mfu_flist flist);
+
 /* unlink all items in flist */
 void mfu_flist_unlink(mfu_flist flist);
 

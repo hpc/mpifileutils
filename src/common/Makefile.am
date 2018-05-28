@@ -22,6 +22,7 @@ libmfu_la_SOURCES = \
     mfu_flist_chunk.c \
     mfu_flist_copy.c \
     mfu_flist_io.c \
+    mfu_flist_create.c \
     mfu_flist_remove.c \
     mfu_flist_sort.c \
     mfu_flist_usrgrp.c \
