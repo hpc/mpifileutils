@@ -5,6 +5,7 @@
 //#include "handle_args.h"
 #include "mfu.h"
 #include "strmap.h"
+
 #define FILE_PERMS (S_IRUSR | S_IWUSR)
 #define DIR_PERMS  (S_IRWXU)
 
@@ -116,11 +117,15 @@ void fillelem(mfu_flist flist, uint64_t index, char* fname, long int flen, mfu_f
     // the following numbers are from /usr/include/bits/stats.h
     //-----------------------------------------------------------
     long int fmode;
-    if (ftype==MFU_TYPE_DIR)  fmode = 0040000;        // _S_IFDIR
-    else if (ftype==MFU_TYPE_FILE) fmode = 0100000;   // _S_IFREG
-    else if (ftype==MFU_TYPE_LINK) fmode= 0120000;    // _S_IFLNK
-    else  
-    {
+    if (ftype == MFU_TYPE_DIR) {
+        fmode = S_IFDIR;
+        fmode |= DIR_PERMS;
+    } else if (ftype == MFU_TYPE_FILE) {
+        fmode = S_IFREG;
+        fmode |= FILE_PERMS;
+    } else if (ftype == MFU_TYPE_LINK) {
+        fmode = S_IFLNK;
+    } else  {
          printf("from fillelem ftype = %ld is not legal value\n",ftype);
          exit(0);
     }
