@@ -1324,3 +1324,210 @@ void mfu_flist_write_cache(
     }
     return;
 }
+
+/* TODO: move this somewhere or modify existing print_file */
+/* print information about a file given the index and rank (used in print_files) */
+static size_t print_file_text(mfu_flist flist, uint64_t idx, char* buffer, size_t bufsize)
+{
+    size_t numbytes = 0;
+
+    /* store types as strings for print_file */
+    char type_str_unknown[] = "UNK";
+    char type_str_dir[]     = "DIR";
+    char type_str_file[]    = "REG";
+    char type_str_link[]    = "LNK";
+
+    /* get filename */
+    const char* file = mfu_flist_file_get_name(flist, idx);
+
+    if (mfu_flist_have_detail(flist)) {
+        /* get mode */
+        mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
+
+        //uint32_t uid = (uint32_t) mfu_flist_file_get_uid(flist, idx);
+        //uint32_t gid = (uint32_t) mfu_flist_file_get_gid(flist, idx);
+        uint64_t acc = mfu_flist_file_get_atime(flist, idx);
+        uint64_t mod = mfu_flist_file_get_mtime(flist, idx);
+        uint64_t cre = mfu_flist_file_get_ctime(flist, idx);
+        uint64_t size = mfu_flist_file_get_size(flist, idx);
+        const char* username  = mfu_flist_file_get_username(flist, idx);
+        const char* groupname = mfu_flist_file_get_groupname(flist, idx);
+
+        char access_s[30];
+        char modify_s[30];
+        char create_s[30];
+        time_t access_t = (time_t) acc;
+        time_t modify_t = (time_t) mod;
+        time_t create_t = (time_t) cre;
+        size_t access_rc = strftime(access_s, sizeof(access_s) - 1, "%FT%T", localtime(&access_t));
+        //size_t modify_rc = strftime(modify_s, sizeof(modify_s) - 1, "%FT%T", localtime(&modify_t));
+        size_t modify_rc = strftime(modify_s, sizeof(modify_s) - 1, "%b %e %Y %H:%M", localtime(&modify_t));
+        size_t create_rc = strftime(create_s, sizeof(create_s) - 1, "%FT%T", localtime(&create_t));
+        if (access_rc == 0 || modify_rc == 0 || create_rc == 0) {
+            /* error */
+            access_s[0] = '\0';
+            modify_s[0] = '\0';
+            create_s[0] = '\0';
+        }
+
+        char mode_format[11];
+        mfu_format_mode(mode, mode_format);
+
+        double size_tmp;
+        const char* size_units;
+        mfu_format_bytes(size, &size_tmp, &size_units);
+
+        numbytes = snprintf(buffer, bufsize, "%s %s %s %7.3f %2s %s %s\n",
+               mode_format, username, groupname,
+               size_tmp, size_units, modify_s, file
+              );
+#if 0
+        printf("%s %s %s A%s M%s C%s %lu %s\n",
+               mode_format, username, groupname,
+               access_s, modify_s, create_s, (unsigned long)size, file
+              );
+        printf("Mode=%lx(%s) UID=%d(%s) GUI=%d(%s) Access=%s Modify=%s Create=%s Size=%lu File=%s\n",
+               (unsigned long)mode, mode_format, uid, username, gid, groupname,
+               access_s, modify_s, create_s, (unsigned long)size, file
+              );
+#endif
+    }
+    else {
+        /* get type */
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+        char* type_str = type_str_unknown;
+        if (type == MFU_TYPE_DIR) {
+            type_str = type_str_dir;
+        }
+        else if (type == MFU_TYPE_FILE) {
+            type_str = type_str_file;
+        }
+        else if (type == MFU_TYPE_LINK) {
+            type_str = type_str_link;
+        }
+
+        numbytes = snprintf(buffer, bufsize, "Type=%s File=%s\n",
+               type_str, file
+              );
+    }
+
+    return numbytes;
+}
+
+void mfu_flist_write_text(
+    const char* name,
+    mfu_flist bflist)
+{
+    /* convert handle to flist_t */
+    flist_t* flist = (flist_t*) bflist;
+
+    /* get our rank and size of the communicator */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* compute size of buffer needed to hold all data */
+    size_t bufsize = 0;
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(flist);
+    for (idx = 0; idx < size; idx++) {
+        size_t count = print_file_text(flist, idx, NULL, 0);
+        bufsize += count + 1;
+    }
+    //printf("rank: %d: %llu\n", rank, (long long unsigned) bufsize);
+
+    /* allocate a buffer big enough to hold all of the data */
+    char* buf = (char*) MFU_MALLOC(bufsize);
+
+    /* format data in buffer */
+    char* ptr = buf;
+    size_t total = 0;
+    for (idx = 0; idx < size; idx++) {
+        size_t count = print_file_text(flist, idx, ptr, bufsize - total);
+        total += count;
+        ptr += count;
+    }
+
+    /* if we block things up into 128MB chunks, how many iterations
+     * to write everything? */
+    uint64_t maxwrite = 128 * 1024 * 1024;
+    uint64_t iters = (uint64_t)total / maxwrite;
+    if (iters * maxwrite < (uint64_t)total) {
+        iters++;
+    }
+
+    /* get max iterations across all procs */
+    uint64_t all_iters;
+    MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+
+    /* use mpi io hints to stripe across OSTs */
+    MPI_Info info;
+    MPI_Info_create(&info);
+
+    /* change number of ranks to string to pass to MPI_Info */
+    char str_buf[12];
+    sprintf(str_buf, "%d", ranks);
+
+    /* no. of I/O devices for lustre striping is number of ranks */
+    MPI_Info_set(info, "striping_factor", str_buf);
+
+    /* open file */
+    MPI_Status status;
+    MPI_File fh;
+    char datarep[] = "external32";
+    //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
+    int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
+
+    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
+
+    /* truncate file to 0 bytes */
+    MPI_File_set_size(fh, 0);
+
+    /* set file view to be sequence of datatypes past header */
+    MPI_File_set_view(fh, 0, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+
+    /* compute byte offset to write our element */
+    uint64_t offset = 0;
+    uint64_t bytes = (uint64_t) total;
+    MPI_Exscan(&bytes, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Offset write_offset = (MPI_Offset)offset;
+
+    ptr = buf;
+    uint64_t written = 0;
+    while (all_iters > 0) {
+        /* compute number of bytes left to write */
+        uint64_t remaining = (uint64_t)total - written;
+
+        /* compute count we'll write in this iteration */
+        int write_count = (int) maxwrite;
+        if (remaining < maxwrite) {
+            write_count = (int) remaining;
+        }
+    
+        /* collective write of file data */
+        MPI_File_write_at_all(fh, write_offset, ptr, write_count, MPI_BYTE, &status);
+
+        /* update our offset into the file */
+        write_offset += (MPI_Offset) write_count;
+
+        /* update pointer into our buffer */
+        ptr += write_count;
+
+        /* update number of bytes written so far */
+        written += (uint64_t) write_count;
+
+        /* decrement our collective write loop counter */
+        all_iters--;
+    }
+
+    /* close file */
+    MPI_File_close(&fh);
+
+    /* free mpi info */
+    MPI_Info_free(&info);
+
+    /* free buffer */
+    mfu_free(&buf);
+
+    return;
+}
