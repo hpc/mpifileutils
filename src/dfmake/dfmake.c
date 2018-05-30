@@ -253,9 +253,6 @@ static int write_file(mfu_flist list, uint64_t idx)
       rc = 1;
     }
  
-    /* free destination path */
-    mfu_free(&dest_path);
- 
     return rc;
 }
 
