@@ -714,6 +714,22 @@ void mfu_flist_set_detail (mfu_flist bflist, int detail)
 {
     flist_t* flist = (flist_t*) bflist;
     flist->detail = detail;
+
+    /* lookup and record user and group info if detail is set */
+    if (detail) {
+        /* get user data if needed */
+        if (flist->have_users == 0) {
+            mfu_flist_usrgrp_get_users(flist);
+        }
+
+        /* get groups data if needed */
+        if (flist->have_groups == 0) {
+            mfu_flist_usrgrp_get_groups(flist);
+        }
+    }
+
+    /* TODO: free resources if detail == 0 ? */
+
     return;
 }
 
