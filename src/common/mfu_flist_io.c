@@ -1344,8 +1344,6 @@ static size_t print_file_text(mfu_flist flist, uint64_t idx, char* buffer, size_
         /* get mode */
         mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
 
-        //uint32_t uid = (uint32_t) mfu_flist_file_get_uid(flist, idx);
-        //uint32_t gid = (uint32_t) mfu_flist_file_get_gid(flist, idx);
         uint64_t acc = mfu_flist_file_get_atime(flist, idx);
         uint64_t mod = mfu_flist_file_get_mtime(flist, idx);
         uint64_t cre = mfu_flist_file_get_ctime(flist, idx);
@@ -1360,7 +1358,6 @@ static size_t print_file_text(mfu_flist flist, uint64_t idx, char* buffer, size_
         time_t modify_t = (time_t) mod;
         time_t create_t = (time_t) cre;
         size_t access_rc = strftime(access_s, sizeof(access_s) - 1, "%FT%T", localtime(&access_t));
-        //size_t modify_rc = strftime(modify_s, sizeof(modify_s) - 1, "%FT%T", localtime(&modify_t));
         size_t modify_rc = strftime(modify_s, sizeof(modify_s) - 1, "%b %e %Y %H:%M", localtime(&modify_t));
         size_t create_rc = strftime(create_s, sizeof(create_s) - 1, "%FT%T", localtime(&create_t));
         if (access_rc == 0 || modify_rc == 0 || create_rc == 0) {
@@ -1378,19 +1375,9 @@ static size_t print_file_text(mfu_flist flist, uint64_t idx, char* buffer, size_
         mfu_format_bytes(size, &size_tmp, &size_units);
 
         numbytes = snprintf(buffer, bufsize, "%s %s %s %7.3f %2s %s %s\n",
-               mode_format, username, groupname,
-               size_tmp, size_units, modify_s, file
-              );
-#if 0
-        printf("%s %s %s A%s M%s C%s %lu %s\n",
-               mode_format, username, groupname,
-               access_s, modify_s, create_s, (unsigned long)size, file
-              );
-        printf("Mode=%lx(%s) UID=%d(%s) GUI=%d(%s) Access=%s Modify=%s Create=%s Size=%lu File=%s\n",
-               (unsigned long)mode, mode_format, uid, username, gid, groupname,
-               access_s, modify_s, create_s, (unsigned long)size, file
-              );
-#endif
+            mode_format, username, groupname,
+            size_tmp, size_units, modify_s, file
+        );
     }
     else {
         /* get type */
@@ -1407,8 +1394,8 @@ static size_t print_file_text(mfu_flist flist, uint64_t idx, char* buffer, size_
         }
 
         numbytes = snprintf(buffer, bufsize, "Type=%s File=%s\n",
-               type_str, file
-              );
+            type_str, file
+        );
     }
 
     return numbytes;
@@ -1434,7 +1421,6 @@ void mfu_flist_write_text(
         size_t count = print_file_text(flist, idx, NULL, 0);
         bufsize += count + 1;
     }
-    //printf("rank: %d: %llu\n", rank, (long long unsigned) bufsize);
 
     /* allocate a buffer big enough to hold all of the data */
     char* buf = (char*) MFU_MALLOC(bufsize);
@@ -1475,7 +1461,6 @@ void mfu_flist_write_text(
     MPI_Status status;
     MPI_File fh;
     char datarep[] = "external32";
-    //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
 
     MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
