@@ -198,6 +198,12 @@ void mfu_flist_write_cache(
     mfu_flist flist
 );
 
+/* write file list to text file */
+void mfu_flist_write_text(
+    const char* name,
+    mfu_flist flist
+);
+
 /* free resouces in file list */
 void mfu_flist_free(mfu_flist* flist);
 
