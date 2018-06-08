@@ -62,6 +62,7 @@ static void print_usage(void)
     printf("      --name             - exclude a list of files from command\n");
     printf("      --dryrun           - print out list of files that would be deleted\n");
     printf("  -v, --verbose          - verbose output\n");
+    printf("  -T, --traceless        - traceless mode, remove the file, but keep parent dir's mtime nochange\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -88,6 +89,7 @@ int main(int argc, char** argv)
     int exclude     = 0;
     int name        = 0;
     int dryrun      = 0;
+    int traceless   = 0;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -98,6 +100,7 @@ int main(int argc, char** argv)
         {"name",     0, 0, 'n'},        
         {"dryrun",   0, 0, 'd'},
         {"verbose",  0, 0, 'v'},
+        {"traceless",  0, 0, 'T'},
         {"help",     0, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -105,7 +108,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:lhv",
+                    argc, argv, "i:lhvT",
                     long_options, &option_index
                 );
 
@@ -137,6 +140,9 @@ int main(int argc, char** argv)
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
+            case 'T':
+                traceless = 1;
+                break;            
             case 'h':
                 usage = 1;
                 break;
@@ -227,7 +233,7 @@ int main(int argc, char** argv)
         mfu_flist_print(srclist);
     } else {
         /* remove files */
-        mfu_flist_unlink(srclist);
+        mfu_flist_unlink(srclist, traceless);
     }
 
     /* free list if it was used */
