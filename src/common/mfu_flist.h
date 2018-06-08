@@ -358,7 +358,7 @@ void mfu_flist_mkdir(mfu_flist flist);
 void mfu_flist_mknod(mfu_flist flist);
 
 /* unlink all items in flist */
-void mfu_flist_unlink(mfu_flist flist);
+void mfu_flist_unlink(mfu_flist flist, bool traceless);
 
 int mfu_input_flist_skip(const char* name, void *args);
 

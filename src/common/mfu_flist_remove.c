@@ -40,6 +40,7 @@
 #include "libcircle.h"
 #include "dtcmp.h"
 #include "mfu.h"
+#include "mfu_flist_internal.h"
 
 /*****************************
  * Global functions used by remove routines
@@ -576,7 +577,7 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
 /* removes list of items, sets write bits on directories from
  * top-to-bottom, then removes items one level at a time starting
  * from the deepest */
-void mfu_flist_unlink(mfu_flist flist)
+void mfu_flist_unlink(mfu_flist flist, bool traceless)
 {
     int level;
 
@@ -588,6 +589,82 @@ void mfu_flist_unlink(mfu_flist flist)
     int levels, minlevel;
     mfu_flist* lists;
     mfu_flist_array_by_depth(flist, &levels, &minlevel, &lists);
+    mfu_flist pstatlist;
+    uint64_t size = mfu_flist_size(flist);
+    char** strings;
+
+    /* if traceless, dump the stat of each item's pdir */
+    if (traceless) {
+        uint64_t idx;
+
+        strings = (char **) MFU_MALLOC(size * sizeof(char *));
+        for (idx = 0; idx < size; idx++) {
+            /* stat the item */
+            struct stat st;
+            /* get name of item */
+            const char* name = mfu_flist_file_get_name(flist, idx);
+            char *pdir = MFU_STRDUP(name);
+
+            dirname(pdir);
+
+            int len = strlen(pdir);
+
+            strings[idx] = (char *) MFU_MALLOC(len + 1);
+
+            strcpy(strings[idx], pdir);
+
+            mfu_free(&pdir);
+        }
+
+        pstatlist = mfu_flist_new();
+
+        mfu_flist_set_detail(pstatlist, 1);
+
+        /* allocate arrays to hold result from DTCMP_Rankv_strings call to
+        * assign group and rank values to each item */
+        uint64_t output_bytes = size * sizeof(uint64_t);
+        uint64_t groups;
+        uint64_t* group_ids   = (uint64_t*) MFU_MALLOC(output_bytes);
+        uint64_t* group_ranks = (uint64_t*) MFU_MALLOC(output_bytes);
+        uint64_t* group_rank  = (uint64_t*) MFU_MALLOC(output_bytes);
+
+        DTCMP_Rankv_strings(size, strings, &groups, group_ids, group_ranks,
+                           group_rank, DTCMP_FLAG_NONE, MPI_COMM_WORLD);
+
+        for (idx = 0; idx < size; idx++) {
+            if(group_rank[idx] == 0) {
+                /* stat the item */
+                struct stat st;
+                char *pdir = strings[idx];
+                int status = mfu_lstat(pdir, &st);
+
+                if (status != 0) {
+                    MFU_LOG(MFU_LOG_DBG, "mfu_lstat(%s): %d", pdir, status);
+                    continue;
+                }
+
+                /* insert item into output list */
+                mfu_flist_insert_stat(pstatlist, strings[idx], st.st_mode, &st);
+            }
+        }
+
+        for (idx = 0; idx < size; idx++) {
+            mfu_free(&strings[idx]);
+        }
+
+        mfu_free(&strings);
+        mfu_free(&group_rank);
+        mfu_free(&group_ranks);
+        mfu_free(&group_ids);
+
+        /* compute global summary */
+        mfu_flist_summarize(pstatlist);
+
+        /* To be sure that all procs have executed their stat calls before
+         * moving on to deleting things.
+         */
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
 
 #if 0
     /* dive from shallow to deep, ensure all directories have write bit set */
@@ -671,6 +748,36 @@ void mfu_flist_unlink(mfu_flist flist)
                 fflush(stdout);
             }
         }
+    }
+
+    /* if traceless, restore the stat of each item's pdir */
+    if (traceless) {
+        mfu_flist newlist = mfu_flist_spread(pstatlist);
+        size = mfu_flist_size(newlist);
+        uint64_t idx;
+
+        for (idx = 0; idx < size; idx++) {
+            struct timespec times[2];
+            /* get name of item */
+            const char* pdir = mfu_flist_file_get_name(newlist, idx);
+
+            /* TODO: skip removed dir, if it happens to become a problem*/
+
+            times[0].tv_sec  = mfu_flist_file_get_atime(newlist, idx);
+            times[1].tv_sec  = mfu_flist_file_get_mtime(newlist, idx);
+
+            times[0].tv_nsec = mfu_flist_file_get_atime_nsec(newlist, idx);
+            times[1].tv_nsec = mfu_flist_file_get_mtime_nsec(newlist, idx);
+
+            if(utimensat(AT_FDCWD, pdir, times, AT_SYMLINK_NOFOLLOW) != 0) {
+                MFU_LOG(MFU_LOG_DBG,
+                        "Failed to changeback timestamps on %s utime() errno=%d %s",
+                        pdir, errno, strerror(errno));
+            }
+        }
+
+        mfu_flist_free(&newlist);
+        mfu_flist_free(&pstatlist);
     }
 
     mfu_flist_array_free(levels, &lists);
