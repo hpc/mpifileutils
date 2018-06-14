@@ -283,6 +283,7 @@ static int parse_ugoa(const char* str, struct perms* p)
         } 
         else if (str[0] == 'a') {
             p->all = 1;
+            p->assume_all = 0;
         } 
         else {
             /* found an invalid character */
