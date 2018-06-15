@@ -236,10 +236,13 @@ int main(int argc, \
         numpaths_src = numpaths - 1;
     }
 
-    if (numpaths_src == 0) {
+    if (usage || numpaths_src == 0) {
         if(rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "No source path found, at least one");
-            print_usage();
+            if (usage != 1) {
+                MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed");
+            } else {
+                print_usage();
+            }
         }
 
         mfu_param_path_free_all(numpaths, paths);
@@ -257,9 +260,9 @@ int main(int argc, \
     mfu_param_path_check_copy(numpaths_src, paths, destpath, &valid, &copy_into_dir);
     mfu_copy_opts->copy_into_dir = copy_into_dir; 
     /* exit job if we found a problem */
-    if(!valid) {
+    if (!valid) {
         if(rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Exiting run");
+            MFU_LOG(MFU_LOG_ERR, "Invalid src/dest paths provided. Exiting run.\n");
         }
         mfu_param_path_free_all(numpaths, paths);
         mfu_free(&paths);
