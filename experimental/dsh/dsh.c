@@ -1756,6 +1756,7 @@ int main(int argc, char** argv)
     char* inputname  = NULL;
     char* outputname = NULL;
     int walk = 0;
+    int text = 0;
     /* set print default to 25 for now */
     int print_default = 100;
 
@@ -1767,13 +1768,14 @@ int main(int argc, char** argv)
         {"lite",     0, 0, 'l'},
         {"help",     0, 0, 'h'},
         {"verbose",  0, 0, 'v'},
+        {"text",     0, 0, 't'},
         {0, 0, 0, 0}
     };
 
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "f:i:o:lhv",
+                    argc, argv, "f:i:o:lhvt",
                     long_options, &option_index
                 );
 
@@ -1801,6 +1803,9 @@ int main(int argc, char** argv)
                 break;
             case 'v':
                 verbose = 1;
+                break;
+            case 't':
+                text = 1;
                 break;
             case '?':
                 usage = 1;
@@ -2065,7 +2070,11 @@ int main(int argc, char** argv)
 
     /* write data to cache file */
     if (outputname != NULL) {
-        mfu_flist_write_cache(outputname, flist);
+        if (!text) {
+            mfu_flist_write_cache(outputname, flist);
+        } else {
+            mfu_flist_write_text(outputname, flist);
+        }
     }
 
     /* free users, groups, and files objects */

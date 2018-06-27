@@ -399,6 +399,7 @@ int main(int argc, char** argv)
     char* distribution = NULL;
     int walk = 0;
     int print = 0;
+    int text = 0;
     struct distribute_option option;
 
     int option_index = 0;
@@ -411,13 +412,14 @@ int main(int argc, char** argv)
         {"print",        0, 0, 'p'},
         {"verbose",      0, 0, 'v'},
         {"help",         0, 0, 'h'},
+        {"text",         0, 0, 't'},
         {0, 0, 0, 0}
     };
 
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:ls:d:pvh",
+                    argc, argv, "i:o:ls:d:pvht",
                     long_options, &option_index
                 );
 
@@ -446,6 +448,9 @@ int main(int argc, char** argv)
                 break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 't':
+                text = 1;
                 break;
             case 'h':
                 usage = 1;
@@ -616,7 +621,11 @@ int main(int argc, char** argv)
 
     /* write data to cache file */
     if (outputname != NULL) {
-        mfu_flist_write_cache(outputname, flist);
+        if (!text) {
+            mfu_flist_write_cache(outputname, flist);
+        } else {
+            mfu_flist_write_text(outputname, flist);
+        }
     }
 
     /* free users, groups, and files objects */
