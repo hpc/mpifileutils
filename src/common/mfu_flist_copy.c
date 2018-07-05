@@ -1472,6 +1472,9 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
      * setting mismatch, which may happen on lustre */
     sync();
 
+    /* wait for all sync to finish before starting to set metadata */
+    MPI_Barrier(MPI_COMM_WORLD);
+
     /* set permissions, ownership, and timestamps if needed */
     mfu_copy_set_metadata(levels, minlevel, lists, numpaths,
             paths, destpath, mfu_copy_opts);
