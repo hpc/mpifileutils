@@ -675,13 +675,6 @@ int main(int argc, char* argv[])
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
-        /* unlink the old file */
-        if (mfu_unlink(in_path) != 0) {
-            printf("Failed to remove input file %s\n", in_path);
-            fflush(stdout);
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-
         /* rename the new, restriped file to the old name */
         if (rename(out_path, in_path) != 0) {
             printf("Failed to rename file %s to %s\n", out_path, in_path);
