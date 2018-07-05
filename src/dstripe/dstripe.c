@@ -648,28 +648,33 @@ int main(int argc, char* argv[])
     /* found a suffix, now we need to break our files into chunks based on stripe size */
     mfu_file_chunk* file_chunks = mfu_file_chunk_list_alloc(filtered, stripe_size);
     mfu_file_chunk* p = file_chunks;
-    while(p != NULL) {
+    while (p != NULL) {
+        /* build path to temp file */
         char temp_path[PATH_MAX];
         strcpy(temp_path, p->name);
         strcat(temp_path, suffix);
 
         /* write each chunk in our list */
         write_file_chunk(p, temp_path);
+
+        /* move on to next file chunk */
         p = p->next;
     }
+    mfu_file_chunk_list_free(&file_chunks);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* remove input file and rename temp file */
     for (idx = 0; idx < size; idx++) {
-        mode_t mode = (mode_t) mfu_flist_file_get_mode(filtered, idx);
+        /* build path to temp file */
         const char *in_path = mfu_flist_file_get_name(filtered, idx);
         char out_path[PATH_MAX];
         strcpy(out_path, in_path);
         strcat(out_path, suffix);
 
         /* change the mode of the newly restriped file to be the same as the old one */
-        if (mfu_chmod(out_path, (mode_t) mode) != 0) {
+        mode_t mode = (mode_t) mfu_flist_file_get_mode(filtered, idx);
+        if (mfu_chmod(out_path, mode) != 0) {
             printf("Failed to chmod file %s (%s)", out_path, strerror(errno));
             fflush(stdout);
             MPI_Abort(MPI_COMM_WORLD, 1);
@@ -686,8 +691,7 @@ int main(int argc, char* argv[])
     /* wait for everyone to finish */
     MPI_Barrier(MPI_COMM_WORLD);
 
-    /* free the chunk list, filtered list, path parameters */
-    mfu_file_chunk_list_free(&file_chunks);
+    /* free filtered list, path parameters */
     mfu_flist_free(&filtered);
     mfu_param_path_free_all(numpaths, paths);
     mfu_free(&paths);
