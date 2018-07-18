@@ -516,12 +516,6 @@ static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
             /* get type of item */
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
 
-            /* we've already set these properties for links,
-             * so we can skip those here */
-            if (type == MFU_TYPE_LINK) {
-                continue;
-            }
-
             /* TODO: skip file if it's not readable */
 
             /* get destination name of item */
@@ -754,13 +748,9 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
         }
     }
 
-    /* TODO: why not do this later? */
-
     /* set permissions on link */
     if (mfu_copy_opts->preserve) {
         mfu_copy_xattrs(list, idx, dest_path);
-        mfu_copy_ownership(list, idx, dest_path);
-        mfu_copy_permissions(list, idx, dest_path);
     }
 
     /* free destination path */
