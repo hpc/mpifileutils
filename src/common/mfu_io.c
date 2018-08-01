@@ -523,6 +523,7 @@ struct dirent* mfu_readdir(DIR* dirp)
     struct dirent* entry;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     entry = readdir(dirp);
     if (entry == NULL) {
         if (errno == EINTR || errno == EIO || errno == ENOENT) {
