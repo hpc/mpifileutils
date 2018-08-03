@@ -57,9 +57,9 @@ static void print_usage(void)
     printf("Options:\n");
     printf("  -i, --input   <file>   - read list from file\n");
     printf("  -l, --lite             - walk file system without stat\n");
-    printf("      --exclude <regex>  - exclude a list of files from command\n");
-    printf("      --match   <regex>  - match a list of files from command\n");
-    printf("      --name             - exclude a list of files from command\n");
+    printf("      --exclude <regex>  - exclude from command entries that match the regex\n");
+    printf("      --match   <regex>  - apply command only to entries that match the regex\n");
+    printf("      --name             - change regex to apply to entry name rather than full pathname\n");
     printf("      --dryrun           - print out list of files that would be deleted\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -T, --traceless        - traceless mode, remove the file, but keep parent dir's mtime nochange\n");
