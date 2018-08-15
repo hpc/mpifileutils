@@ -87,23 +87,74 @@ static void free_list(struct perms** p_head)
     *p_head = NULL;
 }
 
-/* given a group name, lookup and return the group id in gid,
- * the return code is 0 if gid is valid (group was found), 1 otherwise */
-static int lookup_gid(const char* name, gid_t* gid)
+/* given a user name, lookup and return the user id in uid,
+ * the return code is 1 if uid is valid (user name was found), 0 otherwise */
+static int lookup_uid(const char* name, uid_t* uid)
 {
+    /* the first entry will be a flag indicating whether the lookup
+     * succeeded (1) or not (0), if successful, the uid will be
+     * stored in the second entry */
     uint64_t values[2];
 
     /* get our rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    /* have rank 0 lookup the group id */
+    /* have rank 0 do the lookup */
+    if (rank == 0) {
+        /* lookup specified user name */
+        errno = 0;
+        struct passwd* pw = getpwnam(name);
+        if (pw != NULL) {
+            /* lookup succeeded, copy the uid */
+            values[0] = 1;
+            values[1] = (uint64_t) pw->pw_uid;
+        }
+        else {
+            /* indicate that lookup failed */
+            values[0] = 0;
+
+            /* print error message if we can */
+            if (errno != 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to find entry for name %s errno=%d %s",
+                          name, errno, strerror(errno)
+                         );
+            }
+        }
+    }
+
+    /* broadcast result from lookup */
+    MPI_Bcast(values, 2, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+
+    /* copy user id to return value if lookup was successful */
+    int rc = (int) values[0];
+    if (values[0] == 1) {
+        *uid = (uid_t) values[1];
+    }
+
+    return rc;
+}
+
+/* given a group name, lookup and return the group id in gid,
+ * the return code is 1 if gid is valid (group was found), 0 otherwise */
+static int lookup_gid(const char* name, gid_t* gid)
+{
+    /* the first entry will be a flag indicating whether the lookup
+     * succeeded (1) or not (0), if successful, the gid will be
+     * stored in the second entry */
+    uint64_t values[2];
+
+    /* get our rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* have rank 0 do the lookup */
     if (rank == 0) {
         /* lookup specified group name */
         errno = 0;
         struct group* gr = getgrnam(name);
         if (gr != NULL) {
-            /* lookup succeeded */
+            /* lookup succeeded, copy the gid */
             values[0] = 1;
             values[1] = (uint64_t) gr->gr_gid;
         }
@@ -123,7 +174,7 @@ static int lookup_gid(const char* name, gid_t* gid)
     /* broadcast result from lookup */
     MPI_Bcast(values, 2, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
-    /* set the group id */
+    /* copy group id to return value if lookup was successful */
     int rc = (int) values[0];
     if (values[0] == 1) {
         *gid = (gid_t) values[1];
@@ -798,7 +849,7 @@ static void set_modebits(struct perms* head, mfu_filetype type, mode_t old_mode,
     }
 }
 
-static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* grname, struct perms* head, gid_t gid)
+static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* usrname, const char* grname, struct perms* head, uid_t uid, gid_t gid)
 {
     /* each process directly changes permissions on its elements for each level */
     uint64_t idx;
@@ -807,23 +858,37 @@ static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* grn
         /* get file name */
         const char* dest_path = mfu_flist_file_get_name(list, idx);
 
-        /* update group if user gave a group name */
-        if (grname != NULL) {
+        /* update owner/group if user gave an owner/group name */
+        if (usrname != NULL || grname != NULL) {
             /* get user id and group id of file */
-            uid_t uid = (uid_t) mfu_flist_file_get_uid(list, idx);
+            uid_t olduid = (uid_t) mfu_flist_file_get_uid(list, idx);
             gid_t oldgid = (gid_t) mfu_flist_file_get_gid(list, idx);
 
-            /* only bother to change group if it's different */
-            if (oldgid != gid) {
+            /* compute new user id, assume it doesn't change */
+            uid_t newuid = olduid;
+            if (usrname != NULL) {
+                /* user gave us a username, so the uid may have changed */
+                newuid = uid;
+            }
+
+            /* compute new group id, assume it doesn't change */
+            gid_t newgid = oldgid;
+            if (grname != NULL) {
+                /* user gave us a group name, so the gid may have changed */
+                newgid = gid;
+            }
+
+            /* only bother to change owner or group if they are different */
+            if (olduid != newuid || oldgid != newgid) {
                 /* note that we use lchown to change ownership of link itself, it path happens to be a link */
-                if (mfu_lchown(dest_path, uid, gid) != 0) {
+                if (mfu_lchown(dest_path, newuid, newgid) != 0) {
                     /* are there other EPERM conditions we do want to report? */
 
                     /* since the user running dchmod may not be the owner of the
                      * file, we could hit an EPERM error here, and the file
                      * will be left with the effective uid and gid of the dchmod
                      * process, don't bother reporting an error for that case */
-                    if (errno != EPERM) {
+                    if (errno != EPERM || olduid != newuid) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
                                   dest_path, errno, strerror(errno)
                                  );
@@ -869,14 +934,34 @@ static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* grn
     return;
 }
 
-static void flist_chmod(mfu_flist flist, const char* grname, struct perms* head)
+static void flist_chmod(mfu_flist flist, const char* usrname, const char* grname, struct perms* head)
 {
-    /* lookup groupid if set, bail out if not */
+    /* get our rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* lookup user id if given a user name */
+    uid_t uid;
+    if (usrname != NULL) {
+        int lookup_rc = lookup_uid(usrname, &uid);
+        if (lookup_rc == 0) {
+            /* failed to get user id, bail out */
+            if (rank == 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to find uid for user name `%s'", usrname);
+            }
+            return;
+        }
+    }
+
+    /* lookup group id if given a group name */
     gid_t gid;
     if (grname != NULL) {
         int lookup_rc = lookup_gid(grname, &gid);
         if (lookup_rc == 0) {
             /* failed to get group id, bail out */
+            if (rank == 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to find gid for group name `%s'", grname);
+            }
             return;
         }
     }
@@ -893,6 +978,7 @@ static void flist_chmod(mfu_flist flist, const char* grname, struct perms* head)
     /* set bits on items starting at the deepest level, this is so we still get child items
      * in the case that we're disabling bits on the parent items */
     for (int level = levels - 1; level >= 0; level--) {
+        /* start timer for this level */
         double start = MPI_Wtime();
 
         /* get list of items for this level */
@@ -900,13 +986,13 @@ static void flist_chmod(mfu_flist flist, const char* grname, struct perms* head)
 
         /* do a dchmod on each element in the list for this level & pass it the size */
         uint64_t size = 0;
-        dchmod_level(list, &size, grname, head, gid);
+        dchmod_level(list, &size, usrname, grname, head, uid, gid);
 
         /* wait for all processes to finish before we start with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
 
+        /* stop timer and print stats */
         double end = MPI_Wtime();
-
         if (mfu_debug_level >= MFU_LOG_VERBOSE) {
             uint64_t min, max, sum;
             MPI_Allreduce(&size, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
@@ -956,6 +1042,7 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("  -i, --input   <file>   - read list from file\n");
+    printf("  -u, --owner   <name>   - change owner to specified user name\n");
     printf("  -g, --group   <name>   - change group to specified group name\n");
     printf("  -m, --mode    <string> - change mode\n");
     printf("      --exclude <regex>  - exclude a list of files from command\n");
@@ -981,6 +1068,7 @@ int main(int argc, char** argv)
 
     /* parse command line options */
     char* inputname = NULL;
+    char* ownername = NULL;
     char* groupname = NULL;
     char* modestr   = NULL;
     char* regex_exp = NULL;
@@ -992,6 +1080,7 @@ int main(int argc, char** argv)
     int option_index = 0;
     static struct option long_options[] = {
         {"input",    1, 0, 'i'},
+        {"owner",    1, 0, 'u'},
         {"group",    1, 0, 'g'},
         {"mode",     1, 0, 'm'},
         {"exclude",  1, 0, 'e'},
@@ -1016,6 +1105,9 @@ int main(int argc, char** argv)
         switch (c) {
             case 'i':
                 inputname = MFU_STRDUP(optarg);
+                break;
+            case 'u':
+                ownername = MFU_STRDUP(optarg);
                 break;
             case 'g':
                 groupname = MFU_STRDUP(optarg);
@@ -1113,13 +1205,15 @@ int main(int argc, char** argv)
     /* flag used to check if permissions need to be
      * set on the walk */
     int dir_perms = 0;
-    check_usr_input_perms(head, &dir_perms);
+    if (head != NULL) {
+        check_usr_input_perms(head, &dir_perms);
+    }
 
     /* get our list of files, either by walking or reading an
      * input file */
     if (walk) {
         /* if in octal mode set walk_stat=0 */
-        if (head->octal && groupname == NULL) {
+        if (head != NULL && head->octal && ownername == NULL && groupname == NULL) {
             walk_stat = 0;
         }
         /* walk list of input paths */
@@ -1149,7 +1243,7 @@ int main(int argc, char** argv)
     umask(old_mask);
 
     /* change group and permissions */
-    flist_chmod(srclist, groupname, head);
+    flist_chmod(srclist, ownername, groupname, head);
    
     /* free list if it was used */
     if (filtered_flist != MFU_FLIST_NULL){
@@ -1166,7 +1260,8 @@ int main(int argc, char** argv)
     /* free memory allocated to hold params */
     mfu_free(&paths);
 
-    /* free the group name */
+    /* free the owner and group names */
+    mfu_free(&ownername);
     mfu_free(&groupname);
 
     /* free the modestr */
@@ -1178,7 +1273,9 @@ int main(int argc, char** argv)
     }
 
     /* free the head of the list */
-    free_list(&head);
+    if (head != NULL) {
+        free_list(&head);
+    }
 
     /* free the input file name */
     mfu_free(&inputname);
