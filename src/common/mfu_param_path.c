@@ -315,153 +315,6 @@ static void mfu_unpack_param(const char** pptr, mfu_param_path* param)
     return;
 }
 
-void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params)
-{
-    /* get our rank and number of ranks */
-    int rank, ranks;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-    /* determine number we should look up */
-    uint64_t count = num / (uint64_t) ranks;
-    uint64_t extra = num - count * (uint64_t) ranks;
-    if (rank < (int) extra) {
-        /* procs whose rank is less than extra each
-         * handle one extra param than those whose
-         * rank is equal or greater than extra */
-        count++;
-    }
-
-    /* determine our starting point */
-    uint64_t start = 0;
-    if (rank < (int) extra) {
-        /* for these procs, count is one more than procs with ranks >= extra */
-        start = (uint64_t)rank * count;
-    } else {
-        /* for these procs, count is one less than procs with ranks < extra */
-        start = extra * (count + 1) + ((uint64_t)rank - extra) * count;
-    }
-
-    /* TODO: allocate temporary params */
-    mfu_param_path* p = MFU_MALLOC(count * sizeof(mfu_param_path));
-
-    /* track maximum path length */
-    uint64_t bytes = 0;
-
-    /* process each path we're responsible for */
-    uint64_t i;
-    for (i = 0; i < count; i++) {
-        /* get pointer to param structure */
-        mfu_param_path* param = &p[i];
-
-        /* initialize all fields */
-        mfu_param_path_init(param);
-
-        /* lookup the path */
-        uint64_t path_idx = start + i;
-        const char* path = paths[path_idx];
-        
-        /* set param fields for path */
-        if (path != NULL) {
-            /* make a copy of original path */
-            param->orig = MFU_STRDUP(path);
-
-            /* get absolute path and remove ".", "..", consecutive "/",
-             * and trailing "/" characters */
-            param->path = mfu_path_strdup_abs_reduce_str(path);
-
-            /* get stat info for simplified path */
-            if (mfu_lstat(param->path, &param->path_stat) == 0) {
-                param->path_stat_valid = 1;
-            }
-
-            /* TODO: we use realpath below, which is nice since it takes out
-             * ".", "..", symlinks, and adds the absolute path, however, it
-             * fails if the file/directory does not already exist, which is
-             * often the case for dest path. */
-
-            /* resolve any symlinks */
-            char target[PATH_MAX];
-            if (realpath(path, target) != NULL) {
-                /* make a copy of resolved name */
-                param->target = MFU_STRDUP(target);
-
-                /* get stat info for resolved path */
-                if (mfu_lstat(param->target, &param->target_stat) == 0) {
-                    param->target_stat_valid = 1;
-                }
-            }
-
-            /* add in bytes needed to pack this param */
-            bytes += (uint64_t) mfu_pack_param_size(param);
-        }
-    }
-
-    /* TODO: eventually it would be nice to leave this data distributed,
-     * however for now some tools expect all params to be defined */
-
-    /* allgather to get bytes on each process */
-    int* recvcounts = (int*) MFU_MALLOC(ranks * sizeof(int));
-    int* recvdispls = (int*) MFU_MALLOC(ranks * sizeof(int));
-    int sendcount = (int) bytes;
-    MPI_Allgather(&sendcount, 1, MPI_INT, recvcounts, 1, MPI_INT, MPI_COMM_WORLD);
-
-    /* compute displacements and total number of bytes that we'll receive */
-    uint64_t allbytes = 0;
-    int disp = 0;
-    for (i = 0; i < (uint64_t) ranks; i++) {
-        recvdispls[i] = disp;
-        disp += recvcounts[i];
-        allbytes += (uint64_t) recvcounts[i];
-    }
-
-    /* allocate memory for send and recv buffers */
-    char* sendbuf = MFU_MALLOC(bytes);
-    char* recvbuf = MFU_MALLOC(allbytes);
-
-    /* pack send buffer */
-    char* ptr = sendbuf;
-    for (i = 0; i < count; i++) {
-        mfu_pack_param(&ptr, &p[i]);
-    }
-    
-    /* allgatherv to collect data */
-    MPI_Allgatherv(sendbuf, sendcount, MPI_BYTE, recvbuf, recvcounts, recvdispls, MPI_BYTE, MPI_COMM_WORLD);
-
-    /* unpack recv buffer into caller's params */
-    ptr = recvbuf;
-    for (i = 0; i < num; i++) {
-        mfu_unpack_param(&ptr, &params[i]);
-    }
-
-    /* Loop through the list of files &/or directories, and check the params 
-     * struct to see if all of them are valid file names. If one is not, let 
-     * the user know by printing a warning */
-    if (rank == 0) {
-        for (i = 0; i < num; i++) {
-            /* get pointer to param structure */
-            mfu_param_path* param = &params[i];
-            if (param->path_stat_valid == 0) {
-                /* failed to find a file at this location, let user know (may be a typo) */
-                printf("Warning: `%s' does not exist\n", param->orig); 
-            }
-        }
-    }
-
-    /* free message buffers */
-    mfu_free(&recvbuf);
-    mfu_free(&sendbuf);
-
-    /* free arrays for recv counts and displacements */
-    mfu_free(&recvdispls);
-    mfu_free(&recvcounts);
-
-    /* free temporary params */
-    mfu_free(&p);
-
-    return;
-}
-
 /**
  * Analyze all file path inputs and place on the work queue.
  *
@@ -737,6 +590,153 @@ bcast:
 
     /* rank 0 broadcasts whether we're copying into a directory */
     MPI_Bcast(flag_copy_into_dir, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    return;
+}
+
+void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params)
+{
+    /* get our rank and number of ranks */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* determine number we should look up */
+    uint64_t count = num / (uint64_t) ranks;
+    uint64_t extra = num - count * (uint64_t) ranks;
+    if (rank < (int) extra) {
+        /* procs whose rank is less than extra each
+         * handle one extra param than those whose
+         * rank is equal or greater than extra */
+        count++;
+    }
+
+    /* determine our starting point */
+    uint64_t start = 0;
+    if (rank < (int) extra) {
+        /* for these procs, count is one more than procs with ranks >= extra */
+        start = (uint64_t)rank * count;
+    } else {
+        /* for these procs, count is one less than procs with ranks < extra */
+        start = extra * (count + 1) + ((uint64_t)rank - extra) * count;
+    }
+
+    /* TODO: allocate temporary params */
+    mfu_param_path* p = MFU_MALLOC(count * sizeof(mfu_param_path));
+
+    /* track maximum path length */
+    uint64_t bytes = 0;
+
+    /* process each path we're responsible for */
+    uint64_t i;
+    for (i = 0; i < count; i++) {
+        /* get pointer to param structure */
+        mfu_param_path* param = &p[i];
+
+        /* initialize all fields */
+        mfu_param_path_init(param);
+
+        /* lookup the path */
+        uint64_t path_idx = start + i;
+        const char* path = paths[path_idx];
+        
+        /* set param fields for path */
+        if (path != NULL) {
+            /* make a copy of original path */
+            param->orig = MFU_STRDUP(path);
+
+            /* get absolute path and remove ".", "..", consecutive "/",
+             * and trailing "/" characters */
+            param->path = mfu_path_strdup_abs_reduce_str(path);
+
+            /* get stat info for simplified path */
+            if (mfu_lstat(param->path, &param->path_stat) == 0) {
+                param->path_stat_valid = 1;
+            }
+
+            /* TODO: we use realpath below, which is nice since it takes out
+             * ".", "..", symlinks, and adds the absolute path, however, it
+             * fails if the file/directory does not already exist, which is
+             * often the case for dest path. */
+
+            /* resolve any symlinks */
+            char target[PATH_MAX];
+            if (realpath(path, target) != NULL) {
+                /* make a copy of resolved name */
+                param->target = MFU_STRDUP(target);
+
+                /* get stat info for resolved path */
+                if (mfu_lstat(param->target, &param->target_stat) == 0) {
+                    param->target_stat_valid = 1;
+                }
+            }
+
+            /* add in bytes needed to pack this param */
+            bytes += (uint64_t) mfu_pack_param_size(param);
+        }
+    }
+
+    /* TODO: eventually it would be nice to leave this data distributed,
+     * however for now some tools expect all params to be defined */
+
+    /* allgather to get bytes on each process */
+    int* recvcounts = (int*) MFU_MALLOC(ranks * sizeof(int));
+    int* recvdispls = (int*) MFU_MALLOC(ranks * sizeof(int));
+    int sendcount = (int) bytes;
+    MPI_Allgather(&sendcount, 1, MPI_INT, recvcounts, 1, MPI_INT, MPI_COMM_WORLD);
+
+    /* compute displacements and total number of bytes that we'll receive */
+    uint64_t allbytes = 0;
+    int disp = 0;
+    for (i = 0; i < (uint64_t) ranks; i++) {
+        recvdispls[i] = disp;
+        disp += recvcounts[i];
+        allbytes += (uint64_t) recvcounts[i];
+    }
+
+    /* allocate memory for send and recv buffers */
+    char* sendbuf = MFU_MALLOC(bytes);
+    char* recvbuf = MFU_MALLOC(allbytes);
+
+    /* pack send buffer */
+    char* ptr = sendbuf;
+    for (i = 0; i < count; i++) {
+        mfu_pack_param(&ptr, &p[i]);
+    }
+    
+    /* allgatherv to collect data */
+    MPI_Allgatherv(sendbuf, sendcount, MPI_BYTE, recvbuf, recvcounts, recvdispls, MPI_BYTE, MPI_COMM_WORLD);
+
+    /* unpack recv buffer into caller's params */
+    ptr = recvbuf;
+    for (i = 0; i < num; i++) {
+        mfu_unpack_param(&ptr, &params[i]);
+    }
+
+    /* Loop through the list of files &/or directories, and check the params 
+     * struct to see if all of them are valid file names. If one is not, let 
+     * the user know by printing a warning */
+    if (rank == 0) {
+        for (i = 0; i < num; i++) {
+            /* get pointer to param structure */
+            mfu_param_path* param = &params[i];
+            if (param->path_stat_valid == 0) {
+                /* failed to find a file at this location, let user know (may be a typo) */
+                printf("Warning: `%s' does not exist\n", param->orig); 
+            }
+        }
+    }
+
+    /* free message buffers */
+    mfu_free(&recvbuf);
+    mfu_free(&sendbuf);
+
+    /* free arrays for recv counts and displacements */
+    mfu_free(&recvdispls);
+    mfu_free(&recvcounts);
+
+    /* free temporary params */
+    mfu_free(&p);
 
     return;
 }

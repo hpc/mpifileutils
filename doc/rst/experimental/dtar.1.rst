@@ -26,9 +26,5 @@ Known bugs
 SEE ALSO
 --------
 
-:manpage:`dcmp(1)`, :manpage:`dcp(1)`, :manpage:`dfilemaker(1)`, :manpage:`dfind(1)`,
-:manpage:`dgrep(1)`, :manpage:`dparallel(1)`, :manpage:`drm(1)`, :manpage:`dtar(1)`,
-:manpage:`dwalk(1)`.
-
 The mpiFileUtils source code and all documentation may be downloaded
 from <https://github.com/hpc/mpifileutils>

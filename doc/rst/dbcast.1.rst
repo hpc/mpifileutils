@@ -42,22 +42,18 @@ EXAMPLES
 
 1. To broadcast a file to /ssd on each node:
 
-   mpirun -np 128 dbcast /global/path/to/filenane /ssd/filename
+``mpirun -np 128 dbcast /global/path/to/filenane /ssd/filename``
 
 2. Same thing, but slicing at 10MB chunks:
 
-   mpirun -np 128 dbcast -s 10MB /global/path/to/filenane /ssd/filename
+``mpirun -np 128 dbcast -s 10MB /global/path/to/filenane /ssd/filename``
 
 3. To read the current striping parameters of a file on Lustre:
 
-   lfs getstripe /global/path/to/filename
+``lfs getstripe /global/path/to/filename``
 
 SEE ALSO
 --------
-
-:manpage:`dbcast (1)`, :manpage:`dchmod (1)`, :manpage:`dcmp (1)`,
-:manpage:`dcp (1)`, :manpage:`drm (1)`, :manpage:`dstripe (1)`,
-:manpage:`dwalk (1)`.
 
 The mpiFileUtils source code and all documentation may be downloaded
 from <https://github.com/hpc/mpifileutils>

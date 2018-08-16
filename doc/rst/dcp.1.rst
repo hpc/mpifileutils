@@ -60,16 +60,16 @@ EXAMPLES
 
 1. To copy dir1 as dir2:
 
-   mpirun -np 128 dcp /source/dir1 /dest/dir2
+``mpirun -np 128 dcp /source/dir1 /dest/dir2``
 
 2. To copy contents of dir1 into dir2:
 
-   mkdir /dest/dir2 mpirun -np 128 dcp /source/dir1/\* /dest/dir2
+``mkdir /dest/dir2 mpirun -np 128 dcp /source/dir1/\* /dest/dir2``
 
 3. To copy while preserving permissions, group, timestamps, and
    attributes:
 
-   mpirun -np 128 dcp -p /source/dir1/ /dest/dir2
+``mpirun -np 128 dcp -p /source/dir1/ /dest/dir2``
 
 KNOWN BUGS
 ----------
@@ -83,10 +83,6 @@ characters that your operating system supports.
 
 SEE ALSO
 --------
-
-:manpage:`dbcast(1)`, :manpage:`dchmod(1)`, :manpage:`dcmp(1)`,
-:manpage:`dcp(1)`, :manpage:`drm(1)`, :manpage:`dstripe(1)`,
-:manpage:`dwalk(1)`.
 
 The mpiFileUtils source code and all documentation may be downloaded
 from <https://github.com/hpc/mpifileutils>

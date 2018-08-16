@@ -59,32 +59,29 @@ EXAMPLES
 
 1. To stripe a file on all storage devices using a 1MB stripe size:
 
-   mpirun -np 128 dstripe -s 1MB /path/to/file
+``mpirun -np 128 dstripe -s 1MB /path/to/file``
 
 2. To stripe a file across 20 storage devices with a 1GB stripe size:
 
-   mpirun -np 128 dstripe -c 20 -s 1GB /path/to/file
+``mpirun -np 128 dstripe -c 20 -s 1GB /path/to/file``
 
 3. To restripe all files in /path/to/files/ that are at least 1GB in
    size:
 
-   mpirun -np 128 dstripe -m 1GB /path/to/files/
+``mpirun -np 128 dstripe -m 1GB /path/to/files/``
 
 4. To restripe all files in /path/to/files/ across 10 storage devices
    with 2MB stripe size:
 
-   mpirun -np 128 dstripe -c 10 -s 2MB /path/to/files/
+``mpirun -np 128 dstripe -c 10 -s 2MB /path/to/files/``
 
 5. To display the current stripe count and stripe size of all files in
    /path/to/files/:
 
-   mpirun -np 128 dstripe -r /path/to/files/
+``mpirun -np 128 dstripe -r /path/to/files/``
 
 SEE ALSO
 --------
-
-:manpage:`dbcast(1)`, :manpage:`dchmod(1)`, :manpage:`dcmp(1)`, :manpage:`dcp(1)`,
-:manpage:`drm(1)`, :manpage:`dstripe(1)`, :manpage:`dwalk(1)`.
 
 The mpiFileUtils source code and all documentation may be downloaded
 from <https://github.com/hpc/mpifileutils>

@@ -5,7 +5,7 @@ use mvapich2-gnu
 
 set -x
 
-mpifileutils=mpifileutils-0.6
+mpifileutils=mpifileutils-0.8
 
 topdir=`pwd`
 installdir=$topdir/install

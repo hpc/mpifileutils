@@ -69,9 +69,5 @@ actually exist? Unless there is another version of the code somewhere?**
 SEE ALSO
 --------
 
-:manpage:`dbcast(1)`, :manpage:`dchmod(1)`, :manpage:`dcmp(1)`,
-:manpage:`dcp(1)`, :manpage:`drm(1)`, :manpage:`dstripe(1)`,
-:manpage:`dwalk(1)`.
-
 The mpiFileUtils source code and all documentation may be downloaded
 from <https://github.com/hpc/mpifileutils>
