@@ -108,46 +108,6 @@ static mfu_copy_stats_t mfu_copy_stats;
 static mfu_copy_file_cache_t mfu_copy_src_cache;
 static mfu_copy_file_cache_t mfu_copy_dst_cache;
 
-int mfu_input_flist_skip(const char* name, void *args)
-{
-    struct mfu_flist_skip_args *sk_args;
-    /* create mfu_path from name */
-    const mfu_path* path = mfu_path_from_str(name);
-
-    if (args == NULL) {
-        MFU_LOG(MFU_LOG_INFO, "Skip %s.", name);
-        return 1;
-    }
-
-    sk_args =  (struct mfu_flist_skip_args *)args;
-
-    /* iterate over each source path */
-    int i;
-    for (i = 0; i < sk_args->numpaths; i++) {
-        /* create mfu_path of source path */
-        const char* src_name = sk_args->paths[i].path;
-        const mfu_path* src_path = mfu_path_from_str(src_name);
-
-        /* check whether path is contained within or equal to
-         * source path and if so, we need to copy this file */
-        mfu_path_result result = mfu_path_cmp(path, src_path);
-        if (result == MFU_PATH_SRC_CHILD || result == MFU_PATH_EQUAL) {
-               MFU_LOG(MFU_LOG_INFO, "Need to copy %s because of %s.",
-                   name, src_name);
-            mfu_path_delete(&src_path);
-            mfu_path_delete(&path);
-            return 0;
-        }
-        mfu_path_delete(&src_path);
-    }
-
-    /* the path in name is not a child of any source paths,
-     * so skip this file */
-    MFU_LOG(MFU_LOG_INFO, "Skip %s.", name);
-    mfu_path_delete(&path);
-    return 1;
-}
-
 static int mfu_copy_open_file(const char* file, int read_flag, 
         mfu_copy_file_cache_t* cache, mfu_copy_opts_t* mfu_copy_opts)
 {

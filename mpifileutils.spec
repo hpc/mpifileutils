@@ -1,11 +1,11 @@
 Name:		mpifileutils
-Version:	0.6
+Version:	0.8
 Release:	1%{?dist}
 Summary:	File utilities designed for scalability and performance.
 
 Group:		System Environment/Libraries
 License:	Copyright and BSD License
-URL:		http://fileutils.io/
+URL:		https://hpc.github.io/mpifileutils
 Source:		%{name}-%{version}.tar.gz
 BuildRoot:      %_topdir/BUILDROOT
 Requires: libcircle, lwgrp, dtcmp, libarchive, openssl, openssl-devel

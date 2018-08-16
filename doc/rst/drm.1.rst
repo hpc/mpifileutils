@@ -60,26 +60,23 @@ EXAMPLES
 
 1. To delete a directory and its contents:
 
-   mpirun -np 128 drm -v /dir/to/delete
+``mpirun -np 128 drm -v /dir/to/delete``
 
 2. Delete all items (files and directories) ending with .core from
    directory tree:
 
-   mpirun -np 128 drm --match '.core$' /dir/to/delete/from
+``mpirun -np 128 drm --match '.core$' /dir/to/delete/from``
 
 3. List items that would be deleted without removing them:
 
-   mpirun -np 128 drm --dryrun --match '.core$' /dir/to/delete/from
+``mpirun -np 128 drm --dryrun --match '.core$' /dir/to/delete/from``
 
 4. Delete all items named foo:
 
-   mpirun -np 128 drm --name --match '^foo$' /dir/to/delete/from
+``mpirun -np 128 drm --name --match '^foo$' /dir/to/delete/from``
 
 SEE ALSO
 --------
-
-:manpage:`dbcast(1)`, :manpage:`dchmod(1)`, :manpage:`dcmp(1)`, :manpage:`dcp(1)`,
-:manpage:`drm(1)`, :manpage:`dstripe(1)`, :manpage:`dwalk(1)`.
 
 The mpiFileUtils source code and all documentation may be downloaded
 from <https://github.com/hpc/mpifileutils>

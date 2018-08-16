@@ -1,3 +1,4 @@
+.. include:: <isotech.txt>
 dchmod
 ======
 
@@ -70,30 +71,26 @@ EXAMPLES
 
 1. Use octal mode to change permissions:
 
-   mpirun -np 128 dchmod --mode 755 /directory
+``mpirun -np 128 dchmod --mode 755 /directory``
 
 2. Set group and mode in a single command using symbolic mode:
 
-   mpirun -np 128 dchmod --group mygroup --mode u+r,g+rw /directory
+``mpirun -np 128 dchmod --group mygroup --mode u+r,g+rw /directory``
 
 3. Set owner and group, leaving permissions the same:
 
-   mpirun -np 128 dchmod --owner user1 --group mygroup /directory
+``mpirun -np 128 dchmod --owner user1 --group mygroup /directory``
 
 4. Change permissions to u+rw on all items EXCEPT those whose name match
    regex:
 
-   mpirun -np 128 dchmod --name --exclude ‘afilename’ --mode u+rw /directory
+``mpirun -np 128 dchmod --name --exclude ‘afilename’ --mode u+rw /directory``
 
-   Note: You can use --match to change file permissions on all of the
-   files/directories that match the regex.
+Note: You can use --match to change file permissions on all of the
+files/directories that match the regex.
 
 SEE ALSO
 --------
-
-:manpage:`dbcast(1)`, :manpage:`dchmod(1)`, :manpage:`dcmp(1)`,
-:manpage:`dcp(1)`, :manpage:`drm(1)`, :manpage:`dstripe(1)`,
-:manpage:`dwalk(1)`.
 
 The mpiFileUtils source code and all documentation may be downloaded
 from <https://github.com/hpc/mpifileutils>

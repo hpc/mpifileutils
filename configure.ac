@@ -1,4 +1,4 @@
-AC_INIT([mpifileutils],[0.7a],[mpifileutils-discuss@googlegroups.com],[mpifileutils],[http://fileutils.io])
+AC_INIT([mpifileutils],[0.8],[mpifileutils-discuss@googlegroups.com],[mpifileutils],[https://hpc.github.io/mpifileutils])
 
 # Keep artifacts in directories as much as possible.
 AC_CONFIG_AUX_DIR(auxdir)

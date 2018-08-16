@@ -54,8 +54,8 @@ extern "C" {
  * the stat fields are valid (path_stat_valid and target_stat_valid).
  *
  * To avoid hitting the file system with a bunch of redundant stat
- * calls, only rank 0 executes the stat calls, and it broadcasts the
- * results to all other ranks in the job.
+ * calls, only one rank executes the stat call for each path, and
+ * the information is shared through MPI.
  *
  * After calling mfu_param_path_set, you must eventually call
  * mfu_param_path_free to release resources allocated in
@@ -71,11 +71,40 @@ typedef struct mfu_param_path_t {
     struct stat target_stat; /* stat of target path */
 } mfu_param_path;
 
+/* set fields in param according to path */
+void mfu_param_path_set(const char* path, mfu_param_path* param);
+
+/* free memory associated with param */
+void mfu_param_path_free(mfu_param_path* param);
+
+/* set fields in params according to paths,
+ * the number of paths is specified in num,
+ * paths is an array of char* of length num pointing to the input paths,
+ * params is an array of length num to hold output */
+void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params);
+
+/* free resources allocated in call to mfu_param_path_set_all */
+void mfu_param_path_free_all(uint64_t num, mfu_param_path* params);
+
+/* given a list of source param_paths and single destinaton path,
+ * identify whether sources can be copied to destination, returns
+ * valid=1 if copy is valid and returns copy_into_dir=1 if
+ * destination is a directory and items should be copied into
+ * it rather than on top of it */
+void mfu_param_path_check_copy(
+    uint64_t num,                   /* IN  - number of source paths */
+    const mfu_param_path* paths,    /* IN  - array of source param paths */
+    const mfu_param_path* destpath, /* IN  - dest param path */
+    int* flag_valid,                /* OUT - flag indicating whether combination of source and dest param paths are valid (1) or not (0) */
+    int* flag_copy_into_dir         /* OUT - flag indicating whether source items should be copied into destination directory (1) or not (0) */
+);
+
+/* options passed to mfu_flist_copy that affect how a copy is executed */
 typedef struct {
     int    copy_into_dir; /* flag indicating whether copying into existing dir */
     int    do_sync;       /* flag option to sync src dir with dest dir */ 
     char*  dest_path;     /* prefex of destination directory */
-    char*  input_file;    /* file name of input list*/
+    char*  input_file;    /* file name of input list */
     bool   preserve;      /* whether to preserve timestamps, ownership, permissions, etc. */
     bool   synchronous;   /* whether to use O_DIRECT */
     bool   sparse;        /* whether to create sparse files */
@@ -86,35 +115,19 @@ typedef struct {
     int    grouplock_id;  /* Lustre grouplock ID */
 } mfu_copy_opts_t;
 
-/* set fields in params according to paths,
- * the number of paths is specified in num,
- * paths is an array of char* of length num pointing to the input paths,
- * params is an array of length num to hold output */
-void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params);
-
-/* given a list of source param_paths and single destinaton path,
- * identify whether sources can be copied to destination, returns
- * valid=1 if copy is valid and returns copy_into_dir=1 if
- * destination is a directory and items should be copied into
- * it rather than on top of it */
-void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths, 
-        const mfu_param_path* destpath, int* flag_valid, int* flag_copy_into_dir);
-
-/* given an item name, determine which source path this item
+/* Given a source item name, determine which source path this item
  * is contained within, extract directory components from source
- * path to this item and then prepend destination prefix. */
-char* mfu_param_path_copy_dest(const char* name, int numpaths,
-        const mfu_param_path* paths, const mfu_param_path* destpath, 
-        mfu_copy_opts_t* mfu_copy_opts);
-
-/* free resources allocated in call to mfu_param_path_set_all */
-void mfu_param_path_free_all(uint64_t num, mfu_param_path* params);
-
-/* set fields in param according to path */
-void mfu_param_path_set(const char* path, mfu_param_path* param);
-
-/* free memory associated with param */
-void mfu_param_path_free(mfu_param_path* param);
+ * path to this item and then prepend destination prefix.
+ * Returns NULL if destination path could not be computed.
+ * Otherwise allocates and returns a string giving the computed destination path.
+ * Caller is responsible for freeing returned string with mfu_free(). */
+char* mfu_param_path_copy_dest(
+    const char* name,               /* IN  - path of item being considered */
+    int numpaths,                   /* IN  - number of source paths */
+    const mfu_param_path* paths,    /* IN  - array of source param paths */
+    const mfu_param_path* destpath, /* IN  - dest param path */
+    mfu_copy_opts_t* mfu_copy_opts  /* IN  - options to be used during copy */
+);
 
 #endif /* MFU_PARAM_PATH_H */
 

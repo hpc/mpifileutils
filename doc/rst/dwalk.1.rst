@@ -73,26 +73,23 @@ EXAMPLES
 
 1. To print summary information for a directory:
 
-   mpirun -np 128 dwalk -v /dir/to/walk
+``mpirun -np 128 dwalk -v /dir/to/walk``
 
 2. To print a list of files, sorted by file size, then by file name:
 
-   mpirun -np 128 dwalk –print –sort size,name /dir/to/walk
+``mpirun -np 128 dwalk –print –sort size,name /dir/to/walk``
 
 3. To save the list of files:
 
-   mpirun -np 128 dwalk –output out.dwalk /dir/to/walk
+``mpirun -np 128 dwalk –output out.dwalk /dir/to/walk``
 
 4. Print the file distribution for specified histogram based on the size
    field from the top level directory.
 
-   mpirun -np 128 dwalk -v –print -d size:0,20,1G src/
+``mpirun -np 128 dwalk -v –print -d size:0,20,1G src/``
 
 SEE ALSO
 --------
-
-:manpage:`dbcast(1)`, :manpage:`dchmod(1)`, :manpage:`dcmp(1)`, :manpage:`dcp(1)`,
-:manpage:`drm(1)`, :manpage:`dstripe(1)`, :manpage:`dwalk(1)`.
 
 The mpiFileUtils source code and all documentation may be downloaded
 from <https://github.com/hpc/mpifileutils>

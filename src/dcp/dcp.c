@@ -32,6 +32,47 @@
 #include "libcircle.h"
 #include "mfu.h" 
 
+static int input_flist_skip(const char* name, void *args)
+{
+    /* nothing to do if args are NULL */
+    if (args == NULL) {
+        MFU_LOG(MFU_LOG_INFO, "Skip %s.", name);
+        return 1;
+    }
+
+    /* get pointer to arguments */
+    struct mfu_flist_skip_args *sk_args = (struct mfu_flist_skip_args *)args;
+
+    /* create mfu_path from name */
+    const mfu_path* path = mfu_path_from_str(name);
+
+    /* iterate over each source path */
+    int i;
+    for (i = 0; i < sk_args->numpaths; i++) {
+        /* create mfu_path of source path */
+        const char* src_name = sk_args->paths[i].path;
+        const mfu_path* src_path = mfu_path_from_str(src_name);
+
+        /* check whether path is contained within or equal to
+         * source path and if so, we need to copy this file */
+        mfu_path_result result = mfu_path_cmp(path, src_path);
+        if (result == MFU_PATH_SRC_CHILD || result == MFU_PATH_EQUAL) {
+            MFU_LOG(MFU_LOG_INFO, "Need to copy %s because of %s.",
+               name, src_name);
+            mfu_path_delete(&src_path);
+            mfu_path_delete(&path);
+            return 0;
+        }
+        mfu_path_delete(&src_path);
+    }
+
+    /* the path in name is not a child of any source paths,
+     * so skip this file */
+    MFU_LOG(MFU_LOG_INFO, "Skip %s.", name);
+    mfu_path_delete(&path);
+    return 1;
+}
+
 /** Print a usage message. */
 void print_usage(void)
 {
@@ -289,7 +330,7 @@ int main(int argc, \
 
         skip_args.numpaths = numpaths_src;
         skip_args.paths = paths;
-        mfu_flist_stat(input_flist, flist, mfu_input_flist_skip, (void *)&skip_args);
+        mfu_flist_stat(input_flist, flist, input_flist_skip, (void *)&skip_args);
         mfu_flist_free(&input_flist);
     }
 
