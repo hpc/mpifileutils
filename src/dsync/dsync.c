@@ -49,6 +49,9 @@ static void print_usage(void)
     printf("Options:\n");
     printf("  -o, --output field0=state0@field1=state1,field2=state2:file "
            "- write list to file\n");
+    printf("  -n, --dry-run dry-run, just show the diff, don't do real sync\n");
+    printf("  -N, --no-delete  don't delete extraneous files from destination dirs\n");
+    printf("  -d, --debug enable debug mode\n");
     printf("  -v, --verbose\n");
     printf("  -h, --help  - print usage\n");
     printf("\n");
@@ -150,15 +153,19 @@ struct dsync_output {
 
 struct dsync_options {
     struct list_head outputs;      /* list of outputs */
+    int dry_run;                   /* dry run */
     int verbose;
     int debug;                     /* check result after get result */
+    int delete;                    /* delete extraneous files from destination dirs */
     int need_compare[DCMPF_MAX];   /* fields that need to be compared  */
 };
 
 struct dsync_options options = {
     .outputs      = LIST_HEAD_INIT(options.outputs),
+    .dry_run      = 0,
     .verbose      = 0,
     .debug        = 0,
+    .delete       = 1,
     .need_compare = {0,}
 };
 
@@ -574,6 +581,9 @@ static int dsync_compare_data(
         if (src_read != dst_read) {
             /* one read came up shorter than the other */
             rc = 1;
+            if (options.dry_run) {
+                break;
+            }
             copy_src_to_dst = 1;
         }
 
@@ -591,13 +601,16 @@ static int dsync_compare_data(
             if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
                 /* memory contents are different */
                 rc = 1;
+                if (options.dry_run) {
+                    break;
+                } 
                 copy_src_to_dst = 1;
             }
         }
        
         /* if the bytes are different, and the sync option is on,
          * then copy the bytes from the source into the destination */
-        if (copy_src_to_dst == 1) {
+        if (!options.dry_run && copy_src_to_dst == 1) {
             /* number of bytes to write */
             size_t bytes_to_write = (size_t) src_read;
 
@@ -858,9 +871,11 @@ static void dsync_strmap_compare_data(
                  src_p->name, dst_p->name);
 
             /* consider this to be a fatal error if syncing */
-            /* TODO: fall back more gracefully here, e.g., delete dest and overwrite */
-            MFU_LOG(MFU_LOG_ERR, "Files not synced, aborting.");
-            MPI_Abort(MPI_COMM_WORLD, 1);
+            if (!options.dry_run) {
+                /* TODO: fall back more gracefully here, e.g., delete dest and overwrite */
+                MFU_LOG(MFU_LOG_ERR, "Files not synced, aborting.");
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
         }
 
         /* now record results of compare_data for sending to segmented scan */
@@ -1109,7 +1124,7 @@ static void dsync_sync_files(strmap* src_map, strmap* dst_map,
         mfu_param_path* src_path, mfu_param_path* dest_path, 
         mfu_flist dst_list, mfu_flist dst_remove_list,
         mfu_flist src_cp_list, mfu_copy_opts_t* mfu_copy_opts) {
-    
+
     /* get our rank and number of ranks */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -1131,13 +1146,15 @@ static void dsync_sync_files(strmap* src_map, strmap* dst_map,
         MPI_Finalize();
         return 1;
     }
-    
-    /* get files that are only in the destination directory,
-     * and then remove those files */
-    dsync_only_dst(src_map, dst_map, dst_list, dst_remove_list);
-    mfu_flist_summarize(dst_remove_list);
-    mfu_flist_unlink(dst_remove_list);
-        
+   
+    if (options.delete) { 
+        /* get files that are only in the destination directory,
+         * and then remove those files
+         * */
+        dsync_only_dst(src_map, dst_map, dst_list, dst_remove_list);
+        mfu_flist_summarize(dst_remove_list);
+        mfu_flist_unlink(dst_remove_list);
+    }
     /* summarize the src copy list for files 
      * that need to be copied into dest directory */ 
     mfu_flist_summarize(src_cp_list); 
@@ -1173,9 +1190,14 @@ static void dsync_strmap_compare(mfu_flist src_list,
     mfu_flist dst_remove_list = MFU_FLIST_NULL; 
     mfu_flist src_cp_list     = MFU_FLIST_NULL; 
 
-    /* create dst remove list if sync option is on */
-    dst_remove_list = mfu_flist_subset(dst_list);
-    src_cp_list = mfu_flist_subset(src_list);
+    if (!options.dry_run) {
+        /* create dst remove list if sync option is on */
+        if (options.delete) {
+            dst_remove_list = mfu_flist_subset(dst_list);
+        }
+
+        src_cp_list = mfu_flist_subset(src_list);
+    }
 
     /* iterate over each item in source map */
     const strmap_node* node;
@@ -1196,8 +1218,9 @@ static void dsync_strmap_compare(mfu_flist src_list,
 
             /* copy items only in src directory into src copy list
              * for sync option (will be later copied into dst dir) */ 
-            mfu_flist_file_copy(src_list, src_index, src_cp_list);
-
+            if (!options.dry_run) {
+                 mfu_flist_file_copy(src_list, src_index, src_cp_list);
+            }
             /* skip uncommon files, all other states are DCMPS_INIT */
             continue;
         }
@@ -1233,8 +1256,12 @@ static void dsync_strmap_compare(mfu_flist src_list,
             /* if the types are different we need to make sure we delete the
              * file of the same name in the dst dir, and copy the type in 
              * the src dir to the dst directory */
-             mfu_flist_file_copy(src_list, src_index, src_cp_list);
-             mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
+            if (!options.dry_run) {
+                mfu_flist_file_copy(src_list, src_index, src_cp_list);
+                if (options.delete) {
+                    mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
+                }
+            }
 
             if (!dsync_option_need_compare(DCMPF_CONTENT)) {
                 continue;
@@ -1273,8 +1300,12 @@ static void dsync_strmap_compare(mfu_flist src_list,
 
             /* if the file sizes are different then we need to remove the file in
              * the dst directory, and replace it with the one in the src directory */
-            mfu_flist_file_copy(src_list, src_index, src_cp_list);
-            mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
+            if (!options.dry_run) {
+                mfu_flist_file_copy(src_list, src_index, src_cp_list);
+                if (options.delete) {
+                    mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
+                }
+            }
 
             continue;
         }
@@ -1324,8 +1355,9 @@ static void dsync_strmap_compare(mfu_flist src_list,
 
     /* sync the files that are in the source and destination
      * directories */
-    dsync_sync_files(src_map, dst_map, src_path, dest_path, dst_list, dst_remove_list, src_cp_list, mfu_copy_opts);
-
+    if (!options.dry_run) {
+        dsync_sync_files(src_map, dst_map, src_path, dest_path, dst_list, dst_remove_list, src_cp_list, mfu_copy_opts);
+    }
     /* free lists used for copying and removing files in sync option */
     /* TODO: fix MFU_FLIST_NULL so that we don't have to do these NULL
      * checks here */
@@ -2277,10 +2309,12 @@ int main(int argc, char **argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"debug",    0, 0, 'd'},
-        {"output",   1, 0, 'o'},
-        {"verbose",  0, 0, 'v'},
-        {"help",     0, 0, 'h'},
+        {"debug",     0, 0, 'd'},
+        {"dry-run",   0, 0, 'n'},
+        {"no-delete", 0, 0, 'N'},
+        {"output",    1, 0, 'o'},
+        {"verbose",   0, 0, 'v'},
+        {"help",      0, 0, 'h'},
         {0, 0, 0, 0}
     };
     int ret = 0;
@@ -2291,7 +2325,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "do:vh",
+            argc, argv, "dnNo:vh",
             long_options, &option_index
         );
 
@@ -2302,6 +2336,12 @@ int main(int argc, char **argv)
         switch (c) {
         case 'd':
             options.debug++;
+            break;
+        case 'n':
+            options.dry_run++;
+            break;
+        case 'N':
+            options.delete = 0;
             break;
         case 'o':
             ret = dsync_option_output_parse(optarg, 0);
