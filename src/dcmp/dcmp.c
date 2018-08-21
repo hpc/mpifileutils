@@ -906,7 +906,7 @@ static void dcmp_strmap_compare_data(
     DTCMP_Str_create_ascend((int)max_name, &keytype, &keyop);
 
     /* execute segmented scan of comparison flags across file names */
-    DTCMP_Segmented_exscan((int)list_count, keys, keytype, vals, ltr, rtl, MPI_INT, keyop, DTCMP_FLAG_NONE, MPI_LOR, MPI_COMM_WORLD);
+    DTCMP_Segmented_exscanv((int)list_count, keys, keytype, keyop, vals, ltr, rtl, MPI_INT, MPI_LOR, DTCMP_FLAG_NONE, MPI_COMM_WORLD);
     for (i = 0; i < list_count; i++) {
         /* turn segmented exscan into scan by or'ing in our input */
         ltr[i] |= vals[i];

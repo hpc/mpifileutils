@@ -694,17 +694,20 @@ static void sort_scan_sort(mfu_path* origpath, uint64_t allmax,
     }
 
     /* execute scan */
-    DTCMP_Segmented_exscan(
-        numchildren, strbuf, key, rankval,  rankltr,  rankrtl, 
-        MPI_UINT64_T, cmp, DTCMP_FLAG_NONE, MPI_SUM, MPI_COMM_WORLD
+    DTCMP_Segmented_exscanv(
+        numchildren, strbuf, key, cmp,
+        rankval,  rankltr,  rankrtl, MPI_UINT64_T, MPI_SUM,
+        DTCMP_FLAG_NONE, MPI_COMM_WORLD
     );
-    DTCMP_Segmented_exscan(
-        numchildren, strbuf, key, countval, countltr, countrtl,
-        MPI_UINT64_T, cmp, DTCMP_FLAG_NONE, MPI_SUM, MPI_COMM_WORLD
+    DTCMP_Segmented_exscanv(
+        numchildren, strbuf, key, cmp,
+        countval, countltr, countrtl, MPI_UINT64_T, MPI_SUM,
+        DTCMP_FLAG_NONE, MPI_COMM_WORLD
     );
-    DTCMP_Segmented_exscan(
-        numchildren, strbuf, key, bytesval, bytesltr, bytesrtl,
-        MPI_UINT64_T, cmp, DTCMP_FLAG_NONE, MPI_SUM, MPI_COMM_WORLD
+    DTCMP_Segmented_exscanv(
+        numchildren, strbuf, key, cmp,
+        bytesval, bytesltr, bytesrtl, MPI_UINT64_T, MPI_SUM,
+        DTCMP_FLAG_NONE, MPI_COMM_WORLD
     );
 
     /* total counts and bytes for each item */
