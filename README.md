@@ -29,10 +29,12 @@ To enable experimental utilities, run configure with the enable experimental opt
 
     ./configure --enable-experimental
 
- - dbz2 - Compress file with bz2 (experimental).
- - dparallel - Perform commands in parallel (experimental).
- - dsh - List and remove files with interactive commands (experimental).
- - dtar - Create file tape archives (experimental).
+ - dbz2 - Compress a file with bz2.
+ - dfind - Search for files in parallel.
+ - dgrep - Run grep on files in parallel.
+ - dparallel - Perform commands in parallel.
+ - dsh - List and remove files with interactive commands.
+ - dtar - Create file tape archives.
 
 ## libmfu
 Functionality that is common to multiple tools is moved to the common library, libmfu.

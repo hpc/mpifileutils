@@ -97,9 +97,11 @@ AC_CONFIG_FILES([Makefile                \
 X_AC_EXPERIMENTAL
 if test [EXPERIMENTAL_ENABLED]; then
 AC_CONFIG_FILES([experimental/Makefile           \
+                 experimental/dbz2/Makefile      \
+                 experimental/dfind/Makefile     \
+                 experimental/dgrep/Makefile     \
                  experimental/dparallel/Makefile \
                  experimental/dsh/Makefile       \
-                 experimental/dbz2/Makefile      \
                  experimental/dtar/Makefile      \
 ])
 fi

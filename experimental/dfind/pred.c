@@ -159,7 +159,7 @@ int pred_newer (struct target t, void * arg)
 {
 	statif(&t);
 
-	if (t.statbuf->st_mtimespec.tv_sec > (time_t)arg)
+	if (t.statbuf->st_mtime > (time_t)arg)
 		return 1;
 	else
 		return 0;
