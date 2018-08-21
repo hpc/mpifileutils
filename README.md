@@ -97,5 +97,22 @@ it should be provided in the common library.
 ## Contributors
 We welcome contributions to the project.  For details on how to help, see our [Contributor Guide](.github/CONTRIBUTORS.md)
 
+### Copyrights
+
+Copyright (c) 2013-2015, Lawrence Livermore National Security, LLC.
+  Produced at the Lawrence Livermore National Laboratory
+  Written by Adam Moody <moody20@llnl.gov>.
+  CODE-673838
+
+Copyright (c) 2006-2007,2011-2015, Los Alamos National Security, LLC.
+  (LA-CC-06-077, LA-CC-10-066, LA-CC-14-046)
+
+Copyright (2013-2015) UT-Battelle, LLC under Contract No.
+DE-AC05-00OR22725 with the Department of Energy.
+
+Copyright (c) 2015, DataDirect Networks, Inc.
+
+All rights reserved.
+
 ## Build Status
 The current status of the mpiFileUtils master branch is [![Build Status](https://travis-ci.org/hpc/mpifileutils.png?branch=master)](https://travis-ci.org/hpc/mpifileutils).
