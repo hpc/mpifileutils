@@ -1,8 +1,5 @@
 #!/bin/bash
 
-. /usr/local/tools/dotkit/init.sh
-use mvapich2-gnu-2.2
-
 set -x
 
 topdir=`pwd`

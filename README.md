@@ -44,18 +44,21 @@ to efficiently create or remove a large directory tree in a portable way across 
 For documentation on how to use this library, see [libmfu](src/common/README.md).
 
 ## Build
-mpiFileUtils depends on several libraries.  To simplify builds, there are two scripts: buildme\_dependencies and buildme.  The buildme\_dependencies script downloads and installs all the necessary libraries.  The buildme script then builds mpiFileUtils assuming the libraries have been installed.  Both scripts require that mpicc is in your path, and that it is for an MPI library that supports at least v2.2 of the MPI standard.  Please review each buildme script, and edit if necessary.  Then run them in sequence:
-
-    ./buildme_dependencies
-    ./buildme
-
-Alternatively, mpiFileUtils is available in [Spack](https://spack.io/), which simplifies the install to just:
+mpiFileUtils depends on several libraries.
+mpiFileUtils is available in [Spack](https://spack.io/), which simplifies the install to just:
 
     spack install mpifileutils
 
 or to enable all features:
 
     spack install mpifileutils +lustre +experimental
+
+To build from a release tarball, there are two scripts: buildme\_dependencies and buildme.  The buildme\_dependencies script downloads and installs all the necessary libraries.  The buildme script then builds mpiFileUtils assuming the libraries have been installed.  Both scripts require that mpicc is in your path, and that it is for an MPI library that supports at least v2.2 of the MPI standard.  Please review each buildme script, and edit if necessary.  Then run them in sequence:
+
+    ./buildme_dependencies
+    ./buildme
+
+To build from a clone, it may also be necessary to first run the buildme\_autotools script to obtain the required set of autotools.
 
 ## Project Design Principles
 The following principles drive design decisions in the project.
@@ -86,6 +89,9 @@ One tool may process a dataset and generate an output file that another tool can
 e.g., to walk a directory tree with one tool, filter the list of file names with another, and perhaps delete a subset of matching files with a third.
 Additionally, when logic is deemed to be useful across multiple tools or is anticipated to be useful in future tools or applications,
 it should be provided in the common library.
+
+## Contributors
+We welcome contributions to the project.  For details on how to help, see our [Contributor Guide](.github/CONTRIBUTORS.md)
 
 ## Build Status
 The current status of the mpiFileUtils master branch is [![Build Status](https://travis-ci.org/hpc/mpifileutils.png?branch=master)](https://travis-ci.org/hpc/mpifileutils).
