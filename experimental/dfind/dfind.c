@@ -98,7 +98,7 @@ int main (int argc, char ** argv)
 					exit(1);
 				}
 
-				pred_add(pred_newer, (void *)(statbuf.st_mtimespec.tv_sec));
+				pred_add(pred_newer, (void *)(statbuf.st_mtime));
 			}
 			break;
 
