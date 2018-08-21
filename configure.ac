@@ -77,13 +77,14 @@ X_AC_LUSTRE
 AC_SEARCH_LIBS([SHA256_Init], [crypto], [], [AC_MSG_ERROR([could not find libcrypto])], [])
 
 AC_CONFIG_FILES([Makefile                \
+                 man/Makefile            \
                  src/Makefile            \
                  src/common/Makefile     \
                  src/dbcast/Makefile     \
                  src/dchmod/Makefile     \
                  src/dcmp/Makefile       \
                  src/dcp/Makefile        \
-                 src/dcp1/Makefile        \
+                 src/dcp1/Makefile       \
                  src/ddup/Makefile       \
                  src/dfilemaker/Makefile \
                  src/dfmake/Makefile     \
