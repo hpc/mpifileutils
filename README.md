@@ -101,7 +101,6 @@ We welcome contributions to the project.  For details on how to help, see our [C
 
 Copyright (c) 2013-2015, Lawrence Livermore National Security, LLC.
   Produced at the Lawrence Livermore National Laboratory
-  Written by Adam Moody <moody20@llnl.gov>.
   CODE-673838
 
 Copyright (c) 2006-2007,2011-2015, Los Alamos National Security, LLC.
