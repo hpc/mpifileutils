@@ -21,7 +21,7 @@ cd deps
 # (may need to update some other lines further below)
 libcircle=libcircle-0.2.1-rc.1
 lwgrp=lwgrp-1.0.2
-dtcmp=dtcmp-1.1.0
+dtcmp=dtcmp-1.0.3
 libarchive=libarchive-3.1.2
 
 # fetch dependencies
@@ -32,7 +32,7 @@ if [ ! -f ${lwgrp}.tar.gz ] ; then
   wget https://github.com/hpc/lwgrp/releases/download/v1.0.2/${lwgrp}.tar.gz
 fi
 if [ ! -f ${dtcmp}.tar.gz ] ; then
-  wget https://github.com/hpc/dtcmp/releases/download/v1.1.0/${dtcmp}.tar.gz
+  wget https://github.com/hpc/dtcmp/releases/download/v1.0.3/${dtcmp}.tar.gz
 fi
 if [ ! -f ${libarchive}.tar.gz ] ; then 
   wget http://www.libarchive.org/downloads/${libarchive}.tar.gz
