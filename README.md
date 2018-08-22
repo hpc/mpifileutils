@@ -58,10 +58,10 @@ To build from a release tarball, there are two scripts: buildme\_dependencies an
     ./buildme_dependencies
     ./buildme
 
-To build from a clone, it may also be necessary to first run the buildme\_autotools script to obtain the required set of autotools, then use buildme\_dev instead of the buildme script:
+To build from a clone, it may also be necessary to first run the buildme\_autotools script to obtain the required set of autotools, then use buildme\_dependencies\_dev and buildme\_dev:
 
     ./buildme_autotools
-    ./buildme_dependencies
+    ./buildme_dependencies_dev
     ./buildme_dev
 
 ## Project Design Principles
