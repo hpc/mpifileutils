@@ -164,8 +164,6 @@ struct dsync_options {
 
 struct dsync_options options = {
     .outputs      = LIST_HEAD_INIT(options.outputs),
-    .verbose      = 0,
-    .debug        = 0,
     .dry_run      = 0,
     .verbose      = 0,
     .debug        = 0,
