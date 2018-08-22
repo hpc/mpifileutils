@@ -153,8 +153,6 @@ struct dsync_output {
 
 struct dsync_options {
     struct list_head outputs;      /* list of outputs */
-    int verbose;
-    int debug;                     /* check result after get result */
     int dry_run;                   /* dry run */
     int verbose;
     int debug;                     /* check result after get result */
