@@ -881,9 +881,6 @@ static void dsync_strmap_compare_data(
         strncpy(name_ptr, src_p->name, max_name);
         vals[i] = rc;
 
-        /* initialize our output values (have to do this because of exscan) */
-        ltr[i] = 0;
-
         /* move to the start of the next filename */
         name_ptr += max_name;
         i++;
@@ -899,7 +896,11 @@ static void dsync_strmap_compare_data(
     DTCMP_Str_create_ascend((int)max_name, &keytype, &keyop);
 
     /* execute segmented scan of comparison flags across file names */
-    DTCMP_Segmented_scanv_ltr((int)list_count, keys, keytype, keyop, vals, ltr, MPI_INT, MPI_LOR, DTCMP_FLAG_NONE, MPI_COMM_WORLD);
+    DTCMP_Segmented_scanv_ltr(
+        (int)list_count, keys, keytype, keyop,
+        vals, ltr, MPI_INT, MPI_LOR,
+        DTCMP_FLAG_NONE, MPI_COMM_WORLD
+    );
     
     /* we're done with the MPI type and operation, free them */
     MPI_Type_free(&keytype);
