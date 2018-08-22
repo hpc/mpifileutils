@@ -843,10 +843,8 @@ static void dsync_strmap_compare_data(
      * dsync_compare_data will return a 1 or 0 for each set of bytes */
     int* vals = (int*) MFU_MALLOC(list_count * sizeof(int));
 
-    /* ltr pointer for the output of the left-to-right-segmented scan,
-     * rtl is for right-to-left scan, which we don't use */
+    /* ltr pointer for the output of the left-to-right-segmented scan */
     int* ltr  = (int*) MFU_MALLOC(list_count * sizeof(int));
-    int* rtl  = (int*) MFU_MALLOC(list_count * sizeof(int)); 
 
     /* compare bytes for each file section and set flag based on what we find */
     uint64_t i = 0;
@@ -883,10 +881,6 @@ static void dsync_strmap_compare_data(
         strncpy(name_ptr, src_p->name, max_name);
         vals[i] = rc;
 
-        /* initialize our output values (have to do this because of exscan) */
-        ltr[i] = 0;
-        rtl[i] = 0;
-
         /* move to the start of the next filename */
         name_ptr += max_name;
         i++;
@@ -902,11 +896,11 @@ static void dsync_strmap_compare_data(
     DTCMP_Str_create_ascend((int)max_name, &keytype, &keyop);
 
     /* execute segmented scan of comparison flags across file names */
-    DTCMP_Segmented_exscan((int)list_count, keys, keytype, vals, ltr, rtl, MPI_INT, keyop, DTCMP_FLAG_NONE, MPI_LOR, MPI_COMM_WORLD);
-    for (i = 0; i < list_count; i++) {
-        /* turn segmented exscan into scan by or'ing in our input */
-        ltr[i] |= vals[i];
-    }
+    DTCMP_Segmented_scanv_ltr(
+        (int)list_count, keys, keytype, keyop,
+        vals, ltr, MPI_INT, MPI_LOR,
+        DTCMP_FLAG_NONE, MPI_COMM_WORLD
+    );
     
     /* we're done with the MPI type and operation, free them */
     MPI_Type_free(&keytype);
@@ -1022,7 +1016,6 @@ static void dsync_strmap_compare_data(
 
     /* free memory */
     mfu_free(&keys);
-    mfu_free(&rtl);
     mfu_free(&ltr);
     mfu_free(&vals);
     mfu_free(&sendcounts);
@@ -1154,7 +1147,7 @@ static void dsync_sync_files(strmap* src_map, strmap* dst_map,
          * */
         dsync_only_dst(src_map, dst_map, dst_list, dst_remove_list);
         mfu_flist_summarize(dst_remove_list);
-        mfu_flist_unlink(dst_remove_list);
+        mfu_flist_unlink(dst_remove_list, 0);
     }
 
     /* summarize the src copy list for files 
