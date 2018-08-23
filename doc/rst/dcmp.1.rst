@@ -139,10 +139,17 @@ EXAMPLES
 
 ``mpirun -np 128 dcmp /src1/file1 /src2/file2``
 
-2. Compare two directories with verbose output. The verbose output
-   prints timing and number of bytes read:
+2. Compare two directories with verbose output. The verbose output prints timing and number of bytes read:
 
 ``mpirun -np 128 dcmp -v /src1 /src2``
+
+3. Write list of entries to outfile1 that are only in src1 or whose names exist in both src1 and src2 but whose types differ:
+
+``mpirun -np 128 dcmp -o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 /src1 /src2``
+
+4. Same as above but also write list of entries to outfile2 that exist in either src1 or src2 but not both:
+
+``mpirun -np 128 dcmp -o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 -o EXIST=DIFFER:outfile2 /src1 /src2``
 
 SEE ALSO
 --------
