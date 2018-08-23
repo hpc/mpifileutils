@@ -42,10 +42,6 @@ OPTIONS
    command. Files walked, started, completed, seconds, files, bytes
    read, byte rate, and file rate.
 
-.. option:: -d, --debug
-
-   Run command in debug mode.
-
 .. option:: -h, --help
 
    Print the command usage, and the list of options available.
@@ -105,7 +101,7 @@ For example, the following expression reports entries that exist in both source 
 
     EXIST=COMMON@TYPE=DIFFER
 
-The AND operator binds more tightly than the OR operator.
+The AND operator binds with higher precedence than the OR operator.
 For example, the following expression matches on entries which either (exist in both soure and destination and whose types differ) or (only exist in the source).
 
     EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY
@@ -114,9 +110,10 @@ Some conditions imply others.
 For example, for CONTENT to be considered the same,
 the entry must exist in both source and destination, the types must match, the sizes must match, and finally the contents must match.
 
-    TYPE=COMMON => EXISTS=COMMON@TYPE=COMMON
     SIZE=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON
     CONTENT=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON@CONTENT=COMMON
+
+A successful check on any other field also implies that EXIST=COMMON.
 
 When used with the -o option, one must also specify a file name at the end of the expression, separated with a ':'.
 The list of any entries that match the expression are written to the named file.
