@@ -21,10 +21,6 @@ dcmp can be configured to compare a number of different file properties.
 OPTIONS
 -------
 
-.. option:: -b, --base
-
-   Do a base comparison.
-
 .. option:: -o, --output EXPR:FILE
 
    Writes list of files matching expression EXPR to specified FILE.
@@ -32,11 +28,23 @@ OPTIONS
    More than one -o option is allowed in a single invocation,
    in which case, each option should provide a different output file name.
 
+.. option:: -t, --text
+
+   Change --output to write files in text format rather than binary.
+
+.. option:: -b, --base
+
+   Enable base checks and normal stdout results when --output is used.
+
 .. option:: -v, --verbose
 
    Run in verbose mode. Prints a list of statistics/timing data for the
    command. Files walked, started, completed, seconds, files, bytes
    read, byte rate, and file rate.
+
+.. option:: -d, --debug
+
+   Run command in debug mode.
 
 .. option:: -h, --help
 
@@ -97,12 +105,35 @@ For example, the following expression reports entries that exist in both source 
 
     EXIST=COMMON@TYPE=DIFFER
 
+The AND operator binds more tightly than the OR operator.
+For example, the following expression matches on entries which either (exist in both soure and destination and whose types differ) or (only exist in the source).
+
+    EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY
+
+Some conditions imply others.
+For example, for CONTENT to be considered the same,
+the entry must exist in both source and destination, the types must match, the sizes must match, and finally the contents must match.
+
+    TYPE=COMMON => EXISTS=COMMON@TYPE=COMMON
+    SIZE=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON
+    CONTENT=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON@CONTENT=COMMON
+
 When used with the -o option, one must also specify a file name at the end of the expression, separated with a ':'.
-The list of any files that match the expression are written to the named file.
+The list of any entries that match the expression are written to the named file.
 For example, to list any entries matching the above expression to a file named outfile1,
 one should use the following option:
 
     -o EXIST=COMMON@TYPE=DIFFER:outfile1
+
+If the --base option is given or when no output option is specified,
+the following expressions are checked and numeric results are reported to stdout:
+
+    EXIST=COMMON
+    EXIST=DIFFER
+    EXIST=COMMON@TYPE=COMMON
+    EXIST=COMMON@TYPE=DIFFER
+    EXIST=COMMON@CONTENT=COMMON
+    EXIST=COMMON@CONTENT=DIFFER
 
 EXAMPLES
 --------

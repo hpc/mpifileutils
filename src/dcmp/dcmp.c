@@ -27,15 +27,31 @@ static void print_usage(void)
     printf("Usage: dcmp [options] source target\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -s, --sync  - make source & target directory the same\n");
-    printf("  -b, --base  - do base comparison\n");
-    printf("  -o, --output field0=state0@field1=state1,field2=state2:file "
-    	   "- write list to file\n");
-    printf("       multiple output files supports, e.g.\n");
-    printf("       -o EXIST=ONLY_SRC,TYPE=DIFFER,PERM=DIFFER,MTIME=DIFFER:"
-           "fileA -o MTIME=DIFFER:fileB\n");
-    printf("  -v, --verbose\n");
-    printf("  -h, --help  - print usage\n");
+    printf("  -o, --output <EXPR:FILE>  - write list of entries matching EXPR to FILE\n");
+    printf("  -t, --text                - change output option to write in text format\n");
+    printf("  -b, --base                - enable base checks and normal output with --output\n");
+    printf("  -v, --verbose             - verbose output\n");
+    //printf("  -d, --debug               - run in debug mode\n");
+    printf("  -h, --help                - print usage\n");
+    printf("\n");
+    printf("EXPR consists of one or more FIELD=STATE conditions, separated with '@' (and) or ',' (or).\n");
+    printf("And operators bind more tightly than or\n");
+    printf("Fields: EXIST,TYPE,SIZE,UID,GID,ATIME,MTIME,CTIME,PERM,ACL,CONTENT\n");
+    printf("States: DIFFER,COMMON\n");
+    printf("Additional States for EXIST: SRC_ONLY,DEST_ONLY\n");
+    printf("\n");
+    printf("E.g., entry exists in both source and target and type differs between the two\n");
+    printf("  EXIST=COMMON@TYPE=DIFFER\n");
+    printf("E.g., entry exists only in source, or types differ, or permissions differ, or mtimes differ\n");
+    printf("  EXIST=ONLY_SRC,TYPE=DIFFER,PERM=DIFFER,MTIME=DIFFER\n");
+    printf("\n");
+    printf("Base comparison checks the following expressions and prints results to stdout:\n");
+    printf("  EXIST=COMMON\n");
+    printf("  EXIST=DIFFER\n");
+    printf("  EXIST=COMMON@TYPE=COMMON\n");
+    printf("  EXIST=COMMON@TYPE=DIFFER\n");
+    printf("  EXIST=COMMON@CONTENT=COMMON\n");
+    printf("  EXIST=COMMON@CONTENT=DIFFER\n");
     printf("\n");
     fflush(stdout);
 }
@@ -2291,11 +2307,11 @@ int main(int argc, char **argv)
     int option_index = 0;
     static struct option long_options[] = {
         {"sync",     0, 0, 's'} ,
-        {"base",     0, 0, 'b'},
-        {"debug",    0, 0, 'd'},
         {"output",   1, 0, 'o'},
-        {"verbose",  0, 0, 'v'},
         {"text",     0, 0, 't'},
+        {"base",     0, 0, 'b'},
+        {"verbose",  0, 0, 'v'},
+        {"debug",    0, 0, 'd'},
         {"help",     0, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -2307,7 +2323,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "sbdo:vht",
+            argc, argv, "sbo:tvdh",
             long_options, &option_index
         );
 
@@ -2319,24 +2335,24 @@ int main(int argc, char **argv)
         case 's':
             mfu_copy_opts->do_sync = 1;
             break;
-        case 'b':
-            options.base++;
-            break;
-        case 'd':
-            options.debug++;
-            break;
         case 'o':
             ret = dcmp_option_output_parse(optarg, 0);
             if (ret) {
                 usage = 1;
             }
             break;
+        case 't':
+            options.format = 0;
+            break;
+        case 'b':
+            options.base++;
+            break;
         case 'v':
             options.verbose++;
             mfu_debug_level = MFU_LOG_VERBOSE;
             break;
-        case 't':
-            options.format = 0;
+        case 'd':
+            options.debug++;
             break;
         case 'h':
         case '?':
