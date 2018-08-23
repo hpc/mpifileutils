@@ -97,20 +97,20 @@ Valid conditions for the EXIST field are:
 All other fields may only specify the DIFFER and COMMON states.
 
 Conditions can be joined together with AND (@) and OR (,) operators without spaces to build complex expressions.
-For example, the following expression reports entries that exist in both source and destination paths, but are of different types:
+For example, the following expression reports entries that exist in both source and destination paths, but are of different types::
 
     EXIST=COMMON@TYPE=DIFFER
 
 The AND operator binds with higher precedence than the OR operator.
-For example, the following expression matches on entries which either (exist in both soure and destination and whose types differ) or (only exist in the source).
+For example, the following expression matches on entries which either (exist in both soure and destination and whose types differ) or (only exist in the source)::
 
     EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY
 
 Some conditions imply others.
 For example, for CONTENT to be considered the same,
-the entry must exist in both source and destination, the types must match, the sizes must match, and finally the contents must match.
+the entry must exist in both source and destination, the types must match, the sizes must match, and finally the contents must match::
 
-    SIZE=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON
+    SIZE=COMMON    => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON
     CONTENT=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON@CONTENT=COMMON
 
 A successful check on any other field also implies that EXIST=COMMON.
@@ -118,12 +118,12 @@ A successful check on any other field also implies that EXIST=COMMON.
 When used with the -o option, one must also specify a file name at the end of the expression, separated with a ':'.
 The list of any entries that match the expression are written to the named file.
 For example, to list any entries matching the above expression to a file named outfile1,
-one should use the following option:
+one should use the following option::
 
     -o EXIST=COMMON@TYPE=DIFFER:outfile1
 
 If the --base option is given or when no output option is specified,
-the following expressions are checked and numeric results are reported to stdout:
+the following expressions are checked and numeric results are reported to stdout::
 
     EXIST=COMMON
     EXIST=DIFFER
