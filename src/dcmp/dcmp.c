@@ -34,18 +34,21 @@ static void print_usage(void)
     //printf("  -d, --debug               - run in debug mode\n");
     printf("  -h, --help                - print usage\n");
     printf("\n");
-    printf("EXPR consists of one or more FIELD=STATE conditions, separated with '@' (and) or ',' (or).\n");
-    printf("And operators bind more tightly than or\n");
+    printf("EXPR consists of one or more FIELD=STATE conditions, separated with '@' for AND or ',' for OR.\n");
+    printf("AND operators bind with higher precedence than OR.\n");
+    printf("\n");
     printf("Fields: EXIST,TYPE,SIZE,UID,GID,ATIME,MTIME,CTIME,PERM,ACL,CONTENT\n");
     printf("States: DIFFER,COMMON\n");
     printf("Additional States for EXIST: SRC_ONLY,DEST_ONLY\n");
     printf("\n");
-    printf("E.g., entry exists in both source and target and type differs between the two\n");
+    printf("Example expressions:\n");
+    printf("- Entry exists in both source and target and type differs between the two\n");
     printf("  EXIST=COMMON@TYPE=DIFFER\n");
-    printf("E.g., entry exists only in source, or types differ, or permissions differ, or mtimes differ\n");
+    printf("\n");
+    printf("- Entry exists only in source, or types differ, or permissions differ, or mtimes differ\n");
     printf("  EXIST=ONLY_SRC,TYPE=DIFFER,PERM=DIFFER,MTIME=DIFFER\n");
     printf("\n");
-    printf("Base comparison checks the following expressions and prints results to stdout:\n");
+    printf("By default, dcmp checks the following expressions and prints results to stdout:\n");
     printf("  EXIST=COMMON\n");
     printf("  EXIST=DIFFER\n");
     printf("  EXIST=COMMON@TYPE=COMMON\n");
@@ -1913,8 +1916,10 @@ static void dcmp_output_init_disjunction(
 static void dcmp_output_free(struct dcmp_output* output)
 {
     assert(list_empty(&output->linkage));
-    dcmp_disjunction_free(output->disjunction);
-    output->disjunction = NULL;
+    if (output->disjunction != NULL) {
+        dcmp_disjunction_free(output->disjunction);
+        output->disjunction = NULL;
+    }
     if (output->file_name != NULL) {
         mfu_free(&output->file_name);
     }
@@ -2376,7 +2381,7 @@ int main(int argc, char **argv)
             if (dcmp_default_outputs[i] == NULL) {
                 break;
             }
-            dcmp_option_output_parse(dcmp_default_outputs[i], 1);
+            ret = dcmp_option_output_parse(dcmp_default_outputs[i], 1);
             assert(ret == 0);
         }
     }
