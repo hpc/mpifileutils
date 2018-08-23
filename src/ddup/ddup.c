@@ -16,6 +16,19 @@
 /* amount of data to read in order to compute hash */
 #define DDUP_CHUNK_SIZE 1048576
 
+/* Print a usage message */
+static void print_usage(void)
+{
+    printf("\n");
+    printf("Usage: ddup <dir>\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -d, --debug <DEBUG>  - set verbosity, one of: fatal,err,warn,info,dbg\n");
+    printf("  -h, --help           - print usage\n");
+    printf("\n");
+    fflush(stdout);
+}
+
 /* create MPI datatypes for key and key and satellite data */
 static void mpi_type_init(MPI_Datatype* key, MPI_Datatype* keysat)
 {
@@ -158,71 +171,97 @@ int main(int argc, char** argv)
 
     static struct option long_options[] = {
         {"debug",    0, 0, 'd'},
+        {"help",     0, 0, 'h'},
         {0, 0, 0, 0}
     };
 
     /* Parse options */
+    int usage = 0;
+    int help  = 0;
     int c;
     int option_index = 0;
-    while ((c = getopt_long(argc, argv, "d:", \
+    while ((c = getopt_long(argc, argv, "d:h", \
                             long_options, &option_index)) != -1)
     {
         switch (c) {
-            case 'd':
-                if (strncmp(optarg, "fatal", 5) == 0) {
-                    mfu_debug_level = MFU_LOG_FATAL;
+        case 'd':
+            if (strncmp(optarg, "fatal", 5) == 0) {
+                mfu_debug_level = MFU_LOG_FATAL;
 
-                    if (rank == 0)
-                        MFU_LOG(MFU_LOG_INFO,
-                                  "Debug level set to: fatal");
-                }
-                else if (strncmp(optarg, "err", 3) == 0) {
-                    mfu_debug_level = MFU_LOG_ERR;
+                if (rank == 0)
+                    MFU_LOG(MFU_LOG_INFO,
+                              "Debug level set to: fatal");
+            }
+            else if (strncmp(optarg, "err", 3) == 0) {
+                mfu_debug_level = MFU_LOG_ERR;
 
-                    if (rank == 0)
-                        MFU_LOG(MFU_LOG_INFO,
-                                  "Debug level set to: "
-                                  "errors");
-                }
-                else if (strncmp(optarg, "warn", 4) == 0) {
-                    mfu_debug_level = MFU_LOG_WARN;
+                if (rank == 0)
+                    MFU_LOG(MFU_LOG_INFO,
+                              "Debug level set to: "
+                              "errors");
+            }
+            else if (strncmp(optarg, "warn", 4) == 0) {
+                mfu_debug_level = MFU_LOG_WARN;
 
-                    if (rank == 0)
-                        MFU_LOG(MFU_LOG_INFO,
-                                  "Debug level set to: "
-                                  "warnings");
-                }
-                else if (strncmp(optarg, "info", 4) == 0) {
-                    mfu_debug_level = MFU_LOG_INFO;
+                if (rank == 0)
+                    MFU_LOG(MFU_LOG_INFO,
+                              "Debug level set to: "
+                              "warnings");
+            }
+            else if (strncmp(optarg, "info", 4) == 0) {
+                mfu_debug_level = MFU_LOG_INFO;
 
-                    if (rank == 0)
-                        MFU_LOG(MFU_LOG_INFO,
-                                  "Debug level set to: info");
-                }
-                else if (strncmp(optarg, "dbg", 3) == 0) {
-                    mfu_debug_level = MFU_LOG_DBG;
+                if (rank == 0)
+                    MFU_LOG(MFU_LOG_INFO,
+                              "Debug level set to: info");
+            }
+            else if (strncmp(optarg, "dbg", 3) == 0) {
+                mfu_debug_level = MFU_LOG_DBG;
 
-                    if (rank == 0)
-                        MFU_LOG(MFU_LOG_INFO,
-                                  "Debug level set to: debug");
-                }
-                else {
-                    if (rank == 0)
-                        MFU_LOG(MFU_LOG_INFO,
-                                  "Debug level `%s' not "
-                                  "recognized. Defaulting to "
-                                  "`info'.", optarg);
-                }
+                if (rank == 0)
+                    MFU_LOG(MFU_LOG_INFO,
+                              "Debug level set to: debug");
+            }
+            else {
+                if (rank == 0)
+                    MFU_LOG(MFU_LOG_INFO,
+                              "Debug level `%s' not "
+                              "recognized. Defaulting to "
+                              "`info'.", optarg);
+            }
+        case 'h':
+        case '?':
+            usage = 1;
+            help  = 1;
+            break;
+        default:
+            usage = 1;
+            break;
         }
     }
 
-    /* check that user gave us a directory */
-    if (argv[optind] == NULL) {
+    /* check that user gave us one and only one directory */
+    int numargs = argc - optind;
+    if (numargs != 1) {
+        /* missing the directory, so post a message, and print usage */
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "You must specify a directory path");
         }
+        usage = 1;
+    }
+
+    /* print usage and bail if needed */
+    if (usage) {
+        if (rank == 0) {
+            print_usage();
+        }
+        /* set error code base on whether user requested usage or not */
+        if (help) {
+            status = 0;
+        } else {
+            status = -1;
+        }
         MPI_Barrier(MPI_COMM_WORLD);
-        status = -1;
         goto out;
     }
 
