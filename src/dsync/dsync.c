@@ -1310,8 +1310,8 @@ static void dsync_strmap_compare(mfu_flist src_list,
 
         /* make a copy of the src and dest files where the data needs
          * to be compared and store in src & dest compare lists */
-        //mfu_flist_file_copy(src_list, src_index, src_compare_list);
-        //mfu_flist_file_copy(dst_list, dst_index, dst_compare_list);
+        mfu_flist_file_copy(src_list, src_index, src_compare_list);
+        mfu_flist_file_copy(dst_list, dst_index, dst_compare_list);
     }
 
     /* summarize lists of files for which we need to compare data contents */
