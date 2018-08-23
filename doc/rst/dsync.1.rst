@@ -18,6 +18,14 @@ so that SRC and DEST have identical content and metadata.
 OPTIONS
 -------
 
+.. option:: --dryrun
+
+   Show differences without changing anything.
+
+.. option:: -N, --no-delete
+
+   Do not delete files from destination.
+
 .. option:: -v, --verbose
 
    Run in verbose mode. Prints a list of statistics/timing data for the
