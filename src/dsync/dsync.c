@@ -48,7 +48,7 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("      --dryrun     - just show the diff, don't do real sync\n");
-    printf("  -N, --no-delete  - don't delete extraneous files from destination dirs\n");
+    printf("  -N, --no-delete  - don't delete extraneous files from target\n");
     printf("  -v, --verbose    - verbose output\n");
     printf("  -h, --help       - print usage\n");
     printf("\n");
@@ -1138,14 +1138,14 @@ static void dsync_sync_files(strmap* src_map, strmap* dst_map,
         return 1;
     }
 
+    /* get files that are only in the destination directory */
     if (options.delete) { 
-        /* get files that are only in the destination directory,
-         * and then remove those files
-         * */
         dsync_only_dst(src_map, dst_map, dst_list, dst_remove_list);
-        mfu_flist_summarize(dst_remove_list);
-        mfu_flist_unlink(dst_remove_list, 0);
     }
+
+    /* summarize dst remove list and remove files */
+    mfu_flist_summarize(dst_remove_list);
+    mfu_flist_unlink(dst_remove_list, 0);
 
     /* summarize the src copy list for files 
      * that need to be copied into dest directory */ 
@@ -1184,11 +1184,8 @@ static void dsync_strmap_compare(mfu_flist src_list,
 
     if (!options.dry_run) {
         /* create dst remove list if sync option is on */
-        if (options.delete) {
-            dst_remove_list = mfu_flist_subset(dst_list);
-        }
-
-        src_cp_list = mfu_flist_subset(src_list);
+        dst_remove_list = mfu_flist_subset(dst_list);
+        src_cp_list     = mfu_flist_subset(src_list);
     }
 
     /* iterate over each item in source map */
@@ -1251,9 +1248,7 @@ static void dsync_strmap_compare(mfu_flist src_list,
              * the src dir to the dst directory */
             if (!options.dry_run) {
                 mfu_flist_file_copy(src_list, src_index, src_cp_list);
-                if (options.delete) {
-                    mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
-                }
+                mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
             }
 
             if (!dsync_option_need_compare(DCMPF_CONTENT)) {
@@ -1295,9 +1290,7 @@ static void dsync_strmap_compare(mfu_flist src_list,
              * the dst directory, and replace it with the one in the src directory */
             if (!options.dry_run) {
                 mfu_flist_file_copy(src_list, src_index, src_cp_list);
-                if (options.delete) {
-                    mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
-                }
+                mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
             }
 
             continue;

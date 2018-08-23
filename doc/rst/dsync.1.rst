@@ -24,7 +24,7 @@ OPTIONS
 
 .. option:: -N, --no-delete
 
-   Do not delete files from destination.
+   Do not delete extraneous files from destination.
 
 .. option:: -v, --verbose
 
