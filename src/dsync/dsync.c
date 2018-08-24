@@ -1182,6 +1182,10 @@ static void dsync_strmap_compare(mfu_flist src_list,
     mfu_flist dst_remove_list = MFU_FLIST_NULL; 
     mfu_flist src_cp_list     = MFU_FLIST_NULL; 
 
+    /* use a map as a list to record source and destination indices
+     * for entries that need a refresh on metadata */
+    strmap* metadata_refresh = strmap_new();
+
     if (!options.dry_run) {
         /* create dst remove list if sync option is on */
         dst_remove_list = mfu_flist_subset(dst_list);
@@ -1203,6 +1207,7 @@ static void dsync_strmap_compare(mfu_flist src_list,
         uint64_t dst_index;
         rc = dsync_strmap_item_index(dst_map, key, &dst_index);
         if (rc) {
+            /* item only exists in the source */
             dsync_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_ONLY_SRC);
 
             /* copy items only in src directory into src copy list
@@ -1215,6 +1220,12 @@ static void dsync_strmap_compare(mfu_flist src_list,
             continue;
         }
 
+        /* add any item that is in both source and destination to meta
+         * refresh list */
+        strmap_setf(metadata_refresh, "%llu=%llu", src_index, dst_index);
+
+        /* item exists in both source and destination,
+         * so update our state to record that fact */
         dsync_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_COMMON);
         dsync_strmap_item_update(dst_map, key, DCMPF_EXIST, DCMPS_COMMON);
 
@@ -1261,6 +1272,7 @@ static void dsync_strmap_compare(mfu_flist src_list,
             continue;
         }
 
+        /* record that items have same type in source and destination */
         dsync_strmap_item_update(src_map, key, DCMPF_TYPE, DCMPS_COMMON);
         dsync_strmap_item_update(dst_map, key, DCMPF_TYPE, DCMPS_COMMON);
 
@@ -1311,7 +1323,6 @@ static void dsync_strmap_compare(mfu_flist src_list,
     mfu_flist_summarize(src_compare_list);
     mfu_flist_summarize(dst_compare_list);
 
-
     /* compare the contents of the files if we have anything in the compare list */
     uint64_t cmp_global_size = mfu_flist_global_size(src_compare_list);
     if (cmp_global_size > 0) {
@@ -1339,11 +1350,33 @@ static void dsync_strmap_compare(mfu_flist src_list,
      * in the src list. Then, we copy the files that are only
      * in the src list into the destination list. */
 
-    /* sync the files that are in the source and destination
-     * directories */
     if (!options.dry_run) {
+        /* sync the files that are in the source and destination directories */
         dsync_sync_files(src_map, dst_map, src_path, dest_path, dst_list, dst_remove_list, src_cp_list, mfu_copy_opts);
+
+        /* NOTE: this will set metadata on any files that were deleted from
+         * the destination and copied fresh from the source a second time,
+         * which is not efficient, but should still be correct */
+
+        /* update metadata on files */
+        const strmap_node* node;
+        strmap_foreach(metadata_refresh, node) {
+            /* extract source and destination indices */
+            unsigned long long src_i, dst_i;
+            const char* key = strmap_node_key(node);
+            const char* val = strmap_node_value(node);
+            sscanf(key, "%llu", &src_i);
+            sscanf(val, "%llu", &dst_i);
+            uint64_t src_index = (uint64_t) src_i;
+            uint64_t dst_index = (uint64_t) dst_i;
+
+            /* copy metadata values from source to destination, if needed */
+            mfu_flist_file_sync_meta(src_list, src_index, dst_list, dst_index);
+        }
     }
+
+    /* done with our list of files for refreshing metadata */
+    strmap_delete(&metadata_refresh);
 
     /* free lists used for copying and removing files in sync option */
     /* TODO: fix MFU_FLIST_NULL so that we don't have to do these NULL
