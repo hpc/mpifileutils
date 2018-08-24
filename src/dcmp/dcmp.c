@@ -535,8 +535,6 @@ static int dcmp_compare_data(
     /* read and compare data from files */
     size_t total_bytes = 0;
     while(length == 0 || total_bytes < length) {
-        /* whether we should copy the source bytes to the destination as part of sync */
-        int copy_src_to_dst = 0;
 
         /* determine number of bytes to read in this iteration */
         size_t left_to_read;
@@ -582,10 +580,6 @@ static int dcmp_compare_data(
         if (src_read != dst_read) {
             /* one read came up shorter than the other */
             rc = 1;
-            copy_src_to_dst = 1;
-            if (!mfu_copy_opts->do_sync) { 
-                break;
-            }
         }
 
         /* check for EOF */
@@ -603,30 +597,9 @@ static int dcmp_compare_data(
                 /* memory contents are different */
                 rc = 1;
                 copy_src_to_dst = 1;
-                
-                /* if memory contents are different and sync option is on, we want to 
-                 * copy the src bytes to the destination file */ 
-                if (!mfu_copy_opts->do_sync) {
-                    break;
-                } 
             }
         }
        
-        /* if the bytes are different, and the sync option is on,
-         * then copy the bytes from the source into the destination */
-        if (mfu_copy_opts->do_sync && copy_src_to_dst == 1) {
-            /* number of bytes to write */
-            size_t bytes_to_write = (size_t) src_read;
-
-            /* seek to position to write to in destination
-             * file */
-            mfu_lseek(dst_name, dst_fd, offset, SEEK_SET); 
-            
-            /* write data to destination file */
-            ssize_t num_of_bytes_written = mfu_write(dst_name, dst_fd, src_buf,
-                                      bytes_to_write);
-        } 
-
         /* add bytes to our total */
         total_bytes += (long unsigned int)src_read;
     }
@@ -873,13 +846,6 @@ static void dcmp_strmap_compare_data(
             MFU_LOG(MFU_LOG_ERR,
               "Failed to open, lseek, or read %s and/or %s. Assuming contents are different.",
                  src_p->name, dst_p->name);
-
-            /* consider this to be a fatal error if syncing */
-            if (mfu_copy_opts->do_sync) {
-                /* TODO: fall back more gracefully here, e.g., delete dest and overwrite */
-                MFU_LOG(MFU_LOG_ERR, "Files not synced, aborting.");
-                MPI_Abort(MPI_COMM_WORLD, 1);
-            }
         }
 
         /* now record results of compare_data for sending to segmented scan */
@@ -1009,10 +975,6 @@ static void dcmp_strmap_compare_data(
             dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
             
-           /* Note: File does not need to be truncated for syncing because the size 
-            * of the dst and src will be the same. It is one of the checks in
-            * dcmp_strmap_compare */
-
         } else {
             /* update to say contents of the files were found to be the same */
             dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
@@ -1098,73 +1060,6 @@ static void time_strmap_compare(mfu_flist src_list, double start_compare,
     }
 }
 
-/* loop on the dest map to check for files only in the dst list 
- * and copy to a remove_list for the --sync option */
-static void dcmp_only_dst(strmap* src_map,
-    strmap* dst_map, mfu_flist dst_list, mfu_flist dst_remove_list)
-{
-    /* iterate over each item in dest map */
-    const strmap_node* node;
-    strmap_foreach(dst_map, node) {
-        /* get file name */
-        const char* key = strmap_node_key(node);
-
-        /* get index of destination file */
-        uint64_t dst_index;
-        int ret = dcmp_strmap_item_index(dst_map, key, &dst_index);
-        assert(ret == 0);
-
-        /* get index of source file */
-        uint64_t src_index;
-        ret = dcmp_strmap_item_index(src_map, key, &src_index);
-        if (ret) {
-            /* This file only exist in dest */
-            mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
-        }
-    }
-}
-
-static void dcmp_sync_files(strmap* src_map, strmap* dst_map,
-        mfu_param_path* src_path, mfu_param_path* dest_path, 
-        mfu_flist dst_list, mfu_flist dst_remove_list,
-        mfu_flist src_cp_list, mfu_copy_opts_t* mfu_copy_opts) {
-    
-    /* get our rank and number of ranks */
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    
-    /* Parse the source and destination paths. */
-    int valid, copy_into_dir;
-    mfu_param_path_check_copy(1, src_path, dest_path, &valid, &copy_into_dir);
-    
-    /* record copy_into_dir flag result from check_copy into 
-     * mfu copy options structure */ 
-    mfu_copy_opts->copy_into_dir = copy_into_dir; 
-            
-    /* exit job if we found a problem */
-    if(!valid) {
-        if(rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Exiting run");
-        }
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
-    
-    /* get files that are only in the destination directory,
-     * and then remove those files */
-    dcmp_only_dst(src_map, dst_map, dst_list, dst_remove_list);
-    mfu_flist_summarize(dst_remove_list);
-    mfu_flist_unlink(dst_remove_list, false);
-        
-    /* summarize the src copy list for files 
-     * that need to be copied into dest directory */ 
-    mfu_flist_summarize(src_cp_list); 
-       
-    /* copy flist into destination */ 
-    mfu_flist_copy(src_cp_list, 1, src_path, dest_path, mfu_copy_opts);
-}
-
 /* compare entries from src into dst */
 static void dcmp_strmap_compare(mfu_flist src_list,
                                 strmap* src_map,
@@ -1188,16 +1083,6 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     mfu_flist src_compare_list = mfu_flist_subset(src_list);
     mfu_flist dst_compare_list = mfu_flist_subset(dst_list);
   
-    /* remove and copy lists for sync option */ 
-    mfu_flist dst_remove_list = MFU_FLIST_NULL; 
-    mfu_flist src_cp_list     = MFU_FLIST_NULL; 
-    
-    /* create dst remove list if sync option is on */
-    if (mfu_copy_opts->do_sync) {
-        dst_remove_list = mfu_flist_subset(dst_list);
-        src_cp_list = mfu_flist_subset(src_list);
-    }
-
     /* iterate over each item in source map */
     const strmap_node* node;
     strmap_foreach(src_map, node) {
@@ -1214,12 +1099,6 @@ static void dcmp_strmap_compare(mfu_flist src_list,
         rc = dcmp_strmap_item_index(dst_map, key, &dst_index);
         if (rc) {
             dcmp_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_ONLY_SRC);
-            
-            /* copy items only in src directory into src copy list
-             * for sync option (will be later copied into dst dir) */ 
-            if (mfu_copy_opts->do_sync) { 
-                mfu_flist_file_copy(src_list, src_index, src_cp_list);
-            }
             
             /* skip uncommon files, all other states are DCMPS_INIT */
             continue;
@@ -1252,14 +1131,6 @@ static void dcmp_strmap_compare(mfu_flist src_list,
             /* file type is different, no need to go any futher */
             dcmp_strmap_item_update(src_map, key, DCMPF_TYPE, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, key, DCMPF_TYPE, DCMPS_DIFFER);
-
-            /* if the types are different we need to make sure we delete the
-             * file of the same name in the dst dir, and copy the type in 
-             * the src dir to the dst directory */
-            if (mfu_copy_opts->do_sync) { 
-                mfu_flist_file_copy(src_list, src_index, src_cp_list);
-                mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
-            }
 
             if (!dcmp_option_need_compare(DCMPF_CONTENT)) {
                 continue;
@@ -1295,13 +1166,6 @@ static void dcmp_strmap_compare(mfu_flist src_list,
             /* file size is different, their contents should be different */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
-
-            /* if the file sizes are different then we need to remove the file in
-             * the dst directory, and replace it with the one in the src directory */
-            if (mfu_copy_opts->do_sync) { 
-                mfu_flist_file_copy(src_list, src_index, src_cp_list);
-                mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
-            }
 
             continue;
         }
@@ -1344,27 +1208,6 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     time_strmap_compare(src_list, start_compare, end_compare, &time_started,
                         &time_ended, total_bytes_read);
     
-    /* if the sync option is on then we need to remove the files
-     * from the destination list that are not in the src list. Then,
-     * we copy the files that are only in the src list into the 
-     * destination list.*/   
-    if (mfu_copy_opts->do_sync) {
-        /* sync the files that are in the source and destination
-         * directories */ 
-        dcmp_sync_files(src_map, dst_map, src_path, dest_path,
-                dst_list, dst_remove_list, src_cp_list, mfu_copy_opts);
-    }
-   
-    /* free lists used for copying and removing files in sync option */ 
-    /* TODO: fix MFU_FLIST_NULL so that we don't have to do these NULL
-     * checks here */
-    if (src_cp_list != MFU_FLIST_NULL) {
-        mfu_flist_free(&src_cp_list);
-    }
-    if (dst_remove_list != MFU_FLIST_NULL) {
-        mfu_flist_free(&dst_remove_list);
-    }
-
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
     mfu_flist_free(&src_compare_list); 
@@ -2290,7 +2133,7 @@ int main(int argc, char **argv)
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
     mfu_debug_level = MFU_LOG_INFO;
 
-    /* By default, sync option will preserve all attributes. */
+    /* By default, preserve all attributes. */
     mfu_copy_opts->preserve = true;
 
     /* By default, don't use O_DIRECT. */
@@ -2306,12 +2149,8 @@ int main(int argc, char **argv)
     /* By default, don't have iput file. */
     mfu_copy_opts->input_file = NULL;
     
-    /* flag to check for sync option */
-    mfu_copy_opts->do_sync = 0;
-
     int option_index = 0;
     static struct option long_options[] = {
-        {"sync",     0, 0, 's'} ,
         {"output",   1, 0, 'o'},
         {"text",     0, 0, 't'},
         {"base",     0, 0, 'b'},
@@ -2328,7 +2167,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "sbo:tvdh",
+            argc, argv, "bo:tvdh",
             long_options, &option_index
         );
 
@@ -2337,9 +2176,6 @@ int main(int argc, char **argv)
         }
 
         switch (c) {
-        case 's':
-            mfu_copy_opts->do_sync = 1;
-            break;
         case 'o':
             ret = dcmp_option_output_parse(optarg, 0);
             if (ret) {
