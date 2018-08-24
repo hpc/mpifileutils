@@ -21,16 +21,20 @@ dcmp can be configured to compare a number of different file properties.
 OPTIONS
 -------
 
-.. option:: -b, --base
-
-   Do a base comparison.
-
 .. option:: -o, --output EXPR:FILE
 
    Writes list of files matching expression EXPR to specified FILE.
    The expression consists of a set of fields and states described below.
    More than one -o option is allowed in a single invocation,
    in which case, each option should provide a different output file name.
+
+.. option:: -t, --text
+
+   Change --output to write files in text format rather than binary.
+
+.. option:: -b, --base
+
+   Enable base checks and normal stdout results when --output is used.
 
 .. option:: -v, --verbose
 
@@ -93,16 +97,40 @@ Valid conditions for the EXIST field are:
 All other fields may only specify the DIFFER and COMMON states.
 
 Conditions can be joined together with AND (@) and OR (,) operators without spaces to build complex expressions.
-For example, the following expression reports entries that exist in both source and destination paths, but are of different types:
+For example, the following expression reports entries that exist in both source and destination paths, but are of different types::
 
     EXIST=COMMON@TYPE=DIFFER
 
+The AND operator binds with higher precedence than the OR operator.
+For example, the following expression matches on entries which either (exist in both soure and destination and whose types differ) or (only exist in the source)::
+
+    EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY
+
+Some conditions imply others.
+For example, for CONTENT to be considered the same,
+the entry must exist in both source and destination, the types must match, the sizes must match, and finally the contents must match::
+
+    SIZE=COMMON    => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON
+    CONTENT=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON@CONTENT=COMMON
+
+A successful check on any other field also implies that EXIST=COMMON.
+
 When used with the -o option, one must also specify a file name at the end of the expression, separated with a ':'.
-The list of any files that match the expression are written to the named file.
+The list of any entries that match the expression are written to the named file.
 For example, to list any entries matching the above expression to a file named outfile1,
-one should use the following option:
+one should use the following option::
 
     -o EXIST=COMMON@TYPE=DIFFER:outfile1
+
+If the --base option is given or when no output option is specified,
+the following expressions are checked and numeric results are reported to stdout::
+
+    EXIST=COMMON
+    EXIST=DIFFER
+    EXIST=COMMON@TYPE=COMMON
+    EXIST=COMMON@TYPE=DIFFER
+    EXIST=COMMON@CONTENT=COMMON
+    EXIST=COMMON@CONTENT=DIFFER
 
 EXAMPLES
 --------
@@ -111,10 +139,17 @@ EXAMPLES
 
 ``mpirun -np 128 dcmp /src1/file1 /src2/file2``
 
-2. Compare two directories with verbose output. The verbose output
-   prints timing and number of bytes read:
+2. Compare two directories with verbose output. The verbose output prints timing and number of bytes read:
 
 ``mpirun -np 128 dcmp -v /src1 /src2``
+
+3. Write list of entries to outfile1 that are only in src1 or whose names exist in both src1 and src2 but whose types differ:
+
+``mpirun -np 128 dcmp -o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 /src1 /src2``
+
+4. Same as above but also write list of entries to outfile2 that exist in either src1 or src2 but not both:
+
+``mpirun -np 128 dcmp -o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 -o EXIST=DIFFER:outfile2 /src1 /src2``
 
 SEE ALSO
 --------

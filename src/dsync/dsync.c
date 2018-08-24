@@ -47,13 +47,10 @@ static void print_usage(void)
     printf("Usage: dsync [options] source target\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -o, --output field0=state0@field1=state1,field2=state2:file "
-           "- write list to file\n");
-    printf("  -n, --dry-run dry-run, just show the diff, don't do real sync\n");
-    printf("  -N, --no-delete  don't delete extraneous files from destination dirs\n");
-    printf("  -d, --debug enable debug mode\n");
-    printf("  -v, --verbose\n");
-    printf("  -h, --help  - print usage\n");
+    printf("      --dryrun     - just show the diff, don't do real sync\n");
+    printf("  -N, --no-delete  - don't delete extraneous files from target\n");
+    printf("  -v, --verbose    - verbose output\n");
+    printf("  -h, --help       - print usage\n");
     printf("\n");
     fflush(stdout);
 }
@@ -1141,14 +1138,14 @@ static void dsync_sync_files(strmap* src_map, strmap* dst_map,
         return 1;
     }
 
+    /* get files that are only in the destination directory */
     if (options.delete) { 
-        /* get files that are only in the destination directory,
-         * and then remove those files
-         * */
         dsync_only_dst(src_map, dst_map, dst_list, dst_remove_list);
-        mfu_flist_summarize(dst_remove_list);
-        mfu_flist_unlink(dst_remove_list, 0);
     }
+
+    /* summarize dst remove list and remove files */
+    mfu_flist_summarize(dst_remove_list);
+    mfu_flist_unlink(dst_remove_list, 0);
 
     /* summarize the src copy list for files 
      * that need to be copied into dest directory */ 
@@ -1187,11 +1184,8 @@ static void dsync_strmap_compare(mfu_flist src_list,
 
     if (!options.dry_run) {
         /* create dst remove list if sync option is on */
-        if (options.delete) {
-            dst_remove_list = mfu_flist_subset(dst_list);
-        }
-
-        src_cp_list = mfu_flist_subset(src_list);
+        dst_remove_list = mfu_flist_subset(dst_list);
+        src_cp_list     = mfu_flist_subset(src_list);
     }
 
     /* iterate over each item in source map */
@@ -1254,9 +1248,7 @@ static void dsync_strmap_compare(mfu_flist src_list,
              * the src dir to the dst directory */
             if (!options.dry_run) {
                 mfu_flist_file_copy(src_list, src_index, src_cp_list);
-                if (options.delete) {
-                    mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
-                }
+                mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
             }
 
             if (!dsync_option_need_compare(DCMPF_CONTENT)) {
@@ -1298,9 +1290,7 @@ static void dsync_strmap_compare(mfu_flist src_list,
              * the dst directory, and replace it with the one in the src directory */
             if (!options.dry_run) {
                 mfu_flist_file_copy(src_list, src_index, src_cp_list);
-                if (options.delete) {
-                    mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
-                }
+                mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
             }
 
             continue;
@@ -1313,8 +1303,8 @@ static void dsync_strmap_compare(mfu_flist src_list,
 
         /* make a copy of the src and dest files where the data needs
          * to be compared and store in src & dest compare lists */
-        //mfu_flist_file_copy(src_list, src_index, src_compare_list);
-        //mfu_flist_file_copy(dst_list, dst_index, dst_compare_list);
+        mfu_flist_file_copy(src_list, src_index, src_compare_list);
+        mfu_flist_file_copy(dst_list, dst_index, dst_compare_list);
     }
 
     /* summarize lists of files for which we need to compare data contents */
@@ -2306,10 +2296,10 @@ int main(int argc, char **argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"debug",     0, 0, 'd'},
-        {"dry-run",   0, 0, 'n'},
+        {"dryrun",    0, 0, 'n'},
         {"no-delete", 0, 0, 'N'},
         {"output",    1, 0, 'o'},
+        {"debug",     0, 0, 'd'},
         {"verbose",   0, 0, 'v'},
         {"help",      0, 0, 'h'},
         {0, 0, 0, 0}
@@ -2322,7 +2312,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "dnNo:vh",
+            argc, argv, "No:dvh",
             long_options, &option_index
         );
 
@@ -2331,9 +2321,6 @@ int main(int argc, char **argv)
         }
 
         switch (c) {
-        case 'd':
-            options.debug++;
-            break;
         case 'n':
             options.dry_run++;
             break;
@@ -2345,6 +2332,9 @@ int main(int argc, char **argv)
             if (ret) {
                 usage = 1;
             }
+            break;
+        case 'd':
+            options.debug++;
             break;
         case 'v':
             options.verbose++;
