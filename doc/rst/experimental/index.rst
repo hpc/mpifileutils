@@ -6,6 +6,7 @@ Experimental Tools
 .. toctree::
    :maxdepth: 1
 
+   experimental-utilities.rst
    dfind.1
    dgrep.1
    dparallel.1

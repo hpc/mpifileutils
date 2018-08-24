@@ -9,6 +9,10 @@ Documentation for mpiFileUtils
 .. toctree::
    :maxdepth: 1
 
+   overview.rst
+   libmfu.rst
+   build.rst
+   project-design.rst
    dbcast.1
    dchmod.1
    dcmp.1
