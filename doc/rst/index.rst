@@ -7,7 +7,7 @@
 Documentation for mpiFileUtils
 ==============================
 
-**Overview**
+Overview
 *************
 
 mpiFileUtils provides both a library called libmfu and a suite of MPI-based
@@ -20,7 +20,7 @@ jobs like copy, remove, and compare for such datasets, providing speedups of up
 to 50x. It also provides a library that simplifies the creation of new tools
 or can be used in applications
 
-**Utilities**
+Utilities
 ***************
 
 The tools in mpiFileUtils are actually MPI applications. They must be launched
@@ -40,7 +40,7 @@ Example usage of each tool is provided below.
 - dsync - Synchronize files
 - dwalk - List files.
 
-**Experimental Utilities**
+Experimental Utilities
 ***************************
 
 Experimental utilities are under active development. They are not considered to
@@ -60,7 +60,7 @@ option.
 - dsh - List and remove files with interactive commands.
 - dtar - Create file tape archives.
 
-**User Guide**
+User Guide
 ***************************
 
 .. toctree::
@@ -70,7 +70,7 @@ option.
    proj-design.rst
    libmfu.rst
 
-**Man Pages**
+Man Pages
 ***************************
 
 .. toctree::
@@ -92,7 +92,7 @@ option.
    experimental/dtar.1
 
 Indices and tables
-==================
+*********************
 
 * :ref:`genindex`
 * :ref:`search`
