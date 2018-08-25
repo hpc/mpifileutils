@@ -37,7 +37,7 @@ static void mfu_flist_pred(mfu_flist flist, pred_item* p)
     uint64_t size = mfu_flist_size(flist);
     for (idx = 0; idx < size; idx++) {
         const char* name = mfu_flist_file_get_name(flist, idx);
-        execute((char*)name, p);
+        execute(flist, idx, p);
     }
     return;
 }
@@ -55,13 +55,11 @@ static mfu_flist mfu_flist_filter_pred(mfu_flist flist, pred_item* p)
     for (idx = 0; idx < size; idx++) {
         /* get path to this item */
         const char* name = mfu_flist_file_get_name(flist, idx);
-        printf("%s\n", name);
 
         /* run string of predicates against item */
-        int ret = execute((char*)name, p);
+        int ret = execute(flist, idx, p);
         if (ret == 0) {
             /* copy item into new list if all predicates pass */
-            printf("match: %s\n", name);
             mfu_flist_file_copy(flist, idx, list);
         }
     }
@@ -152,7 +150,7 @@ int main (int argc, char** argv)
     	    break;
     
     	case 'n':
-    	    pred_add(name, MFU_STRDUP(optarg));
+    	    pred_add(pred_name, MFU_STRDUP(optarg));
     	    break;
     
     	case 'N':

@@ -1,32 +1,28 @@
 #ifndef _PRED_H
 #define _PRED_H
 
-struct target
-{
-	char * fname;
-	struct stat * statbuf;
-};
+#include "mfu.h"
 
-typedef int (*pred_t)(struct target, void * arg);
+typedef int (*pred_t)(mfu_flist flist, uint64_t idx, void* arg);
 
 struct pred_item_t
 {
 	pred_t f;
-	void * arg;
-	struct pred_item_t * next;
+	void* arg;
+	struct pred_item_t* next;
 };
 
 typedef struct pred_item_t pred_item;
-pred_item * pred_head;
-void pred_add(pred_t, void *);
+pred_item* pred_head;
+void pred_add(pred_t, void*);
 void pred_commit(void);
 
-int name (struct target, void *);
-int pred_exec (struct target, void *);
-int pred_print (struct target, void *);
-int pred_newer (struct target, void *);
-int pred_type (struct target, void *);
+int pred_name  (mfu_flist flist, uint64_t idx, void*);
+int pred_exec  (mfu_flist flist, uint64_t idx, void*);
+int pred_print (mfu_flist flist, uint64_t idx, void*);
+int pred_newer (mfu_flist flist, uint64_t idx, void*);
+int pred_type  (mfu_flist flist, uint64_t idx, void*);
 
-int execute (char *, pred_item *);
+int execute (mfu_flist flist, uint64_t idx, pred_item*);
 
 #endif
