@@ -189,6 +189,37 @@ int pred_user (mfu_flist flist, uint64_t idx, void* arg)
     return ret;
 }
 
+int pred_size (mfu_flist flist, uint64_t idx, void* arg)
+{
+    int ret = 0;
+
+    uint64_t size = mfu_flist_file_get_size(flist, idx);
+
+    char* str = (char*) arg;
+    unsigned long long bytes;
+    if (str[0] == '+') {
+        /* check whether size is greater than target */
+        mfu_abtoull(&str[1], &bytes);
+        if (size > (uint64_t)bytes) {
+            ret = 1;
+        }
+    } else if (str[0] == '-') {
+        /* check whether size is less than target */
+        mfu_abtoull(&str[1], &bytes);
+        if (size < (uint64_t)bytes) {
+            ret = 1;
+        }
+    } else {
+        /* check whether size is equal to target */
+        mfu_abtoull(str, &bytes);
+        if (size == (uint64_t)bytes) {
+            ret = 1;
+        }
+    }
+
+    return ret;
+}
+
 int pred_newer (mfu_flist flist, uint64_t idx, void * arg)
 {
     uint64_t mtime = mfu_flist_file_get_mtime(flist, idx);
