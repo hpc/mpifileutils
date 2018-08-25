@@ -91,12 +91,16 @@ int main (int argc, char** argv)
         {"verbose",   0, 0, 'v'},
         {"help",      0, 0, 'h'},
 
-        { "exec",     required_argument, NULL, 'e' },
         { "maxdepth", required_argument, NULL, 'm' },
+        { "gid",      required_argument, NULL, 'g' },
+        { "group",    required_argument, NULL, 'G' },
+        { "uid",      required_argument, NULL, 'u' },
+        { "user",     required_argument, NULL, 'U' },
         { "name",     required_argument, NULL, 'n' },
         { "newer",    required_argument, NULL, 'N' },
         { "type",     required_argument, NULL, 't' },
         { "print",    no_argument,       NULL, 'p' },
+        { "exec",     required_argument, NULL, 'e' },
         { NULL, 0, NULL, 0 },
     };
 
@@ -148,7 +152,29 @@ int main (int argc, char** argv)
     	case 'm':
     	    options.maxdepth = atoi(optarg);
     	    break;
-    
+
+    	case 'g':
+            /* TODO: error check argument */
+    	    buf = MFU_STRDUP(optarg);
+    	    pred_add(pred_gid, (void *)buf);
+    	    break;
+
+    	case 'G':
+    	    buf = MFU_STRDUP(optarg);
+    	    pred_add(pred_group, (void *)buf);
+    	    break;
+
+    	case 'u':
+            /* TODO: error check argument */
+    	    buf = MFU_STRDUP(optarg);
+    	    pred_add(pred_uid, (void *)buf);
+    	    break;
+
+    	case 'U':
+    	    buf = MFU_STRDUP(optarg);
+    	    pred_add(pred_user, (void *)buf);
+    	    break;
+
     	case 'n':
     	    pred_add(pred_name, MFU_STRDUP(optarg));
     	    break;
