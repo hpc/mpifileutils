@@ -1496,3 +1496,49 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
 
     return;
 }
+
+void mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist dst_list, uint64_t dst_index)
+{
+    /* get destination path */
+    const char* dest_path = mfu_flist_file_get_name(dst_list, dst_index);
+
+    /* get owner and group ids */
+    uid_t src_uid = (uid_t) mfu_flist_file_get_uid(src_list, src_index);
+    gid_t src_gid = (gid_t) mfu_flist_file_get_gid(src_list, src_index);
+
+    uid_t dst_uid = (uid_t) mfu_flist_file_get_uid(dst_list, dst_index);
+    gid_t dst_gid = (gid_t) mfu_flist_file_get_gid(dst_list, dst_index);
+
+    /* update ownership on destination if needed */
+    if ((src_uid != dst_uid) || (src_gid != dst_gid)) {
+        mfu_copy_ownership(src_list, src_index, dest_path);
+    }
+
+    /* update permissions on destination if needed */
+    mode_t src_mode = (mode_t) mfu_flist_file_get_mode(src_list, src_index);
+    mode_t dst_mode = (mode_t) mfu_flist_file_get_mode(dst_list, dst_index);
+    if (src_mode != dst_mode) {
+        mfu_copy_permissions(src_list, src_index, dest_path);
+    }
+
+    /* get atime seconds and nsecs */
+    uint64_t src_atime      = mfu_flist_file_get_atime(src_list, src_index);
+    uint64_t src_atime_nsec = mfu_flist_file_get_atime_nsec(src_list, src_index);
+    uint64_t dst_atime      = mfu_flist_file_get_atime(dst_list, dst_index);
+    uint64_t dst_atime_nsec = mfu_flist_file_get_atime_nsec(dst_list, dst_index);
+
+    /* get mtime seconds and nsecs */
+    uint64_t src_mtime      = mfu_flist_file_get_mtime(src_list, src_index);
+    uint64_t src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_list, src_index);
+    uint64_t dst_mtime      = mfu_flist_file_get_mtime(dst_list, dst_index);
+    uint64_t dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(dst_list, dst_index);
+
+    /* update atime and mtime on destination if needed */
+    if ((src_atime != dst_atime) || (src_atime_nsec != dst_atime_nsec) ||
+        (src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec))
+    {
+        mfu_copy_timestamps(src_list, src_index, dest_path);
+    }
+
+    return;
+}

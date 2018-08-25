@@ -233,6 +233,10 @@ mfu_flist mfu_flist_subset(mfu_flist srclist);
 /* copy specified source file into destination list */
 void mfu_flist_file_copy(mfu_flist src, uint64_t index, mfu_flist dest);
 
+/* given a source and destination file, update destination metadata
+ * to match source if needed */
+void mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist dst_list, uint64_t dst_index);
+
 /* get number of bytes to pack a file from the specified list */
 size_t mfu_flist_file_pack_size(mfu_flist flist);
 

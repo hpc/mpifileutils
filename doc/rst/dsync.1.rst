@@ -13,7 +13,7 @@ Parallel MPI application to synchronize two files or two directory trees.
 
 dsync makes DEST match SRC, adding missing entries from DEST, removing
 extra entries from DEST, and updating existing entries in DEST as necessary
-so that SRC and DEST have identical content and metadata.
+so that SRC and DEST have identical content, ownership, timestamps, and permissions.
 
 OPTIONS
 -------
@@ -21,6 +21,11 @@ OPTIONS
 .. option:: --dryrun
 
    Show differences without changing anything.
+
+.. option:: -c, --contents
+
+   Compare files byte-by-byte rather than checking size and mtime
+   to determine whether file contents are different.
 
 .. option:: -N, --no-delete
 

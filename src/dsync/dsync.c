@@ -47,7 +47,8 @@ static void print_usage(void)
     printf("Usage: dsync [options] source target\n");
     printf("\n");
     printf("Options:\n");
-    printf("      --dryrun     - just show the diff, don't do real sync\n");
+    printf("      --dryrun     - show differences, but do not synchronize files\n");
+    printf("  -c, --contents   - read and compare file contents rather than compare size and mtime\n");
     printf("  -N, --no-delete  - don't delete extraneous files from target\n");
     printf("  -v, --verbose    - verbose output\n");
     printf("  -h, --help       - print usage\n");
@@ -150,6 +151,7 @@ struct dsync_output {
 
 struct dsync_options {
     struct list_head outputs;      /* list of outputs */
+    int contents;                  /* check file contents rather than size and mtime */
     int dry_run;                   /* dry run */
     int verbose;
     int debug;                     /* check result after get result */
@@ -159,6 +161,7 @@ struct dsync_options {
 
 struct dsync_options options = {
     .outputs      = LIST_HEAD_INIT(options.outputs),
+    .contents     = 0,
     .dry_run      = 0,
     .verbose      = 0,
     .debug        = 0,
@@ -471,7 +474,9 @@ static int dsync_compare_data(
     off_t offset,
     size_t length,
     size_t buff_size,
-    mfu_copy_opts_t* mfu_copy_opts)
+    mfu_copy_opts_t* mfu_copy_opts,
+    uint64_t* count_bytes_read,
+    uint64_t* count_bytes_written)
 {
     /* open source file */
     int src_fd = mfu_open(src_name, O_RDONLY);
@@ -485,7 +490,12 @@ static int dsync_compare_data(
     }
 
     /* open destination file */
-    int dst_fd = mfu_open(dst_name, O_RDWR);
+    int dst_flags = O_RDWR;
+    if (options.dry_run) {
+        /* avoid opening file in write mode if on dry run */
+        dst_flags = O_RDONLY;
+    }
+    int dst_fd = mfu_open(dst_name, dst_flags);
     if (dst_fd < 0) {
        /* log error if there is an open failure on the 
         * dst side */
@@ -551,6 +561,14 @@ static int dsync_compare_data(
         ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf,
              left_to_read);
         
+        /* tally up number of bytes written */
+        if (src_read >= 0) {
+            *count_bytes_read += (uint64_t) src_read;
+        }
+        if (dst_read >= 0) {
+            *count_bytes_read += (uint64_t) dst_read;
+        }
+
         /* check for read errors */
         if (src_read < 0 || dst_read < 0) {
             /* hit a read error, now figure out if it was the 
@@ -619,7 +637,12 @@ static int dsync_compare_data(
             /* write data to destination file */
             ssize_t num_of_bytes_written = mfu_write(dst_name, dst_fd, src_buf,
                                       bytes_to_write);
-        } 
+
+            /* tally up number of bytes written */
+            if (num_of_bytes_written >= 0) {
+                *count_bytes_written += (uint64_t) num_of_bytes_written;
+            }
+        }
 
         /* add bytes to our total */
         total_bytes += (long unsigned int)src_read;
@@ -774,34 +797,6 @@ static int dsync_compare_metadata(
     return diff;
 }
 
-/* use Allreduce to get the total number of bytes read if
- * data was compared */
-static uint64_t get_total_bytes_read(mfu_flist src_compare_list) {
-
-    /* get counter for flist id & byte_count */
-    uint64_t idx;
-    uint64_t byte_count = 0;
-
-    /* get size of flist */
-    uint64_t size = mfu_flist_size(src_compare_list);
-
-    /* count up the number of bytes in src list
-     * multiply by two in order to include number
-     * of bytes read in dst list as well */
-    for (idx = 0; idx < size; idx++) {
-        byte_count += mfu_flist_file_get_size(src_compare_list, idx) * 2;
-    }
-
-    /* buffer for total byte count for Allreduce */
-    uint64_t total_bytes_read;
-
-    /* get total number of bytes across all processes */
-    MPI_Allreduce(&byte_count, &total_bytes_read, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    
-    /* return the toal number of bytes */
-    return total_bytes_read;
-}
-
 /* given a list of source/destination files to compare, spread file
  * sections to processes to compare in parallel, fill
  * in comparison results in source and dest string maps */
@@ -811,7 +806,9 @@ static void dsync_strmap_compare_data(
     mfu_flist dst_compare_list,
     strmap* dst_map,
     size_t strlen_prefix,
-    mfu_copy_opts_t* mfu_copy_opts)
+    mfu_copy_opts_t* mfu_copy_opts,
+    uint64_t* count_bytes_read,
+    uint64_t* count_bytes_written)
 {
     /* get the largest filename */
     uint64_t max_name = mfu_flist_file_max_name(src_compare_list);
@@ -857,7 +854,8 @@ static void dsync_strmap_compare_data(
         
         /* compare the contents of the files */
         int rc = dsync_compare_data(src_p->name, dst_p->name, offset, 
-                (size_t)length, 1048576, mfu_copy_opts);
+                (size_t)length, 1048576, mfu_copy_opts,
+                count_bytes_read, count_bytes_written);
         if (rc == -1) {
             /* we hit an error while reading, consider files to be different,
              * they could be the same, but we'll draw attention to them this way */
@@ -1027,13 +1025,80 @@ static void dsync_strmap_compare_data(
     return;
 }
 
-static void time_strmap_compare(mfu_flist src_list, double start_compare, 
-                                double end_compare, time_t *time_started,
-                                time_t *time_ended, uint64_t total_bytes_read) {
-    
+/* given a list of source/destination files to compare, spread file
+ * sections to processes to compare in parallel, fill
+ * in comparison results in source and dest string maps */
+static void dsync_strmap_compare_lite(
+    mfu_flist src_compare_list,
+    mfu_flist src_cp_list,
+    strmap* src_map,
+    mfu_flist dst_compare_list,
+    mfu_flist dst_remove_list,
+    strmap* dst_map,
+    size_t strlen_prefix)
+{
+    /* get size of source and destination compare lists */
+    uint64_t size = mfu_flist_size(src_compare_list);
+
+    /* check size and mtime of each item */
+    uint64_t idx;
+    for (idx = 0; idx < size; idx++) {
+        /* lookup name of file based on id to send to strmap updata call */
+        const char* name = mfu_flist_file_get_name(src_compare_list, idx);
+
+        /* ignore prefix portion of path to use as key */
+        name += strlen_prefix;
+
+        /* get file sizes */
+        uint64_t src_size = mfu_flist_file_get_size(src_compare_list, idx);
+        uint64_t dst_size = mfu_flist_file_get_size(dst_compare_list, idx);
+
+        /* get mtime seconds and nsecs */
+        uint64_t src_mtime      = mfu_flist_file_get_mtime(src_compare_list, idx);
+        uint64_t src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_compare_list, idx);
+        uint64_t dst_mtime      = mfu_flist_file_get_mtime(dst_compare_list, idx);
+        uint64_t dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(dst_compare_list, idx);
+
+        /* if size or mtime is different, we assume the file contents are different */
+        if ((src_size != dst_size) ||
+            (src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec))
+        {
+            /* update to say contents of the files were found to be different */
+            dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
+            dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
+
+            /* mark file to be deleted from destination, copied from source */
+            if (!options.dry_run) {
+                mfu_flist_file_copy(dst_compare_list, idx, dst_remove_list);
+                mfu_flist_file_copy(src_compare_list, idx, src_cp_list);
+            }
+        } else {
+            /* update to say contents of the files were found to be the same */
+            dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
+            dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_COMMON);
+        }
+    }
+
+    return;
+}
+
+static void print_comparison_stats(
+    mfu_flist src_list,
+    double start_compare, 
+    double end_compare,
+    time_t *time_started,
+    time_t *time_ended,
+    uint64_t bytes_read,
+    uint64_t bytes_written)
+{
+    /* get total number of bytes across all processes */
+    uint64_t total_bytes_read, total_bytes_written;
+    MPI_Allreduce(&bytes_read,    &total_bytes_read,    1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&bytes_written, &total_bytes_written, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
     /* if the verbose option is set print the timing data
-        report compare count, time, and rate */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+     * report compare count, time, and rate */
+    if (mfu_rank == 0) {
        /* find out how many files were compared */
        uint64_t all_count = mfu_flist_global_size(src_list);
 
@@ -1041,11 +1106,13 @@ static void time_strmap_compare(mfu_flist src_list, double start_compare,
        double time_diff = end_compare - start_compare;
 
        /* calculate byte and file rate */
-       double file_rate = 0.0;
-       double byte_rate = 0.0;
+       double file_rate  = 0.0;
+       double read_rate  = 0.0;
+       double write_rate = 0.0;
        if (time_diff > 0.0) {
-           file_rate = ((double)all_count) / time_diff;
-           byte_rate = ((double)total_bytes_read) / time_diff;
+           file_rate  = ((double)all_count) / time_diff;
+           read_rate  = ((double)total_bytes_read)    / time_diff;
+           write_rate = ((double)total_bytes_written) / time_diff;
        }
 
        /* convert uint64 to strings for printing to user */
@@ -1060,25 +1127,40 @@ static void time_strmap_compare(mfu_flist src_list, double start_compare,
        strftime(starttime_str, 256, "%b-%d-%Y, %H:%M:%S", &cp_localstart);
        strftime(endtime_str, 256, "%b-%d-%Y, %H:%M:%S", &cp_localend);
 
-       /* convert size to units */
-       double size_tmp;
-       const char* size_units;
-       mfu_format_bytes(total_bytes_read, &size_tmp, &size_units);
+       /* convert read size to units */
+       double read_size_tmp;
+       const char* read_size_units;
+       mfu_format_bytes(total_bytes_read, &read_size_tmp, &read_size_units);
 
-       /* convert bandwidth to units */
-       double total_bytes_tmp;
-       const char* rate_units;
-       mfu_format_bw(byte_rate, &total_bytes_tmp, &rate_units);
+       /* convert write size to units */
+       double write_size_tmp;
+       const char* write_size_units;
+       mfu_format_bytes(total_bytes_written, &write_size_tmp, &write_size_units);
+
+       /* convert read bandwidth to units */
+       double read_rate_tmp;
+       const char* read_rate_units;
+       mfu_format_bw(read_rate, &read_rate_tmp, &read_rate_units);
+
+       /* convert write bandwidth to units */
+       double write_rate_tmp;
+       const char* write_rate_units;
+       mfu_format_bw(write_rate, &write_rate_tmp, &write_rate_units);
 
        MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
        MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
        MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", time_diff);
-       MFU_LOG(MFU_LOG_INFO, "  Files: %" PRId64, all_count);
+       MFU_LOG(MFU_LOG_INFO, "Files: %" PRId64, all_count);
        MFU_LOG(MFU_LOG_INFO, "Bytes read: %.3lf %s (%" PRId64 " bytes)",
-            size_tmp, size_units, total_bytes_read);
-       MFU_LOG(MFU_LOG_INFO, "Byte Rate: %.3lf %s " \
-            "(%.3" PRId64 " bytes in %.3lf seconds)", \
-            total_bytes_tmp, rate_units, total_bytes_read, time_diff); 
+            read_size_tmp, read_size_units, total_bytes_read);
+       MFU_LOG(MFU_LOG_INFO, "Bytes written: %.3lf %s (%" PRId64 " bytes)",
+            write_size_tmp, write_size_units, total_bytes_written);
+       MFU_LOG(MFU_LOG_INFO, "Read Rate: %.3lf %s " \
+            "(%" PRId64 " bytes in %.3lf seconds)", \
+            read_rate_tmp, read_rate_units, total_bytes_read, time_diff); 
+       MFU_LOG(MFU_LOG_INFO, "Write Rate: %.3lf %s " \
+            "(%" PRId64 " bytes in %.3lf seconds)", \
+            write_rate_tmp, write_rate_units, total_bytes_written, time_diff); 
        MFU_LOG(MFU_LOG_INFO, "File Rate: %lu " \
             "items in %f seconds (%f items/sec)", \
             all_count, time_diff, file_rate);     
@@ -1114,8 +1196,8 @@ static void dsync_only_dst(strmap* src_map,
 static void dsync_sync_files(strmap* src_map, strmap* dst_map,
         mfu_param_path* src_path, mfu_param_path* dest_path, 
         mfu_flist dst_list, mfu_flist dst_remove_list,
-        mfu_flist src_cp_list, mfu_copy_opts_t* mfu_copy_opts) {
-
+        mfu_flist src_cp_list, mfu_copy_opts_t* mfu_copy_opts)
+{
     /* get our rank and number of ranks */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -1145,14 +1227,24 @@ static void dsync_sync_files(strmap* src_map, strmap* dst_map,
 
     /* summarize dst remove list and remove files */
     mfu_flist_summarize(dst_remove_list);
-    mfu_flist_unlink(dst_remove_list, 0);
+
+    /* delete files from destination if needed */
+    uint64_t remove_size = mfu_flist_global_size(dst_remove_list);
+    if (remove_size > 0) {
+        mfu_flist_unlink(dst_remove_list, 0);
+    }
 
     /* summarize the src copy list for files 
      * that need to be copied into dest directory */ 
     mfu_flist_summarize(src_cp_list); 
        
-    /* copy flist into destination */ 
-    mfu_flist_copy(src_cp_list, 1, src_path, dest_path, mfu_copy_opts);
+    /* copy files from source to destination if needed */ 
+    uint64_t copy_size = mfu_flist_global_size(src_cp_list);
+    if (copy_size > 0) {
+        mfu_flist_copy(src_cp_list, 1, src_path, dest_path, mfu_copy_opts);
+    }
+
+    return;
 }
 
 /* compare entries from src into dst */
@@ -1174,19 +1266,18 @@ static void dsync_strmap_compare(mfu_flist src_list,
     double start_compare = MPI_Wtime();
     time(&time_started);
 
-    /* create compare_lists */
+    /* create lists to track files whose content must be checked */
     mfu_flist src_compare_list = mfu_flist_subset(src_list);
     mfu_flist dst_compare_list = mfu_flist_subset(dst_list);
 
-    /* remove and copy lists for sync option */ 
-    mfu_flist dst_remove_list = MFU_FLIST_NULL; 
-    mfu_flist src_cp_list     = MFU_FLIST_NULL; 
+    /* list to track files to be copied from source,
+     * list to track files to be deleted from destination */
+    mfu_flist src_cp_list     = mfu_flist_subset(src_list);
+    mfu_flist dst_remove_list = mfu_flist_subset(dst_list);
 
-    if (!options.dry_run) {
-        /* create dst remove list if sync option is on */
-        dst_remove_list = mfu_flist_subset(dst_list);
-        src_cp_list     = mfu_flist_subset(src_list);
-    }
+    /* use a map as a list to record source and destination indices
+     * for entries that need a refresh on metadata */
+    strmap* metadata_refresh = strmap_new();
 
     /* iterate over each item in source map */
     const strmap_node* node;
@@ -1203,10 +1294,11 @@ static void dsync_strmap_compare(mfu_flist src_list,
         uint64_t dst_index;
         rc = dsync_strmap_item_index(dst_map, key, &dst_index);
         if (rc) {
+            /* item only exists in the source */
             dsync_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_ONLY_SRC);
 
-            /* copy items only in src directory into src copy list
-             * for sync option (will be later copied into dst dir) */ 
+            /* add items only in src directory into src copy list,
+             * will be later copied into dst dir */ 
             if (!options.dry_run) {
                  mfu_flist_file_copy(src_list, src_index, src_cp_list);
             }
@@ -1215,6 +1307,12 @@ static void dsync_strmap_compare(mfu_flist src_list,
             continue;
         }
 
+        /* add any item that is in both source and destination to meta
+         * refresh list */
+        strmap_setf(metadata_refresh, "%llu=%llu", src_index, dst_index);
+
+        /* item exists in both source and destination,
+         * so update our state to record that fact */
         dsync_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_COMMON);
         dsync_strmap_item_update(dst_map, key, DCMPF_EXIST, DCMPS_COMMON);
 
@@ -1261,6 +1359,7 @@ static void dsync_strmap_compare(mfu_flist src_list,
             continue;
         }
 
+        /* record that items have same type in source and destination */
         dsync_strmap_item_update(src_map, key, DCMPF_TYPE, DCMPS_COMMON);
         dsync_strmap_item_update(dst_map, key, DCMPF_TYPE, DCMPS_COMMON);
 
@@ -1311,12 +1410,27 @@ static void dsync_strmap_compare(mfu_flist src_list,
     mfu_flist_summarize(src_compare_list);
     mfu_flist_summarize(dst_compare_list);
 
+    /* initalize total_bytes_read to zero */
+    uint64_t total_bytes_read    = 0;
+    uint64_t total_bytes_written = 0;
 
     /* compare the contents of the files if we have anything in the compare list */
     uint64_t cmp_global_size = mfu_flist_global_size(src_compare_list);
     if (cmp_global_size > 0) {
-        dsync_strmap_compare_data(src_compare_list, src_map, dst_compare_list, 
-                dst_map, strlen_prefix, mfu_copy_opts);
+        if (options.contents) {
+            /* compare file contents byte-by-byte, overwrites destination
+             * file in place if found to be different during comparison */
+            dsync_strmap_compare_data(src_compare_list, src_map,
+                dst_compare_list, dst_map, strlen_prefix, mfu_copy_opts,
+                &total_bytes_read, &total_bytes_written
+            );
+        } else {
+            /* assume contents are different if size or mtime are different,
+             * adds files to remove and copy lists if different */
+            dsync_strmap_compare_lite(src_compare_list, src_cp_list, src_map,
+                dst_compare_list, dst_remove_list, dst_map, strlen_prefix
+            );
+        }
     }
 
     /* wait for all procs to finish before stopping timer */
@@ -1324,37 +1438,48 @@ static void dsync_strmap_compare(mfu_flist src_list,
     double end_compare = MPI_Wtime();
     time(&time_ended);
 
-    /* initalize total_bytes_read to zero */
-    uint64_t total_bytes_read = 0;
-
-    /* get total bytes read (if any) */
-    if (cmp_global_size > 0) {
-        total_bytes_read = get_total_bytes_read(src_compare_list);
+    /* print time, bytes read, and bandwidth */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE) {
+        print_comparison_stats(src_list, start_compare, end_compare,
+            &time_started, &time_ended, total_bytes_read, total_bytes_written
+        );
     }
-
-    time_strmap_compare(src_list, start_compare, end_compare, &time_started,
-                        &time_ended, total_bytes_read);
 
     /* remove the files from the destination list that are not
      * in the src list. Then, we copy the files that are only
      * in the src list into the destination list. */
 
-    /* sync the files that are in the source and destination
-     * directories */
     if (!options.dry_run) {
+        /* sync the files that are in the source and destination directories */
         dsync_sync_files(src_map, dst_map, src_path, dest_path, dst_list, dst_remove_list, src_cp_list, mfu_copy_opts);
+
+        /* NOTE: this will set metadata on any files that were deleted from
+         * the destination and copied fresh from the source a second time,
+         * which is not efficient, but should still be correct */
+
+        /* update metadata on files */
+        const strmap_node* node;
+        strmap_foreach(metadata_refresh, node) {
+            /* extract source and destination indices */
+            unsigned long long src_i, dst_i;
+            const char* key = strmap_node_key(node);
+            const char* val = strmap_node_value(node);
+            sscanf(key, "%llu", &src_i);
+            sscanf(val, "%llu", &dst_i);
+            uint64_t src_index = (uint64_t) src_i;
+            uint64_t dst_index = (uint64_t) dst_i;
+
+            /* copy metadata values from source to destination, if needed */
+            mfu_flist_file_sync_meta(src_list, src_index, dst_list, dst_index);
+        }
     }
 
-    /* free lists used for copying and removing files in sync option */
-    /* TODO: fix MFU_FLIST_NULL so that we don't have to do these NULL
-     * checks here */
-    if (src_cp_list != MFU_FLIST_NULL) {
-        mfu_flist_free(&src_cp_list);
-    }
+    /* done with our list of files for refreshing metadata */
+    strmap_delete(&metadata_refresh);
 
-    if (dst_remove_list != MFU_FLIST_NULL) {
-        mfu_flist_free(&dst_remove_list);
-    }
+    /* free lists used for removing and copying files */
+    mfu_flist_free(&dst_remove_list);
+    mfu_flist_free(&src_cp_list);
 
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
@@ -2312,7 +2437,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "No:dvh",
+            argc, argv, "cNo:dvh",
             long_options, &option_index
         );
 
@@ -2321,6 +2446,9 @@ int main(int argc, char **argv)
         }
 
         switch (c) {
+        case 'c':
+            options.contents++;
+            break;
         case 'n':
             options.dry_run++;
             break;
