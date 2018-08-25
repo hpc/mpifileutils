@@ -11,6 +11,23 @@
 #include "common.h"
 #include "pred.h"
 
+static void parse_number(const char* str, int* cmp, uint64_t* val)
+{
+    if (str[0] == '+') {
+        /* check whether id is greater than target */
+        *cmp = 1;
+        *val = (uint64_t) atoi(&str[1]);
+    } else if (str[0] == '-') {
+        /* check whether id is less than target */
+        *cmp = -1;
+        *val = (uint64_t) atoi(&str[1]);
+    } else {
+        /* check whether id is equal to target */
+        *cmp = 0;
+        *val = (uint64_t) atoi(str);
+    }
+}
+
 void pred_add(pred_t predicate, void* arg)
 {
     if (! pred_head) {
@@ -92,6 +109,96 @@ int pred_name (mfu_flist flist, uint64_t idx, void* arg)
     return ret;
 }
 
+int pred_gid (mfu_flist flist, uint64_t idx, void* arg)
+{
+    uint64_t id = mfu_flist_file_get_gid(flist, idx);
+
+    int cmp;
+    uint64_t val;
+    parse_number((char*)arg, &cmp, &val);
+
+    int ret = 0;
+    if (cmp > 0) {
+        /* check whether id is greater than target */
+        if (id > val) {
+            ret = 1;
+        }
+    } else if (cmp < 0) {
+        /* check whether id is less than target */
+        if (id < val) {
+            ret = 1;
+        }
+    } else {
+        /* check whether id is equal to target */
+        if (id == val) {
+            ret = 1;
+        }
+    }
+
+    return ret;
+}
+
+int pred_group (mfu_flist flist, uint64_t idx, void* arg)
+{
+    char* pattern = (char*) arg;
+    const char* str = mfu_flist_file_get_groupname(flist, idx);
+    int ret = 0;
+    if (strcmp(str, pattern) == 0) {
+        ret = 1;
+    }
+    return ret;
+}
+
+int pred_uid (mfu_flist flist, uint64_t idx, void* arg)
+{
+    uint64_t id = mfu_flist_file_get_uid(flist, idx);
+
+    int cmp;
+    uint64_t val;
+    parse_number((char*)arg, &cmp, &val);
+
+    int ret = 0;
+    if (cmp > 0) {
+        /* check whether id is greater than target */
+        if (id > val) {
+            ret = 1;
+        }
+    } else if (cmp < 0) {
+        /* check whether id is less than target */
+        if (id < val) {
+            ret = 1;
+        }
+    } else {
+        /* check whether id is equal to target */
+        if (id == val) {
+            ret = 1;
+        }
+    }
+
+    return ret;
+}
+
+int pred_user (mfu_flist flist, uint64_t idx, void* arg)
+{
+    char* pattern = (char*) arg;
+    const char* str = mfu_flist_file_get_username(flist, idx);
+    int ret = 0;
+    if (strcmp(str, pattern) == 0) {
+        ret = 1;
+    }
+    return ret;
+}
+
+int pred_newer (mfu_flist flist, uint64_t idx, void * arg)
+{
+    uint64_t mtime = mfu_flist_file_get_mtime(flist, idx);
+    if (mtime > (uint64_t)arg) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 int pred_exec (mfu_flist flist, uint64_t idx, void* arg)
 {
     int argmax = sysconf(_SC_ARG_MAX);
@@ -129,14 +236,4 @@ int pred_print (mfu_flist flist, uint64_t idx, void* arg)
     const char* name = mfu_flist_file_get_name(flist, idx);
     printf("%s\n", name);
     return 1;
-}
-
-int pred_newer (mfu_flist flist, uint64_t idx, void * arg)
-{
-    uint64_t mtime = mfu_flist_file_get_mtime(flist, idx);
-    if (mtime > (uint64_t)arg) {
-        return 1;
-    } else {
-        return 0;
-    }
 }
