@@ -48,6 +48,7 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("      --dryrun     - just show the diff, don't do real sync\n");
+    printf("  -c, --contents   - read and compare file contents rather than compare size and mtime\n");
     printf("  -N, --no-delete  - don't delete extraneous files from target\n");
     printf("  -v, --verbose    - verbose output\n");
     printf("  -h, --help       - print usage\n");
@@ -150,6 +151,7 @@ struct dsync_output {
 
 struct dsync_options {
     struct list_head outputs;      /* list of outputs */
+    int contents;                  /* check file contents rather than size and mtime */
     int dry_run;                   /* dry run */
     int verbose;
     int debug;                     /* check result after get result */
@@ -159,6 +161,7 @@ struct dsync_options {
 
 struct dsync_options options = {
     .outputs      = LIST_HEAD_INIT(options.outputs),
+    .contents     = 0,
     .dry_run      = 0,
     .verbose      = 0,
     .debug        = 0,
@@ -1027,6 +1030,63 @@ static void dsync_strmap_compare_data(
     return;
 }
 
+/* given a list of source/destination files to compare, spread file
+ * sections to processes to compare in parallel, fill
+ * in comparison results in source and dest string maps */
+static void dsync_strmap_compare_lite(
+    mfu_flist src_compare_list,
+    mfu_flist src_cp_list,
+    strmap* src_map,
+    mfu_flist dst_compare_list,
+    mfu_flist dst_remove_list,
+    strmap* dst_map,
+    size_t strlen_prefix)
+{
+    /* get size of source and destination compare lists */
+    uint64_t size = mfu_flist_size(src_compare_list);
+
+    /* check size and mtime of each item */
+    uint64_t idx;
+    for (idx = 0; idx < size; idx++) {
+        /* lookup name of file based on id to send to strmap updata call */
+        const char* name = mfu_flist_file_get_name(src_compare_list, idx);
+
+        /* ignore prefix portion of path to use as key */
+        name += strlen_prefix;
+
+        /* get file sizes */
+        uint64_t src_size = mfu_flist_file_get_size(src_compare_list, idx);
+        uint64_t dst_size = mfu_flist_file_get_size(dst_compare_list, idx);
+
+        /* get mtime seconds and nsecs */
+        uint64_t src_mtime      = mfu_flist_file_get_mtime(src_compare_list, idx);
+        uint64_t src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_compare_list, idx);
+        uint64_t dst_mtime      = mfu_flist_file_get_mtime(dst_compare_list, idx);
+        uint64_t dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(dst_compare_list, idx);
+
+        /* if size or mtime is different, we assume the file contents are different */
+        if ((src_size != dst_size) ||
+            (src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec))
+        {
+            /* update to say contents of the files were found to be different */
+            dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
+            dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
+
+            /* mark file to be deleted from destination, copied from source */
+            if (!options.dry_run) {
+                mfu_flist_file_copy(dst_compare_list, idx, dst_remove_list);
+                mfu_flist_file_copy(src_compare_list, idx, src_cp_list);
+            }
+        } else {
+            /* update to say contents of the files were found to be the same */
+            dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
+            dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_COMMON);
+        }
+    }
+
+    return;
+}
+
 static void time_strmap_compare(mfu_flist src_list, double start_compare, 
                                 double end_compare, time_t *time_started,
                                 time_t *time_ended, uint64_t total_bytes_read) {
@@ -1323,11 +1383,28 @@ static void dsync_strmap_compare(mfu_flist src_list,
     mfu_flist_summarize(src_compare_list);
     mfu_flist_summarize(dst_compare_list);
 
+    /* initalize total_bytes_read to zero */
+    uint64_t total_bytes_read = 0;
+
     /* compare the contents of the files if we have anything in the compare list */
     uint64_t cmp_global_size = mfu_flist_global_size(src_compare_list);
     if (cmp_global_size > 0) {
-        dsync_strmap_compare_data(src_compare_list, src_map, dst_compare_list, 
-                dst_map, strlen_prefix, mfu_copy_opts);
+        if (options.contents) {
+            /* compare file contents byte-by-byte, overwrites destination
+             * file in place if found to be different during comparison */
+            dsync_strmap_compare_data(src_compare_list, src_map,
+                dst_compare_list, dst_map, strlen_prefix, mfu_copy_opts
+            );
+
+            /* get total bytes read */
+            total_bytes_read = get_total_bytes_read(src_compare_list);
+        } else {
+            /* assume contents are different if size or mtime are different,
+             * adds files to remove and copy lists if different */
+            dsync_strmap_compare_lite(src_compare_list, src_cp_list, src_map,
+                dst_compare_list, dst_remove_list, dst_map, strlen_prefix
+            );
+        }
     }
 
     /* wait for all procs to finish before stopping timer */
@@ -1335,14 +1412,7 @@ static void dsync_strmap_compare(mfu_flist src_list,
     double end_compare = MPI_Wtime();
     time(&time_ended);
 
-    /* initalize total_bytes_read to zero */
-    uint64_t total_bytes_read = 0;
-
-    /* get total bytes read (if any) */
-    if (cmp_global_size > 0) {
-        total_bytes_read = get_total_bytes_read(src_compare_list);
-    }
-
+    /* print time, bytes read, and bandwidth */
     time_strmap_compare(src_list, start_compare, end_compare, &time_started,
                         &time_ended, total_bytes_read);
 
@@ -2345,7 +2415,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "No:dvh",
+            argc, argv, "cNo:dvh",
             long_options, &option_index
         );
 
@@ -2354,6 +2424,9 @@ int main(int argc, char **argv)
         }
 
         switch (c) {
+        case 'c':
+            options.contents++;
+            break;
         case 'n':
             options.dry_run++;
             break;
