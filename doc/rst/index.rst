@@ -3,34 +3,73 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
+==============================
 Documentation for mpiFileUtils
 ==============================
 
+Overview
+========
+
+mpiFileUtils provides both a library called libmfu and a suite of MPI-based
+tools to manage large datasets, which may vary from large directory trees to
+large files. High-performance computing users often generate large datasets with
+parallel applications that run with many processes (millions in some cases).
+However those users are then stuck with single-process tools like cp and rm to
+manage their datasets. This suite provides MPI-based tools to handle typical
+jobs like copy, remove, and compare for such datasets, providing speedups of up
+to 50x. It also provides a library that simplifies the creation of new tools
+or can be used in applications
+
+Utilities
+=========
+
+The tools in mpiFileUtils are actually MPI applications. They must be launched
+as MPI applications, e.g., within a compute allocation on a cluster using
+mpirun. The tools do not currently checkpoint, so one must be careful that an
+invocation of the tool has sufficient time to complete before it is killed.
+Example usage of each tool is provided below.
+
+- :doc: `dbcast - Broadcast files to compute nodes. <dbcast.1>`
+- :doc: `dchmod - Change owner, group, and permissions on files. <dchmod.1>`
+- :doc: `dcmp - Compare files. <dcmp.1>`
+- :doc: `dcp - Copy files. <dcp.1>`
+- :doc: `ddup - Find duplicate files. <ddup.1>`
+- :doc: `dfilemaker - Generate random files. <dfilemaker.1>`
+- :doc: `drm - Remove files. <drm.1>`
+- :doc: `dstripe - Restripe files. <dstripe.1>`
+- :doc: `dsync - Synchronize files. <dsync.1>`
+- :doc: `dwalk - List files. <dwalk.1>`
+
+Experimental Utilities
+=======================
+
+Experimental utilities are under active development. They are not considered to
+be production worthy, but they are available in the distribution for those
+interested in developing them further or to provide additional examples. To
+enable experimental utilities, run configure with the enable experimental
+option.
+
+
+.. code-block:: Bash
+
+    $ ./configure --enable-experimental
+
+- dbz2 - Compress a file with bz2.
+- :doc: `dfind - Search for files in parallel. <experimental/dfind.1>`
+- :doc: `dgrep - Run grep on files in parallel. <experimental/dgrep.1>`
+- :doc: `dparallel - Perform commands in parallel. experimental/dparallel.1`
+- dsh - List and remove files with interactive commands.
+- :doc: `dtar - Create file tape archives. <experimental/dtar.1`
+
+User Guide
+==========
+
 .. toctree::
-   :maxdepth: 2
-   :caption: User Guide
+   :maxdepth: 3
 
-   overview/index
-
-.. toctree::
-   :maxdepth: 2
-
-   dbcast.1
-   dchmod.1
-   dcmp.1
-   dcp.1
-   ddup.1
-   dfilemaker.1
-   drm.1
-   dstripe.1
-   dsync.1
-   dwalk.1
-
-.. toctree::
-   :maxdepth: 2
-
-   experimental/index
-
+   build.rst
+   proj-design.rst
+   libmfu.rst
 
 Indices and tables
 ==================
