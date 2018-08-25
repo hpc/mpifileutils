@@ -488,7 +488,12 @@ static int dsync_compare_data(
     }
 
     /* open destination file */
-    int dst_fd = mfu_open(dst_name, O_RDWR);
+    int dst_flags = O_RDWR;
+    if (options.dry_run) {
+        /* avoid opening file in write mode if on dry run */
+        dst_flags = O_RDONLY;
+    }
+    int dst_fd = mfu_open(dst_name, dst_flags);
     if (dst_fd < 0) {
        /* log error if there is an open failure on the 
         * dst side */
