@@ -47,7 +47,7 @@ static void print_usage(void)
     printf("Usage: dsync [options] source target\n");
     printf("\n");
     printf("Options:\n");
-    printf("      --dryrun     - just show the diff, don't do real sync\n");
+    printf("      --dryrun     - just show the differences, do not synchronize files\n");
     printf("  -c, --contents   - read and compare file contents rather than compare size and mtime\n");
     printf("  -N, --no-delete  - don't delete extraneous files from target\n");
     printf("  -v, --verbose    - verbose output\n");
@@ -1234,23 +1234,18 @@ static void dsync_strmap_compare(mfu_flist src_list,
     double start_compare = MPI_Wtime();
     time(&time_started);
 
-    /* create compare_lists */
+    /* create lists to track files whose content must be checked */
     mfu_flist src_compare_list = mfu_flist_subset(src_list);
     mfu_flist dst_compare_list = mfu_flist_subset(dst_list);
 
-    /* remove and copy lists for sync option */ 
-    mfu_flist dst_remove_list = MFU_FLIST_NULL; 
-    mfu_flist src_cp_list     = MFU_FLIST_NULL; 
+    /* list to track files to be copied from source,
+     * list to track files to be deleted from destination */
+    mfu_flist src_cp_list     = mfu_flist_subset(src_list);
+    mfu_flist dst_remove_list = mfu_flist_subset(dst_list);
 
     /* use a map as a list to record source and destination indices
      * for entries that need a refresh on metadata */
     strmap* metadata_refresh = strmap_new();
-
-    if (!options.dry_run) {
-        /* create dst remove list if sync option is on */
-        dst_remove_list = mfu_flist_subset(dst_list);
-        src_cp_list     = mfu_flist_subset(src_list);
-    }
 
     /* iterate over each item in source map */
     const strmap_node* node;
@@ -1270,8 +1265,8 @@ static void dsync_strmap_compare(mfu_flist src_list,
             /* item only exists in the source */
             dsync_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_ONLY_SRC);
 
-            /* copy items only in src directory into src copy list
-             * for sync option (will be later copied into dst dir) */ 
+            /* add items only in src directory into src copy list,
+             * will be later copied into dst dir */ 
             if (!options.dry_run) {
                  mfu_flist_file_copy(src_list, src_index, src_cp_list);
             }
@@ -1448,16 +1443,9 @@ static void dsync_strmap_compare(mfu_flist src_list,
     /* done with our list of files for refreshing metadata */
     strmap_delete(&metadata_refresh);
 
-    /* free lists used for copying and removing files in sync option */
-    /* TODO: fix MFU_FLIST_NULL so that we don't have to do these NULL
-     * checks here */
-    if (src_cp_list != MFU_FLIST_NULL) {
-        mfu_flist_free(&src_cp_list);
-    }
-
-    if (dst_remove_list != MFU_FLIST_NULL) {
-        mfu_flist_free(&dst_remove_list);
-    }
+    /* free lists used for removing and copying files */
+    mfu_flist_free(&dst_remove_list);
+    mfu_flist_free(&src_cp_list);
 
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
