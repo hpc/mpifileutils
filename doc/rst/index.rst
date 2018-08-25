@@ -7,8 +7,8 @@
 Documentation for mpiFileUtils
 ==============================
 
-Overview
-========
+**Overview**
+*************
 
 mpiFileUtils provides both a library called libmfu and a suite of MPI-based
 tools to manage large datasets, which may vary from large directory trees to
@@ -20,8 +20,8 @@ jobs like copy, remove, and compare for such datasets, providing speedups of up
 to 50x. It also provides a library that simplifies the creation of new tools
 or can be used in applications
 
-Utilities
-=========
+**Utilities**
+***************
 
 The tools in mpiFileUtils are actually MPI applications. They must be launched
 as MPI applications, e.g., within a compute allocation on a cluster using
@@ -40,8 +40,8 @@ Example usage of each tool is provided below.
 - :doc: `dsync - Synchronize files. <dsync.1>`
 - :doc: `dwalk - List files. <dwalk.1>`
 
-Experimental Utilities
-=======================
+**Experimental Utilities**
+***************************
 
 Experimental utilities are under active development. They are not considered to
 be production worthy, but they are available in the distribution for those
@@ -70,6 +70,20 @@ User Guide
    build.rst
    proj-design.rst
    libmfu.rst
+   dbcast.1
+   dchmod.1
+   dcmp.1
+   dcp.1
+   ddup.1
+   dfilemaker.1
+   drm.1
+   dstripe.1
+   dsync.1
+   dwalk.1
+   experimental/dfind.1
+   experimental/dgrep.1
+   experimental/dparallel.1
+   experimental/dtar.1
 
 Indices and tables
 ==================
