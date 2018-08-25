@@ -52,15 +52,12 @@ void pred_commit (void)
     }
 }
 
-int execute (char* fname, pred_item* root)
+int execute (mfu_flist flist, uint64_t idx, pred_item* root)
 {
     pred_item* p = root;
-    struct target t;
     
-    t.fname = fname;
-    t.statbuf = NULL;
     while (p) {
-        if (p->f(t, p->arg) <= 0) {
+        if (p->f(flist, idx, p->arg) <= 0) {
             return -1;
         }
         p = p->next;
@@ -69,38 +66,33 @@ int execute (char* fname, pred_item* root)
     return 0;
 }
 
-void statif (struct target* t)
+int pred_type (mfu_flist flist, uint64_t idx, void* arg)
 {
-    if (! t->statbuf) {
-        t->statbuf = (struct stat*) MFU_MALLOC(sizeof(struct stat));
-        if (stat(t->fname, t->statbuf) < 0 ) {
-            printf("warning: file %s not found\n", t->fname);
-            return;
-        }
-    }
-    return;
-}
+    mode_t m = (mode_t) arg;
+    
+    mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
 
-int pred_type (struct target t, void* arg)
-{
-    statif(&t);
-    
-    mode_t mode = (mode_t) arg;
-    
-    if ((t.statbuf->st_mode & mode) == mode) {
+    if ((mode & m) == m) {
         return 1;
     } else {
         return 0;
     }
 }
 
-int name (struct target t, void* arg)
+int pred_name (mfu_flist flist, uint64_t idx, void* arg)
 {
     char* pattern = (char*) arg;
-    return fnmatch(pattern, basename(t.fname), FNM_PERIOD) ? 0 : 1;
+
+    const char* name = mfu_flist_file_get_name(flist, idx);
+
+    char* tmpname = MFU_STRDUP(name);
+    int ret = fnmatch(pattern, basename(tmpname), FNM_PERIOD) ? 0 : 1;
+    mfu_free(&tmpname);
+
+    return ret;
 }
 
-int pred_exec (struct target t, void* arg)
+int pred_exec (mfu_flist flist, uint64_t idx, void* arg)
 {
     int argmax = sysconf(_SC_ARG_MAX);
     int written = 0;
@@ -114,7 +106,9 @@ int pred_exec (struct target t, void* arg)
         subst += 2; /* Point to the first char after '{}' */
     }
 
-    written = snprintf(cmdline, argmax/sizeof(char), "%s%s%s", command, t.fname, subst);
+    const char* name = mfu_flist_file_get_name(flist, idx);
+
+    written = snprintf(cmdline, argmax/sizeof(char), "%s%s%s", command, name, subst);
     if (written > argmax/sizeof(char)) {
         fprintf(stderr, "argument %s to exec too long.\n", cmdline);
         mfu_free(&cmdline);
@@ -130,17 +124,17 @@ int pred_exec (struct target t, void* arg)
     return ret ? 0 : 1;
 }
 
-int pred_print (struct target t, void* arg)
+int pred_print (mfu_flist flist, uint64_t idx, void* arg)
 {
-    printf("%s\n", t.fname);
+    const char* name = mfu_flist_file_get_name(flist, idx);
+    printf("%s\n", name);
     return 1;
 }
 
-int pred_newer (struct target t, void * arg)
+int pred_newer (mfu_flist flist, uint64_t idx, void * arg)
 {
-    statif(&t);
-    
-    if (t.statbuf->st_mtime > (time_t)arg) {
+    uint64_t mtime = mfu_flist_file_get_mtime(flist, idx);
+    if (mtime > (uint64_t)arg) {
         return 1;
     } else {
         return 0;
