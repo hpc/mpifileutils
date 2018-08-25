@@ -8,11 +8,13 @@ Documentation for mpiFileUtils
 
 .. toctree::
    :maxdepth: 2
+   :caption: User Guide
 
-   overview
-   libmfu
-   build
-   project-design
+   overview/index
+
+.. toctree::
+   :maxdepth: 2
+
    dbcast.1
    dchmod.1
    dcmp.1
