@@ -11,6 +11,9 @@
 #include "common.h"
 #include "pred.h"
 
+static uint64_t NSECS_IN_MIN = (uint64_t) (1000000000ULL * 60ULL);
+static uint64_t NSECS_IN_DAY = (uint64_t) (1000000000ULL * 60ULL * 60ULL * 24ULL);
+
 static void parse_number(const char* str, int* cmp, uint64_t* val)
 {
     if (str[0] == '+') {
@@ -218,6 +221,91 @@ int pred_size (mfu_flist flist, uint64_t idx, void* arg)
     }
 
     return ret;
+}
+
+static int check_time (uint64_t secs, uint64_t nsecs, uint64_t units, void* arg)
+{
+    /* compute age of item in integer number of days */
+    uint64_t item_nsecs = secs     * 1000000000 + nsecs;
+    uint64_t now_nsecs  = now_secs * 1000000000 + now_usecs * 1000;
+    uint64_t age_nsecs = 0;
+    if (item_nsecs < now_nsecs) {
+        age_nsecs = now_nsecs - item_nsecs;
+    }
+    uint64_t age = age_nsecs / units;
+
+    /* parse parameter from user */
+    int cmp;
+    uint64_t val;
+    parse_number((char*)arg, &cmp, &val);
+
+    int ret = 0;
+    if (cmp > 0) {
+        /* check whether age is greater than target */
+        if (age > val) {
+            ret = 1;
+        }
+    } else if (cmp < 0) {
+        /* check whether age is less than target */
+        if (age < val) {
+            ret = 1;
+        }
+    } else {
+        /* check whether age is equal to target */
+        if (age == val) {
+            ret = 1;
+        }
+    }
+
+    return ret;
+}
+
+int pred_amin (mfu_flist flist, uint64_t idx, void* arg)
+{
+    /* get timestamp from item */
+    uint64_t secs  = mfu_flist_file_get_atime(flist, idx);
+    uint64_t nsecs = mfu_flist_file_get_atime_nsec(flist, idx);
+    return check_time(secs, nsecs, NSECS_IN_MIN, arg);
+}
+
+int pred_mmin (mfu_flist flist, uint64_t idx, void* arg)
+{
+    /* get timestamp from item */
+    uint64_t secs  = mfu_flist_file_get_mtime(flist, idx);
+    uint64_t nsecs = mfu_flist_file_get_mtime_nsec(flist, idx);
+    return check_time(secs, nsecs, NSECS_IN_MIN, arg);
+}
+
+int pred_cmin (mfu_flist flist, uint64_t idx, void* arg)
+{
+    /* get timestamp from item */
+    uint64_t secs  = mfu_flist_file_get_ctime(flist, idx);
+    uint64_t nsecs = mfu_flist_file_get_ctime_nsec(flist, idx);
+    return check_time(secs, nsecs, NSECS_IN_MIN, arg);
+}
+
+int pred_atime (mfu_flist flist, uint64_t idx, void* arg)
+{
+    /* get timestamp from item */
+    uint64_t secs  = mfu_flist_file_get_atime(flist, idx);
+    uint64_t nsecs = mfu_flist_file_get_atime_nsec(flist, idx);
+    return check_time(secs, nsecs, NSECS_IN_DAY, arg);
+}
+
+int pred_mtime (mfu_flist flist, uint64_t idx, void* arg)
+{
+    /* get timestamp from item */
+    uint64_t secs  = mfu_flist_file_get_mtime(flist, idx);
+    uint64_t nsecs = mfu_flist_file_get_mtime_nsec(flist, idx);
+    return check_time(secs, nsecs, NSECS_IN_DAY, arg);
+}
+
+int pred_ctime (mfu_flist flist, uint64_t idx, void* arg)
+{
+    /* get timestamp from item */
+    uint64_t secs  = mfu_flist_file_get_ctime(flist, idx);
+    uint64_t nsecs = mfu_flist_file_get_ctime_nsec(flist, idx);
+    return check_time(secs, nsecs, NSECS_IN_DAY, arg);
 }
 
 int pred_newer (mfu_flist flist, uint64_t idx, void * arg)

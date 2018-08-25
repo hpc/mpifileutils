@@ -23,6 +23,12 @@ int pred_group (mfu_flist flist, uint64_t idx, void*);
 int pred_uid   (mfu_flist flist, uint64_t idx, void*);
 int pred_user  (mfu_flist flist, uint64_t idx, void*);
 int pred_size  (mfu_flist flist, uint64_t idx, void*);
+int pred_amin  (mfu_flist flist, uint64_t idx, void*);
+int pred_mmin  (mfu_flist flist, uint64_t idx, void*);
+int pred_cmin  (mfu_flist flist, uint64_t idx, void*);
+int pred_atime (mfu_flist flist, uint64_t idx, void*);
+int pred_mtime (mfu_flist flist, uint64_t idx, void*);
+int pred_ctime (mfu_flist flist, uint64_t idx, void*);
 int pred_newer (mfu_flist flist, uint64_t idx, void*);
 int pred_type  (mfu_flist flist, uint64_t idx, void*);
 

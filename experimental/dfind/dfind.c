@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 
 #include "mpi.h"
 
@@ -15,6 +16,10 @@
 /* TODO: change globals to struct */
 static int walk_stat = 1;
 static int dir_perm = 0;
+
+/* gettimeofday values when command was started */
+uint64_t now_secs;
+uint64_t now_usecs;
 
 static void print_usage(void)
 {
@@ -78,6 +83,19 @@ int main (int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    /* capture current time for any time based queries,
+     * to get a consistent value, capture and bcast from rank 0 */
+    uint64_t times[2];
+    if (rank == 0) {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        times[0] = (uint64_t) tv.tv_sec;
+        times[1] = (uint64_t) tv.tv_usec;
+    }
+    MPI_Bcast(times, 2, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+    now_secs  = times[0];
+    now_usecs = times[1];
+
     int ch;
 
     char* inputname  = NULL;
@@ -91,13 +109,21 @@ int main (int argc, char** argv)
         {"verbose",   0, 0, 'v'},
         {"help",      0, 0, 'h'},
 
-        { "maxdepth", required_argument, NULL, 'm' },
+        { "maxdepth", required_argument, NULL, 'd' },
         { "gid",      required_argument, NULL, 'g' },
         { "group",    required_argument, NULL, 'G' },
         { "uid",      required_argument, NULL, 'u' },
         { "user",     required_argument, NULL, 'U' },
         { "size",     required_argument, NULL, 's' },
         { "name",     required_argument, NULL, 'n' },
+
+        { "amin",     required_argument, NULL, 'a' },
+        { "mmin",     required_argument, NULL, 'm' },
+        { "cmin",     required_argument, NULL, 'c' },
+        { "atime",    required_argument, NULL, 'A' },
+        { "mtime",    required_argument, NULL, 'M' },
+        { "ctime",    required_argument, NULL, 'C' },
+
         { "newer",    required_argument, NULL, 'N' },
         { "type",     required_argument, NULL, 't' },
         { "print",    no_argument,       NULL, 'p' },
@@ -150,7 +176,7 @@ int main (int argc, char** argv)
     	    pred_add(pred_exec, buf);
     	    break;
     
-    	case 'm':
+    	case 'd':
     	    options.maxdepth = atoi(optarg);
     	    break;
 
@@ -185,6 +211,32 @@ int main (int argc, char** argv)
     	    pred_add(pred_name, MFU_STRDUP(optarg));
     	    break;
     
+    	case 'a':
+    	    buf = MFU_STRDUP(optarg);
+    	    pred_add(pred_amin, (void *)buf);
+    	    break;
+    	case 'm':
+    	    buf = MFU_STRDUP(optarg);
+    	    pred_add(pred_mmin, (void *)buf);
+    	    break;
+    	case 'c':
+    	    buf = MFU_STRDUP(optarg);
+    	    pred_add(pred_cmin, (void *)buf);
+    	    break;
+
+    	case 'A':
+    	    buf = MFU_STRDUP(optarg);
+    	    pred_add(pred_atime, (void *)buf);
+    	    break;
+    	case 'M':
+    	    buf = MFU_STRDUP(optarg);
+    	    pred_add(pred_mtime, (void *)buf);
+    	    break;
+    	case 'C':
+    	    buf = MFU_STRDUP(optarg);
+    	    pred_add(pred_ctime, (void *)buf);
+    	    break;
+
     	case 'N':
             mfu_param_path_set(optarg, &param_path);
             if (! param_path.path_stat_valid) {
