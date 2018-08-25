@@ -4,15 +4,11 @@ bin_PROGRAMS = dfind
 
 noinst_HEADERS = \
     common.h \
-    handle.h \
-    pred.h \
-    queue.h
+    pred.h
 
 dfind_SOURCES = \
     dfind.c \
-    handle.c \
-    pred.c \
-    queue.c
+    pred.c
 
 dfind_CPPFLAGS = -I../../src/common/ $(MPI_CFLAGS) $(libcircle_CFLAGS)
 dfind_LDFLAGS = $(MPI_CLDFLAGS)
