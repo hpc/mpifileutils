@@ -7,7 +7,7 @@ Documentation for mpiFileUtils
 ==============================
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
 
    overview
    libmfu
