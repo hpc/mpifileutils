@@ -29,16 +29,16 @@ mpirun. The tools do not currently checkpoint, so one must be careful that an
 invocation of the tool has sufficient time to complete before it is killed.
 Example usage of each tool is provided below.
 
-- :doc: `dbcast - Broadcast files to compute nodes. <dbcast.1>`
-- :doc: `dchmod - Change owner, group, and permissions on files. <dchmod.1>`
-- :doc: `dcmp - Compare files. <dcmp.1>`
-- :doc: `dcp - Copy files. <dcp.1>`
-- :doc: `ddup - Find duplicate files. <ddup.1>`
-- :doc: `dfilemaker - Generate random files. <dfilemaker.1>`
-- :doc: `drm - Remove files. <drm.1>`
-- :doc: `dstripe - Restripe files. <dstripe.1>`
-- :doc: `dsync - Synchronize files. <dsync.1>`
-- :doc: `dwalk - List files. <dwalk.1>`
+- dbcast - Broadcast files to compute nodes.
+- dchmod - Change owner, group, and permissions on files.
+- dcmp - Compare files.
+- dcp - Copy files.
+- ddup - Find duplicate files.
+- dfilemaker - Generate random files.
+- drm - Remove files.
+- dstripe - Restripe files.
+- dsync - Synchronize files
+- dwalk - List files.
 
 **Experimental Utilities**
 ***************************
@@ -49,20 +49,19 @@ interested in developing them further or to provide additional examples. To
 enable experimental utilities, run configure with the enable experimental
 option.
 
-
 .. code-block:: Bash
 
     $ ./configure --enable-experimental
 
 - dbz2 - Compress a file with bz2.
-- :doc: `dfind - Search for files in parallel. <experimental/dfind.1>`
-- :doc: `dgrep - Run grep on files in parallel. <experimental/dgrep.1>`
-- :doc: `dparallel - Perform commands in parallel. experimental/dparallel.1`
+- dfind - Search for files in parallel.
+- dgrep - Run grep on files in parallel.
+- dparallel - Perform commands in parallel. experimental/dparallel.1
 - dsh - List and remove files with interactive commands.
-- :doc: `dtar - Create file tape archives. <experimental/dtar.1`
+- dtar - Create file tape archives.
 
-User Guide
-==========
+**User Guide**
+***************************
 
 .. toctree::
    :maxdepth: 3
@@ -70,6 +69,13 @@ User Guide
    build.rst
    proj-design.rst
    libmfu.rst
+
+**Man Pages**
+***************************
+
+.. toctree::
+   :maxdepth: 2
+
    dbcast.1
    dchmod.1
    dcmp.1
