@@ -7,6 +7,9 @@ struct
 	char * root;
 } options;
 
+extern uint64_t now_secs;
+extern uint64_t now_usecs;
+
 #undef DEBUG
 
 #ifdef DEBUG
