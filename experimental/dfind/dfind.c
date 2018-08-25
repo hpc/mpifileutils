@@ -96,6 +96,7 @@ int main (int argc, char** argv)
         { "group",    required_argument, NULL, 'G' },
         { "uid",      required_argument, NULL, 'u' },
         { "user",     required_argument, NULL, 'U' },
+        { "size",     required_argument, NULL, 's' },
         { "name",     required_argument, NULL, 'n' },
         { "newer",    required_argument, NULL, 'N' },
         { "type",     required_argument, NULL, 't' },
@@ -173,6 +174,11 @@ int main (int argc, char** argv)
     	case 'U':
     	    buf = MFU_STRDUP(optarg);
     	    pred_add(pred_user, (void *)buf);
+    	    break;
+
+    	case 's':
+    	    buf = MFU_STRDUP(optarg);
+    	    pred_add(pred_size, (void *)buf);
     	    break;
 
     	case 'n':
