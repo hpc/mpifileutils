@@ -18,6 +18,8 @@ void pred_add(pred_t, void*);
 void pred_commit(void);
 
 int pred_name  (mfu_flist flist, uint64_t idx, void*);
+int pred_path  (mfu_flist flist, uint64_t idx, void*);
+int pred_regex (mfu_flist flist, uint64_t idx, void*);
 int pred_gid   (mfu_flist flist, uint64_t idx, void*);
 int pred_group (mfu_flist flist, uint64_t idx, void*);
 int pred_uid   (mfu_flist flist, uint64_t idx, void*);

@@ -6,6 +6,8 @@
 #include <libgen.h>
 #include <fnmatch.h>
 
+#include <regex.h>
+
 #include "mfu.h"
 
 #include "common.h"
@@ -109,6 +111,24 @@ int pred_name (mfu_flist flist, uint64_t idx, void* arg)
     int ret = fnmatch(pattern, basename(tmpname), FNM_PERIOD) ? 0 : 1;
     mfu_free(&tmpname);
 
+    return ret;
+}
+
+int pred_path (mfu_flist flist, uint64_t idx, void* arg)
+{
+    char* pattern = (char*) arg;
+    const char* name = mfu_flist_file_get_name(flist, idx);
+    int ret = fnmatch(pattern, name, FNM_PERIOD) ? 0 : 1;
+    return ret;
+}
+
+int pred_regex (mfu_flist flist, uint64_t idx, void* arg)
+{
+    /* run regex on full path */
+    regex_t* regex = (regex_t*) arg;
+    const char* name = mfu_flist_file_get_name(flist, idx);
+    int regex_return = regexec(regex, name, 0, NULL, 0);
+    int ret = (regex_return == 0) ? 1 : 0;
     return ret;
 }
 
