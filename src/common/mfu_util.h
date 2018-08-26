@@ -178,6 +178,16 @@ void mfu_unpack_uint64(const char** pptr, uint64_t* value);
 /* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
 uint32_t mfu_hash_jenkins(const char* key, size_t len);
 
+/* get secs and nsecs values from stat structure */
+void mfu_stat_get_atimes(const struct stat* sb, uint64_t* secs, uint64_t* nsecs);
+void mfu_stat_get_mtimes(const struct stat* sb, uint64_t* secs, uint64_t* nsecs);
+void mfu_stat_get_ctimes(const struct stat* sb, uint64_t* secs, uint64_t* nsecs);
+
+/* set secs and nsecs values on stat structure */
+void mfu_stat_set_atimes(struct stat* sb, uint64_t secs, uint64_t nsecs);
+void mfu_stat_set_mtimes(struct stat* sb, uint64_t secs, uint64_t nsecs);
+void mfu_stat_set_ctimes(struct stat* sb, uint64_t secs, uint64_t nsecs);
+
 #endif /* MFU_UTIL_H */
 
 /* enable C++ codes to include this header directly */

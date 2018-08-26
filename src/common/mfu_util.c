@@ -1,3 +1,6 @@
+/* to get nsec fields in stat structure */
+#define _GNU_SOURCE
+
 #include "mfu.h"
 #include "mpi.h"
 #include "dtcmp.h"
@@ -8,6 +11,10 @@
 #include <stdarg.h>
 #include <errno.h>
 #include <limits.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #ifndef ULLONG_MAX 
 #define ULLONG_MAX (__LONG_LONG_MAX__ * 2UL + 1UL)
@@ -546,4 +553,118 @@ uint32_t mfu_hash_jenkins(const char* key, size_t len)
     hash ^= (hash >> 11);
     hash += (hash << 15);
     return hash;
+}
+
+void mfu_stat_get_atimes(const struct stat* sb, uint64_t* secs, uint64_t* nsecs)
+{
+    *secs = (uint64_t) sb->st_atime;
+
+#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+    *nsecs = (uint64_t) sb->st_atimespec.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+    *nsecs = (uint64_t) sb->st_atim.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIME_N
+    *nsecs = (uint64_t) sb->st_atime_n;
+#elif HAVE_STRUCT_STAT_ST_UMTIME
+    *nsecs = (uint64_t) sb->st_uatime * 1000;
+#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
+    *nsecs = (uint64_t) sb->st_atime_usec * 1000;
+#else
+    *nsecs = 0;
+#endif
+}
+
+void mfu_stat_get_mtimes (const struct stat* sb, uint64_t* secs, uint64_t* nsecs)
+{
+    *secs = (uint64_t) sb->st_mtime;
+
+#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+    *nsecs = (uint64_t) sb->st_mtimespec.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+    *nsecs = (uint64_t) sb->st_mtim.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIME_N
+    *nsecs = (uint64_t) sb->st_mtime_n;
+#elif HAVE_STRUCT_STAT_ST_UMTIME
+    *nsecs = (uint64_t) sb->st_umtime * 1000;
+#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
+    *nsecs = (uint64_t) sb->st_mtime_usec * 1000;
+#else
+    *nsecs = 0;
+#endif
+}
+
+void mfu_stat_get_ctimes (const struct stat* sb, uint64_t* secs, uint64_t* nsecs)
+{
+    *secs = (uint64_t) sb->st_ctime;
+
+#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+    *nsecs = (uint64_t) sb->st_ctimespec.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+    *nsecs = (uint64_t) sb->st_ctim.tv_nsec;
+#elif HAVE_STRUCT_STAT_ST_MTIME_N
+    *nsecs = (uint64_t) sb->st_ctime_n;
+#elif HAVE_STRUCT_STAT_ST_UMTIME
+    *nsecs = (uint64_t) sb->st_uctime * 1000;
+#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
+    *nsecs = (uint64_t) sb->st_ctime_usec * 1000;
+#else
+    *nsecs = 0;
+#endif
+}
+
+void mfu_stat_set_atimes (struct stat* sb, uint64_t secs, uint64_t nsecs)
+{
+    sb->st_atime = (time_t) secs;
+
+#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+    sb->st_atimespec.tv_nsec = (time_t) nsecs;
+#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+    sb->st_atim.tv_nsec = (time_t) nsecs;
+#elif HAVE_STRUCT_STAT_ST_MTIME_N
+    sb->st_atime_n = (time_t) nsecs;
+#elif HAVE_STRUCT_STAT_ST_UMTIME
+    sb->st_uatime = (time_t) (nsecs / 1000);
+#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
+    sb->st_atime_usec = (time_t) (nsecs / 1000);
+#else
+    // error?
+#endif
+}
+
+void mfu_stat_set_mtimes (struct stat* sb, uint64_t secs, uint64_t nsecs)
+{
+    sb->st_mtime = (time_t) secs;
+
+#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+    sb->st_mtimespec.tv_nsec = (time_t) nsecs;
+#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+    sb->st_mtim.tv_nsec = (time_t) nsecs;
+#elif HAVE_STRUCT_STAT_ST_MTIME_N
+    sb->st_mtime_n = (time_t) nsecs;
+#elif HAVE_STRUCT_STAT_ST_UMTIME
+    sb->st_umtime = (time_t) (nsecs / 1000);
+#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
+    sb->st_mtime_usec = (time_t) (nsecs / 1000);
+#else
+    // error?
+#endif
+}
+
+void mfu_stat_set_ctimes (struct stat* sb, uint64_t secs, uint64_t nsecs)
+{
+    sb->st_ctime = (time_t) secs;
+
+#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
+    sb->st_ctimespec.tv_nsec = (time_t) nsecs;
+#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
+    sb->st_ctim.tv_nsec = (time_t) nsecs;
+#elif HAVE_STRUCT_STAT_ST_MTIME_N
+    sb->st_ctime_n = (time_t) nsecs;
+#elif HAVE_STRUCT_STAT_ST_UMTIME
+    sb->st_uctime = (time_t) (nsecs / 1000);
+#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
+    sb->st_ctime_usec = (time_t) (nsecs / 1000);
+#else
+    // error?
+#endif
 }
