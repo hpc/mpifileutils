@@ -285,36 +285,21 @@ void mfu_flist_insert_stat(flist_t* flist, const char* fpath, mode_t mode, const
         elem->mode  = (uint64_t) sb->st_mode;
         elem->uid   = (uint64_t) sb->st_uid;
         elem->gid   = (uint64_t) sb->st_gid;
-        elem->atime = (uint64_t) sb->st_atime;
-        elem->mtime = (uint64_t) sb->st_mtime;
-        elem->ctime = (uint64_t) sb->st_ctime;
-        elem->size  = (uint64_t) sb->st_size;
 
-#if HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_NSEC
-        elem->atime_nsec = (uint64_t) sb->st_atimespec.tv_nsec;
-        elem->ctime_nsec = (uint64_t) sb->st_ctimespec.tv_nsec;
-        elem->mtime_nsec = (uint64_t) sb->st_mtimespec.tv_nsec;
-#elif HAVE_STRUCT_STAT_ST_MTIM_TV_NSEC
-        elem->atime_nsec = (uint64_t) sb->st_atim.tv_nsec;
-        elem->ctime_nsec = (uint64_t) sb->st_ctim.tv_nsec;
-        elem->mtime_nsec = (uint64_t) sb->st_mtim.tv_nsec;
-#elif HAVE_STRUCT_STAT_ST_MTIME_N
-        elem->atime_nsec = (uint64_t) sb->st_atime_n;
-        elem->ctime_nsec = (uint64_t) sb->st_ctime_n;
-        elem->mtime_nsec = (uint64_t) sb->st_mtime_n;
-#elif HAVE_STRUCT_STAT_ST_UMTIME
-        elem->atime_nsec = (uint64_t) sb->st_uatime * 1000;
-        elem->ctime_nsec = (uint64_t) sb->st_uctime * 1000;
-        elem->mtime_nsec = (uint64_t) sb->st_umtime * 1000;
-#elif HAVE_STRUCT_STAT_ST_MTIME_USEC
-        elem->atime_nsec = (uint64_t) sb->st_atime_usec * 1000;
-        elem->ctime_nsec = (uint64_t) sb->st_ctime_usec * 1000;
-        elem->mtime_nsec = (uint64_t) sb->st_mtime_usec * 1000;
-#else
-        elem->atime_nsec = 0;
-        elem->ctime_nsec = 0;
-        elem->mtime_nsec = 0;
-#endif
+        uint64_t secs, nsecs;
+        mfu_stat_get_atimes(sb, &secs, &nsecs);
+        elem->atime      = secs;
+        elem->atime_nsec = nsecs;
+
+        mfu_stat_get_mtimes(sb, &secs, &nsecs);
+        elem->mtime      = secs;
+        elem->mtime_nsec = nsecs;
+
+        mfu_stat_get_ctimes(sb, &secs, &nsecs);
+        elem->ctime      = secs;
+        elem->ctime_nsec = nsecs;
+
+        elem->size  = (uint64_t) sb->st_size;
 
         /* TODO: link to user and group names? */
     }
