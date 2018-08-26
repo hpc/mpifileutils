@@ -1,11 +1,15 @@
 #ifndef _COMMON_H
 #define _COMMON_H
 
-struct
-{
-	int maxdepth;
-	char * root;
+struct {
+    int maxdepth;
+    char * root;
 } options;
+
+struct stattimes {
+    uint64_t secs;
+    uint64_t nsecs;
+};
 
 extern uint64_t now_secs;
 extern uint64_t now_usecs;

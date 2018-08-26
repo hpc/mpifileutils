@@ -36,17 +36,19 @@ static void print_usage(void)
     return;
 }
 
+/* apply predicate tests and actions to matching items in flist */
 static void mfu_flist_pred(mfu_flist flist, pred_item* p)
 {
     uint64_t idx;
     uint64_t size = mfu_flist_size(flist);
     for (idx = 0; idx < size; idx++) {
-        const char* name = mfu_flist_file_get_name(flist, idx);
         execute(flist, idx, p);
     }
     return;
 }
 
+/* given a source flist and a predicates,
+ * return a new list consisting of all matching items */
 static mfu_flist mfu_flist_filter_pred(mfu_flist flist, pred_item* p)
 {
     /* create a new list to copy matching items */
@@ -58,9 +60,6 @@ static mfu_flist mfu_flist_filter_pred(mfu_flist flist, pred_item* p)
     /* iterate over each item in input list */
     uint64_t idx;
     for (idx = 0; idx < size; idx++) {
-        /* get path to this item */
-        const char* name = mfu_flist_file_get_name(flist, idx);
-
         /* run string of predicates against item */
         int ret = execute(flist, idx, p);
         if (ret == 0) {
@@ -120,11 +119,15 @@ int main (int argc, char** argv)
         { "amin",     required_argument, NULL, 'a' },
         { "mmin",     required_argument, NULL, 'm' },
         { "cmin",     required_argument, NULL, 'c' },
+
         { "atime",    required_argument, NULL, 'A' },
         { "mtime",    required_argument, NULL, 'M' },
         { "ctime",    required_argument, NULL, 'C' },
 
+        { "anewer",   required_argument, NULL, 'B' },
         { "newer",    required_argument, NULL, 'N' },
+        { "cnewer",   required_argument, NULL, 'D' },
+
         { "type",     required_argument, NULL, 't' },
         { "print",    no_argument,       NULL, 'p' },
         { "exec",     required_argument, NULL, 'e' },
@@ -148,6 +151,7 @@ int main (int argc, char** argv)
         int space;
         char* buf;
         mfu_param_path param_path;
+        struct stattimes* t;
     	switch (c) {
     	case 'e':
     	    space = sysconf(_SC_ARG_MAX);
@@ -237,6 +241,19 @@ int main (int argc, char** argv)
     	    pred_add(pred_ctime, (void *)buf);
     	    break;
 
+    	case 'B':
+            mfu_param_path_set(optarg, &param_path);
+            if (! param_path.path_stat_valid) {
+                if (rank == 0) {
+    	            printf("%s: can't find file %s\n", argv[0], optarg);
+                }
+    	        exit(1);
+    	    }
+            t = (struct stattimes*) MFU_MALLOC(sizeof(struct stattimes));
+            mfu_stat_get_atimes(&param_path.path_stat, &t->secs, &t->nsecs);
+    	    pred_add(pred_anewer, (void *)t);
+            mfu_param_path_free(&param_path);
+    	    break;
     	case 'N':
             mfu_param_path_set(optarg, &param_path);
             if (! param_path.path_stat_valid) {
@@ -245,7 +262,22 @@ int main (int argc, char** argv)
                 }
     	        exit(1);
     	    }
-    	    pred_add(pred_newer, (void *)(param_path.path_stat.st_mtime));
+            t = (struct stattimes*) MFU_MALLOC(sizeof(struct stattimes));
+            mfu_stat_get_mtimes(&param_path.path_stat, &t->secs, &t->nsecs);
+    	    pred_add(pred_mnewer, (void *)t);
+            mfu_param_path_free(&param_path);
+    	    break;
+    	case 'D':
+            mfu_param_path_set(optarg, &param_path);
+            if (! param_path.path_stat_valid) {
+                if (rank == 0) {
+    	            printf("%s: can't find file %s\n", argv[0], optarg);
+                }
+    	        exit(1);
+    	    }
+            t = (struct stattimes*) MFU_MALLOC(sizeof(struct stattimes));
+            mfu_stat_get_ctimes(&param_path.path_stat, &t->secs, &t->nsecs);
+    	    pred_add(pred_cnewer, (void *)t);
             mfu_param_path_free(&param_path);
     	    break;
     
