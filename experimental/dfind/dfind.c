@@ -7,6 +7,8 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 
+#include <regex.h>
+
 #include "mpi.h"
 
 #include "mfu.h"
@@ -114,7 +116,10 @@ int main (int argc, char** argv)
         { "uid",      required_argument, NULL, 'u' },
         { "user",     required_argument, NULL, 'U' },
         { "size",     required_argument, NULL, 's' },
+
         { "name",     required_argument, NULL, 'n' },
+        { "path",     required_argument, NULL, 'P' },
+        { "regex",    required_argument, NULL, 'r' },
 
         { "amin",     required_argument, NULL, 'a' },
         { "mmin",     required_argument, NULL, 'm' },
@@ -152,6 +157,8 @@ int main (int argc, char** argv)
         char* buf;
         mfu_param_path param_path;
         struct stattimes* t;
+        regex_t* r;
+        int regex_return;
     	switch (c) {
     	case 'e':
     	    space = sysconf(_SC_ARG_MAX);
@@ -213,6 +220,17 @@ int main (int argc, char** argv)
 
     	case 'n':
     	    pred_add(pred_name, MFU_STRDUP(optarg));
+    	    break;
+    	case 'P':
+    	    pred_add(pred_path, MFU_STRDUP(optarg));
+    	    break;
+    	case 'r':
+            r = (regex_t*) MFU_MALLOC(sizeof(regex_t));
+            regex_return = regcomp(r, optarg, 0);
+            if (regex_return) {
+                MFU_ABORT(-1, "Could not compile regex: `%s' rc=%d\n", optarg, regex_return);
+            }
+    	    pred_add(pred_regex, (void*)r);
     	    break;
     
     	case 'a':
