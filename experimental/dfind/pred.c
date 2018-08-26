@@ -308,10 +308,42 @@ int pred_ctime (mfu_flist flist, uint64_t idx, void* arg)
     return check_time(secs, nsecs, NSECS_IN_DAY, arg);
 }
 
-int pred_newer (mfu_flist flist, uint64_t idx, void * arg)
+int pred_anewer (mfu_flist flist, uint64_t idx, void * arg)
 {
-    uint64_t mtime = mfu_flist_file_get_mtime(flist, idx);
-    if (mtime > (uint64_t)arg) {
+    uint64_t secs  = mfu_flist_file_get_atime(flist, idx);
+    uint64_t nsecs = mfu_flist_file_get_atime_nsec(flist, idx);
+    struct stattimes* times = (struct stattimes*) arg;
+    if (secs > times->secs ||
+       (secs == times->secs && nsecs > times->nsecs))
+    {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+int pred_mnewer (mfu_flist flist, uint64_t idx, void * arg)
+{
+    uint64_t secs  = mfu_flist_file_get_mtime(flist, idx);
+    uint64_t nsecs = mfu_flist_file_get_mtime_nsec(flist, idx);
+    struct stattimes* times = (struct stattimes*) arg;
+    if (secs > times->secs ||
+       (secs == times->secs && nsecs > times->nsecs))
+    {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+int pred_cnewer (mfu_flist flist, uint64_t idx, void * arg)
+{
+    uint64_t secs  = mfu_flist_file_get_ctime(flist, idx);
+    uint64_t nsecs = mfu_flist_file_get_ctime_nsec(flist, idx);
+    struct stattimes* times = (struct stattimes*) arg;
+    if (secs > times->secs ||
+       (secs == times->secs && nsecs > times->nsecs))
+    {
         return 1;
     } else {
         return 0;
