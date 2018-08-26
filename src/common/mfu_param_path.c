@@ -42,12 +42,19 @@ static void mfu_pack_stat(char** pptr, const struct stat* s)
     mfu_pack_uint64(pptr, (uint64_t) s->st_size);
     mfu_pack_uint64(pptr, (uint64_t) s->st_blksize);
     mfu_pack_uint64(pptr, (uint64_t) s->st_blocks);
-    mfu_pack_uint64(pptr, (uint64_t) s->st_atime);
-    mfu_pack_uint64(pptr, (uint64_t) 0);
-    mfu_pack_uint64(pptr, (uint64_t) s->st_mtime);
-    mfu_pack_uint64(pptr, (uint64_t) 0);
-    mfu_pack_uint64(pptr, (uint64_t) s->st_ctime);
-    mfu_pack_uint64(pptr, (uint64_t) 0);
+
+    uint64_t secs, nsecs;
+    mfu_stat_get_atimes(s, &secs, &nsecs);
+    mfu_pack_uint64(pptr, secs);
+    mfu_pack_uint64(pptr, nsecs);
+
+    mfu_stat_get_mtimes(s, &secs, &nsecs);
+    mfu_pack_uint64(pptr, secs);
+    mfu_pack_uint64(pptr, nsecs);
+
+    mfu_stat_get_ctimes(s, &secs, &nsecs);
+    mfu_pack_uint64(pptr, secs);
+    mfu_pack_uint64(pptr, nsecs);
 
     return;
 }
@@ -86,23 +93,19 @@ static void mfu_unpack_stat(const char** pptr, struct stat* s)
     mfu_unpack_uint64(pptr, &val);
     s->st_blocks = (blkcnt_t) val;
 
-    mfu_unpack_uint64(pptr, &val);
-    s->st_atime = (time_t) val;
+    uint64_t secs, nsecs;
 
-    mfu_unpack_uint64(pptr, &val);
-    /* atime nsecs */
+    mfu_unpack_uint64(pptr, &secs);
+    mfu_unpack_uint64(pptr, &nsecs);
+    mfu_stat_set_atimes(s, secs, nsecs);
 
-    mfu_unpack_uint64(pptr, &val);
-    s->st_mtime = (time_t) val;
+    mfu_unpack_uint64(pptr, &secs);
+    mfu_unpack_uint64(pptr, &nsecs);
+    mfu_stat_set_mtimes(s, secs, nsecs);
 
-    mfu_unpack_uint64(pptr, &val);
-    /* mtime nsecs */
-
-    mfu_unpack_uint64(pptr, &val);
-    s->st_ctime = (time_t) val;
-
-    mfu_unpack_uint64(pptr, &val);
-    /* ctime nsecs */
+    mfu_unpack_uint64(pptr, &secs);
+    mfu_unpack_uint64(pptr, &nsecs);
+    mfu_stat_set_ctimes(s, secs, nsecs);
 
     return;
 }
