@@ -39,19 +39,19 @@ static void print_usage(void)
 }
 
 /* apply predicate tests and actions to matching items in flist */
-static void mfu_flist_pred(mfu_flist flist, pred_item* p)
+static void mfu_flist_pred(mfu_flist flist, mfu_pred* p)
 {
     uint64_t idx;
     uint64_t size = mfu_flist_size(flist);
     for (idx = 0; idx < size; idx++) {
-        pred_execute(flist, idx, p);
+        mfu_pred_execute(flist, idx, p);
     }
     return;
 }
 
 /* given a source flist and a predicates,
  * return a new list consisting of all matching items */
-static mfu_flist mfu_flist_filter_pred(mfu_flist flist, pred_item* p)
+static mfu_flist mfu_flist_filter_pred(mfu_flist flist, mfu_pred* p)
 {
     /* create a new list to copy matching items */
     mfu_flist list = mfu_flist_subset(flist);
@@ -63,7 +63,7 @@ static mfu_flist mfu_flist_filter_pred(mfu_flist flist, pred_item* p)
     uint64_t idx;
     for (idx = 0; idx < size; idx++) {
         /* run string of predicates against item */
-        int ret = pred_execute(flist, idx, p);
+        int ret = mfu_pred_execute(flist, idx, p);
         if (ret == 0) {
             /* copy item into new list if all predicates pass */
             mfu_flist_file_copy(flist, idx, list);
@@ -92,7 +92,7 @@ static struct stattimes* get_mtimes(const char* file)
     return t;
 }
 
-static int add_type(char t)
+static int add_type(mfu_pred* p, char t)
 {
     mode_t* type = (mode_t*) MFU_MALLOC(sizeof(mode_t));
     switch (t) {
@@ -126,8 +126,26 @@ static int add_type(char t)
     }
 
     /* add check for this type */
-    pred_add(pred_type, (void *)type);
+    mfu_pred_add(p, mfu_pred_type, (void *)type);
     return 1;
+}
+
+static void pred_commit (mfu_pred* p)
+{
+    int need_print = 1;
+
+    mfu_pred* cur = p;
+    while (cur) {
+        if (cur->f == mfu_pred_print || cur->f == mfu_pred_exec) {
+            need_print = 0;
+            break;
+        }
+        cur = cur->next;
+    }
+    
+    if (need_print) {
+//        mfu_pred_add(p, mfu_pred_print, NULL);
+    }
 }
 
 int main (int argc, char** argv)
@@ -156,6 +174,7 @@ int main (int argc, char** argv)
 
     int ch;
 
+    mfu_pred* pred_head = mfu_pred_new();
     char* inputname  = NULL;
     char* outputname = NULL;
     int walk = 0;
@@ -241,7 +260,7 @@ int main (int argc, char** argv)
     	        optind++;
     	    }
     	    buf[strlen(buf)] = '\0'; /* clobbers trailing space */
-    	    pred_add(pred_exec, buf);
+    	    mfu_pred_add(pred_head, mfu_pred_exec, buf);
     	    break;
     
     	case 'd':
@@ -251,35 +270,35 @@ int main (int argc, char** argv)
     	case 'g':
             /* TODO: error check argument */
     	    buf = MFU_STRDUP(optarg);
-    	    pred_add(pred_gid, (void *)buf);
+    	    mfu_pred_add(pred_head, mfu_pred_gid, (void *)buf);
     	    break;
 
     	case 'G':
     	    buf = MFU_STRDUP(optarg);
-    	    pred_add(pred_group, (void *)buf);
+    	    mfu_pred_add(pred_head, mfu_pred_group, (void *)buf);
     	    break;
 
     	case 'u':
             /* TODO: error check argument */
     	    buf = MFU_STRDUP(optarg);
-    	    pred_add(pred_uid, (void *)buf);
+    	    mfu_pred_add(pred_head, mfu_pred_uid, (void *)buf);
     	    break;
 
     	case 'U':
     	    buf = MFU_STRDUP(optarg);
-    	    pred_add(pred_user, (void *)buf);
+    	    mfu_pred_add(pred_head, mfu_pred_user, (void *)buf);
     	    break;
 
     	case 's':
     	    buf = MFU_STRDUP(optarg);
-    	    pred_add(pred_size, (void *)buf);
+    	    mfu_pred_add(pred_head, mfu_pred_size, (void *)buf);
     	    break;
 
     	case 'n':
-    	    pred_add(pred_name, MFU_STRDUP(optarg));
+    	    mfu_pred_add(pred_head, mfu_pred_name, MFU_STRDUP(optarg));
     	    break;
     	case 'P':
-    	    pred_add(pred_path, MFU_STRDUP(optarg));
+    	    mfu_pred_add(pred_head, mfu_pred_path, MFU_STRDUP(optarg));
     	    break;
     	case 'r':
             r = (regex_t*) MFU_MALLOC(sizeof(regex_t));
@@ -287,33 +306,33 @@ int main (int argc, char** argv)
             if (ret) {
                 MFU_ABORT(-1, "Could not compile regex: `%s' rc=%d\n", optarg, ret);
             }
-    	    pred_add(pred_regex, (void*)r);
+    	    mfu_pred_add(pred_head, mfu_pred_regex, (void*)r);
     	    break;
     
     	case 'a':
     	    buf = MFU_STRDUP(optarg);
-    	    pred_add(pred_amin, (void *)buf);
+    	    mfu_pred_add(pred_head, mfu_pred_amin, (void *)buf);
     	    break;
     	case 'm':
     	    buf = MFU_STRDUP(optarg);
-    	    pred_add(pred_mmin, (void *)buf);
+    	    mfu_pred_add(pred_head, mfu_pred_mmin, (void *)buf);
     	    break;
     	case 'c':
     	    buf = MFU_STRDUP(optarg);
-    	    pred_add(pred_cmin, (void *)buf);
+    	    mfu_pred_add(pred_head, mfu_pred_cmin, (void *)buf);
     	    break;
 
     	case 'A':
     	    buf = MFU_STRDUP(optarg);
-    	    pred_add(pred_atime, (void *)buf);
+    	    mfu_pred_add(pred_head, mfu_pred_atime, (void *)buf);
     	    break;
     	case 'M':
     	    buf = MFU_STRDUP(optarg);
-    	    pred_add(pred_mtime, (void *)buf);
+    	    mfu_pred_add(pred_head, mfu_pred_mtime, (void *)buf);
     	    break;
     	case 'C':
     	    buf = MFU_STRDUP(optarg);
-    	    pred_add(pred_ctime, (void *)buf);
+    	    mfu_pred_add(pred_head, mfu_pred_ctime, (void *)buf);
     	    break;
 
     	case 'B':
@@ -324,7 +343,7 @@ int main (int argc, char** argv)
                 }
     	        exit(1);
     	    }
-    	    pred_add(pred_anewer, (void *)t);
+    	    mfu_pred_add(pred_head, mfu_pred_anewer, (void *)t);
     	    break;
     	case 'N':
             t = get_mtimes(optarg);
@@ -334,7 +353,7 @@ int main (int argc, char** argv)
                 }
     	        exit(1);
     	    }
-    	    pred_add(pred_mnewer, (void *)t);
+    	    mfu_pred_add(pred_head, mfu_pred_mnewer, (void *)t);
     	    break;
     	case 'D':
             t = get_mtimes(optarg);
@@ -344,15 +363,15 @@ int main (int argc, char** argv)
                 }
     	        exit(1);
     	    }
-    	    pred_add(pred_cnewer, (void *)t);
+    	    mfu_pred_add(pred_head, mfu_pred_cnewer, (void *)t);
     	    break;
     
     	case 'p':
-    	    pred_add(pred_print, NULL);
+    	    mfu_pred_add(pred_head, mfu_pred_print, NULL);
     	    break;
     
     	case 't':
-            ret = add_type(*optarg);
+            ret = add_type(pred_head, *optarg);
             if (ret != 1) {
                 if (rank == 0) {
     	            printf("%s: unsupported file type %s\n", argv[0], optarg);
@@ -383,7 +402,7 @@ int main (int argc, char** argv)
     	}
     }
     
-    pred_commit();
+    pred_commit(pred_head);
 
     /* paths to walk come after the options */
     int numpaths = 0;
@@ -457,7 +476,7 @@ int main (int argc, char** argv)
     mfu_flist_free(&flist);
 
     /* free predicate list */
-    pred_free();
+    mfu_pred_free(&pred_head);
 
     /* free memory allocated for options */
     mfu_free(&outputname);
