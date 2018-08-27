@@ -386,7 +386,7 @@ int pred_cnewer (mfu_flist flist, uint64_t idx, void * arg)
 
 int pred_exec (mfu_flist flist, uint64_t idx, void* arg)
 {
-    int argmax = sysconf(_SC_ARG_MAX);
+    int argmax = 1024*1024;;
     int written = 0;
     int ret;
     char* command = MFU_STRDUP((char*) arg);

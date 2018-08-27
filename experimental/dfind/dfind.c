@@ -220,9 +220,7 @@ int main (int argc, char** argv)
         int ret;
     	switch (c) {
     	case 'e':
-    	    space = sysconf(_SC_ARG_MAX);
-    	    buf = (char *)MFU_MALLOC(space);
-    
+    	    buf = (char *)MFU_MALLOC(1024*1024);
     	    for (i = optind-1; strcmp(";", argv[i]); i++) {
     	        if (i > argc) {
                     if (rank == 0) {
