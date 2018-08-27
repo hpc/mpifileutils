@@ -4,6 +4,11 @@ dwalk
 SYNOPSIS
 --------
 
+**dwalk [OPTION] PATH ...**
+
+DESCRIPTION
+-----------
+
 Parallel MPI application to recursively walk and list contents in a
 directory.
 
