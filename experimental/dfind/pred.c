@@ -74,7 +74,21 @@ void pred_commit (void)
     }
 }
 
-int execute (mfu_flist flist, uint64_t idx, pred_item* root)
+/* free memory allocated in list of predicates */
+void pred_free (void)
+{
+    pred_item* cur  = pred_head;
+    while (cur) {
+        pred_item* next = cur->next;
+        if (cur->arg != NULL) {
+            mfu_free(&cur->arg);
+        }
+        mfu_free(&cur);
+        cur = next;
+    }
+}
+
+int pred_execute (mfu_flist flist, uint64_t idx, pred_item* root)
 {
     pred_item* p = root;
     

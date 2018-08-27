@@ -44,7 +44,7 @@ static void mfu_flist_pred(mfu_flist flist, pred_item* p)
     uint64_t idx;
     uint64_t size = mfu_flist_size(flist);
     for (idx = 0; idx < size; idx++) {
-        execute(flist, idx, p);
+        pred_execute(flist, idx, p);
     }
     return;
 }
@@ -63,14 +63,55 @@ static mfu_flist mfu_flist_filter_pred(mfu_flist flist, pred_item* p)
     uint64_t idx;
     for (idx = 0; idx < size; idx++) {
         /* run string of predicates against item */
-        int ret = execute(flist, idx, p);
+        int ret = pred_execute(flist, idx, p);
         if (ret == 0) {
             /* copy item into new list if all predicates pass */
             mfu_flist_file_copy(flist, idx, list);
         }
     }
 
+    /* summarize the list */
+    mfu_flist_summarize(list);
+
     return list;
+}
+
+static int add_type(char t)
+{
+    mode_t* type = (mode_t*) MFU_MALLOC(sizeof(mode_t));
+    switch (t) {
+    case 'b':
+        *type = S_IFBLK;
+        break;
+    case 'c':
+        *type = S_IFCHR;
+        break;
+    case 'd':
+        *type = S_IFDIR;
+        break;
+    case 'f':
+        *type = S_IFREG;
+        break;
+    case 'l':
+        *type = S_IFLNK;
+        break;
+    case 'p':
+        *type = S_IFIFO;
+        break;
+    case 's':
+        *type = S_IFSOCK;
+        break;
+    
+    default:
+        /* unsupported type character */
+        mfu_free(&type);
+        return -1;
+        break;
+    }
+
+    /* add check for this type */
+    pred_add(pred_type, (void *)type);
+    return 1;
 }
 
 int main (int argc, char** argv)
@@ -158,7 +199,7 @@ int main (int argc, char** argv)
         mfu_param_path param_path;
         struct stattimes* t;
         regex_t* r;
-        int regex_return;
+        int ret;
     	switch (c) {
     	case 'e':
     	    space = sysconf(_SC_ARG_MAX);
@@ -226,9 +267,9 @@ int main (int argc, char** argv)
     	    break;
     	case 'r':
             r = (regex_t*) MFU_MALLOC(sizeof(regex_t));
-            regex_return = regcomp(r, optarg, 0);
-            if (regex_return) {
-                MFU_ABORT(-1, "Could not compile regex: `%s' rc=%d\n", optarg, regex_return);
+            ret = regcomp(r, optarg, 0);
+            if (ret) {
+                MFU_ABORT(-1, "Could not compile regex: `%s' rc=%d\n", optarg, ret);
             }
     	    pred_add(pred_regex, (void*)r);
     	    break;
@@ -304,22 +345,13 @@ int main (int argc, char** argv)
     	    break;
     
     	case 't':
-    	    switch (*optarg) {
-    	        case 'b': pred_add(pred_type, (void *)S_IFBLK); break;
-    	        case 'c': pred_add(pred_type, (void *)S_IFCHR); break;
-    	        case 'd': pred_add(pred_type, (void *)S_IFDIR); break;
-    	        case 'f': pred_add(pred_type, (void *)S_IFREG); break;
-    	        case 'l': pred_add(pred_type, (void *)S_IFLNK); break;
-    	        case 'p': pred_add(pred_type, (void *)S_IFIFO); break;
-    	        case 's': pred_add(pred_type, (void *)S_IFSOCK); break;
-    
-    	        default:
-                    if (rank == 0) {
-    	                printf("%s: unsupported file type %s\n", argv[0], optarg);
-                    }
-    	            exit(1);
-    	            break;
-    	    }
+            ret = add_type(*optarg);
+            if (ret != 1) {
+                if (rank == 0) {
+    	            printf("%s: unsupported file type %s\n", argv[0], optarg);
+                }
+    	        exit(1);
+            }
     	    break;
     
         case 'i':
@@ -417,6 +449,9 @@ int main (int argc, char** argv)
 
     /* free users, groups, and files objects */
     mfu_flist_free(&flist);
+
+    /* free predicate list */
+    pred_free();
 
     /* free memory allocated for options */
     mfu_free(&outputname);

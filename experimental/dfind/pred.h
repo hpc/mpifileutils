@@ -14,8 +14,11 @@ struct pred_item_t
 
 typedef struct pred_item_t pred_item;
 pred_item* pred_head;
+
 void pred_add(pred_t, void*);
 void pred_commit(void);
+void pred_free(void);
+int  pred_execute(mfu_flist flist, uint64_t idx, pred_item*);
 
 int pred_name  (mfu_flist flist, uint64_t idx, void*);
 int pred_path  (mfu_flist flist, uint64_t idx, void*);
@@ -38,7 +41,5 @@ int pred_type  (mfu_flist flist, uint64_t idx, void*);
 
 int pred_exec  (mfu_flist flist, uint64_t idx, void*);
 int pred_print (mfu_flist flist, uint64_t idx, void*);
-
-int execute (mfu_flist flist, uint64_t idx, pred_item*);
 
 #endif
