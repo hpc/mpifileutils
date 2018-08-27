@@ -153,9 +153,9 @@ EXAMPLES
 
 ``mpirun -np 128 dfind -v -o outfile --size -1GB /path/to/target``
 
-3. Filter input list to list all files not changed in the past 180 days and write to output file:
+3. Filter list in infile to find all regular files not changed in the past 180 days and write new list to outfile:
 
-``mpirun -np 128 dfind -v -i infile -o outfile --mtime +180``
+``mpirun -np 128 dfind -v -i infile -o outfile --type f --mtime +180``
 
 SEE ALSO
 --------
