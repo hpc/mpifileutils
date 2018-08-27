@@ -101,7 +101,7 @@ Numeric arguments can be specified as:
 
 .. option:: --newer FILE
 
-   File's status was last changed more recently than FILE was modified.
+   File was modified more recently than FILE.
 
 .. option:: --mtime N
 
