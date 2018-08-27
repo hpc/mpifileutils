@@ -76,6 +76,22 @@ static mfu_flist mfu_flist_filter_pred(mfu_flist flist, pred_item* p)
     return list;
 }
 
+/* look up mtimes for specified file,
+ * return secs/nsecs in newly allocated stattimes struct,
+ * return NULL on error */
+static struct stattimes* get_mtimes(const char* file)
+{
+    mfu_param_path param_path;
+    mfu_param_path_set(file, &param_path);
+    if (! param_path.path_stat_valid) {
+        return NULL;
+    }
+    struct stattimes* t = (struct stattimes*) MFU_MALLOC(sizeof(struct stattimes));
+    mfu_stat_get_mtimes(&param_path.path_stat, &t->secs, &t->nsecs);
+    mfu_param_path_free(&param_path);
+    return t;
+}
+
 static int add_type(char t)
 {
     mode_t* type = (mode_t*) MFU_MALLOC(sizeof(mode_t));
@@ -152,10 +168,12 @@ int main (int argc, char** argv)
         {"help",      0, 0, 'h'},
 
         { "maxdepth", required_argument, NULL, 'd' },
+
         { "gid",      required_argument, NULL, 'g' },
         { "group",    required_argument, NULL, 'G' },
         { "uid",      required_argument, NULL, 'u' },
         { "user",     required_argument, NULL, 'U' },
+
         { "size",     required_argument, NULL, 's' },
 
         { "name",     required_argument, NULL, 'n' },
@@ -175,6 +193,7 @@ int main (int argc, char** argv)
         { "cnewer",   required_argument, NULL, 'D' },
 
         { "type",     required_argument, NULL, 't' },
+
         { "print",    no_argument,       NULL, 'p' },
         { "exec",     required_argument, NULL, 'e' },
         { NULL, 0, NULL, 0 },
@@ -196,7 +215,6 @@ int main (int argc, char** argv)
         int i;
         int space;
         char* buf;
-        mfu_param_path param_path;
         struct stattimes* t;
         regex_t* r;
         int ret;
@@ -301,43 +319,34 @@ int main (int argc, char** argv)
     	    break;
 
     	case 'B':
-            mfu_param_path_set(optarg, &param_path);
-            if (! param_path.path_stat_valid) {
+            t = get_mtimes(optarg);
+            if (t == NULL) {
                 if (rank == 0) {
     	            printf("%s: can't find file %s\n", argv[0], optarg);
                 }
     	        exit(1);
     	    }
-            t = (struct stattimes*) MFU_MALLOC(sizeof(struct stattimes));
-            mfu_stat_get_atimes(&param_path.path_stat, &t->secs, &t->nsecs);
     	    pred_add(pred_anewer, (void *)t);
-            mfu_param_path_free(&param_path);
     	    break;
     	case 'N':
-            mfu_param_path_set(optarg, &param_path);
-            if (! param_path.path_stat_valid) {
+            t = get_mtimes(optarg);
+            if (t == NULL) {
                 if (rank == 0) {
     	            printf("%s: can't find file %s\n", argv[0], optarg);
                 }
     	        exit(1);
     	    }
-            t = (struct stattimes*) MFU_MALLOC(sizeof(struct stattimes));
-            mfu_stat_get_mtimes(&param_path.path_stat, &t->secs, &t->nsecs);
     	    pred_add(pred_mnewer, (void *)t);
-            mfu_param_path_free(&param_path);
     	    break;
     	case 'D':
-            mfu_param_path_set(optarg, &param_path);
-            if (! param_path.path_stat_valid) {
+            t = get_mtimes(optarg);
+            if (t == NULL) {
                 if (rank == 0) {
     	            printf("%s: can't find file %s\n", argv[0], optarg);
                 }
     	        exit(1);
     	    }
-            t = (struct stattimes*) MFU_MALLOC(sizeof(struct stattimes));
-            mfu_stat_get_ctimes(&param_path.path_stat, &t->secs, &t->nsecs);
     	    pred_add(pred_cnewer, (void *)t);
-            mfu_param_path_free(&param_path);
     	    break;
     
     	case 'p':
