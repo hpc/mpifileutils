@@ -245,7 +245,7 @@ static int write_file(mfu_flist list, uint64_t idx)
       }
  
       /* sync output to disk and close the file */
-      mfu_fsync(dest_path, fd);
+      /* jll temporary  mfu_fsync(dest_path, fd);  */
       mfu_close(dest_path, fd);
     } else {
       /* failed to open the file */
