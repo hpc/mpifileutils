@@ -104,7 +104,7 @@ int pred_execute (mfu_flist flist, uint64_t idx, pred_item* root)
 
 int pred_type (mfu_flist flist, uint64_t idx, void* arg)
 {
-    mode_t m = (mode_t) arg;
+    mode_t m = *((mode_t*)arg);
     
     mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
 
