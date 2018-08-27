@@ -33,68 +33,58 @@ static void parse_number(const char* str, int* cmp, uint64_t* val)
     }
 }
 
-void pred_add(pred_t predicate, void* arg)
+mfu_pred* mfu_pred_new(void)
 {
-    if (! pred_head) {
-        pred_head       = (pred_item*) MFU_MALLOC(sizeof(pred_item));
-        pred_head->f    = predicate;
-        pred_head->arg  = arg;
-        pred_head->next = NULL;
-        return;
-    }
-    
-    pred_item* p = pred_head;
-    
-    while (p->next) {
-        p = p->next;
-    }
-    
-    p->next = (pred_item*) MFU_MALLOC(sizeof(pred_item));
-    p       = p->next;
-    p->f    = predicate;
-    p->arg  = arg;
+    mfu_pred* p = (mfu_pred*) MFU_MALLOC(sizeof(mfu_pred));
+    p->f    = NULL;
+    p->arg  = NULL;
     p->next = NULL;
+    return p;
 }
 
-void pred_commit (void)
+void mfu_pred_add(mfu_pred* head, mfu_pred_fn predicate, void* arg)
 {
-    int need_print = 1;
-
-    pred_item* cur = pred_head;
-    while (cur) {
-        if (cur->f == pred_print || cur->f == pred_exec) {
-            need_print = 0;
-            break;
+    if (head) {
+        mfu_pred* p = head;
+        
+        while (p->next) {
+            p = p->next;
         }
-        cur = cur->next;
-    }
-    
-    if (need_print) {
-//        pred_add(pred_print, NULL);
+        
+        p->next = (mfu_pred*) MFU_MALLOC(sizeof(mfu_pred));
+        p       = p->next;
+        p->f    = predicate;
+        p->arg  = arg;
+        p->next = NULL;
     }
 }
 
 /* free memory allocated in list of predicates */
-void pred_free (void)
+void mfu_pred_free (mfu_pred** phead)
 {
-    pred_item* cur  = pred_head;
-    while (cur) {
-        pred_item* next = cur->next;
-        if (cur->arg != NULL) {
-            mfu_free(&cur->arg);
+    if (phead != NULL) {
+        mfu_pred* cur = *phead;
+        while (cur) {
+            mfu_pred* next = cur->next;
+            if (cur->arg != NULL) {
+                mfu_free(&cur->arg);
+            }
+            mfu_free(&cur);
+            cur = next;
         }
-        mfu_free(&cur);
-        cur = next;
+        *phead = NULL;
     }
 }
 
-int pred_execute (mfu_flist flist, uint64_t idx, pred_item* root)
+int mfu_pred_execute (mfu_flist flist, uint64_t idx, const mfu_pred* root)
 {
-    pred_item* p = root;
+    mfu_pred* p = root;
     
     while (p) {
-        if (p->f(flist, idx, p->arg) <= 0) {
-            return -1;
+        if (p->f != NULL) {
+            if (p->f(flist, idx, p->arg) <= 0) {
+                return -1;
+            }
         }
         p = p->next;
     }
@@ -102,7 +92,7 @@ int pred_execute (mfu_flist flist, uint64_t idx, pred_item* root)
     return 0;
 }
 
-int pred_type (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_type (mfu_flist flist, uint64_t idx, void* arg)
 {
     mode_t m = *((mode_t*)arg);
     
@@ -115,7 +105,7 @@ int pred_type (mfu_flist flist, uint64_t idx, void* arg)
     }
 }
 
-int pred_name (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_name (mfu_flist flist, uint64_t idx, void* arg)
 {
     char* pattern = (char*) arg;
 
@@ -128,7 +118,7 @@ int pred_name (mfu_flist flist, uint64_t idx, void* arg)
     return ret;
 }
 
-int pred_path (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_path (mfu_flist flist, uint64_t idx, void* arg)
 {
     char* pattern = (char*) arg;
     const char* name = mfu_flist_file_get_name(flist, idx);
@@ -136,7 +126,7 @@ int pred_path (mfu_flist flist, uint64_t idx, void* arg)
     return ret;
 }
 
-int pred_regex (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_regex (mfu_flist flist, uint64_t idx, void* arg)
 {
     /* run regex on full path */
     regex_t* regex = (regex_t*) arg;
@@ -146,7 +136,7 @@ int pred_regex (mfu_flist flist, uint64_t idx, void* arg)
     return ret;
 }
 
-int pred_gid (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_gid (mfu_flist flist, uint64_t idx, void* arg)
 {
     uint64_t id = mfu_flist_file_get_gid(flist, idx);
 
@@ -175,7 +165,7 @@ int pred_gid (mfu_flist flist, uint64_t idx, void* arg)
     return ret;
 }
 
-int pred_group (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_group (mfu_flist flist, uint64_t idx, void* arg)
 {
     char* pattern = (char*) arg;
     const char* str = mfu_flist_file_get_groupname(flist, idx);
@@ -186,7 +176,7 @@ int pred_group (mfu_flist flist, uint64_t idx, void* arg)
     return ret;
 }
 
-int pred_uid (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_uid (mfu_flist flist, uint64_t idx, void* arg)
 {
     uint64_t id = mfu_flist_file_get_uid(flist, idx);
 
@@ -215,7 +205,7 @@ int pred_uid (mfu_flist flist, uint64_t idx, void* arg)
     return ret;
 }
 
-int pred_user (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_user (mfu_flist flist, uint64_t idx, void* arg)
 {
     char* pattern = (char*) arg;
     const char* str = mfu_flist_file_get_username(flist, idx);
@@ -226,7 +216,7 @@ int pred_user (mfu_flist flist, uint64_t idx, void* arg)
     return ret;
 }
 
-int pred_size (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_size (mfu_flist flist, uint64_t idx, void* arg)
 {
     int ret = 0;
 
@@ -294,7 +284,7 @@ static int check_time (uint64_t secs, uint64_t nsecs, uint64_t units, void* arg)
     return ret;
 }
 
-int pred_amin (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_amin (mfu_flist flist, uint64_t idx, void* arg)
 {
     /* get timestamp from item */
     uint64_t secs  = mfu_flist_file_get_atime(flist, idx);
@@ -302,7 +292,7 @@ int pred_amin (mfu_flist flist, uint64_t idx, void* arg)
     return check_time(secs, nsecs, NSECS_IN_MIN, arg);
 }
 
-int pred_mmin (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_mmin (mfu_flist flist, uint64_t idx, void* arg)
 {
     /* get timestamp from item */
     uint64_t secs  = mfu_flist_file_get_mtime(flist, idx);
@@ -310,7 +300,7 @@ int pred_mmin (mfu_flist flist, uint64_t idx, void* arg)
     return check_time(secs, nsecs, NSECS_IN_MIN, arg);
 }
 
-int pred_cmin (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_cmin (mfu_flist flist, uint64_t idx, void* arg)
 {
     /* get timestamp from item */
     uint64_t secs  = mfu_flist_file_get_ctime(flist, idx);
@@ -318,7 +308,7 @@ int pred_cmin (mfu_flist flist, uint64_t idx, void* arg)
     return check_time(secs, nsecs, NSECS_IN_MIN, arg);
 }
 
-int pred_atime (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_atime (mfu_flist flist, uint64_t idx, void* arg)
 {
     /* get timestamp from item */
     uint64_t secs  = mfu_flist_file_get_atime(flist, idx);
@@ -326,7 +316,7 @@ int pred_atime (mfu_flist flist, uint64_t idx, void* arg)
     return check_time(secs, nsecs, NSECS_IN_DAY, arg);
 }
 
-int pred_mtime (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_mtime (mfu_flist flist, uint64_t idx, void* arg)
 {
     /* get timestamp from item */
     uint64_t secs  = mfu_flist_file_get_mtime(flist, idx);
@@ -334,7 +324,7 @@ int pred_mtime (mfu_flist flist, uint64_t idx, void* arg)
     return check_time(secs, nsecs, NSECS_IN_DAY, arg);
 }
 
-int pred_ctime (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_ctime (mfu_flist flist, uint64_t idx, void* arg)
 {
     /* get timestamp from item */
     uint64_t secs  = mfu_flist_file_get_ctime(flist, idx);
@@ -342,7 +332,7 @@ int pred_ctime (mfu_flist flist, uint64_t idx, void* arg)
     return check_time(secs, nsecs, NSECS_IN_DAY, arg);
 }
 
-int pred_anewer (mfu_flist flist, uint64_t idx, void * arg)
+int mfu_pred_anewer (mfu_flist flist, uint64_t idx, void * arg)
 {
     uint64_t secs  = mfu_flist_file_get_atime(flist, idx);
     uint64_t nsecs = mfu_flist_file_get_atime_nsec(flist, idx);
@@ -356,7 +346,7 @@ int pred_anewer (mfu_flist flist, uint64_t idx, void * arg)
     }
 }
 
-int pred_mnewer (mfu_flist flist, uint64_t idx, void * arg)
+int mfu_pred_mnewer (mfu_flist flist, uint64_t idx, void * arg)
 {
     uint64_t secs  = mfu_flist_file_get_mtime(flist, idx);
     uint64_t nsecs = mfu_flist_file_get_mtime_nsec(flist, idx);
@@ -370,7 +360,7 @@ int pred_mnewer (mfu_flist flist, uint64_t idx, void * arg)
     }
 }
 
-int pred_cnewer (mfu_flist flist, uint64_t idx, void * arg)
+int mfu_pred_cnewer (mfu_flist flist, uint64_t idx, void * arg)
 {
     uint64_t secs  = mfu_flist_file_get_ctime(flist, idx);
     uint64_t nsecs = mfu_flist_file_get_ctime_nsec(flist, idx);
@@ -384,7 +374,7 @@ int pred_cnewer (mfu_flist flist, uint64_t idx, void * arg)
     }
 }
 
-int pred_exec (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_exec (mfu_flist flist, uint64_t idx, void* arg)
 {
     int argmax = 1024*1024;;
     int written = 0;
@@ -416,7 +406,7 @@ int pred_exec (mfu_flist flist, uint64_t idx, void* arg)
     return ret ? 0 : 1;
 }
 
-int pred_print (mfu_flist flist, uint64_t idx, void* arg)
+int mfu_pred_print (mfu_flist flist, uint64_t idx, void* arg)
 {
     const char* name = mfu_flist_file_get_name(flist, idx);
     printf("%s\n", name);
