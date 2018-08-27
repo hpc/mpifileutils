@@ -441,9 +441,7 @@ int main (int argc, char** argv)
     }
 
     /* apply predicates to each item in list */
-    //mfu_flist_pred(flist, pred_head);
     mfu_flist flist2 = mfu_flist_filter_pred(flist, pred_head);
-    mfu_flist_print(flist2);
 
     /* write data to cache file */
     if (outputname != NULL) {
@@ -454,6 +452,7 @@ int main (int argc, char** argv)
         }
     }
 
+    /* free off the filtered list */
     mfu_flist_free(&flist2);
 
     /* free users, groups, and files objects */
