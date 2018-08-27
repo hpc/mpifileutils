@@ -574,6 +574,32 @@ bcast:
     return;
 }
 
+/* free resources allocated in list of params */
+static void mfu_param_path_free_list(uint64_t num, mfu_param_path* params)
+{
+    /* make sure we got a valid pointer */
+    if (params != NULL) {
+        /* free memory for each param */
+        uint64_t i;
+        for (i = 0; i < num; i++) {
+            /* get pointer to param structure */
+            mfu_param_path* param = &params[i];
+
+            /* free memory and reinit */
+            if (param != NULL) {
+                /* free all mememory */
+                mfu_free(&param->orig);
+                mfu_free(&param->path);
+                mfu_free(&param->target);
+
+                /* initialize all fields */
+                mfu_param_path_init(param);
+            }
+        }
+    }
+    return;
+}
+
 void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params)
 {
     /* get our rank and number of ranks */
@@ -716,6 +742,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
     mfu_free(&recvcounts);
 
     /* free temporary params */
+    mfu_param_path_free_list(count, p);
     mfu_free(&p);
 
     return;
@@ -724,26 +751,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
 /* free resources allocated in call to mfu_param_path_set_all */
 void mfu_param_path_free_all(uint64_t num, mfu_param_path* params)
 {
-    /* make sure we got a valid pointer */
-    if (params != NULL) {
-        /* free memory for each param */
-        uint64_t i;
-        for (i = 0; i < num; i++) {
-            /* get pointer to param structure */
-            mfu_param_path* param = &params[i];
-
-            /* free memory and reinit */
-            if (param != NULL) {
-                /* free all mememory */
-                mfu_free(&param->orig);
-                mfu_free(&param->path);
-                mfu_free(&param->target);
-
-                /* initialize all fields */
-                mfu_param_path_init(param);
-            }
-        }
-    }
+    mfu_param_path_free_list(num, params);
     return;
 }
 
