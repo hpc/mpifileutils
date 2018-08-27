@@ -2421,6 +2421,7 @@ int main(int argc, char **argv)
 
     int option_index = 0;
     static struct option long_options[] = {
+        {"contents",  0, 0, 'c'},
         {"dryrun",    0, 0, 'n'},
         {"no-delete", 0, 0, 'N'},
         {"output",    1, 0, 'o'},
