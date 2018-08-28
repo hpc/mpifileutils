@@ -98,17 +98,17 @@ void mfu_flist_usrgrp_create_map(const buf_t* items, strmap* id2name)
         mfu_unpack_uint64(&ptr, &id);
 
         /* convert id number to string */
-        char id_str[20];
+        char id_str[32];
         int len_int = snprintf(id_str, sizeof(id_str), "%llu", (unsigned long long) id);
         if (len_int < 0) {
             /* TODO: ERROR! */
-            printf("ERROR!!!\n");
+            MFU_LOG(MFU_LOG_ERR, "Failed to convert id %llu to string, ret=%d", (unsigned long long) id, len_int);
         }
 
         size_t len = (size_t) len_int;
         if (len > (sizeof(id_str) - 1)) {
             /* TODO: ERROR! */
-            printf("ERROR!!!\n");
+            MFU_LOG(MFU_LOG_ERR, "Converting id %llu to string needs buffer of at least %d chars", (unsigned long long) id, len_int+1);
         }
 
         strmap_set(id2name, id_str, name);
@@ -121,17 +121,17 @@ void mfu_flist_usrgrp_create_map(const buf_t* items, strmap* id2name)
 const char* mfu_flist_usrgrp_get_name_from_id(strmap* id2name, uint64_t id)
 {
     /* convert id number to string representation */
-    char id_str[20];
+    char id_str[32];
     int len_int = snprintf(id_str, sizeof(id_str), "%llu", (unsigned long long) id);
     if (len_int < 0) {
         /* TODO: ERROR! */
-        printf("ERROR!!!\n");
+        MFU_LOG(MFU_LOG_ERR, "Failed to convert id %llu to string, ret=%d", (unsigned long long) id, len_int);
     }
 
     size_t len = (size_t) len_int;
     if (len > (sizeof(id_str) - 1)) {
         /* TODO: ERROR! */
-        printf("ERROR!!!\n");
+        MFU_LOG(MFU_LOG_ERR, "Converting id %llu to string needs buffer of at least %d chars", (unsigned long long) id, len_int+1);
     }
 
     /* lookup name by id */
