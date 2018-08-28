@@ -30,7 +30,7 @@ To enable experimental utilities, run configure with the enable experimental opt
     ./configure --enable-experimental
 
  - dbz2 - Compress a file with bz2.
- - dfind - Search for files in parallel.
+ - [dfind](doc/rst/experimental/dfind.1.rst) - Search for files in parallel.
  - dgrep - Run grep on files in parallel.
  - dparallel - Perform commands in parallel.
  - dsh - List and remove files with interactive commands.
