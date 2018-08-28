@@ -4,19 +4,34 @@ dfilemaker
 SYNOPSIS
 --------
 
-**dfilemaker [OPTION] PATH...**
+**dfilemaker <nitems> <nlevels> <maxflen>**
 
 DESCRIPTION
 -----------
 
-dfilemaker is a tool for generating files and file trees which contain
-files suitable for testing.
+dfilemaker creates a random directory tree with files having random data
+that is useful for testing.
+
+Files and directories are created in the current working directory where the tool is executed.
+dfilemaker takes three positional parameters:
+
+.. option:: nitems
+
+   Total number of items to create.
+
+.. option:: nlevels
+
+   Maximum depth to create in directory level (relative to current path).
+
+.. option:: maxflen
+
+   Maximum number of bytes to write to a file.
+
+
+The following options are planned in future releases, but they are not yet implemented.
 
 OPTIONS
 -------
-
-**NOTE: I cannot find these options in the code. I am not sure that they
-actually exist? Unless there is another version of the code somewhere?**
 
 .. option:: -d, --depth=*min*-*max*
 
