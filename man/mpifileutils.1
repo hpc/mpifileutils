@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "MPIFILEUTILS" "1" "Aug 20, 2018" "0.8" "mpiFileUtils"
+.TH "MPIFILEUTILS" "1" "Aug 28, 2018" "0.8" "mpiFileUtils"
 .SH NAME
 mpifileutils \- mpiFileUtils Documentation
 .
@@ -30,7 +30,252 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
-.SH DBCAST
+.SH OVERVIEW
+.sp
+mpiFileUtils provides both a library called libmfu and a suite of MPI\-based
+tools to manage large datasets, which may vary from large directory trees to
+large files. High\-performance computing users often generate large datasets with
+parallel applications that run with many processes (millions in some cases).
+However those users are then stuck with single\-process tools like cp and rm to
+manage their datasets. This suite provides MPI\-based tools to handle typical
+jobs like copy, remove, and compare for such datasets, providing speedups of up
+to 50x. It also provides a library that simplifies the creation of new tools
+or can be used in applications
+.SH UTILITIES
+.sp
+The tools in mpiFileUtils are actually MPI applications. They must be launched
+as MPI applications, e.g., within a compute allocation on a cluster using
+mpirun. The tools do not currently checkpoint, so one must be careful that an
+invocation of the tool has sufficient time to complete before it is killed.
+Example usage of each tool is provided below.
+.INDENT 0.0
+.IP \(bu 2
+dbcast \- Broadcast files to compute nodes.
+.IP \(bu 2
+dchmod \- Change owner, group, and permissions on files.
+.IP \(bu 2
+dcmp \- Compare files.
+.IP \(bu 2
+dcp \- Copy files.
+.IP \(bu 2
+ddup \- Find duplicate files.
+.IP \(bu 2
+dfilemaker \- Generate random files.
+.IP \(bu 2
+drm \- Remove files.
+.IP \(bu 2
+dstripe \- Restripe files.
+.IP \(bu 2
+dsync \- Synchronize files
+.IP \(bu 2
+dwalk \- List files.
+.UNINDENT
+.SH EXPERIMENTAL UTILITIES
+.sp
+Experimental utilities are under active development. They are not considered to
+be production worthy, but they are available in the distribution for those
+interested in developing them further or to provide additional examples. To
+enable experimental utilities, run configure with the enable experimental
+option.
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+$ ./configure \-\-enable\-experimental
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.INDENT 0.0
+.IP \(bu 2
+dbz2 \- Compress a file with bz2.
+.IP \(bu 2
+dfind \- Search for files in parallel.
+.IP \(bu 2
+dgrep \- Run grep on files in parallel.
+.IP \(bu 2
+dparallel \- Perform commands in parallel. experimental/dparallel.1
+.IP \(bu 2
+dsh \- List and remove files with interactive commands.
+.IP \(bu 2
+dtar \- Create file tape archives.
+.UNINDENT
+.SH USER GUIDE
+.SS Build
+.sp
+mpiFileUtils depends on several libraries. mpiFileUtils is available in
+\fI\%Spack\fP, which simplifies the install to just:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+$ spack install mpifileutils
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+or to enable all features:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+$ spack install mpifileutils +lustre +experimental
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+To build from a release tarball, there are two scripts: buildme_dependencies and
+buildme. The buildme_dependencies script downloads and installs all the
+necessary libraries. The buildme script then builds mpiFileUtils assuming the
+libraries have been installed. Both scripts require that mpicc is in your path,
+and that it is for an MPI library that supports at least v2.2 of the MPI
+standard. Please review each buildme script, and edit if necessary. Then run
+them in sequence:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+$ ./buildme_dependencies
+$ ./buildme
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+To build from a clone, it may also be necessary to first run the
+buildme_autotools script to obtain the required set of autotools, then use
+buildme_dependencies_dev and buildme_dev:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+$ ./buildme_autotools
+$ ./buildme_dependencies_dev
+$ ./buildme_dev
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.SS Project Design Principles
+.sp
+The following principles drive design decisions in the project.
+.SS Scale
+.sp
+The library and tools should be designed such that running with more processes
+increases performance, provided there are sufficient data and parallelism
+available in the underlying file systems. The design of the tool should not
+impose performance scalability bottlenecks.
+.SS Performance
+.sp
+While it is tempting to mimic the interface, behavior, and file formats of
+familiar tools like cp, rm, and tar, when forced with a choice between
+compatibility and performance, mpiFileUtils chooses performance. For example,
+if an archive file format requires serialization that inhibits parallel
+performance, mpiFileUtils will opt to define a new file format that enables
+parallelism rather than being constrained to existing formats. Similarly,
+options in the tool command line interface may have different semantics from
+familiar tools in cases where performance is improved. Thus, one should be
+careful to learn the options of each tool.
+.SS Portability
+.sp
+The tools are intended to support common file systems used in HPC centers, like
+Lustre, GPFS, and NFS. Additionally, methods in the library should be portable
+and efficient across multiple file systems. Tool and library users can rely on
+mpiFileUtils to provide portable and performant implementations.
+.SS Composability
+.sp
+While the tools do not support chaining with Unix pipes, they do support
+interoperability through input and output files. One tool may process a dataset
+and generate an output file that another tool can read as input, e.g., to walk
+a directory tree with one tool, filter the list of file names with another, and
+perhaps delete a subset of matching files with a third. Additionally, when logic
+is deemed to be useful across multiple tools or is anticipated to be useful in
+future tools or applications, it should be provided in the common library.
+.SS libmfu
+.sp
+Functionality that is common to multiple tools is moved to the common library,
+libmfu. This goal of this library is to make it easy to develop new tools and
+to provide consistent behavior across tools in the suite. The library can also
+be useful to end applications, e.g., to efficiently create or remove a large
+directory tree in a portable way across different parallel file systems.
+.SS libmfu: the mpiFileUtils common library
+.sp
+The mpiFileUtils common library defines data structures and methods on those
+data structures that makes it easier to develop new tools or for use within HPC
+applications to provide portable, performant implementations across file
+systems common in HPC centers.
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+#include "mfu.h"
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+This file includes all other necessary headers.
+.SS mfu_flist
+.sp
+The key data structure in libmfu is a distributed file list called mfu_flist.
+This structure represents a list of files, each with stat\-like metadata, that
+is distributed among a set of MPI ranks.
+.sp
+The library contains functions for creating and operating on these lists. For
+example, one may create a list by recursively walking an existing directory or
+by inserting new entries one at a time. Given a list as input, functions exist
+to create corresponding entries (inodes) on the file system or to delete the
+list of files. One may filter, sort, and remap entries. One can copy a list of
+entries from one location to another or compare corresponding entries across
+two different lists. A file list can be serialized and written to or read from
+a file.
+.sp
+Each MPI rank “owns” a portion of the list, and there are routines to step
+through the entries owned by that process. This portion is referred to as the
+“local” list. Functions exist to get and set properties of the items in the
+local list, for example to get the path name, type, and size of a file.
+Functions dealing with the local list can be called by the MPI process
+independently of other MPI processes.
+.sp
+Other functions operate on the global list in a collective fashion, such as
+deleting all items in a file list. All processes in the MPI job must invoke
+these functions simultaenously.
+.sp
+For full details, see \fI\%mfu_flist.h\fP
+and refer to its usage in existing tools.
+.SS mfu_path
+.sp
+mpiFileUtils represents file paths with the \fI\%mfu_path\fP
+structure. Functions are available to manipulate paths to prepend and append
+entries, to slice paths into pieces, and to compute relative paths.
+.SS mfu_param_path
+.sp
+Path names provided by the user on the command line (parameters) are handled
+through the \fImfu_param_path <https://github.com/hpc/mpifileutils/blob/master/src/common/mfu_param_path.h>_\fP
+structure. Such paths may have to be checked for existence and to determine
+their type (file or directory). Additionally, the user may specify many such
+paths through invocations involving shell wildcards, so functions are available
+to check long lists of paths in parallel.
+.SS mfu_io_and_mfu_util
+.sp
+The \fI\%mfu_io.h\fP
+functions provide wrappers for many POSIX\-IO functions. This is helpful for
+checking error codes in a consistent manner and automating retries on failed
+I/O calls. One should use the wrappers in mfu_io if available, and if not, one
+should consider adding the missing wrapper.
+.sp
+The \fI\%mfu_util.h\fP
+functions provide wrappers for error reporting and memory allocation.
+.SH MAN PAGES
+.SS dbcast
 .SS SYNOPSIS
 .sp
 \fBdbcast [OPTION] SRC DEST\fP
@@ -86,7 +331,7 @@ To read the current striping parameters of a file on Lustre:
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SH DCHMOD
+.SS dchmod
 .SS SYNOPSIS
 .sp
 \fBdchmod [OPTION] PATH …\fP
@@ -187,7 +432,7 @@ files/directories that match the regex.
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SH DCMP
+.SS dcmp
 .SS SYNOPSIS
 .sp
 \fBdcmp [OPTION] SRC DEST\fP
@@ -203,16 +448,21 @@ dcmp can be configured to compare a number of different file properties.
 .SS OPTIONS
 .INDENT 0.0
 .TP
-.B \-b, \-\-base
-Do a base comparison.
-.UNINDENT
-.INDENT 0.0
-.TP
 .B \-o, \-\-output EXPR:FILE
 Writes list of files matching expression EXPR to specified FILE.
 The expression consists of a set of fields and states described below.
 More than one \-o option is allowed in a single invocation,
 in which case, each option should provide a different output file name.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-t, \-\-text
+Change –output to write files in text format rather than binary.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-b, \-\-base
+Enable base checks and normal stdout results when –output is used.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -353,17 +603,75 @@ Conditions can be joined together with AND (@) and OR (,) operators without spac
 For example, the following expression reports entries that exist in both source and destination paths, but are of different types:
 .INDENT 0.0
 .INDENT 3.5
-\fI\%EXIST=COMMON@TYPE=DIFFER\fP
+.sp
+.nf
+.ft C
+EXIST=COMMON@TYPE=DIFFER
+.ft P
+.fi
 .UNINDENT
 .UNINDENT
 .sp
+The AND operator binds with higher precedence than the OR operator.
+For example, the following expression matches on entries which either (exist in both soure and destination and whose types differ) or (only exist in the source):
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Some conditions imply others.
+For example, for CONTENT to be considered the same,
+the entry must exist in both source and destination, the types must match, the sizes must match, and finally the contents must match:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+SIZE=COMMON    => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON
+CONTENT=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON@CONTENT=COMMON
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+A successful check on any other field also implies that EXIST=COMMON.
+.sp
 When used with the \-o option, one must also specify a file name at the end of the expression, separated with a ‘:’.
-The list of any files that match the expression are written to the named file.
+The list of any entries that match the expression are written to the named file.
 For example, to list any entries matching the above expression to a file named outfile1,
 one should use the following option:
 .INDENT 0.0
 .INDENT 3.5
-\-o \fI\%EXIST=COMMON@TYPE=DIFFER\fP:outfile1
+.sp
+.nf
+.ft C
+\-o EXIST=COMMON@TYPE=DIFFER:outfile1
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+If the –base option is given or when no output option is specified,
+the following expressions are checked and numeric results are reported to stdout:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+EXIST=COMMON
+EXIST=DIFFER
+EXIST=COMMON@TYPE=COMMON
+EXIST=COMMON@TYPE=DIFFER
+EXIST=COMMON@CONTENT=COMMON
+EXIST=COMMON@CONTENT=DIFFER
+.ft P
+.fi
 .UNINDENT
 .UNINDENT
 .SS EXAMPLES
@@ -375,16 +683,27 @@ Compare two files in different directories:
 \fBmpirun \-np 128 dcmp /src1/file1 /src2/file2\fP
 .INDENT 0.0
 .IP 2. 3
-Compare two directories with verbose output. The verbose output
-prints timing and number of bytes read:
+Compare two directories with verbose output. The verbose output prints timing and number of bytes read:
 .UNINDENT
 .sp
 \fBmpirun \-np 128 dcmp \-v /src1 /src2\fP
+.INDENT 0.0
+.IP 3. 3
+Write list of entries to outfile1 that are only in src1 or whose names exist in both src1 and src2 but whose types differ:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 /src1 /src2\fP
+.INDENT 0.0
+.IP 4. 3
+Same as above but also write list of entries to outfile2 that exist in either src1 or src2 but not both:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 \-o EXIST=DIFFER:outfile2 /src1 /src2\fP
 .SS SEE ALSO
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SH DCP
+.SS dcp
 .SS SYNOPSIS
 .sp
 \fBdcp [OPTION] SRC DEST\fP
@@ -469,7 +788,7 @@ characters that your operating system supports.
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SH DDUP
+.SS ddup
 .SS SYNOPSIS
 .sp
 \fBddup [OPTION] PATH\fP
@@ -504,18 +823,35 @@ To report any duplicate files under a directory tree:
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SH DFILEMAKER
+.SS dfilemaker
 .SS SYNOPSIS
 .sp
-\fBdfilemaker [OPTION] PATH…\fP
+\fBdfilemaker <nitems> <nlevels> <maxflen>\fP
 .SS DESCRIPTION
 .sp
-dfilemaker is a tool for generating files and file trees which contain
-files suitable for testing.
-.SS OPTIONS
+dfilemaker creates a random directory tree with files having random data
+that is useful for testing.
 .sp
-\fBNOTE: I cannot find these options in the code. I am not sure that they
-actually exist? Unless there is another version of the code somewhere?\fP
+Files and directories are created in the current working directory where the tool is executed.
+dfilemaker takes three positional parameters:
+.INDENT 0.0
+.TP
+.B nitems
+Total number of items to create.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B nlevels
+Maximum depth to create in directory level (relative to current path).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B maxflen
+Maximum number of bytes to write to a file.
+.UNINDENT
+.sp
+The following options are planned in future releases, but they are not yet implemented.
+.SS OPTIONS
 .INDENT 0.0
 .TP
 .B \-d, \-\-depth=*min*\-*max*
@@ -576,7 +912,7 @@ Print version information and exit.
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SH DRM
+.SS drm
 .SS SYNOPSIS
 .sp
 \fBdrm [OPTION] PATH…\fP
@@ -663,7 +999,7 @@ Delete all items named foo:
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SH DSTRIPE
+.SS dstripe
 .SS SYNOPSIS
 .sp
 \fBdstripe [OPTION] PATH…\fP
@@ -759,7 +1095,7 @@ To display the current stripe count and stripe size of all files in
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SH DSYNC
+.SS dsync
 .SS SYNOPSIS
 .sp
 \fBdsync [OPTION] SRC DEST\fP
@@ -769,8 +1105,24 @@ Parallel MPI application to synchronize two files or two directory trees.
 .sp
 dsync makes DEST match SRC, adding missing entries from DEST, removing
 extra entries from DEST, and updating existing entries in DEST as necessary
-so that SRC and DEST have identical content and metadata.
+so that SRC and DEST have identical content, ownership, timestamps, and permissions.
 .SS OPTIONS
+.INDENT 0.0
+.TP
+.B \-\-dryrun
+Show differences without changing anything.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-c, \-\-contents
+Compare files byte\-by\-byte rather than checking size and mtime
+to determine whether file contents are different.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-N, \-\-no\-delete
+Do not delete extraneous files from destination.
+.UNINDENT
 .INDENT 0.0
 .TP
 .B \-v, \-\-verbose
@@ -794,8 +1146,11 @@ Synchronize dir2 to match dir1:
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SH DWALK
+.SS dwalk
 .SS SYNOPSIS
+.sp
+\fBdwalk [OPTION] PATH …\fP
+.SS DESCRIPTION
 .sp
 Parallel MPI application to recursively walk and list contents in a
 directory.
@@ -894,24 +1249,214 @@ field from the top level directory.
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SH EXPERIMENTAL TOOLS
 .SS dfind
 .SS SYNOPSIS
 .sp
-dfind …
+\fBdfind [OPTION] [EXPRESSION] PATH …\fP
 .SS DESCRIPTION
+.sp
+Parallel MPI application to filter a list of files according to an expression.
+.sp
+dfind provides functionality similar to \fBfind(1)\fP\&.
+.sp
+The file list can be obtained by either walking one or more paths provided on the command line or through an input list.
+.sp
+The filtered list can be written to an output file.
 .SS OPTIONS
+.INDENT 0.0
+.TP
+.B \-i, \-\-input FILE
+Read source list from FILE. FILE must be generated by another tool
+from the mpiFileUtils suite.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-o, \-\-output FILE
+Write the processed list to a file.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-v, \-\-verbose
+Run in verbose mode.
+.UNINDENT
 .INDENT 0.0
 .TP
 .B \-h, \-\-help
 Print a brief message listing the \fBdfind(1)\fP options and usage.
 .UNINDENT
+.SS EXPRESSIONS
+.sp
+Numeric arguments can be specified as:
+.INDENT 0.0
+.INDENT 3.5
+.TS
+center;
+|l|l|.
+_
+T{
++N
+T}	T{
+more than N
+T}
+_
+T{
+\-N
+T}	T{
+less than N
+T}
+_
+T{
+N
+T}	T{
+exactly N
+T}
+_
+.TE
+.UNINDENT
+.UNINDENT
 .INDENT 0.0
 .TP
-.B \-v, \-\-version
-Print version information and exit.
+.B \-\-amin N
+File was last accessed N minutes ago.
 .UNINDENT
-.SS Known bugs
+.INDENT 0.0
+.TP
+.B \-\-anewer FILE
+File was last accessed more recently than FILE was modified.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-atime N
+File was last accessed N days ago.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-cmin N
+File’s status was last changed N minutes ago.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-cnewer FILE
+File’s status was last changed more recently than FILE was modified.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-ctime N
+File’s status was last changed N days ago.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-gid N
+File’s numeric group ID is N.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-group NAME
+File belongs to group NAME.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-mmin N
+File’s data was last modified N minutes ago.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-name PATTERN
+Base of file name matches shell pattern PATTERN.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-path PATTERN
+Full path to file matches shell pattern PATTERN.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-regex REGEX
+Full path to file matches POSIX regular expression REGEX.  Regular expressions processed by \fBregexec(3)\fP\&.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-newer FILE
+File was modified more recently than FILE.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-mtime N
+File’s data was last modified N days ago.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-size N
+File size is N bytes.  Units can be used like ‘KB’, ‘MB’, ‘GB’.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-type C
+File is of type C:
+.TS
+center;
+|l|l|.
+_
+T{
+d
+T}	T{
+directory
+T}
+_
+T{
+f
+T}	T{
+regular file
+T}
+_
+T{
+l
+T}	T{
+symbolic link
+T}
+_
+.TE
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-uid N
+File’s numeric user ID is N.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-user NAME
+File is owned by user NAME.
+.UNINDENT
+.SS ACTIONS
+.INDENT 0.0
+.TP
+.B \-\-print
+Print file name to stdout.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-exec CMD ;
+Execute command CMD on file.  All following arguments are taken as arguments to the command until ‘;’ is encountered.  The string ‘{}’ is replaced by the current file name.
+.UNINDENT
+.SS EXAMPLES
+.INDENT 0.0
+.IP 1. 3
+Print all files owner by user1 under given path:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dfind \-v \-\-user user1 \-\-print /path/to/target\fP
+.INDENT 0.0
+.IP 2. 3
+To find all files less than 1GB and write them to a file:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dfind \-v \-o outfile \-\-size \-1GB /path/to/target\fP
+.INDENT 0.0
+.IP 3. 3
+Filter list in infile to find all regular files not changed in the past 180 days and write new list to outfile:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dfind \-v \-i infile \-o outfile \-\-type f \-\-mtime +180\fP
 .SS SEE ALSO
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
@@ -979,6 +1524,7 @@ Print version information and exit.
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
+.SH INDICES AND TABLES
 .INDENT 0.0
 .IP \(bu 2
 genindex
