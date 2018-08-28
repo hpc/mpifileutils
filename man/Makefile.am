@@ -1,4 +1,4 @@
-man1_MANS = \
+dist_man1_MANS = \
   dbcast.1 \
   dchmod.1 \
   dcmp.1 \
