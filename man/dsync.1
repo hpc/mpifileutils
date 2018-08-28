@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DSYNC" "1" "Aug 20, 2018" "0.8" "mpiFileUtils"
+.TH "DSYNC" "1" "Aug 28, 2018" "0.8" "mpiFileUtils"
 .SH NAME
 dsync \- synchronize directory trees
 .
@@ -39,8 +39,24 @@ Parallel MPI application to synchronize two files or two directory trees.
 .sp
 dsync makes DEST match SRC, adding missing entries from DEST, removing
 extra entries from DEST, and updating existing entries in DEST as necessary
-so that SRC and DEST have identical content and metadata.
+so that SRC and DEST have identical content, ownership, timestamps, and permissions.
 .SH OPTIONS
+.INDENT 0.0
+.TP
+.B \-\-dryrun
+Show differences without changing anything.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-c, \-\-contents
+Compare files byte\-by\-byte rather than checking size and mtime
+to determine whether file contents are different.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-N, \-\-no\-delete
+Do not delete extraneous files from destination.
+.UNINDENT
 .INDENT 0.0
 .TP
 .B \-v, \-\-verbose
