@@ -508,8 +508,8 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
     }
 
     /* Skipping the destination directory ONLY if it already exists.
-     * If we are doing a dsync operation it is safe to assume that
-     * the destination directory already exists. The reason that
+     * If we are doing a sync operation and if the dest dir does not
+     * exist, we need to create it. The reason that
      * the dest_path and the destpath->path are compared is because
      * if we are syncing two directories we want the tree to have the
      * same number of levels. If dsync is on then only the contents of
@@ -519,8 +519,10 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
      * not dsync is on happens prior to this in
      * mfu_param_path_copy_dest. */
 
-    if ((mfu_copy_opts->do_sync) &&
-        (strncmp(dest_path, destpath->path, strlen(dest_path)) == 0)) {
+    if (mfu_copy_opts->do_sync &&
+        (strncmp(dest_path, destpath->path, strlen(dest_path)) == 0) &&
+        destpath->target_stat_valid)
+    {
         mfu_free(&dest_path);
         return 0;
     }
