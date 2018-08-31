@@ -6,11 +6,6 @@ struct {
     char * root;
 } options;
 
-struct stattimes {
-    uint64_t secs;
-    uint64_t nsecs;
-};
-
 extern uint64_t now_secs;
 extern uint64_t now_usecs;
 
