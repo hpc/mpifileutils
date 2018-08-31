@@ -1137,6 +1137,33 @@ mfu_flist mfu_flist_filter_regex(mfu_flist flist, const char* regex_exp, int exc
     return dest;
 }
 
+/* given an input flist, return a newly allocated flist consisting of
+ * a filtered set by finding all items that match the given predicate */
+mfu_flist mfu_flist_filter_pred(mfu_flist flist, mfu_pred* p)
+{
+    /* create a new list to copy matching items */
+    mfu_flist list = mfu_flist_subset(flist);
+
+    /* get size of input list */
+    uint64_t size = mfu_flist_size(flist);
+
+    /* iterate over each item in input list */
+    uint64_t idx;
+    for (idx = 0; idx < size; idx++) {
+        /* run string of predicates against item */
+        int ret = mfu_pred_execute(flist, idx, p);
+        if (ret > 0) {
+            /* copy item into new list if all predicates pass */
+            mfu_flist_file_copy(flist, idx, list);
+        }
+    }
+
+    /* summarize the list */
+    mfu_flist_summarize(list);
+
+    return list;
+}
+
 void mfu_flist_file_copy(mfu_flist bsrc, uint64_t idx, mfu_flist bdst)
 {
     /* convert handle to flist_t */

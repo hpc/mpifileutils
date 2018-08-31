@@ -15,6 +15,7 @@ include_HEADERS = \
     mfu_io.h \
     mfu_param_path.h \
     mfu_path.h \
+    mfu_pred.h \
     mfu_util.h
 
 libmfu_la_SOURCES = \
@@ -30,6 +31,7 @@ libmfu_la_SOURCES = \
     mfu_io.c \
     mfu_param_path.c \
     mfu_path.c \
+    mfu_pred.c \
     mfu_util.c \
     strmap.c
 

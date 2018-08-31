@@ -5,7 +5,6 @@
 #include <unistd.h>
 #include <limits.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 
 #include <regex.h>
 
@@ -13,15 +12,52 @@
 
 #include "mfu.h"
 #include "common.h"
-#include "pred.h"
 
 /* TODO: change globals to struct */
 static int walk_stat = 1;
 static int dir_perm = 0;
 
-/* gettimeofday values when command was started */
-uint64_t now_secs;
-uint64_t now_usecs;
+int MFU_PRED_EXEC  (mfu_flist flist, uint64_t idx, void* arg);
+int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg);
+
+int MFU_PRED_EXEC (mfu_flist flist, uint64_t idx, void* arg)
+{
+    int argmax = 1024*1024;;
+    int written = 0;
+    int ret;
+    char* command = MFU_STRDUP((char*) arg);
+    char* cmdline = (char*) MFU_MALLOC(argmax);
+    char* subst = strstr(command, "{}");
+    
+    if (subst) {
+        subst[0] = '\0';
+        subst += 2; /* Point to the first char after '{}' */
+    }
+
+    const char* name = mfu_flist_file_get_name(flist, idx);
+
+    written = snprintf(cmdline, argmax/sizeof(char), "%s%s%s", command, name, subst);
+    if (written > argmax/sizeof(char)) {
+        fprintf(stderr, "argument %s to exec too long.\n", cmdline);
+        mfu_free(&cmdline);
+        mfu_free(&command);
+        return -1;
+    }
+    
+    ret = system(cmdline);
+
+    mfu_free(&cmdline);
+    mfu_free(&command);
+
+    return ret ? 0 : 1;
+}
+
+int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg)
+{
+    const char* name = mfu_flist_file_get_name(flist, idx);
+    printf("%s\n", name);
+    return 1;
+}
 
 static void print_usage(void)
 {
@@ -49,44 +85,17 @@ static void mfu_flist_pred(mfu_flist flist, mfu_pred* p)
     return;
 }
 
-/* given a source flist and a predicates,
- * return a new list consisting of all matching items */
-static mfu_flist mfu_flist_filter_pred(mfu_flist flist, mfu_pred* p)
-{
-    /* create a new list to copy matching items */
-    mfu_flist list = mfu_flist_subset(flist);
-
-    /* get size of input list */
-    uint64_t size = mfu_flist_size(flist);
-
-    /* iterate over each item in input list */
-    uint64_t idx;
-    for (idx = 0; idx < size; idx++) {
-        /* run string of predicates against item */
-        int ret = mfu_pred_execute(flist, idx, p);
-        if (ret == 0) {
-            /* copy item into new list if all predicates pass */
-            mfu_flist_file_copy(flist, idx, list);
-        }
-    }
-
-    /* summarize the list */
-    mfu_flist_summarize(list);
-
-    return list;
-}
-
 /* look up mtimes for specified file,
- * return secs/nsecs in newly allocated stattimes struct,
+ * return secs/nsecs in newly allocated mfu_pred_times struct,
  * return NULL on error */
-static struct stattimes* get_mtimes(const char* file)
+static mfu_pred_times* get_mtimes(const char* file)
 {
     mfu_param_path param_path;
     mfu_param_path_set(file, &param_path);
     if (! param_path.path_stat_valid) {
         return NULL;
     }
-    struct stattimes* t = (struct stattimes*) MFU_MALLOC(sizeof(struct stattimes));
+    mfu_pred_times* t = (mfu_pred_times*) MFU_MALLOC(sizeof(mfu_pred_times));
     mfu_stat_get_mtimes(&param_path.path_stat, &t->secs, &t->nsecs);
     mfu_param_path_free(&param_path);
     return t;
@@ -126,7 +135,7 @@ static int add_type(mfu_pred* p, char t)
     }
 
     /* add check for this type */
-    mfu_pred_add(p, mfu_pred_type, (void *)type);
+    mfu_pred_add(p, MFU_PRED_TYPE, (void *)type);
     return 1;
 }
 
@@ -136,7 +145,7 @@ static void pred_commit (mfu_pred* p)
 
     mfu_pred* cur = p;
     while (cur) {
-        if (cur->f == mfu_pred_print || cur->f == mfu_pred_exec) {
+        if (cur->f == MFU_PRED_PRINT || cur->f == MFU_PRED_EXEC) {
             need_print = 0;
             break;
         }
@@ -144,7 +153,7 @@ static void pred_commit (mfu_pred* p)
     }
     
     if (need_print) {
-//        mfu_pred_add(p, mfu_pred_print, NULL);
+//        mfu_pred_add(p, MFU_PRED_PRINT, NULL);
     }
 }
 
@@ -161,16 +170,7 @@ int main (int argc, char** argv)
 
     /* capture current time for any time based queries,
      * to get a consistent value, capture and bcast from rank 0 */
-    uint64_t times[2];
-    if (rank == 0) {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        times[0] = (uint64_t) tv.tv_sec;
-        times[1] = (uint64_t) tv.tv_usec;
-    }
-    MPI_Bcast(times, 2, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-    now_secs  = times[0];
-    now_usecs = times[1];
+    mfu_pred_times* now_t = mfu_pred_now();
 
     int ch;
 
@@ -234,12 +234,14 @@ int main (int argc, char** argv)
         int i;
         int space;
         char* buf;
-        struct stattimes* t;
+        mfu_pred_times* t;
+        mfu_pred_times_rel* tr;
         regex_t* r;
         int ret;
     	switch (c) {
     	case 'e':
-    	    buf = (char *)MFU_MALLOC(1024*1024);
+            space = 1024 * 1024;
+    	    buf = (char *)MFU_MALLOC(space);
     	    for (i = optind-1; strcmp(";", argv[i]); i++) {
     	        if (i > argc) {
                     if (rank == 0) {
@@ -260,7 +262,7 @@ int main (int argc, char** argv)
     	        optind++;
     	    }
     	    buf[strlen(buf)] = '\0'; /* clobbers trailing space */
-    	    mfu_pred_add(pred_head, mfu_pred_exec, buf);
+    	    mfu_pred_add(pred_head, MFU_PRED_EXEC, buf);
     	    break;
     
     	case 'd':
@@ -270,35 +272,35 @@ int main (int argc, char** argv)
     	case 'g':
             /* TODO: error check argument */
     	    buf = MFU_STRDUP(optarg);
-    	    mfu_pred_add(pred_head, mfu_pred_gid, (void *)buf);
+    	    mfu_pred_add(pred_head, MFU_PRED_GID, (void *)buf);
     	    break;
 
     	case 'G':
     	    buf = MFU_STRDUP(optarg);
-    	    mfu_pred_add(pred_head, mfu_pred_group, (void *)buf);
+    	    mfu_pred_add(pred_head, MFU_PRED_GROUP, (void *)buf);
     	    break;
 
     	case 'u':
             /* TODO: error check argument */
     	    buf = MFU_STRDUP(optarg);
-    	    mfu_pred_add(pred_head, mfu_pred_uid, (void *)buf);
+    	    mfu_pred_add(pred_head, MFU_PRED_UID, (void *)buf);
     	    break;
 
     	case 'U':
     	    buf = MFU_STRDUP(optarg);
-    	    mfu_pred_add(pred_head, mfu_pred_user, (void *)buf);
+    	    mfu_pred_add(pred_head, MFU_PRED_USER, (void *)buf);
     	    break;
 
     	case 's':
     	    buf = MFU_STRDUP(optarg);
-    	    mfu_pred_add(pred_head, mfu_pred_size, (void *)buf);
+    	    mfu_pred_add(pred_head, MFU_PRED_SIZE, (void *)buf);
     	    break;
 
     	case 'n':
-    	    mfu_pred_add(pred_head, mfu_pred_name, MFU_STRDUP(optarg));
+    	    mfu_pred_add(pred_head, MFU_PRED_NAME, MFU_STRDUP(optarg));
     	    break;
     	case 'P':
-    	    mfu_pred_add(pred_head, mfu_pred_path, MFU_STRDUP(optarg));
+    	    mfu_pred_add(pred_head, MFU_PRED_PATH, MFU_STRDUP(optarg));
     	    break;
     	case 'r':
             r = (regex_t*) MFU_MALLOC(sizeof(regex_t));
@@ -306,33 +308,33 @@ int main (int argc, char** argv)
             if (ret) {
                 MFU_ABORT(-1, "Could not compile regex: `%s' rc=%d\n", optarg, ret);
             }
-    	    mfu_pred_add(pred_head, mfu_pred_regex, (void*)r);
+    	    mfu_pred_add(pred_head, MFU_PRED_REGEX, (void*)r);
     	    break;
     
     	case 'a':
-    	    buf = MFU_STRDUP(optarg);
-    	    mfu_pred_add(pred_head, mfu_pred_amin, (void *)buf);
+            tr = mfu_pred_relative(optarg, now_t);
+    	    mfu_pred_add(pred_head, MFU_PRED_AMIN, (void *)tr);
     	    break;
     	case 'm':
-    	    buf = MFU_STRDUP(optarg);
-    	    mfu_pred_add(pred_head, mfu_pred_mmin, (void *)buf);
+            tr = mfu_pred_relative(optarg, now_t);
+    	    mfu_pred_add(pred_head, MFU_PRED_MMIN, (void *)tr);
     	    break;
     	case 'c':
-    	    buf = MFU_STRDUP(optarg);
-    	    mfu_pred_add(pred_head, mfu_pred_cmin, (void *)buf);
+            tr = mfu_pred_relative(optarg, now_t);
+    	    mfu_pred_add(pred_head, MFU_PRED_CMIN, (void *)tr);
     	    break;
 
     	case 'A':
-    	    buf = MFU_STRDUP(optarg);
-    	    mfu_pred_add(pred_head, mfu_pred_atime, (void *)buf);
+            tr = mfu_pred_relative(optarg, now_t);
+    	    mfu_pred_add(pred_head, MFU_PRED_ATIME, (void *)tr);
     	    break;
     	case 'M':
-    	    buf = MFU_STRDUP(optarg);
-    	    mfu_pred_add(pred_head, mfu_pred_mtime, (void *)buf);
+            tr = mfu_pred_relative(optarg, now_t);
+    	    mfu_pred_add(pred_head, MFU_PRED_MTIME, (void *)tr);
     	    break;
     	case 'C':
-    	    buf = MFU_STRDUP(optarg);
-    	    mfu_pred_add(pred_head, mfu_pred_ctime, (void *)buf);
+            tr = mfu_pred_relative(optarg, now_t);
+    	    mfu_pred_add(pred_head, MFU_PRED_CTIME, (void *)tr);
     	    break;
 
     	case 'B':
@@ -343,7 +345,7 @@ int main (int argc, char** argv)
                 }
     	        exit(1);
     	    }
-    	    mfu_pred_add(pred_head, mfu_pred_anewer, (void *)t);
+    	    mfu_pred_add(pred_head, MFU_PRED_ANEWER, (void *)t);
     	    break;
     	case 'N':
             t = get_mtimes(optarg);
@@ -353,7 +355,7 @@ int main (int argc, char** argv)
                 }
     	        exit(1);
     	    }
-    	    mfu_pred_add(pred_head, mfu_pred_mnewer, (void *)t);
+    	    mfu_pred_add(pred_head, MFU_PRED_MNEWER, (void *)t);
     	    break;
     	case 'D':
             t = get_mtimes(optarg);
@@ -363,11 +365,11 @@ int main (int argc, char** argv)
                 }
     	        exit(1);
     	    }
-    	    mfu_pred_add(pred_head, mfu_pred_cnewer, (void *)t);
+    	    mfu_pred_add(pred_head, MFU_PRED_CNEWER, (void *)t);
     	    break;
     
     	case 'p':
-    	    mfu_pred_add(pred_head, mfu_pred_print, NULL);
+    	    mfu_pred_add(pred_head, MFU_PRED_PRINT, NULL);
     	    break;
     
     	case 't':
@@ -487,6 +489,9 @@ int main (int argc, char** argv)
 
     /* free memory allocated to hold params */
     mfu_free(&paths);
+
+    /* free structure holding current time */
+    mfu_free(&now_t);
 
     /* shut down MPI */
     mfu_finalize();

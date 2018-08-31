@@ -95,6 +95,19 @@ typedef void* mfu_flist;
 /* define a value to represent a NULL handle */
 extern mfu_flist MFU_FLIST_NULL;
 
+/* function prototype for predicate, return values:
+ *   1 - if element satisfies test
+ *   0 - if element does not satisfy test
+ *  -1 - if test of element encountered an error condition */
+typedef int (*mfu_pred_fn)(mfu_flist flist, uint64_t idx, void* arg);
+
+/* defines element type for predicate list */
+typedef struct mfu_pred_item_t {
+    mfu_pred_fn f;                /* function to be executed */
+    void* arg;                    /* argument to be passed to function */
+    struct mfu_pred_item_t* next; /* pointer to next element in list */
+} mfu_pred;
+
 /****************************************
  * Functions to create and free lists
  ****************************************/
@@ -178,6 +191,10 @@ mfu_flist mfu_flist_filter_regex(
     int exclude,
     int name
 );
+
+/* given an input flist, return a newly allocated flist consisting of
+ * a filtered set by finding all items that match the given predicate */
+mfu_flist mfu_flist_filter_pred(mfu_flist flist, mfu_pred* p);
 
 /* given an input list, split items into separate lists depending
  * on their depth, returns number of levels, minimum depth, and
