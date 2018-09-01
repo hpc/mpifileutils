@@ -108,6 +108,48 @@ typedef struct mfu_pred_item_t {
     struct mfu_pred_item_t* next; /* pointer to next element in list */
 } mfu_pred;
 
+/* we parse the mode string given by the user and build a linked list of
+ * permissions operations, this defines one element in that list.  This
+ * enables the user to specify a sequence of operations separated with
+ * commas like "u+r,g+x" */
+typedef struct mfu_perms_t {
+    int octal;           /* set to 1 if mode_octal is valid */
+    long mode_octal;     /* records octal mode (converted to an integer) */
+    int usr;             /* set to 1 if user (owner) bits should be set (e.g. u+r) */
+    int group;           /* set to 1 if group bits should be set (e.g. g+r) */
+    int other;           /* set to 1 if other bits should be set (e.g. o+r) */
+    int all;             /* set to 1 if all bits should be set (e.g. a+r) */
+    int assume_all;      /* if this flag is set umask is taken into account */
+    int plus;            /* set to 1 if mode has plus, set to 0 for minus */
+    int read;            /* set to 1 if 'r' is given */
+    int write;           /* set to 1 if 'w' is given */
+    int execute;         /* set to 1 if 'x' is given */
+    int capital_execute; /* set to 1 if 'X' is given */
+    int assignment;      /* set to 1 if operation is an assignment (e.g. g=u) */
+    char source;         /* records source of target: 'u', 'g', 'a' */
+    struct mfu_perms_t* next;  /* pointer to next perms struct in linked list */
+} mfu_perms;
+
+/****************************************
+ * Functions to create, free, and inspect mode strings
+ ****************************************/
+
+/* given a mode string like "u+r,g-x", fill in a linked list of permission
+ * struct pointers returns 1 on success, 0 on failure */
+int mfu_perms_parse(const char* modestr, mfu_perms** pperms);
+
+/* given a linked list of permissions structures, check whether user has given us
+ * something like "u+rx", "u+rX", or "u+r,u+X" since we need to set bits on
+ * directories during the walk in this case. Also, check for turning on read and
+ * execute for the "all" bits as well because those can also turn on the user's
+ * read and execute bits, sets dir_perms to 1 if "rx" should be set on directories
+ * and set to 0 otherwise */
+void mfu_perms_need_dir_rx(const mfu_perms* head, int* dir_perms);
+
+/* free the permissions linked list allocated in mfu_perms_parse,
+ * sets pointer to NULL on return */
+void mfu_perms_free(mfu_perms** pperms);
+
 /****************************************
  * Functions to create and free lists
  ****************************************/
@@ -405,6 +447,10 @@ void mfu_flist_mknod(mfu_flist flist);
 /* unlink all items in flist,
  * if traceless=1, restore timestamps on parent directories after unlinking children */
 void mfu_flist_unlink(mfu_flist flist, bool traceless);
+
+/* given an input flist, set permissions on items according to perms list,
+ * optionally, if usrname != NULL, change owner, or if grname != NULL, change group */
+void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, const mfu_perms* head);
 
 /* TODO: integrate this into the file list proper, or otherwise move it to another file */
 /* element structure in linked list returned by mfu_file_chunk_list_alloc */
