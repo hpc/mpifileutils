@@ -153,11 +153,13 @@ latex_documents = [
 man_pages = [
     (master_doc, 'mpifileutils', u'mpiFileUtils Documentation',[author], 1),
     ('dbcast.1', 'dbcast', u'distributed broadcast',[author], 1),
+    ('dbz2.1', 'dbz2', u'distributed bz2 compression',[author], 1),
     ('dchmod.1', 'dchmod', u'distributed tool to set permissions and group',[author], 1),
     ('dcmp.1', 'dcmp', u'distributed compare',[author], 1),
     ('dcp.1', 'dcp', u'distributed copy',[author], 1),
     ('ddup.1', 'ddup', u'report files with identical content',[author], 1),
     ('dfilemaker.1', 'dfilemaker', u'distributed random file generation program',[author], 1),
+    ('dfind.1', 'dfind', u'distributed file filtering',[author], 1),
     ('drm.1', 'drm', u'distributed remove',[author], 1),
     ('dstripe.1', 'dstripe', u'restripe files on underlying storage',[author], 1),
     ('dsync.1', 'dsync', u'synchronize directory trees',[author], 1),

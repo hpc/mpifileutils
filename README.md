@@ -11,11 +11,13 @@ so one must be careful that an invocation of the tool has sufficient time to com
 Example usage of each tool is provided below.
 
  - [dbcast](doc/rst/dbcast.1.rst) - Broadcast files to compute nodes.
+ - [dbz2](doc/rst/dbz2.1.rst) - Compress a file with bz2.
  - [dchmod](doc/rst/dchmod.1.rst) - Change owner, group, and permissions on files.
  - [dcmp](doc/rst/dcmp.1.rst) - Compare files.
  - [dcp](doc/rst/dcp.1.rst) - Copy files.
  - [ddup](doc/rst/ddup.1.rst) - Find duplicate files.
  - [dfilemaker](doc/rst/dfilemaker.1.rst) - Generate random files.
+ - [dfind](doc/rst/dfind.1.rst) - Search for files in parallel.
  - [drm](doc/rst/drm.1.rst) - Remove files.
  - [dstripe](doc/rst/dstripe.1.rst) - Restripe files.
  - [dsync](doc/rst/dsync.1.rst) - Synchronize files.
@@ -29,8 +31,6 @@ To enable experimental utilities, run configure with the enable experimental opt
 
     ./configure --enable-experimental
 
- - dbz2 - Compress a file with bz2.
- - [dfind](doc/rst/experimental/dfind.1.rst) - Search for files in parallel.
  - dgrep - Run grep on files in parallel.
  - dparallel - Perform commands in parallel.
  - dsh - List and remove files with interactive commands.
