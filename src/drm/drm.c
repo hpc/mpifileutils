@@ -41,8 +41,8 @@ static void print_usage(void)
     printf("      --match   <regex>  - apply command only to entries that match the regex\n");
     printf("      --name             - change regex to apply to entry name rather than full pathname\n");
     printf("      --dryrun           - print out list of files that would be deleted\n");
+    printf("  -T, --traceless        - remove child items without changing parent directory mtime\n");
     printf("  -v, --verbose          - verbose output\n");
-    printf("  -T, --traceless        - traceless mode, remove the file, but keep parent dir's mtime nochange\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);

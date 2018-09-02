@@ -81,16 +81,18 @@ AC_CONFIG_FILES([Makefile                \
                  src/Makefile            \
                  src/common/Makefile     \
                  src/dbcast/Makefile     \
+                 src/dbz2/Makefile       \
                  src/dchmod/Makefile     \
                  src/dcmp/Makefile       \
-                 src/dsync/Makefile       \
                  src/dcp/Makefile        \
                  src/dcp1/Makefile       \
                  src/ddup/Makefile       \
                  src/dfilemaker/Makefile \
                  src/dfilemaker1/Makefile \
+                 src/dfind/Makefile      \
                  src/drm/Makefile        \
                  src/dstripe/Makefile    \
+                 src/dsync/Makefile      \
                  src/dwalk/Makefile      \
 ])
 
@@ -98,8 +100,6 @@ AC_CONFIG_FILES([Makefile                \
 X_AC_EXPERIMENTAL
 if test [EXPERIMENTAL_ENABLED]; then
 AC_CONFIG_FILES([experimental/Makefile           \
-                 experimental/dbz2/Makefile      \
-                 experimental/dfind/Makefile     \
                  experimental/dgrep/Makefile     \
                  experimental/dparallel/Makefile \
                  experimental/dsh/Makefile       \

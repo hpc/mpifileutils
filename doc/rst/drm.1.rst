@@ -12,8 +12,8 @@ DESCRIPTION
 Parallel MPI application to recursively delete a directory and its
 contents.
 
-drm is a tool for removing files recursively in parallel. Be careful:
-drm behaves like `rm -rf`, but it is much faster.
+drm is a tool for removing files recursively in parallel.
+drm behaves like `rm -rf`, but it is faster.
 
 OPTIONS
 -------
@@ -41,11 +41,15 @@ OPTIONS
    Change --exclude and match to apply to item name rather than its
    full path.
 
-.. option:: -d, --dryrun
+.. option:: --dryrun
 
    Print a list of files that **would** be deleted without deleting
    them. This is useful to check list of items satisfying --exclude or
    --match options before actually deleting anything.
+
+.. option:: -T, --traceless
+
+   Delete child items without updating the mtime on their parent directory.
 
 .. option:: -v, --verbose
 

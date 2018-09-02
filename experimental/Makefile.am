@@ -1,1 +1,1 @@
-SUBDIRS = dbz2 dfind dgrep dparallel dsh dtar
+SUBDIRS = dgrep dparallel dsh dtar
