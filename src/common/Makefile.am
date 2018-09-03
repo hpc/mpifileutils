@@ -10,6 +10,7 @@ noinst_HEADERS = \
 
 include_HEADERS = \
     mfu.h \
+    mfu_bz2.h \
     mfu_flist.h \
     mfu_flist_internal.h \
     mfu_io.h \
@@ -19,6 +20,8 @@ include_HEADERS = \
     mfu_util.h
 
 libmfu_la_SOURCES = \
+    mfu_compress_bz2_libcircle.c \
+    mfu_decompress_bz2_libcircle.c \
     mfu_flist.c \
     mfu_flist_chunk.c \
     mfu_flist_copy.c \
@@ -39,3 +42,9 @@ libmfu_la_SOURCES = \
 libmfu_la_CPPFLAGS = \
      $(MPI_CFLAGS) \
      $(libcircle_CFLAGS)
+
+libmfu_la_LDFLAGS = \
+     $(MPI_CLDFLAGS) \
+     $(archives_LIBS) \
+     $(libcircle_LIBS) \
+     -lbz2

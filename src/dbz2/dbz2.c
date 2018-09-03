@@ -14,7 +14,6 @@
 #include <getopt.h>
 
 #include "mfu.h"
-#include "mfu_bz2.h"
 
 /* All the options available */
 
@@ -30,7 +29,7 @@ static int opts_debug      = 0;
 static void print_usage(void)
 {
     printf("\n");
-    printf("Usage: dbz2 [options] <source> <destination>\n");
+    printf("Usage: dbz2 [options] <source>\n");
     printf("\n");
     printf("Options:\n");
     printf("  -c, --compress         - compress file\n");
@@ -130,6 +129,12 @@ int main(int argc, char** argv)
         mfu_debug_level = MFU_LOG_INFO;
     } else {
         mfu_debug_level = MFU_LOG_ERR;
+    }
+
+    /* TODO: also bail if we can't find the file */
+    /* print usage if we don't have a file name */
+    if (argc != 2) {
+        usage = 1;
     }
 
     /* print usage if we need to */
