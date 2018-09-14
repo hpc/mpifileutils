@@ -1246,15 +1246,12 @@ int mfu_flist_summarize(mfu_flist bflist)
     return MFU_SUCCESS;
 }
 
-/*****************************
- * Randomly hash items to processes by filename, then remove
- ****************************/
-
 /* given an input list and a map function pointer, call map function
  * for each item in list, identify new rank to send item to and then
  * exchange items among ranks and return new output list */
 mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args)
 {
+    int i;
     uint64_t idx;
 
     /* create new list as subset (actually will be a remapping of
@@ -1262,22 +1259,18 @@ mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args
     mfu_flist newlist = mfu_flist_subset(list);
 
     /* get our rank and number of ranks in job */
-    int ranks;
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-    /* allocate arrays for alltoall */
-    size_t bufsize = (size_t)ranks * sizeof(int);
-    int* sendsizes  = (int*) MFU_MALLOC(bufsize);
-    int* senddisps  = (int*) MFU_MALLOC(bufsize);
-    int* sendoffset = (int*) MFU_MALLOC(bufsize);
-    int* recvsizes  = (int*) MFU_MALLOC(bufsize);
-    int* recvdisps  = (int*) MFU_MALLOC(bufsize);
+    /* allocate array for alltoall */
+    uint64_t* sendcounts = (uint64_t*) MFU_MALLOC(ranks * sizeof(uint64_t));
+    uint64_t* recvcounts = (uint64_t*) MFU_MALLOC(ranks * sizeof(uint64_t));
 
-    /* initialize sendsizes and offsets */
-    int i;
+    /* initialize our send count array */
     for (i = 0; i < ranks; i++) {
-        sendsizes[i]  = 0;
-        sendoffset[i] = 0;
+        sendcounts[i] = 0;
+        recvcounts[i] = 0;
     }
 
     /* get number of elements in our local list */
@@ -1286,94 +1279,141 @@ mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args
     /* allocate space to record file-to-rank mapping */
     int* file2rank = (int*) MFU_MALLOC(size * sizeof(int));
 
-    /* call map function for each item to identify its new rank,
-     * and compute number of bytes we'll send to each rank */
-    size_t sendbytes = 0;
+    /* call map function for each item to identify its new rank */
     for (idx = 0; idx < size; idx++) {
-        /* determine which rank we'll map this file to */
+        /* identify which rank this item should be mapped to */
         int dest = map(list, idx, ranks, args);
-
-        /* cache mapping so we don't have to compute it again
-         * below while packing items for send */
         file2rank[idx] = dest;
 
-        /* TODO: check that pack size doesn't overflow int */
-        /* total number of bytes we'll send to each rank and the total overall */
-        size_t count = mfu_flist_file_pack_size(list);
-        sendsizes[dest] += (int) count;
-        sendbytes += count;
+        /* count number of items we'll send to each rank */
+        sendcounts[dest]++;
     }
 
-    /* compute send buffer displacements */
-    senddisps[0] = 0;
-    for (i = 1; i < ranks; i++) {
-        senddisps[i] = senddisps[i - 1] + sendsizes[i - 1];
+    /* get size of a packed element */
+    size_t pack_size = mfu_flist_file_pack_size(list);
+
+    /* ensure buffer can hold at least one element */
+    size_t bufsize = 16ULL * 1024ULL * 1024ULL; /* 16MB */
+    if (bufsize < pack_size) {
+        bufsize = pack_size;
     }
 
-    /* allocate space for send buffer */
-    char* sendbuf = (char*) MFU_MALLOC(sendbytes);
+    /* allocate space for send and receive buffers */
+    char* sendbuf = (char*) MFU_MALLOC(bufsize);
+    char* recvbuf = (char*) MFU_MALLOC(bufsize);
 
-    /* copy data into send buffer */
-    for (idx = 0; idx < size; idx++) {
-        /* determine which rank we mapped this file to */
-        int dest = file2rank[idx];
-
-        /* get pointer into send buffer and pack item */
-        char* ptr = sendbuf + senddisps[dest] + sendoffset[dest];
-        size_t count = mfu_flist_file_pack(ptr, list, idx);
-
-        /* TODO: check that pack size doesn't overflow int */
-        /* bump up the offset for this rank */
-        sendoffset[dest] += (int) count;
-    }
+    /* number of elements we can send in each round */
+    uint64_t max_count = (uint64_t) (bufsize / pack_size);
 
     /* alltoall to get our incoming counts */
-    MPI_Alltoall(sendsizes, 1, MPI_INT, recvsizes, 1, MPI_INT, MPI_COMM_WORLD);
+    MPI_Alltoall(sendcounts, 1, MPI_UINT64_T, recvcounts, 1, MPI_UINT64_T, MPI_COMM_WORLD);
 
-    /* compute size of recvbuf and displacements */
-    size_t recvbytes = 0;
-    recvdisps[0] = 0;
+    /* execute ring-based alltoallv */
     for (i = 0; i < ranks; i++) {
-        recvbytes += (size_t) recvsizes[i];
-        if (i > 0) {
-            recvdisps[i] = recvdisps[i - 1] + recvsizes[i - 1];
+        /* compute rank of source in this step */
+        int src = rank - i;
+        if (src < 0) {
+            src += ranks;
+        }
+
+        /* compute rank of destination in this step */
+        int dst = rank + i;
+        if (dst >= ranks) {
+            dst -= ranks;
+        }
+
+        /* get item counts for incoming and outgoing */
+        uint64_t incoming = recvcounts[src];
+        uint64_t outgoing = sendcounts[dst];
+
+        /* exchange data in this step, if needed */
+        idx = 0;
+        uint64_t recv_count = 0;
+        uint64_t send_count = 0;
+        while (recv_count < incoming || send_count < outgoing) {
+            int k = 0;
+            MPI_Request request[2];
+            MPI_Status status[2];
+
+            /* post receive if we still have incoming data */
+            if (recv_count < incoming) {
+                /* compute number of items we'll receive in this step */
+                uint64_t num_recv = incoming - recv_count;
+                if (num_recv > max_count) {
+                    num_recv = max_count;
+                }
+
+                /* compute number of bytes we'll receive, and post receive */
+                int recvbytes = (int)(num_recv * (uint64_t)pack_size);
+                MPI_Irecv(recvbuf, recvbytes, MPI_BYTE, src, 0, MPI_COMM_WORLD, &request[k]);
+                k++;
+            }
+
+            /* pack data and post send if we still are sending */
+            if (send_count < outgoing) {
+                /* pack data into send buffer */
+                char* ptr = sendbuf;
+                uint64_t elem_count = 0;
+                while (elem_count < max_count && idx < size) {
+                    /* determine which rank we mapped this file to */
+                    int item_dest = file2rank[idx];
+                    if (item_dest == dst) {
+                        /* got one for this dest, so pack item */
+                        size_t count = mfu_flist_file_pack(ptr, list, idx);
+                        ptr += count;
+
+                        /* increment counters */
+                        elem_count++;
+                        send_count++;
+                    }
+
+                    /* move to next item in our list */
+                    idx++;
+                }
+
+                /* post our send */
+                int sendbytes = (int)(elem_count * (uint64_t)pack_size);
+                MPI_Issend(sendbuf, sendbytes, MPI_BYTE, dst, 0, MPI_COMM_WORLD, &request[k]);
+                k++;
+            }
+
+            /* wait for sends and receives to complete */
+            MPI_Waitall(k, request, status);
+
+            /* unpack data if we received any */
+            if (recv_count < incoming) {
+                /* unpack items into new list */
+                char* ptr = recvbuf;
+                uint64_t elem_count = 0;
+                while (elem_count < max_count && recv_count < incoming) {
+                    /* unpack item into list */
+                    size_t count = mfu_flist_file_unpack(ptr, newlist);
+                    ptr += count;
+
+                    /* increment counters */
+                    elem_count++;
+                    recv_count++;
+                }
+            }
         }
     }
 
-    /* allocate recvbuf */
-    char* recvbuf = (char*) MFU_MALLOC(recvbytes);
-
-    /* alltoallv to send data */
-    MPI_Alltoallv(
-        sendbuf, sendsizes, senddisps, MPI_CHAR,
-        recvbuf, recvsizes, recvdisps, MPI_CHAR, MPI_COMM_WORLD
-    );
-
-    /* unpack items into new list */
-    char* ptr = recvbuf;
-    char* recvend = recvbuf + recvbytes;
-    while (ptr < recvend) {
-        size_t count = mfu_flist_file_unpack(ptr, newlist);
-        ptr += count;
-    }
+    /* summarize new list */
     mfu_flist_summarize(newlist);
 
     /* free memory */
     mfu_free(&file2rank);
+    mfu_free(&recvcounts);
+    mfu_free(&sendcounts);
     mfu_free(&recvbuf);
-    mfu_free(&recvdisps);
-    mfu_free(&recvsizes);
     mfu_free(&sendbuf);
-    mfu_free(&sendoffset);
-    mfu_free(&senddisps);
-    mfu_free(&sendsizes);
 
     /* return list to caller */
     return newlist;
 }
 
 /* map function to evenly spread list among ranks, using block allocation */
-static int map_spread(mfu_flist flist, uint64_t idx, int ranks, void* args)
+static int map_spread(mfu_flist flist, uint64_t idx, int ranks, const void* args)
 {
     /* compute global index of this item */
     uint64_t offset = mfu_flist_global_offset(flist);
