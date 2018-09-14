@@ -405,7 +405,7 @@ void mfu_flist_file_set_size(mfu_flist flist, uint64_t index, uint64_t size);
 /* map function pointer: given a list and index as input, along with
  * number of ranks and pointer to user-provided arguments, compute
  * rank number specified item should be assigned to */
-typedef int (*mfu_flist_map_fn)(mfu_flist flist, uint64_t index, int ranks, void* args);
+typedef int (*mfu_flist_map_fn)(mfu_flist flist, uint64_t index, int ranks, const void* args);
 
 /* given an input list and a map function pointer, call map function
  * for each item in list, identify new rank to send item to and then
