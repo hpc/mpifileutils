@@ -102,229 +102,42 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
  * Distribute items evenly across processes, then remove
  ****************************/
 
-/* given an array of integers and its size, find and return
- * index of first non-zero element, returns -1 if not found */
-static int get_first_nonzero(const int* buf, int size)
-{
-    int i;
-    for (i = 0; i < size; i++) {
-        if (buf[i] != 0) {
-            return i;
-        }
-    }
-    return -1;
-}
-
 /* for given depth, evenly spread the files among processes for
  * improved load balancing */
 static void remove_spread(mfu_flist flist, uint64_t* rmcount)
 {
-    uint64_t idx;
-
-    /* initialize our remove count */
-    *rmcount = 0;
-
-    /* get our rank and number of ranks in job */
-    int rank, ranks;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-    /* allocate memory for alltoall exchanges */
-    size_t bufsize = (size_t)ranks * sizeof(int);
-    int* sendcounts = (int*) MFU_MALLOC(bufsize);
-    int* sendsizes  = (int*) MFU_MALLOC(bufsize);
-    int* senddisps  = (int*) MFU_MALLOC(bufsize);
-    int* recvsizes  = (int*) MFU_MALLOC(bufsize);
-    int* recvdisps  = (int*) MFU_MALLOC(bufsize);
-
-    /* get number of items */
-    uint64_t my_count  = mfu_flist_size(flist);
-    uint64_t all_count = mfu_flist_global_size(flist);
-    uint64_t offset    = mfu_flist_global_offset(flist);
-
-    /* compute number of bytes we'll send */
-    size_t sendbytes = 0;
-    for (idx = 0; idx < my_count; idx++) {
-        const char* name = mfu_flist_file_get_name(flist, idx);
-        size_t len = strlen(name) + 2;
-        sendbytes += len;
-    }
-
-    /* compute the number of items that each rank should have */
-    uint64_t low = all_count / (uint64_t)ranks;
-    uint64_t extra = all_count - low * (uint64_t)ranks;
-
-    /* compute number that we'll send to each rank and initialize sendsizes and offsets */
-    uint64_t i;
-    for (i = 0; i < (uint64_t)ranks; i++) {
-        /* compute starting element id and count for given rank */
-        uint64_t start, num;
-        if (i < extra) {
-            num = low + 1;
-            start = i * num;
-        }
-        else {
-            num = low;
-            start = (i - extra) * num + extra * (low + 1);
-        }
-
-        /* compute the number of items we'll send to this task */
-        uint64_t sendcnt = 0;
-        if (my_count > 0) {
-            if (start <= offset && offset < start + num) {
-                /* this rank overlaps our range,
-                 * and its first element comes at or before our first element */
-                sendcnt = num - (offset - start);
-                if (my_count < sendcnt) {
-                    /* the number the rank could receive from us
-                     * is more than we have left */
-                    sendcnt = my_count;
-                }
-            }
-            else if (offset < start && start < offset + my_count) {
-                /* this rank overlaps our range,
-                 * and our first element comes strictly before its first element */
-                sendcnt = my_count - (start - offset);
-                if (num < sendcnt) {
-                    /* the number the rank can receive from us
-                     * is less than we have left */
-                    sendcnt = num;
-                }
-            }
-        }
-
-        /* record the number of items we'll send to this task */
-        sendcounts[i]  = (int) sendcnt;
-
-        /* set sizes and displacements to 0, we'll fix this later */
-        sendsizes[i] = 0;
-        senddisps[i] = 0;
-    }
-
-    /* allocate space */
-    char* sendbuf = (char*) MFU_MALLOC(sendbytes);
-
-    /* copy data into buffer */
-    int dest = -1;
-    int disp = 0;
-    for (idx = 0; idx < my_count; idx++) {
-        /* get name and type of item */
-        const char* name = mfu_flist_file_get_name(flist, idx);
-        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
-
-        /* get rank that we're packing data for */
-        if (dest == -1) {
-            dest = get_first_nonzero(sendcounts, ranks);
-            if (dest == -1) {
-                /* error */
-            }
-            /* about to copy first item for this rank,
-             * record its displacement */
-            senddisps[dest] = disp;
-        }
-
-        /* identify region to be sent to rank */
-        char* path = sendbuf + disp;
-
-        /* first character encodes item type */
-        if (type == MFU_TYPE_DIR) {
-            path[0] = 'd';
-        }
-        else if (type == MFU_TYPE_FILE || type == MFU_TYPE_LINK) {
-            path[0] = 'f';
-        }
-        else {
-            path[0] = 'u';
-        }
-
-        /* now copy in the path */
-        strcpy(&path[1], name);
-
-        /* TODO: check that we don't overflow the int */
-        /* add bytes to sendsizes and increase displacement */
-        size_t count = strlen(name) + 2;
-        sendsizes[dest] += (int) count;
-        disp += (int) count;
-
-        /* decrement the count for this rank */
-        sendcounts[dest]--;
-        if (sendcounts[dest] == 0) {
-            dest = -1;
-        }
-    }
-
-    /* compute displacements */
-    senddisps[0] = 0;
-    for (i = 1; i < (uint64_t)ranks; i++) {
-        senddisps[i] = senddisps[i - 1] + sendsizes[i - 1];
-    }
-
-    /* alltoall to specify incoming counts */
-    MPI_Alltoall(sendsizes, 1, MPI_INT, recvsizes, 1, MPI_INT, MPI_COMM_WORLD);
-
-    /* compute size of recvbuf and displacements */
-    size_t recvbytes = 0;
-    recvdisps[0] = 0;
-    for (i = 0; i < (uint64_t)ranks; i++) {
-        recvbytes += (size_t) recvsizes[i];
-        if (i > 0) {
-            recvdisps[i] = recvdisps[i - 1] + recvsizes[i - 1];
-        }
-    }
-
-    /* allocate recvbuf */
-    char* recvbuf = (char*) MFU_MALLOC(recvbytes);
-
-    /* alltoallv to send data */
-    MPI_Alltoallv(
-        sendbuf, sendsizes, senddisps, MPI_CHAR,
-        recvbuf, recvsizes, recvdisps, MPI_CHAR, MPI_COMM_WORLD
-    );
-
-    /* delete data */
-    char* item = recvbuf;
-    while (item < recvbuf + recvbytes) {
-        /* get item name and type */
-        char type = item[0];
-        char* name = &item[1];
-
-        /* delete item */
-        remove_type(type, name);
-
-        /* keep tally of number of items we deleted */
-        *rmcount++;
-
-        /* go to next item */
-        size_t item_size = strlen(item) + 1;
-        item += item_size;
-    }
-
-    /* free memory */
-    mfu_free(&recvbuf);
-    mfu_free(&recvdisps);
-    mfu_free(&recvsizes);
-    mfu_free(&sendbuf);
-    mfu_free(&senddisps);
-    mfu_free(&sendsizes);
-    mfu_free(&sendcounts);
-
+    /* evenly spread flist among processes,
+     * execute direct delete, and free temp list */
+    mfu_flist newlist = mfu_flist_spread(flist);
+    remove_direct(newlist, rmcount);
+    mfu_flist_free(&newlist);
     return;
 }
 
+/*****************************
+ * Map all items in same parent directory to a single rank
+ ****************************/
+
 /* we hash file names based on its parent directory to map all
  * files in the same directory to the same process */
-static int map_name(mfu_flist flist, uint64_t idx, int ranks, void* args)
+static int map_name(mfu_flist flist, uint64_t idx, int ranks, const void* args)
 {
     /* get name of item */
     const char* name = mfu_flist_file_get_name(flist, idx);
 
-    /* identify rank to send this file to */
+    /* get parent directory of item */
     char* dir = MFU_STRDUP(name);
     dirname(dir);
+
+    /* identify rank to send this file to */
     size_t dir_len = strlen(dir);
     uint32_t hash = mfu_hash_jenkins(dir, dir_len);
     int rank = (int)(hash % (uint32_t)ranks);
+
+    /* free directory string */
     mfu_free(&dir);
+
+    /* return rank to map item to */
     return rank;
 }
 
@@ -571,13 +384,13 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
     mfu_flist_array_by_depth(flist, &levels, &minlevel, &lists);
     mfu_flist pstatlist;
     uint64_t size = mfu_flist_size(flist);
-    char** strings;
+    const char** strings;
 
     /* if traceless, dump the stat of each item's pdir */
     if (traceless) {
         uint64_t idx;
 
-        strings = (char **) MFU_MALLOC(size * sizeof(char *));
+        strings = (const char **) MFU_MALLOC(size * sizeof(char *));
         for (idx = 0; idx < size; idx++) {
             /* stat the item */
             struct stat st;
@@ -587,7 +400,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
 
             dirname(pdir);
 
-            int len = strlen(pdir);
+            size_t len = strlen(pdir);
 
             strings[idx] = (char *) MFU_MALLOC(len + 1);
 
@@ -608,7 +421,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
         uint64_t* group_ranks = (uint64_t*) MFU_MALLOC(output_bytes);
         uint64_t* group_rank  = (uint64_t*) MFU_MALLOC(output_bytes);
 
-        DTCMP_Rankv_strings(size, strings, &groups, group_ids, group_ranks,
+        DTCMP_Rankv_strings((int)size, strings, &groups, group_ids, group_ranks,
                            group_rank, DTCMP_FLAG_NONE, MPI_COMM_WORLD);
 
         for (idx = 0; idx < size; idx++) {
