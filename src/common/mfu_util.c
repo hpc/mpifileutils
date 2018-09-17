@@ -691,9 +691,9 @@ int mfu_compare_contents(
     }
 
     /* avoid opening file in write mode if we're only reading */
-    int dst_flags = O_RDWR;
+    int dst_flags = O_RDONLY;
     if (overwrite) {
-        dst_flags = O_RDONLY;
+        dst_flags = O_RDWR;
     }
 
     /* open destination file */
@@ -739,7 +739,7 @@ int mfu_compare_contents(
 
     /* read and compare data from files */
     off_t total_bytes = 0;
-    while(length == 0 || total_bytes < length) {
+    while (length == 0 || total_bytes < length) {
         /* track current position in file for error reporting and seeking */
         off_t pos = offset + total_bytes;
 
