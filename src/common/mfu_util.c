@@ -668,3 +668,188 @@ void mfu_stat_set_ctimes (struct stat* sb, uint64_t secs, uint64_t nsecs)
     // error?
 #endif
 }
+
+/* compares contents of two files and optionally overwrite dest with source,
+ * returns -1 on error, 0 if equal, 1 if different */
+int mfu_compare_contents(
+    const char* src_name,          /* IN  - path name to souce file */
+    const char* dst_name,          /* IN  - path name to destination file */
+    off_t offset,                  /* IN  - offset with file to start comparison */
+    off_t length,                  /* IN  - number of bytes to be compared */
+    size_t bufsize,                /* IN  - size of I/O buffer to be used during compare */
+    int overwrite,                 /* IN  - whether to replace dest with source contents (1) or not (0) */
+    uint64_t* count_bytes_read,    /* OUT - number of bytes read (src + dest) */
+    uint64_t* count_bytes_written) /* OUT - number of bytes written to dest */
+{
+    /* open source file */
+    int src_fd = mfu_open(src_name, O_RDONLY);
+    if (src_fd < 0) {
+        /* log error if there is an open failure on the src side */
+        MFU_LOG(MFU_LOG_ERR, "Failed to open %s, error msg: %s", 
+          src_name, strerror(errno));
+       return -1;
+    }
+
+    /* avoid opening file in write mode if we're only reading */
+    int dst_flags = O_RDWR;
+    if (overwrite) {
+        dst_flags = O_RDONLY;
+    }
+
+    /* open destination file */
+    int dst_fd = mfu_open(dst_name, dst_flags);
+    if (dst_fd < 0) {
+        /* log error if there is an open failure on the dst side */
+        MFU_LOG(MFU_LOG_ERR, "Failed to open %s, error msg: %s", 
+          dst_name, strerror(errno));
+        mfu_close(src_name, src_fd);
+        return -1;
+    }
+
+    /* hint that we'll read from file sequentially */
+    posix_fadvise(src_fd, offset, length, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(dst_fd, offset, length, POSIX_FADV_SEQUENTIAL);
+
+    /* assume we'll find that file contents are the same */
+    int rc = 0;
+
+    /* seek to offset in source file */
+    if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
+        /* log error if there is an lseek failure on the src side */
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",
+          src_name, (unsigned long)offset, strerror(errno));
+        mfu_close(dst_name, dst_fd);
+        mfu_close(src_name, src_fd);
+        return -1;
+    }
+
+    /* seek to offset in destination file */
+    if (mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
+        /* log error if there is an lseek failure on the dst side */
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",  
+          dst_name, (unsigned long)offset, strerror(errno));
+        mfu_close(dst_name, dst_fd);
+        mfu_close(src_name, src_fd);
+        return -1;
+    }
+
+    /* allocate buffers to read file data */
+    void* src_buf  = MFU_MALLOC(bufsize);
+    void* dest_buf = MFU_MALLOC(bufsize);
+
+    /* read and compare data from files */
+    off_t total_bytes = 0;
+    while(length == 0 || total_bytes < length) {
+        /* track current position in file for error reporting and seeking */
+        off_t pos = offset + total_bytes;
+
+        /* whether we should copy the source bytes to the destination */
+        int need_copy = 0;
+
+        /* determine number of bytes to read in this iteration */
+        size_t left_to_read = bufsize;
+        if (length > 0) {
+            if (length - total_bytes < (off_t)bufsize) {
+                left_to_read = (size_t)(length - total_bytes);
+            }
+        }
+
+        /* read data from source file */
+        ssize_t src_read = mfu_read(src_name, src_fd, (ssize_t*)src_buf, left_to_read);
+        if (src_read < 0) {
+            /* hit a read error */
+            MFU_LOG(MFU_LOG_ERR, "Failed to read %s at offset %llx, error msg: %s", 
+              src_name, (unsigned long long)pos, strerror(errno));
+            rc = -1;
+            break;
+        }
+
+        /* tally up number of bytes read */
+        *count_bytes_read += (uint64_t) src_read;
+
+        /* read data from destination file */
+        ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf, left_to_read);
+        if (dst_read < 0) {
+            /* hit a read error */
+            MFU_LOG(MFU_LOG_ERR, "Failed to read %s at offset %llx, error msg: %s", 
+              dst_name, (unsigned long long)pos, strerror(errno));
+            rc = -1;
+            break;
+        }
+
+        /* tally up number of bytes read */
+        *count_bytes_read += (uint64_t) dst_read;
+
+        /* TODO: could be a non-error short read, we could just adjust number
+         * of bytes we compare and update offset to shorter of the two values
+         * numread = min(src_read, dst_read) */
+
+        /* check that we got the same number of bytes from each */
+        if (src_read != dst_read) {
+            /* one read came up shorter than the other */
+            rc = 1;
+            if (! overwrite) {
+                break;
+            }
+            need_copy = 1;
+        }
+
+        /* check for EOF */
+        if (src_read == 0) {
+            /* hit end of source file */
+            break;
+        }
+
+        /* if have same size buffers, and read some data, let's check the contents */
+        if (src_read == dst_read) {
+            if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
+                /* memory contents are different */
+                rc = 1;
+                if (! overwrite) {
+                    break;
+                } 
+                need_copy = 1;
+            }
+        }
+
+        /* if the bytes are different,
+         * then copy the bytes from the source into the destination */
+        if (overwrite && need_copy == 1) {
+            /* seek back to position to write to in destination file */
+            if (mfu_lseek(dst_name, dst_fd, pos, SEEK_SET) == (off_t)-1) {
+                /* log error if there is an lseek failure on the dst side */
+                MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %llx, error msg: %s",  
+                  dst_name, (unsigned long long)pos, strerror(errno));
+                rc = -1;
+                break;
+            }
+
+            /* write data to destination file */
+            size_t bytes_to_write = (size_t) src_read;
+            ssize_t bytes_written = mfu_write(dst_name, dst_fd, src_buf, bytes_to_write);
+            if (bytes_written < 0) {
+                /* hit a write error */
+                MFU_LOG(MFU_LOG_ERR, "Failed to write %s at offset %llx, error msg: %s", 
+                  dst_name, (unsigned long long)pos, strerror(errno));
+                rc = -1;
+                break;
+            }
+
+            /* tally up number of bytes written */
+            *count_bytes_written += (uint64_t) bytes_written;
+        }
+
+        /* add bytes to our total */
+        total_bytes += (long unsigned int)src_read;
+    }
+
+    /* free buffers */
+    mfu_free(&dest_buf);
+    mfu_free(&src_buf);
+
+    /* close files */
+    mfu_close(dst_name, dst_fd);
+    mfu_close(src_name, src_fd);
+
+    return rc;
+}
