@@ -705,7 +705,7 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
 }
 
 static int mfu_create_file(mfu_flist list, uint64_t idx,
-        int numpaths, mfu_param_path* paths, 
+        int numpaths, const mfu_param_path* paths, 
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
     /* get source name */
@@ -1287,8 +1287,10 @@ static int mfu_copy_file(
         }
     }
 
-    return mfu_copy_file_normal(src, dest, in_fd, out_fd, 
+    ret = mfu_copy_file_normal(src, dest, in_fd, out_fd, 
             offset, length, file_size, mfu_copy_opts);
+
+    return ret;
 }
 
 /* After receiving all incoming chunks, process open and write their chunks 
@@ -1302,6 +1304,9 @@ static void mfu_copy_files(mfu_flist list, uint64_t chunk_size,
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    /* barrier to ensure all procs are ready to start copy */
+    MPI_Barrier(MPI_COMM_WORLD);
+
     /* indicate which phase we're in to user */
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Copying data.");
@@ -1309,32 +1314,102 @@ static void mfu_copy_files(mfu_flist list, uint64_t chunk_size,
     
     /* split file list into a linked list of file sections,
      * this evenly spreads the file sections across processes */
-    mfu_file_chunk* p = mfu_file_chunk_list_alloc(list, chunk_size);
-    
-    /* loop over and copy data for each file section we're responsible for */
-    while (p != NULL) {
-        /* get name of destination file */
-        char* dest_path = mfu_param_path_copy_dest(p->name, numpaths,
-                paths, destpath, mfu_copy_opts);
+    mfu_file_chunk* head = mfu_file_chunk_list_alloc(list, chunk_size);
 
-        /* No need to copy it */
-        if (dest_path == NULL) {
+    /* get a count of how many items are the chunk list */
+    uint64_t list_count = mfu_file_chunk_list_size(head);
+
+    /* allocate a flag for each element in chunk list,
+     * will store 0 to mean copy of this chunk succeeded and 1 otherwise
+     * to be used as input to logical OR to determine state of entire file */
+    int* vals = (int*) MFU_MALLOC(list_count * sizeof(int));
+
+    /* loop over and copy data for each file section we're responsible for */
+    uint64_t i;
+    const mfu_file_chunk* p = head;
+    for (i = 0; i < list_count; i++) {
+         /* assume we'll succeed in copying this chunk */
+         vals[i] = 0;
+
+        /* get name of destination file */
+        char* dest = mfu_param_path_copy_dest(p->name, numpaths,
+                paths, destpath, mfu_copy_opts);
+        if (dest == NULL) {
+            /* No need to copy it */
+            p = p->next;
             continue;
         }
 
-        /* call copy_file for each element of the copy_elem linked list of structs */
-        mfu_copy_file(p->name, dest_path, (uint64_t)p->offset, 
+        /* copy portion of file corresponding to this chunk,
+         * and record whether copy operation succeeded */
+        int rc = mfu_copy_file(p->name, dest, (uint64_t)p->offset, 
                 (uint64_t)p->length, (uint64_t)p->file_size, mfu_copy_opts);
+        if (rc < 0) {
+            /* error copying file */
+            vals[i] = 1;
+        }
 
         /* free the dest name */
-        mfu_free(&dest_path);
+        mfu_free(&dest);
 
         /* update pointer to next element */
         p = p->next;
     }
-    
-    /* free the linked list */
-    mfu_file_chunk_list_free(&p);
+
+    /* close files */
+    mfu_copy_close_file(&mfu_copy_src_cache);
+    mfu_copy_close_file(&mfu_copy_dst_cache);
+
+    /* barrier to ensure all files are closed,
+     * may try to unlink bad destination files below */
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    /* allocate a flag for each item in our file list */
+    uint64_t size = mfu_flist_size(list);
+    int* results = (int*) MFU_MALLOC(size * sizeof(int));
+
+    /* intialize values, since not every item is represented
+     * in chunk list */
+    for (i = 0; i < size; i++) {
+        results[i] = 0;
+    }
+
+    /* determnie which files were copied correctly */
+    mfu_file_chunk_list_lor(list, head, vals, results);
+
+    /* delete any destination file that failed to copy */
+    for (i = 0; i < size; i++) {
+        if (results[i] != 0) {
+            /* found a file that had an error during copy,
+             * compute destination name and delete it */
+            const char* name = mfu_flist_file_get_name(list, i);
+            const char* dest = mfu_param_path_copy_dest(name, numpaths,
+                paths, destpath, mfu_copy_opts);
+            if (dest != NULL) {
+                /* sanity check to ensure we don't * delete the source file */
+                if (strcmp(dest, name) != 0) {
+                    /* delete destination file */
+                    int rc = mfu_unlink(dest);
+                    if (rc != 0) {
+                        MFU_LOG(MFU_LOG_ERR, "Failed to unlink `%s' (errno=%d %s)",
+                                  name, errno, strerror(errno)
+                                );
+                    }
+                }
+
+                /* free destination name */
+                mfu_free(&dest);
+            }
+        }
+    }
+
+    /* free copy flags */
+    mfu_free(&results);
+
+    /* free the list of file chunks */
+    mfu_file_chunk_list_free(&head);
+
+    return;
 }
 
 void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
@@ -1395,10 +1470,6 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     /* copy data */
     mfu_copy_files(src_cp_list, mfu_copy_opts->chunk_size, 
             numpaths, paths, destpath, mfu_copy_opts);
-
-    /* close files */
-    mfu_copy_close_file(&mfu_copy_src_cache);
-    mfu_copy_close_file(&mfu_copy_dst_cache);
 
     /* force the copy to backend, to avoid the following metadata
      * setting mismatch, which may happen on lustre */
