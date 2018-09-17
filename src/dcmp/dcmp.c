@@ -510,7 +510,7 @@ static int dcmp_compare_data(
     if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
        /* log error if there is an lseek failure on the 
         * src side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %x, error msg: %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",
           src_name, (unsigned long)offset, strerror(errno));
         mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
@@ -521,7 +521,7 @@ static int dcmp_compare_data(
     if(mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
        /* log error if there is an lseek failure on the 
         * dst side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %x, error msg: %s",  
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",  
           dst_name, (unsigned long)offset, strerror(errno));
         mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
@@ -793,9 +793,6 @@ static void dcmp_strmap_compare_data(
     size_t strlen_prefix,
     mfu_copy_opts_t* mfu_copy_opts)
 {
-    /* get the largest filename */
-    uint64_t max_name = mfu_flist_file_max_name(src_compare_list);
-
     /* get chunk size for copying files (just hard-coded for now) */
     uint64_t chunk_size = 1024 * 1024;
 
@@ -803,34 +800,19 @@ static void dcmp_strmap_compare_data(
     mfu_file_chunk* src_head = mfu_file_chunk_list_alloc(src_compare_list, chunk_size);
     mfu_file_chunk* dst_head = mfu_file_chunk_list_alloc(dst_compare_list, chunk_size);
 
-    /* get a count of how many items are the compare list and total
-     * number of bytes we'll read */
-    uint64_t list_count = 0;
-    mfu_file_chunk* src_p = src_head;
-    while (src_p != NULL) {
-        list_count++;
-        src_p = src_p->next;
-    }
+    /* get a count of how many items are the chunk list */
+    uint64_t list_count = mfu_file_chunk_list_size(src_head);
 
-    /* keys are the filename, so only bytes that belong to 
-     * the same file will be compared via a flag in the segmented scan */
-    char* keys = (char*) MFU_MALLOC(list_count * max_name);
-
-    /* vals pointer allocation for input to segmented scan, so 
-     * dcmp_compare_data will return a 1 or 0 for each set of bytes */
+    /* allocate a flag for each element in chunk list,
+     * will store 0 to mean data of this chunk is the same 1 if different
+     * to be used as input to logical OR to determine state of entire file */
     int* vals = (int*) MFU_MALLOC(list_count * sizeof(int));
-
-    /* ltr pointer for the output of the left-to-right-segmented scan,
-     * rtl is for right-to-left scan, which we don't use */
-    int* ltr  = (int*) MFU_MALLOC(list_count * sizeof(int));
-    int* rtl  = (int*) MFU_MALLOC(list_count * sizeof(int)); 
 
     /* compare bytes for each file section and set flag based on what we find */
     uint64_t i = 0;
-    char* name_ptr = keys;
-    src_p = src_head;
-    mfu_file_chunk* dst_p = dst_head;
-    while (src_p != NULL) {
+    const mfu_file_chunk* src_p = src_head;
+    const mfu_file_chunk* dst_p = dst_head;
+    for (i = 0; i < list_count; i++) {
         /* get offset into file that we should compare (bytes) */
         off_t offset = (off_t)src_p->offset;
 
@@ -849,126 +831,31 @@ static void dcmp_strmap_compare_data(
                  src_p->name, dst_p->name);
         }
 
-        /* now record results of compare_data for sending to segmented scan */
-        strncpy(name_ptr, src_p->name, max_name);
+        /* record results of comparison */
         vals[i] = rc;
-
-        /* initialize our output values (have to do this because of exscan) */
-        ltr[i] = 0;
-        rtl[i] = 0;
-
-        /* move to the start of the next filename */
-        name_ptr += max_name;
-        i++;
 
         /* update pointers for src and dest in linked list */
         src_p = src_p->next;
         dst_p = dst_p->next;
     }
 
-    /* create type and comparison operation for file names for the segmented scan */
-    MPI_Datatype keytype;
-    DTCMP_Op keyop;
-    DTCMP_Str_create_ascend((int)max_name, &keytype, &keyop);
+    /* allocate a flag for each item in our file list */
+    uint64_t size = mfu_flist_size(src_compare_list);
+    int* results = (int*) MFU_MALLOC(size * sizeof(int));
 
-    /* execute segmented scan of comparison flags across file names */
-    DTCMP_Segmented_exscanv((int)list_count, keys, keytype, keyop, vals, ltr, rtl, MPI_INT, MPI_LOR, DTCMP_FLAG_NONE, MPI_COMM_WORLD);
-    for (i = 0; i < list_count; i++) {
-        /* turn segmented exscan into scan by or'ing in our input */
-        ltr[i] |= vals[i];
-    }
-    
-    /* we're done with the MPI type and operation, free them */
-    MPI_Type_free(&keytype);
-    DTCMP_Op_free(&keyop);
-
-    /* get number of ranks */
-    int ranks;
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-    /* allocate arrays for alltoall -- one for sending, and one for receiving */
-    int* sendcounts = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
-    int* recvcounts = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
-    int* recvdisps  = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
-    int* senddisps  = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
-
-    /* allocate space for send buffer, we'll send an index value and comparison
-     * flag, both as uint64_t */
-    size_t sendbytes = list_count * 2 * sizeof(uint64_t); 
-    uint64_t* sendbuf = (uint64_t*) MFU_MALLOC(sendbytes);
-
-    /* initialize sendcounts array */
-    for (int idx = 0; idx < (int)ranks; idx++) {
-        sendcounts[idx] = 0;
-    }
-
-    /* Iterate over the list of files. For each file a process needs to report on,
-     * we increment the counter correspoinding to the "owner" of the file. After
-     * going through all files, we then have a count of the number of files we 
-     * will report for each rank */
-    i = 0;
-    int disp = 0;
-    src_p = src_head;
-    while (src_p != NULL) {
-        /* if we checked the last byte of the file, we need to send scan result to owner */
-        if (src_p->offset + src_p->length >= src_p->file_size) {
-            /* increment count of items that will be sent to owner */
-            int owner = (int) src_p->rank_of_owner;
-            sendcounts[owner] += 2;
-
-            /* copy index and flag value to send buffer */
-            uint64_t file_index = src_p->index_of_owner;
-            uint64_t flag       = (uint64_t) ltr[i];
-            sendbuf[disp    ]   = file_index;
-            sendbuf[disp + 1]   = flag;
-            
-            /* advance to next value in buffer */
-            disp += 2;
-        }
-
-        /* advance in struct list and ltr array */
-        i++;
-        src_p = src_p->next;
-    }
-
-    /* compute send buffer displacements */
-    senddisps[0] = 0;
-    for (i = 1; i < (uint64_t)ranks; i++) {
-        senddisps[i] = senddisps[i - 1] + sendcounts[i - 1];
-    }
-
-    /* alltoall to let every process know a count of how much it will be receiving */
-    MPI_Alltoall(sendcounts, 1, MPI_INT, recvcounts, 1, MPI_INT, MPI_COMM_WORLD);
-
-    /* calculate total incoming bytes and displacements for alltoallv */
-    int recv_total = recvcounts[0];
-    recvdisps[0] = 0;
-    for (i = 1; i < (uint64_t)ranks; i++) {
-        recv_total += recvcounts[i];
-        recvdisps[i] = recvdisps[i - 1] + recvcounts[i - 1];
-    }
-
-    /* allocate buffer to recv bytes into based on recvounts */
-    uint64_t* recvbuf = (uint64_t*) MFU_MALLOC((uint64_t)recv_total * sizeof(uint64_t));
-
-    /* send the bytes to the correct rank that owns the file */
-    MPI_Alltoallv(
-        sendbuf, sendcounts, senddisps, MPI_UINT64_T,
-        recvbuf, recvcounts, recvdisps, MPI_UINT64_T, MPI_COMM_WORLD
-    );
+    /* execute logical OR over chunks for each file */
+    mfu_file_chunk_list_lor(src_compare_list, src_head, vals, results);
 
     /* unpack contents of recv buffer & store results in strmap */
-    disp = 0;
-    while (disp < recv_total) {
-        /* local store of idx & flag values for each file */
-        uint64_t idx  = recvbuf[disp];
-        uint64_t flag = recvbuf[disp + 1];
-
+    for (i = 0; i < size; i++) {
         /* lookup name of file based on id to send to strmap updata call */
-        const char* name = mfu_flist_file_get_name(src_compare_list, idx);
+        const char* name = mfu_flist_file_get_name(src_compare_list, i);
 
         /* ignore prefix portion of path to use as key */
         name += strlen_prefix;
+
+        /* get comparison results for this item */
+        int flag = results[i];
 
         /* set flag in strmap to record status of file */
         if (flag != 0) {
@@ -981,22 +868,11 @@ static void dcmp_strmap_compare_data(
             dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
             dcmp_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_COMMON);
         }
-
-        /* go to next id & flag */
-        disp += 2;
     }
 
     /* free memory */
-    mfu_free(&keys);
-    mfu_free(&rtl);
-    mfu_free(&ltr);
+    mfu_free(&results);
     mfu_free(&vals);
-    mfu_free(&sendcounts);
-    mfu_free(&recvcounts);
-    mfu_free(&recvdisps);
-    mfu_free(&senddisps);
-    mfu_free(&recvbuf);
-    mfu_free(&sendbuf);
     mfu_file_chunk_list_free(&src_head);
     mfu_file_chunk_list_free(&dst_head);
 
@@ -2251,7 +2127,7 @@ int main(int argc, char **argv)
     mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
             
     /* process each path */
-    char** argpaths = &argv[optind];
+    const char** argpaths = &argv[optind];
     mfu_param_path_set_all(numargs, argpaths, paths);
 
     /* advance to next set of options */
