@@ -472,6 +472,20 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size);
 /* free the linked list allocated with mfu_file_chunk_list_alloc */
 void mfu_file_chunk_list_free(mfu_file_chunk** phead);
 
+/* return number of items in chunk list */
+uint64_t mfu_file_chunk_list_size(const mfu_file_chunk* list);
+
+/* given an flist, a file chunk list generated from that flist,
+ * and an input array of flags with one element per chunk,
+ * execute a LOR per item in the flist, and return the result
+ * to the process owning that item in the flist */
+void mfu_file_chunk_list_lor(
+    mfu_flist list,             /* IN  - input flist */
+    const mfu_file_chunk* head, /* IN  - chunk list generated from flist */
+    const int* vals,            /* IN  - array of flags, one element for each chunk in the chunk list */
+    int* results                /* OUT - array of output, storing logical OR across all chunks for each item in flist */
+);
+
 #endif /* MFU_FLIST_H */
 
 /* enable C++ codes to include this header directly */

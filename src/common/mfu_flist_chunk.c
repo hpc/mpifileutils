@@ -422,3 +422,150 @@ void mfu_file_chunk_list_free(mfu_file_chunk** phead)
 
     return;
 }
+
+uint64_t mfu_file_chunk_list_size(const mfu_file_chunk* p)
+{
+    uint64_t count = 0;
+    while (p != NULL) {
+        count++;
+        p = p->next;
+    }
+    return count;
+}
+
+/* given an flist, a file chunk list generated from that flist,
+ * and an input array of flags with one element per chunk,
+ * execute a LOR per item in the flist, and return the result
+ * to the process owning that item in the flist */
+void mfu_file_chunk_list_lor(mfu_flist list, const mfu_file_chunk* head, const int* vals, int* results)
+{
+    /* get the largest filename */
+    uint64_t max_name = mfu_flist_file_max_name(list);
+
+    /* get a count of how many items are the chunk list */
+    uint64_t list_count = mfu_file_chunk_list_size(head);
+
+    /* keys are the filename, so only bytes that belong to 
+     * the same file will be compared via a flag in the segmented scan */
+    char* keys = (char*) MFU_MALLOC(list_count * max_name);
+
+    /* ltr pointer for the output of the left-to-right-segmented scan */
+    int* ltr = (int*) MFU_MALLOC(list_count * sizeof(int));
+
+    /* create type and comparison operation for file names for the segmented scan */
+    MPI_Datatype keytype;
+    DTCMP_Op keyop;
+    DTCMP_Str_create_ascend((int)max_name, &keytype, &keyop);
+
+    /* execute segmented scan of comparison flags across file names */
+    DTCMP_Segmented_scanv_ltr(
+        (int)list_count, keys, keytype, keyop,
+        vals, ltr, MPI_INT, MPI_LOR,
+        DTCMP_FLAG_NONE, MPI_COMM_WORLD
+    );
+    
+    /* we're done with the MPI type and operation, free them */
+    MPI_Type_free(&keytype);
+    DTCMP_Op_free(&keyop);
+
+    /* get number of ranks */
+    int ranks;
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* allocate arrays for alltoall -- one for sending, and one for receiving */
+    int* sendcounts = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
+    int* recvcounts = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
+    int* recvdisps  = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
+    int* senddisps  = (int*) MFU_MALLOC((size_t)ranks * sizeof(int));
+
+    /* allocate space for send buffer, we'll send an index value and comparison
+     * flag, both as uint64_t */
+    size_t sendbytes = list_count * 2 * sizeof(uint64_t); 
+    uint64_t* sendbuf = (uint64_t*) MFU_MALLOC(sendbytes);
+
+    /* initialize sendcounts array */
+    for (int idx = 0; idx < ranks; idx++) {
+        sendcounts[idx] = 0;
+    }
+
+    /* Iterate over the list of files. For each file a process needs to report on,
+     * we increment the counter correspoinding to the "owner" of the file. After
+     * going through all files, we then have a count of the number of files we 
+     * will report for each rank */
+    int disp = 0;
+    uint64_t i;
+    const mfu_file_chunk* p = head;
+    for (i = 0; i < list_count; i++) {
+        /* if we have the last byte of the file, we need to send scan result to owner */
+        if (p->offset + p->length >= p->file_size) {
+            /* increment count of items that will be sent to owner */
+            int owner = (int) p->rank_of_owner;
+            sendcounts[owner] += 2;
+
+            /* copy index and flag value to send buffer */
+            uint64_t file_index = p->index_of_owner;
+            uint64_t flag       = (uint64_t) ltr[i];
+            sendbuf[disp    ]   = file_index;
+            sendbuf[disp + 1]   = flag;
+            
+            /* advance to next value in buffer */
+            disp += 2;
+        }
+
+        /* advance to next chunk */
+        p = p->next;
+    }
+
+    /* compute send buffer displacements */
+    senddisps[0] = 0;
+    for (i = 1; i < (uint64_t)ranks; i++) {
+        senddisps[i] = senddisps[i - 1] + sendcounts[i - 1];
+    }
+
+    /* alltoall to let every process know a count of how much it will be receiving */
+    MPI_Alltoall(sendcounts, 1, MPI_INT, recvcounts, 1, MPI_INT, MPI_COMM_WORLD);
+
+    /* calculate total incoming bytes and displacements for alltoallv */
+    int recv_total = recvcounts[0];
+    recvdisps[0] = 0;
+    for (i = 1; i < (uint64_t)ranks; i++) {
+        recv_total += recvcounts[i];
+        recvdisps[i] = recvdisps[i - 1] + recvcounts[i - 1];
+    }
+
+    /* allocate buffer to recv bytes into based on recvounts */
+    uint64_t* recvbuf = (uint64_t*) MFU_MALLOC((uint64_t)recv_total * sizeof(uint64_t));
+
+    /* send the bytes to the correct rank that owns the file */
+    MPI_Alltoallv(
+        sendbuf, sendcounts, senddisps, MPI_UINT64_T,
+        recvbuf, recvcounts, recvdisps, MPI_UINT64_T, MPI_COMM_WORLD
+    );
+
+    /* unpack contents of recv buffer & store results in strmap */
+    disp = 0;
+    while (disp < recv_total) {
+        /* local store of idx & flag values for each file */
+        uint64_t idx  = recvbuf[disp];
+        uint64_t flag = recvbuf[disp + 1];
+
+        /* set value in output array for corresponding item */
+        results[idx] = (int)flag;
+
+        /* go to next id & flag */
+        disp += 2;
+    }
+
+    mfu_free(&recvbuf);
+    mfu_free(&sendbuf);
+
+    mfu_free(&sendcounts);
+    mfu_free(&recvcounts);
+    mfu_free(&recvdisps);
+    mfu_free(&senddisps);
+
+    mfu_free(&keys);
+    mfu_free(&ltr);
+
+    return;
+}
