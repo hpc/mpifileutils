@@ -467,13 +467,13 @@ static strmap* dsync_strmap_creat(mfu_flist list, const char* prefix)
     return map;
 }
 
-/* Return -1 when error, return 0 when equal, return 1 when diff */
+/* Return -1 when error, return 0 when equal, return 1 when different */
 static int dsync_compare_data(
     const char* src_name,
     const char* dst_name,
     off_t offset,
     off_t length,
-    size_t buff_size,
+    size_t bufsize,
     int overwrite,
     uint64_t* count_bytes_read,
     uint64_t* count_bytes_written)
@@ -531,19 +531,22 @@ static int dsync_compare_data(
     }
 
     /* allocate buffers to read file data */
-    void* src_buf  = MFU_MALLOC(buff_size + 1);
-    void* dest_buf = MFU_MALLOC(buff_size + 1);
+    void* src_buf  = MFU_MALLOC(bufsize);
+    void* dest_buf = MFU_MALLOC(bufsize);
 
     /* read and compare data from files */
     off_t total_bytes = 0;
     while(length == 0 || total_bytes < length) {
+        /* track current position in file for error reporting and seeking */
+        off_t pos = offset + total_bytes;
+
         /* whether we should copy the source bytes to the destination */
         int need_copy = 0;
 
         /* determine number of bytes to read in this iteration */
-        size_t left_to_read = buff_size;
+        size_t left_to_read = bufsize;
         if (length > 0) {
-            if (length - total_bytes < (off_t)buff_size) {
+            if (length - total_bytes < (off_t)bufsize) {
                 left_to_read = (size_t)(length - total_bytes);
             }
         }
@@ -552,8 +555,8 @@ static int dsync_compare_data(
         ssize_t src_read = mfu_read(src_name, src_fd, (ssize_t*)src_buf, left_to_read);
         if (src_read < 0) {
             /* hit a read error */
-            MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
-              src_name, strerror(errno));
+            MFU_LOG(MFU_LOG_ERR, "Failed to read %s at offset %llx, error msg: %s", 
+              src_name, (unsigned long long)pos, strerror(errno));
             rc = -1;
             break;
         }
@@ -565,8 +568,8 @@ static int dsync_compare_data(
         ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf, left_to_read);
         if (dst_read < 0) {
             /* hit a read error */
-            MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
-              dst_name, strerror(errno));
+            MFU_LOG(MFU_LOG_ERR, "Failed to read %s at offset %llx, error msg: %s", 
+              dst_name, (unsigned long long)pos, strerror(errno));
             rc = -1;
             break;
         }
@@ -610,11 +613,10 @@ static int dsync_compare_data(
          * then copy the bytes from the source into the destination */
         if (overwrite && need_copy == 1) {
             /* seek back to position to write to in destination file */
-            off_t pos = offset + total_bytes;
             if (mfu_lseek(dst_name, dst_fd, pos, SEEK_SET) == (off_t)-1) {
                 /* log error if there is an lseek failure on the dst side */
-                MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",  
-                  dst_name, (unsigned long)pos, strerror(errno));
+                MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %llx, error msg: %s",  
+                  dst_name, (unsigned long long)pos, strerror(errno));
                 rc = -1;
                 break;
             }
@@ -624,8 +626,8 @@ static int dsync_compare_data(
             ssize_t bytes_written = mfu_write(dst_name, dst_fd, src_buf, bytes_to_write);
             if (bytes_written < 0) {
                 /* hit a write error */
-                MFU_LOG(MFU_LOG_ERR, "Failed to write %s, error msg: %s", 
-                  dst_name, strerror(errno));
+                MFU_LOG(MFU_LOG_ERR, "Failed to write %s at offset %llx, error msg: %s", 
+                  dst_name, (unsigned long long)pos, strerror(errno));
                 rc = -1;
                 break;
             }
@@ -834,7 +836,7 @@ static void dsync_strmap_compare_data(
         
         /* compare the contents of the files */
         int rc = dsync_compare_data(src_p->name, dst_p->name, offset, 
-                (size_t)length, 1048576, overwrite,
+                length, 1048576, overwrite,
                 count_bytes_read, count_bytes_written);
         if (rc == -1) {
             /* we hit an error while reading, consider files to be different,
