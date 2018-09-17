@@ -484,7 +484,6 @@ static int dcmp_compare_data(
         * src side */
         MFU_LOG(MFU_LOG_ERR, "Failed to open %s, error msg: %s", 
           src_name, strerror(errno));
-        mfu_close(src_name, src_fd);
        return -1;
     }
 
@@ -518,7 +517,7 @@ static int dcmp_compare_data(
     }
     
     /* seek to offset in destination file */
-    if(mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
+    if (mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
        /* log error if there is an lseek failure on the 
         * dst side */
         MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",  
@@ -535,42 +534,40 @@ static int dcmp_compare_data(
     /* read and compare data from files */
     size_t total_bytes = 0;
     while(length == 0 || total_bytes < length) {
-
         /* determine number of bytes to read in this iteration */
-        size_t left_to_read;
-        if (length == 0) {
-            left_to_read = buff_size;
-        } else {
+        size_t left_to_read = buff_size;
+        if (length > 0) {
             left_to_read = length - total_bytes;
             if (left_to_read > buff_size) {
                 left_to_read = buff_size;
             }
         }
-        
-        /* read data from source and destination */
-        ssize_t src_read = mfu_read(src_name, src_fd, (ssize_t*)src_buf,
-             left_to_read);
-        ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf,
-             left_to_read);
-        
-        /* check for read errors */
-        if (src_read < 0 || dst_read < 0) {
-            /* hit a read error, now figure out if it was the 
-             * src or dest, and print file */
-            if (src_read < 0) { 
-                MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
-                  src_name, strerror(errno));
-            } 
-            /* added this extra check in case both are less 
-             * than zero -- we'd want both files read 
-             * errors reported */
-            if (dst_read < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
-                  dst_name, strerror(errno));
-            } 
+
+        /* read data from source file */
+        ssize_t src_read = mfu_read(src_name, src_fd, (ssize_t*)src_buf, left_to_read);
+        if (src_read < 0) {
+            /* hit a read error */
+            MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
+              src_name, strerror(errno));
             rc = -1;
             break;
         }
+
+        /* add bytes to our total */
+        total_bytes += (long unsigned int)src_read;
+
+        /* read data from destination file */
+        ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf, left_to_read);
+        if (dst_read < 0) {
+            /* hit a read error */
+            MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
+              dst_name, strerror(errno));
+            rc = -1;
+            break;
+        }
+
+        /* add bytes to our total */
+        total_bytes += (long unsigned int)dst_read;
 
         /* TODO: could be a non-error short read, we could just adjust number
          * of bytes we compare and update offset to shorter of the two values
@@ -589,20 +586,12 @@ static int dcmp_compare_data(
             break;
         }
 
-        /* check that buffers are the same, only need to bother if bytes read are the
-         * same in both cases, since we already mark the difference above if the sizes
-         * are different */
-        if (src_read == dst_read) {
-            /* got same size buffers, let's check the contents */
-            if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
-                /* memory contents are different */
-                rc = 1;
-                break;
-            }
+        /* got same size buffers, and read some data, let's check the contents */
+        if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
+            /* memory contents are different */
+            rc = 1;
+            break;
         }
-       
-        /* add bytes to our total */
-        total_bytes += (long unsigned int)src_read;
     }
     
     /* free buffers */

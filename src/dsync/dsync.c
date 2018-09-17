@@ -474,7 +474,7 @@ static int dsync_compare_data(
     off_t offset,
     size_t length,
     size_t buff_size,
-    mfu_copy_opts_t* mfu_copy_opts,
+    int overwrite,
     uint64_t* count_bytes_read,
     uint64_t* count_bytes_written)
 {
@@ -485,16 +485,16 @@ static int dsync_compare_data(
         * src side */
         MFU_LOG(MFU_LOG_ERR, "Failed to open %s, error msg: %s", 
           src_name, strerror(errno));
-        mfu_close(src_name, src_fd);
        return -1;
     }
 
-    /* open destination file */
+    /* avoid opening file in write mode if we're only reading */
     int dst_flags = O_RDWR;
-    if (options.dry_run) {
-        /* avoid opening file in write mode if on dry run */
+    if (overwrite) {
         dst_flags = O_RDONLY;
     }
+
+    /* open destination file */
     int dst_fd = mfu_open(dst_name, dst_flags);
     if (dst_fd < 0) {
        /* log error if there is an open failure on the 
@@ -522,9 +522,9 @@ static int dsync_compare_data(
         mfu_close(src_name, src_fd);
         return -1;
     }
-    
+
     /* seek to offset in destination file */
-    if(mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
+    if (mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
        /* log error if there is an lseek failure on the 
         * dst side */
         MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",  
@@ -541,52 +541,43 @@ static int dsync_compare_data(
     /* read and compare data from files */
     size_t total_bytes = 0;
     while(length == 0 || total_bytes < length) {
-        /* whether we should copy the source bytes to the destination as part of sync */
-        int copy_src_to_dst = 0;
+        /* whether we should copy the source bytes to the destination */
+        int need_copy = 0;
 
         /* determine number of bytes to read in this iteration */
-        size_t left_to_read;
-        if (length == 0) {
-            left_to_read = buff_size;
-        } else {
+        size_t left_to_read = buff_size;
+        if (length > 0) {
             left_to_read = length - total_bytes;
             if (left_to_read > buff_size) {
                 left_to_read = buff_size;
             }
         }
-        
-        /* read data from source and destination */
-        ssize_t src_read = mfu_read(src_name, src_fd, (ssize_t*)src_buf,
-             left_to_read);
-        ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf,
-             left_to_read);
-        
-        /* tally up number of bytes written */
-        if (src_read >= 0) {
-            *count_bytes_read += (uint64_t) src_read;
-        }
-        if (dst_read >= 0) {
-            *count_bytes_read += (uint64_t) dst_read;
-        }
 
-        /* check for read errors */
-        if (src_read < 0 || dst_read < 0) {
-            /* hit a read error, now figure out if it was the 
-             * src or dest, and print file */
-            if (src_read < 0) { 
-                MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
-                  src_name, strerror(errno));
-            } 
-            /* added this extra check in case both are less 
-             * than zero -- we'd want both files read 
-             * errors reported */
-            if (dst_read < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
-                  dst_name, strerror(errno));
-            } 
+        /* read data from source file */
+        ssize_t src_read = mfu_read(src_name, src_fd, (ssize_t*)src_buf, left_to_read);
+        if (src_read < 0) {
+            /* hit a read error */
+            MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
+              src_name, strerror(errno));
             rc = -1;
             break;
         }
+
+        /* tally up number of bytes read */
+        *count_bytes_read += (uint64_t) src_read;
+
+        /* read data from destination file */
+        ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf, left_to_read);
+        if (dst_read < 0) {
+            /* hit a read error */
+            MFU_LOG(MFU_LOG_ERR, "Failed to read %s, error msg: %s", 
+              dst_name, strerror(errno));
+            rc = -1;
+            break;
+        }
+
+        /* tally up number of bytes read */
+        *count_bytes_read += (uint64_t) dst_read;
 
         /* TODO: could be a non-error short read, we could just adjust number
          * of bytes we compare and update offset to shorter of the two values
@@ -596,10 +587,10 @@ static int dsync_compare_data(
         if (src_read != dst_read) {
             /* one read came up shorter than the other */
             rc = 1;
-            if (options.dry_run) {
+            if (! overwrite) {
                 break;
             }
-            copy_src_to_dst = 1;
+            need_copy = 1;
         }
 
         /* check for EOF */
@@ -608,35 +599,30 @@ static int dsync_compare_data(
             break;
         }
 
-        /* check that buffers are the same, only need to bother if bytes read are the
-         * same in both cases, since we already mark the difference above if the sizes
-         * are different */
+        /* if have same size buffers, and read some data, let's check the contents */
         if (src_read == dst_read) {
-            /* got same size buffers, let's check the contents */
             if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
                 /* memory contents are different */
                 rc = 1;
-                if (options.dry_run) {
+                if (! overwrite) {
                     break;
                 } 
-                copy_src_to_dst = 1;
+                need_copy = 1;
             }
         }
 
-        /* if the bytes are different, and the sync option is on,
+        /* if the bytes are different,
          * then copy the bytes from the source into the destination */
-
-        if (!options.dry_run && copy_src_to_dst == 1) {
+        if (overwrite && need_copy == 1) {
             /* number of bytes to write */
             size_t bytes_to_write = (size_t) src_read;
 
             /* seek to position to write to in destination
              * file */
             mfu_lseek(dst_name, dst_fd, offset, SEEK_SET); 
-            
+
             /* write data to destination file */
-            ssize_t num_of_bytes_written = mfu_write(dst_name, dst_fd, src_buf,
-                                      bytes_to_write);
+            ssize_t num_of_bytes_written = mfu_write(dst_name, dst_fd, src_buf, bytes_to_write);
 
             /* tally up number of bytes written */
             if (num_of_bytes_written >= 0) {
@@ -647,7 +633,7 @@ static int dsync_compare_data(
         /* add bytes to our total */
         total_bytes += (long unsigned int)src_read;
     }
-    
+
     /* free buffers */
     mfu_free(&dest_buf);
     mfu_free(&src_buf);
@@ -825,6 +811,12 @@ static void dsync_strmap_compare_data(
      * to be used as input to logical OR to determine state of entire file */
     int* vals = (int*) MFU_MALLOC(list_count * sizeof(int));
 
+    /* whether we should overwrite bytes in destination file during compare */
+    int overwrite = 1;
+    if (options.dry_run) {
+        overwrite = 0;
+    }
+
     /* compare bytes for each file section and set flag based on what we find */
     uint64_t i = 0;
     const mfu_file_chunk* src_p = src_head;
@@ -838,7 +830,7 @@ static void dsync_strmap_compare_data(
         
         /* compare the contents of the files */
         int rc = dsync_compare_data(src_p->name, dst_p->name, offset, 
-                (size_t)length, 1048576, mfu_copy_opts,
+                (size_t)length, 1048576, overwrite,
                 count_bytes_read, count_bytes_written);
         if (rc == -1) {
             /* we hit an error while reading, consider files to be different,
