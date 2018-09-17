@@ -467,190 +467,6 @@ static strmap* dsync_strmap_creat(mfu_flist list, const char* prefix)
     return map;
 }
 
-/* Return -1 when error, return 0 when equal, return 1 when different */
-static int dsync_compare_data(
-    const char* src_name,
-    const char* dst_name,
-    off_t offset,
-    off_t length,
-    size_t bufsize,
-    int overwrite,
-    uint64_t* count_bytes_read,
-    uint64_t* count_bytes_written)
-{
-    /* open source file */
-    int src_fd = mfu_open(src_name, O_RDONLY);
-    if (src_fd < 0) {
-        /* log error if there is an open failure on the src side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to open %s, error msg: %s", 
-          src_name, strerror(errno));
-       return -1;
-    }
-
-    /* avoid opening file in write mode if we're only reading */
-    int dst_flags = O_RDWR;
-    if (overwrite) {
-        dst_flags = O_RDONLY;
-    }
-
-    /* open destination file */
-    int dst_fd = mfu_open(dst_name, dst_flags);
-    if (dst_fd < 0) {
-        /* log error if there is an open failure on the dst side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to open %s, error msg: %s", 
-          dst_name, strerror(errno));
-        mfu_close(src_name, src_fd);
-        return -1;
-    }
-
-    /* hint that we'll read from file sequentially */
-    posix_fadvise(src_fd, offset, length, POSIX_FADV_SEQUENTIAL);
-    posix_fadvise(dst_fd, offset, length, POSIX_FADV_SEQUENTIAL);
-
-    /* assume we'll find that file contents are the same */
-    int rc = 0;
-
-    /* seek to offset in source file */
-    if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
-        /* log error if there is an lseek failure on the src side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",
-          src_name, (unsigned long)offset, strerror(errno));
-        mfu_close(dst_name, dst_fd);
-        mfu_close(src_name, src_fd);
-        return -1;
-    }
-
-    /* seek to offset in destination file */
-    if (mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
-        /* log error if there is an lseek failure on the dst side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",  
-          dst_name, (unsigned long)offset, strerror(errno));
-        mfu_close(dst_name, dst_fd);
-        mfu_close(src_name, src_fd);
-        return -1;
-    }
-
-    /* allocate buffers to read file data */
-    void* src_buf  = MFU_MALLOC(bufsize);
-    void* dest_buf = MFU_MALLOC(bufsize);
-
-    /* read and compare data from files */
-    off_t total_bytes = 0;
-    while(length == 0 || total_bytes < length) {
-        /* track current position in file for error reporting and seeking */
-        off_t pos = offset + total_bytes;
-
-        /* whether we should copy the source bytes to the destination */
-        int need_copy = 0;
-
-        /* determine number of bytes to read in this iteration */
-        size_t left_to_read = bufsize;
-        if (length > 0) {
-            if (length - total_bytes < (off_t)bufsize) {
-                left_to_read = (size_t)(length - total_bytes);
-            }
-        }
-
-        /* read data from source file */
-        ssize_t src_read = mfu_read(src_name, src_fd, (ssize_t*)src_buf, left_to_read);
-        if (src_read < 0) {
-            /* hit a read error */
-            MFU_LOG(MFU_LOG_ERR, "Failed to read %s at offset %llx, error msg: %s", 
-              src_name, (unsigned long long)pos, strerror(errno));
-            rc = -1;
-            break;
-        }
-
-        /* tally up number of bytes read */
-        *count_bytes_read += (uint64_t) src_read;
-
-        /* read data from destination file */
-        ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf, left_to_read);
-        if (dst_read < 0) {
-            /* hit a read error */
-            MFU_LOG(MFU_LOG_ERR, "Failed to read %s at offset %llx, error msg: %s", 
-              dst_name, (unsigned long long)pos, strerror(errno));
-            rc = -1;
-            break;
-        }
-
-        /* tally up number of bytes read */
-        *count_bytes_read += (uint64_t) dst_read;
-
-        /* TODO: could be a non-error short read, we could just adjust number
-         * of bytes we compare and update offset to shorter of the two values
-         * numread = min(src_read, dst_read) */
-
-        /* check that we got the same number of bytes from each */
-        if (src_read != dst_read) {
-            /* one read came up shorter than the other */
-            rc = 1;
-            if (! overwrite) {
-                break;
-            }
-            need_copy = 1;
-        }
-
-        /* check for EOF */
-        if (src_read == 0) {
-            /* hit end of source file */
-            break;
-        }
-
-        /* if have same size buffers, and read some data, let's check the contents */
-        if (src_read == dst_read) {
-            if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
-                /* memory contents are different */
-                rc = 1;
-                if (! overwrite) {
-                    break;
-                } 
-                need_copy = 1;
-            }
-        }
-
-        /* if the bytes are different,
-         * then copy the bytes from the source into the destination */
-        if (overwrite && need_copy == 1) {
-            /* seek back to position to write to in destination file */
-            if (mfu_lseek(dst_name, dst_fd, pos, SEEK_SET) == (off_t)-1) {
-                /* log error if there is an lseek failure on the dst side */
-                MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %llx, error msg: %s",  
-                  dst_name, (unsigned long long)pos, strerror(errno));
-                rc = -1;
-                break;
-            }
-
-            /* write data to destination file */
-            size_t bytes_to_write = (size_t) src_read;
-            ssize_t bytes_written = mfu_write(dst_name, dst_fd, src_buf, bytes_to_write);
-            if (bytes_written < 0) {
-                /* hit a write error */
-                MFU_LOG(MFU_LOG_ERR, "Failed to write %s at offset %llx, error msg: %s", 
-                  dst_name, (unsigned long long)pos, strerror(errno));
-                rc = -1;
-                break;
-            }
-
-            /* tally up number of bytes written */
-            *count_bytes_written += (uint64_t) bytes_written;
-        }
-
-        /* add bytes to our total */
-        total_bytes += (long unsigned int)src_read;
-    }
-
-    /* free buffers */
-    mfu_free(&dest_buf);
-    mfu_free(&src_buf);
-
-    /* close files */
-    mfu_close(dst_name, dst_fd);
-    mfu_close(src_name, src_fd);
-
-    return rc;
-}
-
 #define dsync_compare_field(field_name, field)                                \
 do {                                                                         \
     uint64_t src = mfu_flist_file_get_ ## field_name(src_list, src_index); \
@@ -798,7 +614,6 @@ static void dsync_strmap_compare_data(
     mfu_flist dst_compare_list,
     strmap* dst_map,
     size_t strlen_prefix,
-    mfu_copy_opts_t* mfu_copy_opts,
     uint64_t* count_bytes_read,
     uint64_t* count_bytes_written)
 {
@@ -835,9 +650,8 @@ static void dsync_strmap_compare_data(
         off_t length = (off_t)src_p->length;
         
         /* compare the contents of the files */
-        int rc = dsync_compare_data(src_p->name, dst_p->name, offset, 
-                length, 1048576, overwrite,
-                count_bytes_read, count_bytes_written);
+        int rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length,
+                1048576, overwrite, count_bytes_read, count_bytes_written);
         if (rc == -1) {
             /* we hit an error while reading, consider files to be different,
              * they could be the same, but we'll draw attention to them this way */
@@ -1302,7 +1116,7 @@ static void dsync_strmap_compare(mfu_flist src_list,
             /* compare file contents byte-by-byte, overwrites destination
              * file in place if found to be different during comparison */
             dsync_strmap_compare_data(src_compare_list, src_map,
-                dst_compare_list, dst_map, strlen_prefix, mfu_copy_opts,
+                dst_compare_list, dst_map, strlen_prefix,
                 &total_bytes_read, &total_bytes_written
             );
         } else {
