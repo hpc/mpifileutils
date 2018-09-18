@@ -174,7 +174,7 @@ static int lustre_mds_stat(int fd, char* fname, struct stat* sb)
         lustre_stripe_info(buf);
     }
     else {
-        printf("ioctl errno=%d %s\n", errno, strerror(errno));
+        MFU_LOG(MFU_LOG_ERR, "ioctl fd=%d (errno=%d %s)", fd, errno, strerror(errno));
     }
 
     /* free the buffer */
@@ -242,10 +242,8 @@ static void walk_lustrestat_process_dir(char* dir, CIRCLE_handle* handle)
                     }
                 }
                 else {
-                    /* TODO: print error in correct format */
                     /* name is too long */
-                    printf("Path name is too long: %lu chars exceeds limit %lu\n", len, sizeof(newpath));
-                    fflush(stdout);
+                    MFU_LOG(MFU_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu", len, sizeof(newpath));
                 }
             }
         }
@@ -321,7 +319,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
     int fd = mfu_open(dir, O_RDONLY | O_DIRECTORY);
     if (fd == -1) {
         /* print error */
-        MFU_LOG(MFU_LOG_ERR, "Failed to open directory for reading: %s", dir);
+        MFU_LOG(MFU_LOG_ERR, "Failed to open directory for reading: `%s' (errno=%d %s)", dir, errno, strerror(errno));
         return;
     }
 
@@ -330,7 +328,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
         /* execute system call to get block of directory entries */
         int nread = syscall(SYS_getdents, fd, buf, (int) BUF_SIZE);
         if (nread == -1) {
-            MFU_LOG(MFU_LOG_ERR, "syscall to getdents failed when reading %s (errno=%d %s)", dir, errno, strerror(errno));
+            MFU_LOG(MFU_LOG_ERR, "syscall to getdents failed when reading `%s' (errno=%d %s)", dir, errno, strerror(errno));
             break;
         }
 
@@ -400,7 +398,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
                     }
                 }
                 else {
-                    MFU_LOG(MFU_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu\n", len, sizeof(newpath));
+                    MFU_LOG(MFU_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu", len, sizeof(newpath));
                 }
             }
 
@@ -476,7 +474,7 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
             dirp = mfu_opendir(dir);
             if (dirp == NULL) {
                 if (errno == EACCES) {
-                    printf("can't open directory at this time\n");
+                    MFU_LOG(MFU_LOG_ERR, "Failed to open directory with opendir: `%s' (errno=%d %s)", dir, errno, strerror(errno));
                 }
             }
         }
@@ -542,8 +540,7 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
                 else {
                     /* TODO: print error in correct format */
                     /* name is too long */
-                    printf("Path name is too long: %lu chars exceeds limit %lu\n", len, sizeof(newpath));
-                    fflush(stdout);
+                    MFU_LOG(MFU_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu", len, sizeof(newpath));
                 }
             }
         }
@@ -630,10 +627,8 @@ static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
                     handle->enqueue(newpath);
                 }
                 else {
-                    /* TODO: print error in correct format */
                     /* name is too long */
-                    printf("Path name is too long: %lu chars exceeds limit %lu\n", len, sizeof(newpath));
-                    fflush(stdout);
+                    MFU_LOG(MFU_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu", len, sizeof(newpath));
                 }
             }
         }
@@ -817,7 +812,11 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, 
         printf("Walked %lu files in %f seconds (%f files/sec)\n",
                all_count, time_diff, rate
               );
+        fflush(stdout);
     }
+
+    /* hold procs here until summary is printed */
+    MPI_Barrier(MPI_COMM_WORLD);
 
     return;
 }
@@ -886,7 +885,7 @@ void mfu_flist_stat(
         struct stat st;
         int status = mfu_lstat(name, &st);
         if (status != 0) {
-            MFU_LOG(MFU_LOG_ERR, "mfu_lstat(): %d", status);
+            MFU_LOG(MFU_LOG_ERR, "mfu_lstat() failed: `%s' rc=%d (errno=%d %s)", name, status, errno, strerror(errno));
             continue;
         }
 

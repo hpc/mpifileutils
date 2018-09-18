@@ -751,7 +751,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
 
             if(utimensat(AT_FDCWD, pdir, times, AT_SYMLINK_NOFOLLOW) != 0) {
                 MFU_LOG(MFU_LOG_DBG,
-                        "Failed to changeback timestamps on %s utime() errno=%d %s",
+                        "Failed to changeback timestamps with utimesat() `%s' (errno=%d %s)",
                         pdir, errno, strerror(errno));
             }
         }
@@ -777,7 +777,11 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
         printf("Removed %lu items in %f seconds (%f items/sec)\n",
                all_count, time_diff, rate
               );
+        fflush(stdout);
     }
+
+    /* wait for summary to be printed */
+    MPI_Barrier(MPI_COMM_WORLD);
 
     return;
 }

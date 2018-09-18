@@ -138,9 +138,8 @@ static int mfu_copy_open_file(const char* file, int read_flag,
             rc = ioctl(newfd, LL_IOC_GROUP_LOCK, mfu_copy_opts->grouplock_id);
             if (rc) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to obtain grouplock with ID %d "
-                    "on file `%s', ignoring this error: %s",
-                    mfu_copy_opts->grouplock_id,
-                    file, strerror(errno));
+                    "on file `%s', ignoring this error (errno=%d %s)",
+                    mfu_copy_opts->grouplock_id, file, errno, strerror(errno));
             } else {
                 MFU_LOG(MFU_LOG_INFO, "Obtained grouplock with ID %d "
                     "on file `%s', fd %d", mfu_copy_opts->grouplock_id,
@@ -188,7 +187,7 @@ static void mfu_copy_xattrs(
             }
             else {
                 /* this is a real error */
-                MFU_LOG(MFU_LOG_ERR, "Failed to get list of extended attributes on %s llistxattr() errno=%d %s",
+                MFU_LOG(MFU_LOG_ERR, "Failed to get list of extended attributes on `%s' llistxattr() (errno=%d %s)",
                     src_path, errno, strerror(errno)
                    );
                 break;
@@ -239,7 +238,7 @@ static void mfu_copy_xattrs(
                     }
                     else {
                         /* this is a real error */
-                        MFU_LOG(MFU_LOG_ERR, "Failed to get value for name=%s on %s llistxattr() errno=%d %s",
+                        MFU_LOG(MFU_LOG_ERR, "Failed to get value for name=%s on `%s' llistxattr() (errno=%d %s)",
                             name, src_path, errno, strerror(errno)
                            );
                         break;
@@ -264,7 +263,7 @@ static void mfu_copy_xattrs(
                 int setrc = lsetxattr(dest_path, name, val, (size_t) val_size, 0);
 
                 if(setrc != 0) {
-                    MFU_LOG(MFU_LOG_ERR, "Failed to set value for name=%s on %s llistxattr() errno=%d %s",
+                    MFU_LOG(MFU_LOG_ERR, "Failed to set value for name=%s on `%s' llistxattr() (errno=%d %s)",
                         name, dest_path, errno, strerror(errno)
                        );
                 }
@@ -306,7 +305,7 @@ static void mfu_copy_ownership(
          * will be left with the effective uid and gid of the dcp
          * process, don't bother reporting an error for that case */
         if (errno != EPERM) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -328,7 +327,7 @@ static void mfu_copy_permissions(
     /* change mode */
     if(type != MFU_TYPE_LINK) {
         if(mfu_chmod(dest_path, mode) != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on `%s' chmod() (errno=%d %s)",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -362,7 +361,7 @@ static void mfu_copy_timestamps(
      * if it's not absolute, and set times on link (not target file)
      * if dest_path refers to a link */
     if(utimensat(AT_FDCWD, dest_path, times, AT_SYMLINK_NOFOLLOW) != 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on `%s' utime() (errno=%d %s)",
             dest_path, errno, strerror(errno)
            );
     }
@@ -376,7 +375,7 @@ static void mfu_copy_timestamps(
         times.actime  = statbuf->st_atime;
         times.modtime = statbuf->st_mtime;
         if(utime(dest_path, &times) != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on `%s' utime() (errno=%d %s)",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -388,7 +387,7 @@ static void mfu_copy_timestamps(
         tv[1].tv_sec  = statbuf->st_mtime;
         tv[1].tv_usec = 0;
         if(lutimes(dest_path, tv) != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on %s utime() errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on `%s' utime() (errno=%d %s)",
                 dest_path, errno, strerror(errno)
                );
         }
@@ -537,7 +536,7 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
                     dest_path, errno, strerror(errno));
 
         } else {
-            MFU_LOG(MFU_LOG_ERR, "Create `%s' mkdir() failed, errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Create `%s' mkdir() failed (errno=%d %s)",
                     dest_path, errno, strerror(errno)
             );
             mfu_free(&dest_path);
@@ -663,7 +662,7 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
     ssize_t rc = mfu_readlink(src_path, path, sizeof(path) - 1);
 
     if(rc < 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() (errno=%d %s)",
             src_path, errno, strerror(errno)
         );
         mfu_free(&dest_path);
@@ -682,7 +681,7 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
                     "Original link exists, skip the creation: `%s' (errno=%d %s)",
                     dest_path, errno, strerror(errno));
         } else {
-            MFU_LOG(MFU_LOG_ERR, "Create `%s' symlink() failed, errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Create `%s' symlink() failed, (errno=%d %s)",
                     dest_path, errno, strerror(errno)
             );
             mfu_free(&dest_path);
@@ -736,7 +735,7 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
                     "Original file exists, skip the creation: `%s' (errno=%d %s)",
                     dest_path, errno, strerror(errno));
         } else {
-            MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() failed, errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() failed (errno=%d %s)",
                     dest_path, errno, strerror(errno)
             );
             mfu_free(&dest_path);
@@ -762,7 +761,7 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
             /* destination exists, truncate it to 0 bytes */
             status = truncate64(dest_path, 0);
             if (status) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
+                MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: `%s' (errno=%d %s)",
                           dest_path, errno, strerror(errno));
             }
         } else if (errno == -ENOENT) {
@@ -770,7 +769,7 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
             status = 0;
         } else {
             /* had an error stating destination file */
-            MFU_LOG(MFU_LOG_ERR, "mfu_lstat() file: %s (errno=%d %s)",
+            MFU_LOG(MFU_LOG_ERR, "mfu_lstat() file: `%s' (errno=%d %s)",
                       dest_path, errno, strerror(errno));
         }
 
@@ -898,7 +897,7 @@ static int mfu_is_eof(const char* file, int fd)
 
     /* otherwise, we're not at EOF yet, seek back one byte */
     if(mfu_lseek(file, fd, -1, SEEK_CUR) == (off_t)-1) {
-        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in path `%s' errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in path `%s' (errno=%d %s)",
                   file, errno, strerror(errno));
         return -1;
     }
@@ -920,14 +919,14 @@ static int mfu_copy_file_normal(
 
     /* seek to offset in source file */
     if(mfu_lseek(src, in_fd, offset, SEEK_SET) == (off_t)-1) {
-        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' (errno=%d %s)",
             src, errno, strerror(errno));
         return -1;
     }
 
     /* seek to offset in destination file */
     if(mfu_lseek(dest, out_fd, offset, SEEK_SET) == (off_t)-1) {
-        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' (errno=%d %s)",
             dest, errno, strerror(errno));
         return -1;
     }
@@ -995,7 +994,7 @@ static int mfu_copy_file_normal(
             if (end_of_file) {
                 /* seek to last byte position in file */
                 if(mfu_lseek(dest, out_fd, (off_t)bytes_to_write - 1, SEEK_CUR) == (off_t)-1) {
-                    MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+                    MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' (errno=%d %s)",
                         dest, errno, strerror(errno));
                     return -1;
                 }
@@ -1006,7 +1005,7 @@ static int mfu_copy_file_normal(
                 /* this section of the destination file is all 0,
                  * seek past this section */
                 if(mfu_lseek(dest, out_fd, (off_t)bytes_to_write, SEEK_CUR) == (off_t)-1) {
-                    MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+                    MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' (errno=%d %s)",
                         dest, errno, strerror(errno));
                     return -1;
                 }
@@ -1018,7 +1017,7 @@ static int mfu_copy_file_normal(
 
         /* check for an error */
         if(num_of_bytes_written < 0) {
-            MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s' (errno=%d %s)",
                 src, dest, errno, strerror(errno));
             return -1;
         }
@@ -1094,7 +1093,7 @@ static int mfu_copy_file_fiemap(
 
     struct fiemap *fiemap = (struct fiemap*)malloc(sizeof(struct fiemap));
     if (fiemap == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "Out of memory allocating fiemap\n");
+        MFU_LOG(MFU_LOG_ERR, "Out of memory allocating fiemap");
         goto fail_normal_copy;
     }
     memset(fiemap, 0, sizeof(struct fiemap));
@@ -1111,7 +1110,7 @@ static int mfu_copy_file_fiemap(
     }
 
     if (ioctl(in_fd, FS_IOC_FIEMAP, fiemap) < 0) {
-        MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src %s\n", src);
+        MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src `%s'", src);
         goto fail_normal_copy;
     }
 
@@ -1120,7 +1119,7 @@ static int mfu_copy_file_fiemap(
     if ((fiemap = (struct fiemap*)realloc(fiemap,sizeof(struct fiemap) +
                                   extents_size)) == NULL)
     {
-        MFU_LOG(MFU_LOG_ERR, "Out of memory reallocating fiemap\n");
+        MFU_LOG(MFU_LOG_ERR, "Out of memory reallocating fiemap");
         goto fail_normal_copy;
     }
 
@@ -1129,7 +1128,7 @@ static int mfu_copy_file_fiemap(
     fiemap->fm_mapped_extents = 0;
 
     if (ioctl(in_fd, FS_IOC_FIEMAP, fiemap) < 0) {
-        MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src %s\n", src);
+        MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src `%s'", src);
         goto fail_normal_copy;
     }
 
@@ -1155,14 +1154,14 @@ static int mfu_copy_file_fiemap(
 
     /* seek to offset in source file */
     if (mfu_lseek(src, in_fd, (off_t)last_ext_start, SEEK_SET) < 0) {
-        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' (errno=%d %s)",
             src, errno, strerror(errno));
         goto fail;
     }
 
     /* seek to offset in destination file */
     if (mfu_lseek(dest, out_fd, (off_t)last_ext_start, SEEK_SET) < 0) {
-        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' (errno=%d %s)",
             dest, errno, strerror(errno));
         goto fail;
     }
@@ -1182,12 +1181,12 @@ static int mfu_copy_file_fiemap(
 
         if (ext_hole_size) {
             if (mfu_lseek(src, in_fd, (off_t)ext_start, SEEK_SET) < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' errno=%d %s", \
+                MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' (errno=%d %s)",
                     src, errno, strerror(errno));
                 goto fail;
             }
             if (mfu_lseek(dest, out_fd, (off_t)ext_hole_size, SEEK_CUR) < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' errno=%d %s", \
+                MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' (errno=%d %s)",
                     dest, errno, strerror(errno));
                 goto fail;
             }
@@ -1205,7 +1204,7 @@ static int mfu_copy_file_fiemap(
             ssize_t num_written = mfu_write(dest, out_fd, buf, (size_t)num_read);
 
             if (num_written < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s' errno=%d %s",
+                MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s' (errno=%d %s)",
                           src, dest, errno, strerror(errno));
                 goto fail;
             }
@@ -1265,7 +1264,7 @@ static int mfu_copy_file(
     /* open the input file */
     int in_fd = mfu_copy_open_file(src, 1, &mfu_copy_src_cache, mfu_copy_opts);
     if (in_fd < 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to open input file `%s' errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to open input file `%s' (errno=%d %s)",
             src, errno, strerror(errno));
         return -1;
     }
@@ -1273,7 +1272,7 @@ static int mfu_copy_file(
     /* open the output file */
     int out_fd = mfu_copy_open_file(dest, 0, &mfu_copy_dst_cache, mfu_copy_opts);
     if (out_fd < 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to open output file `%s' errno=%d %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to open output file `%s' (errno=%d %s)",
             dest, errno, strerror(errno));
         return -1;
     }

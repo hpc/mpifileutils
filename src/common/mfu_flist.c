@@ -771,7 +771,7 @@ void *mfu_flist_file_get_acl(mfu_flist bflist, uint64_t idx, ssize_t *acl_size, 
                 break;
             } else {
                 /* this is a real error */
-                MFU_LOG(MFU_LOG_ERR, "Failed to get value for name=%s on %s lgetxattr() errno=%d %s",
+                MFU_LOG(MFU_LOG_ERR, "Failed to get value for name=%s on `%s' lgetxattr() (errno=%d %s)",
                     type, filename, errno, strerror(errno)
                    );
                 break;
@@ -1600,6 +1600,7 @@ void mfu_flist_print(mfu_flist flist)
             }
         }
         printf("\n");
+        fflush(stdout);
     }
 
     /* free our temporary list */

@@ -685,8 +685,8 @@ int mfu_compare_contents(
     int src_fd = mfu_open(src_name, O_RDONLY);
     if (src_fd < 0) {
         /* log error if there is an open failure on the src side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to open %s, error msg: %s", 
-          src_name, strerror(errno));
+        MFU_LOG(MFU_LOG_ERR, "Failed to open `%s' (errno=%d %s)", 
+          src_name, errno, strerror(errno));
        return -1;
     }
 
@@ -700,8 +700,8 @@ int mfu_compare_contents(
     int dst_fd = mfu_open(dst_name, dst_flags);
     if (dst_fd < 0) {
         /* log error if there is an open failure on the dst side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to open %s, error msg: %s", 
-          dst_name, strerror(errno));
+        MFU_LOG(MFU_LOG_ERR, "Failed to open `%s' (errno=%d %s)", 
+          dst_name, errno, strerror(errno));
         mfu_close(src_name, src_fd);
         return -1;
     }
@@ -716,8 +716,8 @@ int mfu_compare_contents(
     /* seek to offset in source file */
     if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
         /* log error if there is an lseek failure on the src side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",
-          src_name, (unsigned long)offset, strerror(errno));
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek `%s', offset: %lx (errno=%d %s)",
+          src_name, (unsigned long)offset, errno, strerror(errno));
         mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
         return -1;
@@ -726,8 +726,8 @@ int mfu_compare_contents(
     /* seek to offset in destination file */
     if (mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
         /* log error if there is an lseek failure on the dst side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",  
-          dst_name, (unsigned long)offset, strerror(errno));
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek `%s', offset: %lx (errno=%d %s)",  
+          dst_name, (unsigned long)offset, errno, strerror(errno));
         mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
         return -1;
@@ -758,8 +758,8 @@ int mfu_compare_contents(
         ssize_t src_read = mfu_read(src_name, src_fd, (ssize_t*)src_buf, left_to_read);
         if (src_read < 0) {
             /* hit a read error */
-            MFU_LOG(MFU_LOG_ERR, "Failed to read %s at offset %llx, error msg: %s", 
-              src_name, (unsigned long long)pos, strerror(errno));
+            MFU_LOG(MFU_LOG_ERR, "Failed to read `%s' at offset %llx (errno=%d %s)", 
+              src_name, (unsigned long long)pos, errno, strerror(errno));
             rc = -1;
             break;
         }
@@ -771,8 +771,8 @@ int mfu_compare_contents(
         ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf, left_to_read);
         if (dst_read < 0) {
             /* hit a read error */
-            MFU_LOG(MFU_LOG_ERR, "Failed to read %s at offset %llx, error msg: %s", 
-              dst_name, (unsigned long long)pos, strerror(errno));
+            MFU_LOG(MFU_LOG_ERR, "Failed to read `%s' at offset %llx (errno=%d %s)", 
+              dst_name, (unsigned long long)pos, errno, strerror(errno));
             rc = -1;
             break;
         }
@@ -818,7 +818,7 @@ int mfu_compare_contents(
             /* seek back to position to write to in destination file */
             if (mfu_lseek(dst_name, dst_fd, pos, SEEK_SET) == (off_t)-1) {
                 /* log error if there is an lseek failure on the dst side */
-                MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %llx, error msg: %s",  
+                MFU_LOG(MFU_LOG_ERR, "Failed to lseek `%s', offset: %llx (errno=%d %s)",  
                   dst_name, (unsigned long long)pos, strerror(errno));
                 rc = -1;
                 break;
@@ -829,7 +829,7 @@ int mfu_compare_contents(
             ssize_t bytes_written = mfu_write(dst_name, dst_fd, src_buf, bytes_to_write);
             if (bytes_written < 0) {
                 /* hit a write error */
-                MFU_LOG(MFU_LOG_ERR, "Failed to write %s at offset %llx, error msg: %s", 
+                MFU_LOG(MFU_LOG_ERR, "Failed to write `%s' at offset %llx (errno=%d %s)", 
                   dst_name, (unsigned long long)pos, strerror(errno));
                 rc = -1;
                 break;

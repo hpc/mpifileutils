@@ -619,7 +619,11 @@ int mfu_flist_sort(const char* sortfields, mfu_flist* pflist)
         printf("Sorted %lu files in %f seconds (%f files/sec)\n",
                all_count, secs, rate
               );
+        fflush(stdout);
     }
+
+    /* wait for summary to be printed */
+    MPI_Barrier(MPI_COMM_WORLD);
 
     return rc;
 }

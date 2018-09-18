@@ -70,7 +70,7 @@ static int lookup_uid(const char* name, uid_t* uid)
 
             /* print error message if we can */
             if (errno != 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to find entry for name %s errno=%d %s",
+                MFU_LOG(MFU_LOG_ERR, "Failed to find entry for name `%s' (errno=%d %s)",
                           name, errno, strerror(errno)
                          );
             }
@@ -118,7 +118,7 @@ static int lookup_gid(const char* name, gid_t* gid)
 
             /* print error message if we can */
             if (errno != 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to find entry for group %s errno=%d %s",
+                MFU_LOG(MFU_LOG_ERR, "Failed to find entry for group `%s' (errno=%d %s)",
                           name, errno, strerror(errno)
                          );
             }
@@ -843,7 +843,7 @@ static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* usr
                      * will be left with the effective uid and gid of the dchmod
                      * process, don't bother reporting an error for that case */
                     if (errno != EPERM || olduid != newuid) {
-                        MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on %s lchown() errno=%d %s",
+                        MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
                                   dest_path, errno, strerror(errno)
                                  );
                     }
@@ -874,7 +874,7 @@ static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* usr
 
                 /* set the mode on the file */
                 if (mfu_chmod(dest_path, new_mode) != 0) {
-                    MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on %s chmod() errno=%d %s",
+                    MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on `%s' chmod() (errno=%d %s)",
                               dest_path, errno, strerror(errno)
                              );
                 }
@@ -990,6 +990,7 @@ void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, c
         printf("dchmod %lu items in %f seconds (%f items/sec)\n",
                all_count, time_diff, rate
               );
+        fflush(stdout);
     }
 
     return;

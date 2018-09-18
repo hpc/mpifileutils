@@ -429,7 +429,7 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
                 /* found a source path that we can't read, not fatal,
                  * but print an error to notify user */
                 const char* orig = paths[i].orig;
-                MFU_LOG(MFU_LOG_ERR, "Could not read `%s' errno=%d %s",
+                MFU_LOG(MFU_LOG_ERR, "Could not read `%s' (errno=%d %s)",
                     orig, errno, strerror(errno));
             }
         }
@@ -732,6 +732,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
             if (param->path_stat_valid == 0) {
                 /* failed to find a file at this location, let user know (may be a typo) */
                 printf("Warning: `%s' does not exist\n", param->orig); 
+                fflush(stdout);
             }
         }
     }

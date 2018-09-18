@@ -738,7 +738,8 @@ void mfu_flist_read_cache(
     rc = MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
     if (rc != MPI_SUCCESS) {
         if (rank == 0) {
-            printf("Failed to open file %s", name);
+            printf("Failed to open file %s\n", name);
+            fflush(stdout);
         }
         return;
     }
@@ -788,7 +789,11 @@ void mfu_flist_read_cache(
         printf("Read %lu files in %f seconds (%f files/sec)\n",
                all_count, time_diff, rate
               );
+        fflush(stdout);
     }
+
+    /* wait for summary to be printed */
+    MPI_Barrier(MPI_COMM_WORLD);
 
     return;
 }
@@ -1301,7 +1306,12 @@ void mfu_flist_write_cache(
         printf("Wrote %lu files in %f seconds (%f files/sec)\n",
                all_count, secs, rate
               );
+        fflush(stdout);
     }
+
+    /* wait for summary to be printed */
+    MPI_Barrier(MPI_COMM_WORLD);
+
     return;
 }
 
