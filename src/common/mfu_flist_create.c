@@ -22,7 +22,7 @@ static int create_directory(mfu_flist list, uint64_t idx)
                     name, errno, strerror(errno)
             );
         } else {
-            MFU_LOG(MFU_LOG_ERR, "Create `%s' mkdir() failed, errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "Create `%s' mkdir() failed (errno=%d %s)",
                     name, errno, strerror(errno)
             );
             return -1;
@@ -143,7 +143,7 @@ static int create_file(mfu_flist list, uint64_t idx)
 
             /* TODO: truncate file? */
         } else {
-            MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() failed, errno=%d %s",
+            MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() failed (errno=%d %s)",
                     name, errno, strerror(errno)
             );
             return -1;
