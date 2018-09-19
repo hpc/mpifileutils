@@ -1387,6 +1387,8 @@ static void mfu_copy_files(mfu_flist list, uint64_t chunk_size,
             if (dest != NULL) {
                 /* sanity check to ensure we don't * delete the source file */
                 if (strcmp(dest, name) != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to copy `%s' to `%s'", name, dest);
+#if 0
                     /* delete destination file */
                     int rc = mfu_unlink(dest);
                     if (rc != 0) {
@@ -1394,6 +1396,7 @@ static void mfu_copy_files(mfu_flist list, uint64_t chunk_size,
                                   name, errno, strerror(errno)
                                 );
                     }
+#endif
                 }
 
                 /* free destination name */
