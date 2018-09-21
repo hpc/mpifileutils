@@ -55,6 +55,9 @@ int mfu_lchown(const char* path, uid_t owner, gid_t group);
 /* calls chmod, and retries a few times if we get EIO or EINTR */
 int mfu_chmod(const char* path, mode_t mode);
 
+/* calls utimensat, and retries a few times if we get EIO or EINTR */
+int mfu_utimensat(int dirfd, const char *pathname, const struct timespec times[2], int flags);
+
 /* calls lstat, and retries a few times if we get EIO or EINTR */
 int mfu_lstat(const char* path, struct stat* buf);
 
@@ -95,6 +98,12 @@ ssize_t mfu_read(const char* file, int fd, void* buf, size_t size);
 
 /* reliable write to opened file descriptor (retries, if necessary, until hard error) */
 ssize_t mfu_write(const char* file, int fd, const void* buf, size_t size);
+
+/* truncate a file */
+int truncate(const char* file, off_t length);
+
+/* ftruncate a file */
+int ftruncate(int fd, off_t length);
 
 /* delete a file */
 int mfu_unlink(const char* file);

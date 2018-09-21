@@ -76,6 +76,27 @@ retry:
     return rc;
 }
 
+/* calls utimensat, and retries a few times if we get EIO or EINTR */
+int mfu_utimensat(int dirfd, const char *pathname, const struct timespec times[2], int flags)
+{
+    int rc;
+    int tries = MFU_IO_TRIES;
+retry:
+    errno = 0;
+    rc = utimensat(dirfd, pathname, times, flags);
+    if (rc != 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(MFU_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
 /* calls lstat, and retries a few times if we get EIO or EINTR */
 int mfu_lstat(const char* path, struct stat* buf)
 {
@@ -370,6 +391,48 @@ ssize_t mfu_write(const char* file, int fd, const void* buf, size_t size)
         }
     }
     return n;
+}
+
+/* truncate a file */
+int mfu_truncate(const char* file, off_t length)
+{
+    int rc;
+    int tries = MFU_IO_TRIES;
+retry:
+    errno = 0;
+    rc = truncate(file, length);
+    if (rc != 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(MFU_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
+/* ftruncate a file */
+int mfu_ftruncate(int fd, off_t length)
+{
+    int rc;
+    int tries = MFU_IO_TRIES;
+retry:
+    errno = 0;
+    rc = ftruncate(fd, length);
+    if (rc != 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(MFU_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
 }
 
 /* delete a file */
