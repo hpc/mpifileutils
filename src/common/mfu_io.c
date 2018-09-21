@@ -19,6 +19,7 @@ int mfu_access(const char* path, int amode)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = access(path, amode);
     if (rc != 0) {
         if (errno == EINTR || errno == EIO) {
@@ -39,6 +40,7 @@ int mfu_lchown(const char* path, uid_t owner, gid_t group)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = lchown(path, owner, group);
     if (rc != 0) {
         if (errno == EINTR || errno == EIO) {
@@ -59,6 +61,7 @@ int mfu_chmod(const char* path, mode_t mode)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = chmod(path, mode);
     if (rc != 0) {
         if (errno == EINTR || errno == EIO) {
@@ -79,6 +82,7 @@ int mfu_lstat(const char* path, struct stat* buf)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = lstat(path, buf);
     if (rc != 0) {
         if (errno == EINTR || errno == EIO) {
@@ -99,6 +103,7 @@ int mfu_lstat64(const char* path, struct stat64* buf)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = lstat64(path, buf);
     if (rc != 0) {
         if (errno == EINTR || errno == EIO) {
@@ -119,6 +124,7 @@ int mfu_mknod(const char* path, mode_t mode, dev_t dev)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = mknod(path, mode, dev);
     if (rc < 0) {
         if (errno == EINTR || errno == EIO) {
@@ -139,6 +145,7 @@ int mfu_remove(const char* path)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = remove(path);
     if (rc < 0) {
         if (errno == EINTR || errno == EIO) {
@@ -163,6 +170,7 @@ ssize_t mfu_readlink(const char* path, char* buf, size_t bufsize)
     ssize_t rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = readlink(path, buf, bufsize);
     if (rc < 0) {
         if (errno == EINTR || errno == EIO) {
@@ -183,6 +191,7 @@ int mfu_symlink(const char* oldpath, const char* newpath)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = symlink(oldpath, newpath);
     if (rc < 0) {
         if (errno == EINTR || errno == EIO) {
@@ -299,6 +308,7 @@ ssize_t mfu_read(const char* file, int fd, void* buf, size_t size)
     int tries = MFU_IO_TRIES;
     ssize_t n = 0;
     while ((size_t)n < size) {
+        errno = 0;
         ssize_t rc = read(fd, (char*) buf + n, size - (size_t)n);
         if (rc > 0) {
             /* read some data */
@@ -332,6 +342,7 @@ ssize_t mfu_write(const char* file, int fd, const void* buf, size_t size)
     int tries = 10;
     ssize_t n = 0;
     while ((size_t)n < size) {
+        errno = 0;
         ssize_t rc = write(fd, (const char*) buf + n, size - (size_t)n);
         if (rc > 0) {
             /* wrote some data */
@@ -367,6 +378,7 @@ int mfu_unlink(const char* file)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = unlink(file);
     if (rc != 0) {
         if (errno == EINTR || errno == EIO) {
@@ -387,6 +399,7 @@ int mfu_fsync(const char* file, int fd)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = fsync(fd);
     if (rc < 0) {
         if (errno == EINTR || errno == EIO) {
@@ -408,6 +421,7 @@ retry:
 /* get current working directory, abort if fail or buffer too small */
 void mfu_getcwd(char* buf, size_t size)
 {
+    errno = 0;
     char* p = getcwd(buf, size);
     if (p == NULL) {
         MFU_ABORT(-1, "Failed to get current working directory errno=%d (%s)",
@@ -422,6 +436,7 @@ int mfu_mkdir(const char* dir, mode_t mode)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = mkdir(dir, mode);
     if (rc < 0) {
         if (errno == EINTR || errno == EIO) {
@@ -442,6 +457,7 @@ int mfu_rmdir(const char* dir)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = rmdir(dir);
     if (rc < 0) {
         if (errno == EINTR || errno == EIO) {
@@ -462,6 +478,7 @@ DIR* mfu_opendir(const char* dir)
     DIR* dirp;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     dirp = opendir(dir);
     if (dirp == NULL) {
         if (errno == EINTR || errno == EIO) {
@@ -482,6 +499,7 @@ int mfu_closedir(DIR* dirp)
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
+    errno = 0;
     rc = closedir(dirp);
     if (rc < 0) {
         if (errno == EINTR || errno == EIO) {
