@@ -892,6 +892,14 @@ static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* usr
  * optionally, if usrname != NULL, change owner, or if grname != NULL, change group */
 void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, const mfu_perms* head)
 {
+    /* get global size of list */
+    uint64_t all_count = mfu_flist_global_size(flist);
+
+    /* report remove count, time, and rate */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Changing %lu items", all_count);
+    }
+
     /* lookup current mask and set it back before chmod call */
     old_mask = umask(S_IWGRP | S_IWOTH);
     umask(old_mask);
@@ -964,10 +972,9 @@ void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, c
             }
             double time_diff = end - start;
             if (mfu_rank == 0) {
-                printf("level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
+                MFU_LOG(MFU_LOG_INFO, "level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f",
                        (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
                       );
-                fflush(stdout);
             }
         }
     }
@@ -981,16 +988,14 @@ void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, c
 
     /* report remove count, time, and rate */
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        uint64_t all_count = mfu_flist_global_size(flist);
         double time_diff = end_dchmod - start_dchmod;
         double rate = 0.0;
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        printf("dchmod %lu items in %f seconds (%f items/sec)\n",
+        MFU_LOG(MFU_LOG_INFO, "Changed %lu items in %f seconds (%f items/sec)",
                all_count, time_diff, rate
               );
-        fflush(stdout);
     }
 
     return;

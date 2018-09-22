@@ -731,8 +731,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
             mfu_param_path* param = &params[i];
             if (param->path_stat_valid == 0) {
                 /* failed to find a file at this location, let user know (may be a typo) */
-                printf("Warning: `%s' does not exist\n", param->orig); 
-                fflush(stdout);
+                MFU_LOG(MFU_LOG_WARN, "Warning: `%s' does not exist", param->orig); 
             }
         }
     }

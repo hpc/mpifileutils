@@ -609,17 +609,16 @@ int mfu_flist_sort(const char* sortfields, mfu_flist* pflist)
     double end_sort = MPI_Wtime();
 
     /* report sort count, time, and rate */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+    if (mfu_rank == 0) {
         uint64_t all_count = mfu_flist_global_size(flist);
         double secs = end_sort - start_sort;
         double rate = 0.0;
         if (secs > 0.0) {
             rate = ((double)all_count) / secs;
         }
-        printf("Sorted %lu files in %f seconds (%f files/sec)\n",
+        MFU_LOG(MFU_LOG_INFO, "Sorted %lu files in %f seconds (%f files/sec)",
                all_count, secs, rate
               );
-        fflush(stdout);
     }
 
     /* wait for summary to be printed */

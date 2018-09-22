@@ -71,26 +71,12 @@ static void reduce_exec(const void* buf1, size_t size1, const void* buf2, size_t
 
 static void reduce_fini(const void* buf, size_t size)
 {
-    /* get current time */
-    time_t walk_start_t = time(NULL);
-    if (walk_start_t == (time_t) - 1) {
-        /* TODO: ERROR! */
-    }
-
-    /* format timestamp string */
-    char walk_s[30];
-    size_t rc = strftime(walk_s, sizeof(walk_s) - 1, "%FT%T", localtime(&walk_start_t));
-    if (rc == 0) {
-        walk_s[0] = '\0';
-    }
-
     /* get result of reduction */
     const uint64_t* a = (const uint64_t*) buf;
     unsigned long long val = (unsigned long long) a[0];
 
     /* print status to stdout */
-    printf("%s: Items walked %llu ...\n", walk_s, val);
-    fflush(stdout);
+    MFU_LOG(MFU_LOG_INFO, "Items walked %llu", val);
 }
 
 #ifdef LUSTRE_SUPPORT
@@ -728,18 +714,8 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, 
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
         uint64_t i;
         for (i = 0; i < num_paths; i++) {
-            time_t walk_start_t = time(NULL);
-            if (walk_start_t == (time_t) - 1) {
-                /* TODO: ERROR! */
-            }
-            char walk_s[30];
-            size_t rc = strftime(walk_s, sizeof(walk_s) - 1, "%FT%T", localtime(&walk_start_t));
-            if (rc == 0) {
-                walk_s[0] = '\0';
-            }
-            printf("%s: Walking %s\n", walk_s, paths[i]);
+            MFU_LOG(MFU_LOG_INFO, "Walking %s", paths[i]);
         }
-        fflush(stdout);
     }
 
     /* initialize libcircle */
@@ -809,11 +785,13 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, 
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        printf("Walked %lu files in %f seconds (%f files/sec)\n",
+        MFU_LOG(MFU_LOG_INFO, "Walked %lu items in %f seconds (%f files/sec)",
                all_count, time_diff, rate
               );
-        fflush(stdout);
     }
+
+    /* print statistics about flist */
+    mfu_flist_print_summary(bflist);
 
     /* hold procs here until summary is printed */
     MPI_Barrier(MPI_COMM_WORLD);

@@ -133,9 +133,8 @@ static int mfu_copy_open_file(const char* file, int read_flag,
 #ifdef LUSTRE_SUPPORT
         /* Zero is an invalid ID for grouplock. */
         if (mfu_copy_opts->grouplock_id != 0) {
-            int rc;
-
-            rc = ioctl(newfd, LL_IOC_GROUP_LOCK, mfu_copy_opts->grouplock_id);
+            errno = 0;
+            int rc = ioctl(newfd, LL_IOC_GROUP_LOCK, mfu_copy_opts->grouplock_id);
             if (rc) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to obtain grouplock with ID %d "
                     "on file `%s', ignoring this error (errno=%d %s)",
@@ -152,12 +151,16 @@ static int mfu_copy_open_file(const char* file, int read_flag,
     return newfd;
 }
 
-/* copy all extended attributes from op->operand to dest_path */
-static void mfu_copy_xattrs(
+/* copy all extended attributes from op->operand to dest_path,
+ * returns 0 on success and -1 on failure */
+static int mfu_copy_xattrs(
     mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
 {
+    /* assume that we'll succeed */
+    int rc = 0;
+
 #if DCOPY_USE_XATTRS
     /* get source file name */
     const char* src_path = mfu_flist_file_get_name(flist, idx);
@@ -172,6 +175,7 @@ static void mfu_copy_xattrs(
 
     /* get current estimate for list size */
     while(! got_list) {
+        errno = 0;
         list_size = llistxattr(src_path, list, list_bufsize);
 
         if(list_size < 0) {
@@ -190,6 +194,7 @@ static void mfu_copy_xattrs(
                 MFU_LOG(MFU_LOG_ERR, "Failed to get list of extended attributes on `%s' llistxattr() (errno=%d %s)",
                     src_path, errno, strerror(errno)
                    );
+                rc = -1;
                 break;
             }
         }
@@ -222,6 +227,7 @@ static void mfu_copy_xattrs(
             int got_val = 0;
 
             while(! got_val) {
+                errno = 0;
                 val_size = lgetxattr(src_path, name, val, val_bufsize);
 
                 if(val_size < 0) {
@@ -233,7 +239,10 @@ static void mfu_copy_xattrs(
                     }
                     else if(errno == ENOATTR) {
                         /* source object no longer has this attribute,
-                         * maybe deleted out from under us */
+                         * maybe deleted out from under us, ignore but print warning */
+                        MFU_LOG(MFU_LOG_WARN, "Attribute does not exist for name=%s on `%s' llistxattr() (errno=%d %s)",
+                            name, src_path, errno, strerror(errno)
+                           );
                         break;
                     }
                     else {
@@ -241,6 +250,7 @@ static void mfu_copy_xattrs(
                         MFU_LOG(MFU_LOG_ERR, "Failed to get value for name=%s on `%s' llistxattr() (errno=%d %s)",
                             name, src_path, errno, strerror(errno)
                            );
+                        rc = -1;
                         break;
                     }
                 }
@@ -260,12 +270,14 @@ static void mfu_copy_xattrs(
 
             /* set attribute on destination object */
             if(got_val) {
+                errno = 0;
                 int setrc = lsetxattr(dest_path, name, val, (size_t) val_size, 0);
-
                 if(setrc != 0) {
+                    /* failed to set attribute */
                     MFU_LOG(MFU_LOG_ERR, "Failed to set value for name=%s on `%s' llistxattr() (errno=%d %s)",
                         name, dest_path, errno, strerror(errno)
                        );
+                    rc = -1;
                 }
             }
 
@@ -282,16 +294,19 @@ static void mfu_copy_xattrs(
     /* free space allocated for list */
     mfu_free(&list);
     list_bufsize = 0;
-
-    return;
 #endif /* DCOPY_USE_XATTR */
+
+    return rc;
 }
 
-static void mfu_copy_ownership(
+static int mfu_copy_ownership(
     mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+
     /* get user id and group id of file */
     uid_t uid = (uid_t) mfu_flist_file_get_uid(flist, idx);
     gid_t gid = (gid_t) mfu_flist_file_get_gid(flist, idx);
@@ -309,17 +324,21 @@ static void mfu_copy_ownership(
                 dest_path, errno, strerror(errno)
                );
         }
+        rc = -1;
     }
 
-    return;
+    return rc;
 }
 
 /* TODO: condionally set setuid and setgid bits? */
-static void mfu_copy_permissions(
+static int mfu_copy_permissions(
     mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+
     /* get mode and type */
     mfu_filetype type = mfu_flist_file_get_type(flist, idx);
     mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
@@ -330,17 +349,21 @@ static void mfu_copy_permissions(
             MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on `%s' chmod() (errno=%d %s)",
                 dest_path, errno, strerror(errno)
                );
+            rc = -1;
         }
     }
 
-    return;
+    return rc;
 }
 
-static void mfu_copy_timestamps(
+static int mfu_copy_timestamps(
     mfu_flist flist,
     uint64_t idx,
     const char* dest_path)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+
     /* get atime seconds and nsecs */
     uint64_t atime      = mfu_flist_file_get_atime(flist, idx);
     uint64_t atime_nsec = mfu_flist_file_get_atime_nsec(flist, idx);
@@ -360,41 +383,14 @@ static void mfu_copy_timestamps(
      * assume path is relative to current working directory,
      * if it's not absolute, and set times on link (not target file)
      * if dest_path refers to a link */
-    if(utimensat(AT_FDCWD, dest_path, times, AT_SYMLINK_NOFOLLOW) != 0) {
+    if(mfu_utimensat(AT_FDCWD, dest_path, times, AT_SYMLINK_NOFOLLOW) != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on `%s' utime() (errno=%d %s)",
             dest_path, errno, strerror(errno)
            );
+        rc = -1;
     }
 
-#if 0
-    /* TODO: see stat-time.h and get_stat_atime/mtime/ctime to read sub-second times,
-     * and use utimensat to set sub-second times */
-    /* as last step, change timestamps */
-    if(! S_ISLNK(statbuf->st_mode)) {
-        struct utimbuf times;
-        times.actime  = statbuf->st_atime;
-        times.modtime = statbuf->st_mtime;
-        if(utime(dest_path, &times) != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on `%s' utime() (errno=%d %s)",
-                dest_path, errno, strerror(errno)
-               );
-        }
-    }
-    else {
-        struct timeval tv[2];
-        tv[0].tv_sec  = statbuf->st_atime;
-        tv[0].tv_usec = 0;
-        tv[1].tv_sec  = statbuf->st_mtime;
-        tv[1].tv_usec = 0;
-        if(lutimes(dest_path, tv) != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on `%s' utime() (errno=%d %s)",
-                dest_path, errno, strerror(errno)
-               );
-        }
-    }
-#endif
-
-    return;
+    return rc;
 }
 
 static int mfu_copy_close_file(mfu_copy_file_cache_t* cache)
@@ -424,10 +420,13 @@ static int mfu_copy_close_file(mfu_copy_file_cache_t* cache)
  * and permissions starting from deepest level and working upwards,
  * we go in this direction in case updating a file updates its
  * parent directory */
-static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
+static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
         int numpaths, const mfu_param_path* paths, 
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+
     /* get current rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -442,6 +441,7 @@ static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
     }
 
     /* now set timestamps on files starting from deepest level */
+    int tmp_rc;
     int level;
     for (level = levels-1; level >= 0; level--) {
         /* get list at this level */
@@ -452,13 +452,12 @@ static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
         uint64_t idx;
         uint64_t size = mfu_flist_size(list);
         for (idx = 0; idx < size; idx++) {
-            /* get type of item */
-            mfu_filetype type = mfu_flist_file_get_type(list, idx);
-
             /* TODO: skip file if it's not readable */
 
-            /* get destination name of item */
+            /* get source name of item */
             const char* name = mfu_flist_file_get_name(list, idx);
+
+            /* get destination name of item */
             char* dest = mfu_param_path_copy_dest(name, numpaths, 
                     paths, destpath, mfu_copy_opts);
 
@@ -468,14 +467,26 @@ static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
             }
 
             if(mfu_copy_opts->preserve) {
-                mfu_copy_ownership(list, idx, dest);
-                mfu_copy_permissions(list, idx, dest);
-                mfu_copy_timestamps(list, idx, dest);
+                tmp_rc = mfu_copy_ownership(list, idx, dest);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
+                tmp_rc = mfu_copy_permissions(list, idx, dest);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
+                tmp_rc = mfu_copy_timestamps(list, idx, dest);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
             }
             else {
                 /* TODO: set permissions based on source permissons
                  * masked by umask */
-                mfu_copy_permissions(list, idx, dest);
+                tmp_rc = mfu_copy_permissions(list, idx, dest);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
             }
 
             /* free destination item */
@@ -487,13 +498,25 @@ static void mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
-    return;
+    /* force metadata changes to backend */
+    sync();
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    return rc;
 }
 
+/* creates dir in destpath for specified item, identifies source path
+ * that contains source dir, computes relative path to dir under source path,
+ * and creates dir at same relative path under destpath, copies xattrs
+ * when preserving permissions, which contains file striping info on Lustre,
+ * returns 0 on success and -1 on error */
 static int mfu_create_directory(mfu_flist list, uint64_t idx,
         int numpaths, const mfu_param_path* paths,
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+
     /* get name of directory */
     const char* name = mfu_flist_file_get_name(list, idx);
 
@@ -526,10 +549,10 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
         return 0;
     }
 
-   /* create the destination directory */
+    /* create the destination directory */
     MFU_LOG(MFU_LOG_DBG, "Creating directory `%s'", dest_path);
-    int rc = mfu_mkdir(dest_path, DCOPY_DEF_PERMS_DIR);
-    if(rc < 0) {
+    int mkdir_rc = mfu_mkdir(dest_path, DCOPY_DEF_PERMS_DIR);
+    if(mkdir_rc < 0) {
         if(errno == EEXIST) {
             MFU_LOG(MFU_LOG_WARN,
                     "Original directory exists, skip the creation: `%s' (errno=%d %s)",
@@ -549,7 +572,10 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
 
     /* copy extended attributes on directory */
     if (mfu_copy_opts->preserve) {
-        mfu_copy_xattrs(list, idx, dest_path);
+        int tmp_rc = mfu_copy_xattrs(list, idx, dest_path);
+        if (tmp_rc < 0) {
+            rc = -1;
+        }
     }
 
     /* increment our directory count by one */
@@ -558,16 +584,18 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
     /* free the directory name */
     mfu_free(&dest_path);
 
-    return 0;
+    return rc;
 }
 
 /* create directories, we work from shallowest level to the deepest
  * with a barrier in between levels, so that we don't try to create
- * a child directory until the parent exists */
+ * a child directory until the parent exists,
+ * returns 0 on success and -1 on failure */
 static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
         int numpaths, const mfu_param_path* paths, 
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
+    /* assume we'll succeed */
     int rc = 0;
 
     /* determine whether we should print status messages */
@@ -602,9 +630,8 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
                 /* create the directory */
                 int tmp_rc = mfu_create_directory(list, idx, numpaths, 
                         paths, destpath, mfu_copy_opts);
-                if (tmp_rc != 0) {
-                    /* set return code to most recent non-zero return code */
-                    rc = tmp_rc;
+                if (tmp_rc < 0) {
+                    rc = -1;
                 }
 
                 count++;
@@ -613,6 +640,7 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
 
         /* wait for all procs to finish before we start
          * creating directories at next level */
+        sync();
         MPI_Barrier(MPI_COMM_WORLD);
 
         /* stop our timer */
@@ -630,10 +658,9 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
               rate = (double)sum / secs;
             }
             if (rank == 0) {
-                printf("  level=%d min=%lu max=%lu sum=%lu rate=%f/sec secs=%f\n",
+                MFU_LOG(MFU_LOG_INFO, "  level=%d min=%lu max=%lu sum=%lu rate=%f/sec secs=%f",
                   (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
                 );
-                fflush(stdout);
             }
         }
     }
@@ -641,10 +668,17 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
     return rc;
 }
 
+/* creates symlink in destpath for specified file, identifies source path
+ * that contains source link, computes relative path to link under source path,
+ * and creates link at same relative path under destpath,
+ * returns 0 on success and -1 on error */
 static int mfu_create_link(mfu_flist list, uint64_t idx,
         int numpaths, const mfu_param_path* paths,
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+
     /* get source name */
     const char* src_path = mfu_flist_file_get_name(list, idx);
 
@@ -659,9 +693,8 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
 
     /* read link target */
     char path[PATH_MAX + 1];
-    ssize_t rc = mfu_readlink(src_path, path, sizeof(path) - 1);
-
-    if(rc < 0) {
+    ssize_t readlink_rc = mfu_readlink(src_path, path, sizeof(path) - 1);
+    if(readlink_rc < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() (errno=%d %s)",
             src_path, errno, strerror(errno)
         );
@@ -673,9 +706,8 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
     path[rc] = '\0';
 
     /* create new link */
-    int symrc = mfu_symlink(path, dest_path);
-
-    if(symrc < 0) {
+    int symlink_rc = mfu_symlink(path, dest_path);
+    if(symlink_rc < 0) {
         if(errno == EEXIST) {
             MFU_LOG(MFU_LOG_WARN,
                     "Original link exists, skip the creation: `%s' (errno=%d %s)",
@@ -691,7 +723,10 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
 
     /* set permissions on link */
     if (mfu_copy_opts->preserve) {
-        mfu_copy_xattrs(list, idx, dest_path);
+        int xattr_rc = mfu_copy_xattrs(list, idx, dest_path);
+        if (xattr_rc < 0) {
+            rc = -1;
+        }
     }
 
     /* free destination path */
@@ -700,13 +735,21 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
     /* increment our directory count by one */
     mfu_copy_stats.total_links++;
 
-    return 0;
+    return rc;
 }
 
+/* creates inode in destpath for specified file, identifies source path
+ * that contains source file, computes relative path to file under source path,
+ * and creates file at same relative path under destpath, copies xattrs
+ * when preserving permissions, which contains file striping info on Lustre,
+ * returns 0 on success and -1 on error */
 static int mfu_create_file(mfu_flist list, uint64_t idx,
         int numpaths, const mfu_param_path* paths, 
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+
     /* get source name */
     const char* src_path = mfu_flist_file_get_name(list, idx);
 
@@ -723,18 +766,19 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
      * we first create it with mknod and then set xattrs */
 
     /* create file with mknod
-    * for regular files, dev argument is supposed to be ignored,
-    * see makedev() to create valid dev */
+     * for regular files, dev argument is supposed to be ignored,
+     * see makedev() to create valid dev */
     dev_t dev;
     memset(&dev, 0, sizeof(dev_t));
     int mknod_rc = mfu_mknod(dest_path, DCOPY_DEF_PERMS_FILE | S_IFREG, dev);
-
     if(mknod_rc < 0) {
         if(errno == EEXIST) {
+            /* destination already exists, no big deal, but print warning */
             MFU_LOG(MFU_LOG_WARN,
                     "Original file exists, skip the creation: `%s' (errno=%d %s)",
                     dest_path, errno, strerror(errno));
         } else {
+            /* failed to create inode, that's a problem */
             MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() failed (errno=%d %s)",
                     dest_path, errno, strerror(errno)
             );
@@ -747,7 +791,10 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
      * writing data because some attributes tell file system how to
      * stripe data, e.g., Lustre */
     if (mfu_copy_opts->preserve) {
-        mfu_copy_xattrs(list, idx, dest_path);
+        int tmp_rc = mfu_copy_xattrs(list, idx, dest_path);
+        if (tmp_rc < 0) {
+            rc = -1;
+        }
     }
 
     /* Truncate destination files to 0 bytes when sparse file is enabled,
@@ -759,10 +806,13 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
         int status = mfu_lstat(dest_path, &st);
         if (status == 0) {
             /* destination exists, truncate it to 0 bytes */
-            status = truncate64(dest_path, 0);
+            status = mfu_truncate(dest_path, 0);
             if (status) {
+                /* when using sparse file optimization, consider this to be an error,
+                 * since we will not be overwriting the holes */
                 MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: `%s' (errno=%d %s)",
                           dest_path, errno, strerror(errno));
+                rc = -1;
             }
         } else if (errno == -ENOENT) {
             /* destination does not exist, which is fine */
@@ -772,11 +822,6 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
             MFU_LOG(MFU_LOG_ERR, "mfu_lstat() file: `%s' (errno=%d %s)",
                       dest_path, errno, strerror(errno));
         }
-
-        if (status) {
-            /* do we need to abort here? */
-            //return;
-        }
     }
 
     /* free destination path */
@@ -785,9 +830,11 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
     /* increment our file count by one */
     mfu_copy_stats.total_files++;
 
-    return 0;
+    return rc;
 }
 
+/* creates file inodes and symlinks,
+ * returns 0 on success and -1 on error */
 static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
         int numpaths, const mfu_param_path* paths,
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
@@ -826,13 +873,20 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
 
             /* process files and links */
             if (type == MFU_TYPE_FILE) {
-                /* TODO: skip file if it's not readable */
-                mfu_create_file(list, idx, numpaths,
+                /* create inode and copy xattr for regular file */
+                int tmp_rc = mfu_create_file(list, idx, numpaths,
                         paths, destpath, mfu_copy_opts);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
                 count++;
             } else if (type == MFU_TYPE_LINK) {
-                mfu_create_link(list, idx, numpaths,
+                /* create symlink */
+                int tmp_rc = mfu_create_link(list, idx, numpaths,
                         paths, destpath, mfu_copy_opts);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
                 count++;
             }
         }
@@ -856,13 +910,16 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
               rate = (double)sum / secs;
             }
             if (rank == 0) {
-                printf("  level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
+                MFU_LOG(MFU_LOG_INFO, "  level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f",
                   (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
                 );
-                fflush(stdout);
             }
         }
     }
+
+    /* force inode info to disk before starting to copy data */
+    sync();
+    MPI_Barrier(MPI_COMM_WORLD);
 
     return rc;
 }
@@ -1055,12 +1112,10 @@ static int mfu_copy_file_normal(
     off_t last_written = offset + length;
     off_t file_size_offt = (off_t) file_size;
     if (last_written >= file_size_offt || file_size == 0) {
-       /*
-        * Use ftruncate() here rather than truncate(), because grouplock
-        * of Lustre would cause block to truncate() since the fd is different
-        * from the out_fd.
-        */
-        if(ftruncate(out_fd, file_size_offt) < 0) {
+        /* Use ftruncate() here rather than truncate(), because grouplock
+         * of Lustre would cause block to truncate() since the fd is different
+         * from the out_fd. */
+        if(mfu_ftruncate(out_fd, file_size_offt) < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
                 dest, errno, strerror(errno));
             return -1;
@@ -1222,12 +1277,10 @@ static int mfu_copy_file_fiemap(
     off_t last_written = (off_t) last_byte;
     off_t file_size_offt = (off_t) file_size;
     if (last_written >= file_size_offt || file_size == 0) {
-       /*
-        * Use ftruncate() here rather than truncate(), because grouplock
-        * of Lustre would cause block to truncate() since the fd is different
-        * from the out_fd.
-        */
-        if (ftruncate(out_fd, file_size_offt) < 0) {
+        /* Use ftruncate() here rather than truncate(), because grouplock
+         * of Lustre would cause block to truncate() since the fd is different
+         * from the out_fd. */
+        if (mfu_ftruncate(out_fd, file_size_offt) < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
                 dest, errno, strerror(errno));
             goto fail;
@@ -1292,13 +1345,16 @@ static int mfu_copy_file(
     return ret;
 }
 
-/* After receiving all incoming chunks, process open and write their chunks 
- * to the files. The process which writes the last chunk to each file also 
- * truncates the file to correct size.  A 0-byte file still has one chunk. */
-static void mfu_copy_files(mfu_flist list, uint64_t chunk_size, 
+/* slices files in list at boundaries of chunk size, evenly distributes
+ * chunks, and copies data from source to destination file,
+ * returns 0 on success and -1 on error */
+static int mfu_copy_files(mfu_flist list, uint64_t chunk_size, 
         int numpaths, const mfu_param_path* paths,
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+
     /* get current rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -1341,9 +1397,9 @@ static void mfu_copy_files(mfu_flist list, uint64_t chunk_size,
 
         /* copy portion of file corresponding to this chunk,
          * and record whether copy operation succeeded */
-        int rc = mfu_copy_file(p->name, dest, (uint64_t)p->offset, 
+        int copy_rc = mfu_copy_file(p->name, dest, (uint64_t)p->offset, 
                 (uint64_t)p->length, (uint64_t)p->file_size, mfu_copy_opts);
-        if (rc < 0) {
+        if (copy_rc < 0) {
             /* error copying file */
             vals[i] = 1;
         }
@@ -1388,10 +1444,11 @@ static void mfu_copy_files(mfu_flist list, uint64_t chunk_size,
                 /* sanity check to ensure we don't * delete the source file */
                 if (strcmp(dest, name) != 0) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to copy `%s' to `%s'", name, dest);
+                    rc = -1;
 #if 0
                     /* delete destination file */
-                    int rc = mfu_unlink(dest);
-                    if (rc != 0) {
+                    int unlink_rc = mfu_unlink(dest);
+                    if (unlink_rc != 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to unlink `%s' (errno=%d %s)",
                                   name, errno, strerror(errno)
                                 );
@@ -1411,13 +1468,121 @@ static void mfu_copy_files(mfu_flist list, uint64_t chunk_size,
     /* free the list of file chunks */
     mfu_file_chunk_list_free(&head);
 
+    /* force data to backend to avoid the following metadata
+     * setting mismatch, which may happen on lustre */
+    sync();
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    return rc;
+}
+
+static void print_summary(mfu_flist flist)
+{
+    uint64_t total_dirs    = 0;
+    uint64_t total_files   = 0;
+    uint64_t total_links   = 0;
+    uint64_t total_unknown = 0;
+    uint64_t total_bytes   = 0;
+
+    /* get our rank and the size of comm_world */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* step through and print data */
+    uint64_t idx = 0;
+    uint64_t max = mfu_flist_size(flist);
+    while (idx < max) {
+        if (mfu_flist_have_detail(flist)) {
+            /* get mode */
+            mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
+
+            /* get size */
+            uint64_t size = mfu_flist_file_get_size(flist, idx);
+
+            /* set file type */
+            if (S_ISDIR(mode)) {
+                total_dirs++;
+            }
+            else if (S_ISREG(mode)) {
+                total_files++;
+                total_bytes += size;
+            }
+            else if (S_ISLNK(mode)) {
+                total_links++;
+            }
+            else {
+                /* unknown file type */
+                total_unknown++;
+            }
+        }
+        else {
+            /* get type */
+            mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+
+            if (type == MFU_TYPE_DIR) {
+                total_dirs++;
+            }
+            else if (type == MFU_TYPE_FILE) {
+                total_files++;
+            }
+            else if (type == MFU_TYPE_LINK) {
+                total_links++;
+            }
+            else {
+                /* unknown file type */
+                total_unknown++;
+            }
+        }
+
+        /* go to next file */
+        idx++;
+    }
+
+    /* get total directories, files, links, and bytes */
+    uint64_t all_dirs, all_files, all_links, all_unknown, all_bytes;
+    uint64_t all_count = mfu_flist_global_size(flist);
+    MPI_Allreduce(&total_dirs,    &all_dirs,    1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_files,   &all_files,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_links,   &all_links,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_unknown, &all_unknown, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_bytes,   &all_bytes,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* convert total size to units */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Items: %llu", (unsigned long long) all_count);
+        MFU_LOG(MFU_LOG_INFO, "  Directories: %llu", (unsigned long long) all_dirs);
+        MFU_LOG(MFU_LOG_INFO, "  Files: %llu", (unsigned long long) all_files);
+        MFU_LOG(MFU_LOG_INFO, "  Links: %llu", (unsigned long long) all_links);
+        /* MFU_LOG("  Unknown: %lu", (unsigned long long) all_unknown); */
+
+        if (mfu_flist_have_detail(flist)) {
+            double agg_size_tmp;
+            const char* agg_size_units;
+            mfu_format_bytes(all_bytes, &agg_size_tmp, &agg_size_units);
+
+            uint64_t size_per_file = 0.0;
+            if (all_files > 0) {
+                size_per_file = (uint64_t)((double)all_bytes / (double)all_files);
+            }
+            double size_per_file_tmp;
+            const char* size_per_file_units;
+            mfu_format_bytes(size_per_file, &size_per_file_tmp, &size_per_file_units);
+
+            MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%.3lf %s per file)", agg_size_tmp, agg_size_units, size_per_file_tmp, size_per_file_units);
+        }
+    }
+
     return;
 }
 
-void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
+int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
         const mfu_param_path* paths, const mfu_param_path* destpath, 
         mfu_copy_opts_t* mfu_copy_opts)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+
     /* get our rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -1427,6 +1592,12 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     /* copy the destination path to user opts structure */
     mfu_copy_opts->dest_path = MFU_STRDUP((*destpath).path);
     
+    /* print note about what we're doing and the amount of files/data to be moved */
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Copying to %s", mfu_copy_opts->dest_path);
+    }
+    mfu_flist_print_summary(src_cp_list);
+
     /* TODO: consider file system striping params here */
     /* hard code some configurables for now */
 
@@ -1462,23 +1633,25 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     /* TODO: filter out files that are bigger than 0 bytes if we can't read them */
 
     /* create directories, from top down */
-    mfu_create_directories(levels, minlevel, lists, numpaths,
+    int tmp_rc = mfu_create_directories(levels, minlevel, lists, numpaths,
             paths, destpath, mfu_copy_opts);
+    if (tmp_rc < 0) {
+        rc = -1;
+    }
 
     /* create files and links */
-    mfu_create_files(levels, minlevel, lists, numpaths,
+    tmp_rc = mfu_create_files(levels, minlevel, lists, numpaths,
             paths, destpath, mfu_copy_opts);
+    if (tmp_rc < 0) {
+        rc = -1;
+    }
 
     /* copy data */
-    mfu_copy_files(src_cp_list, mfu_copy_opts->chunk_size, 
+    tmp_rc = mfu_copy_files(src_cp_list, mfu_copy_opts->chunk_size, 
             numpaths, paths, destpath, mfu_copy_opts);
-
-    /* force the copy to backend, to avoid the following metadata
-     * setting mismatch, which may happen on lustre */
-    sync();
-
-    /* wait for all sync to finish before starting to set metadata */
-    MPI_Barrier(MPI_COMM_WORLD);
+    if (tmp_rc < 0) {
+        rc = -1;
+    }
 
     /* set permissions, ownership, and timestamps if needed */
     mfu_copy_set_metadata(levels, minlevel, lists, numpaths,
@@ -1569,11 +1742,21 @@ void mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
             agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
     }
 
-    return;
+    /* determine whether any process reported an error,
+     * inputs should are either 0 or -1, so min will be -1 on any -1 */
+    int all_rc;
+    MPI_Allreduce(&rc, &all_rc, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+    rc = all_rc;
+
+    return rc;
 }
 
-void mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist dst_list, uint64_t dst_index)
+int mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist dst_list, uint64_t dst_index)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+    int tmp_rc;
+
     /* get destination path */
     const char* dest_path = mfu_flist_file_get_name(dst_list, dst_index);
 
@@ -1586,14 +1769,20 @@ void mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist 
 
     /* update ownership on destination if needed */
     if ((src_uid != dst_uid) || (src_gid != dst_gid)) {
-        mfu_copy_ownership(src_list, src_index, dest_path);
+        tmp_rc = mfu_copy_ownership(src_list, src_index, dest_path);
+        if (tmp_rc < 0) {
+            rc = -1;
+        }
     }
 
     /* update permissions on destination if needed */
     mode_t src_mode = (mode_t) mfu_flist_file_get_mode(src_list, src_index);
     mode_t dst_mode = (mode_t) mfu_flist_file_get_mode(dst_list, dst_index);
     if (src_mode != dst_mode) {
-        mfu_copy_permissions(src_list, src_index, dest_path);
+        tmp_rc = mfu_copy_permissions(src_list, src_index, dest_path);
+        if (tmp_rc < 0) {
+            rc = -1;
+        }
     }
 
     /* get atime seconds and nsecs */
@@ -1612,8 +1801,11 @@ void mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist 
     if ((src_atime != dst_atime) || (src_atime_nsec != dst_atime_nsec) ||
         (src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec))
     {
-        mfu_copy_timestamps(src_list, src_index, dest_path);
+        tmp_rc = mfu_copy_timestamps(src_list, src_index, dest_path);
+        if (tmp_rc < 0) {
+            rc = -1;
+        }
     }
 
-    return;
+    return rc;
 }

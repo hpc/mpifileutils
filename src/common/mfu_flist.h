@@ -277,6 +277,9 @@ void mfu_flist_write_text(
 /* given a list of files print from start and end of the list */
 void mfu_flist_print(mfu_flist flist);
 
+/* print count of items, directories, files, links, and bytes */
+void mfu_flist_print_summary(mfu_flist flist);
+
 /****************************************
  * Functions to add new items to a list
  * and summarize global properties after adding new items
@@ -291,10 +294,6 @@ mfu_flist mfu_flist_subset(mfu_flist srclist);
 
 /* copy specified source file into destination list */
 void mfu_flist_file_copy(mfu_flist src, uint64_t index, mfu_flist dest);
-
-/* given a source and destination file, update destination metadata
- * to match source if needed */
-void mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist dst_list, uint64_t dst_index);
 
 /* get number of bytes to pack a file from the specified list */
 size_t mfu_flist_file_pack_size(mfu_flist flist);
@@ -429,8 +428,8 @@ int mfu_flist_sort(const char* fields, mfu_flist* flist);
 
 /* copy items in list from source paths to destination,
  * each item in source list must come from one of the
- * given source paths */
-void mfu_flist_copy(
+ * given source paths, returns 0 on success -1 on error */
+int mfu_flist_copy(
     mfu_flist src_cp_list,          /* IN - flist providing source items */
     int numpaths,                   /* IN - number of source paths */
     const mfu_param_path* paths,    /* IN - array of source pathts */
@@ -451,6 +450,10 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless);
 /* given an input flist, set permissions on items according to perms list,
  * optionally, if usrname != NULL, change owner, or if grname != NULL, change group */
 void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, const mfu_perms* head);
+
+/* given a source and destination file, update destination metadata
+ * to match source if needed, returns 0 on success -1 on error */
+int mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist dst_list, uint64_t dst_index);
 
 /* TODO: integrate this into the file list proper, or otherwise move it to another file */
 /* element structure in linked list returned by mfu_file_chunk_list_alloc */
