@@ -1654,3 +1654,106 @@ void mfu_flist_print(mfu_flist flist)
 
     return;
 }
+
+void mfu_flist_print_summary(mfu_flist flist)
+{
+    /* get our rank and the size of comm_world */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* initlialize counters */
+    uint64_t total_dirs    = 0;
+    uint64_t total_files   = 0;
+    uint64_t total_links   = 0;
+    uint64_t total_unknown = 0;
+    uint64_t total_bytes   = 0;
+
+    /* step through and print data */
+    uint64_t idx = 0;
+    uint64_t max = mfu_flist_size(flist);
+    while (idx < max) {
+        if (mfu_flist_have_detail(flist)) {
+            /* get mode */
+            mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
+
+            /* get size of item */
+            uint64_t size = mfu_flist_file_get_size(flist, idx);
+
+            /* set file type */
+            if (S_ISDIR(mode)) {
+                total_dirs++;
+            }
+            else if (S_ISREG(mode)) {
+                total_files++;
+                total_bytes += size;
+            }
+            else if (S_ISLNK(mode)) {
+                total_links++;
+            }
+            else {
+                /* unknown file type */
+                total_unknown++;
+            }
+        }
+        else {
+            /* get type */
+            mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+
+            if (type == MFU_TYPE_DIR) {
+                total_dirs++;
+            }
+            else if (type == MFU_TYPE_FILE) {
+                total_files++;
+            }
+            else if (type == MFU_TYPE_LINK) {
+                total_links++;
+            }
+            else {
+                /* unknown file type */
+                total_unknown++;
+            }
+        }
+
+        /* go to next file */
+        idx++;
+    }
+
+    /* get total directories, files, links, and bytes */
+    uint64_t all_dirs, all_files, all_links, all_unknown, all_bytes;
+    uint64_t all_count = mfu_flist_global_size(flist);
+    MPI_Allreduce(&total_dirs,    &all_dirs,    1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_files,   &all_files,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_links,   &all_links,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_unknown, &all_unknown, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_bytes,   &all_bytes,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* convert total size to units */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Items: %llu", (unsigned long long) all_count);
+        MFU_LOG(MFU_LOG_INFO, "  Directories: %llu", (unsigned long long) all_dirs);
+        MFU_LOG(MFU_LOG_INFO, "  Files: %llu", (unsigned long long) all_files);
+        MFU_LOG(MFU_LOG_INFO, "  Links: %llu", (unsigned long long) all_links);
+        /* MFU_LOG(MFU_LOG_INFO, "  Unknown: %lu", (unsigned long long) all_unknown); */
+
+        if (mfu_flist_have_detail(flist)) {
+            /* format total bytes */
+            double agg_size_tmp;
+            const char* agg_size_units;
+            mfu_format_bytes(all_bytes, &agg_size_tmp, &agg_size_units);
+
+            /* format bytes per file */
+            uint64_t size_per_file = 0.0;
+            if (all_files > 0) {
+                size_per_file = (uint64_t)((double)all_bytes / (double)all_files);
+            }
+            double size_per_file_tmp;
+            const char* size_per_file_units;
+            mfu_format_bytes(size_per_file, &size_per_file_tmp, &size_per_file_units);
+
+            MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%.3lf %s per file)", agg_size_tmp, agg_size_units, size_per_file_tmp, size_per_file_units);
+        }
+    }
+
+    return;
+}

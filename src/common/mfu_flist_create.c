@@ -105,10 +105,9 @@ void mfu_flist_mkdir(mfu_flist flist)
                 rate = (double)sum / secs;
             }
             if (rank == 0) {
-                printf("  level=%d min=%lu max=%lu sum=%lu rate=%f/sec secs=%f\n",
+                MFU_LOG(MFU_LOG_INFO, "  level=%d min=%lu max=%lu sum=%lu rate=%f/sec secs=%f",
                   (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
                 );
-                fflush(stdout);
             }
         }
     }
@@ -215,10 +214,9 @@ void mfu_flist_mknod(mfu_flist flist)
             rate = (double)sum / secs;
         }
         if (rank == 0) {
-            printf("  min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
+            MFU_LOG(MFU_LOG_DBG, "  min=%lu max=%lu sum=%lu rate=%f secs=%f",
               (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
             );
-            fflush(stdout);
         }
     }
 

@@ -378,6 +378,12 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
     MPI_Barrier(MPI_COMM_WORLD);
     double start_remove = MPI_Wtime();
 
+    /* print a message to inform user what we're doing */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        uint64_t all_count = mfu_flist_global_size(flist);
+        MFU_LOG(MFU_LOG_INFO, "Removing %lu items", all_count);
+    }
+
     /* split files into separate lists by directory depth */
     int levels, minlevel;
     mfu_flist* lists;
@@ -535,10 +541,9 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
             }
             double time_diff = end - start;
             if (mfu_rank == 0) {
-                printf("level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
+                MFU_LOG(MFU_LOG_INFO, "level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f",
                        (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
                       );
-                fflush(stdout);
             }
         }
     }
@@ -587,10 +592,9 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        printf("Removed %lu items in %f seconds (%f items/sec)\n",
+        MFU_LOG(MFU_LOG_INFO, "Removed %lu items in %f seconds (%f items/sec)",
                all_count, time_diff, rate
               );
-        fflush(stdout);
     }
 
     /* wait for summary to be printed */

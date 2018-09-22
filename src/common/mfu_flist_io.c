@@ -724,9 +724,8 @@ void mfu_flist_read_cache(
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     /* report the filename we're writing to */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        printf("Reading from input file: %s\n", name);
-        fflush(stdout);
+    if (mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Reading from input file: %s", name);
     }
 
     /* open file */
@@ -738,8 +737,7 @@ void mfu_flist_read_cache(
     rc = MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
     if (rc != MPI_SUCCESS) {
         if (rank == 0) {
-            printf("Failed to open file %s\n", name);
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Failed to open file %s", name);
         }
         return;
     }
@@ -779,17 +777,16 @@ void mfu_flist_read_cache(
     double end_read = MPI_Wtime();
 
     /* report read count, time, and rate */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+    if (mfu_rank == 0) {
         uint64_t all_count = mfu_flist_global_size(bflist);
         double time_diff = end_read - start_read;
         double rate = 0.0;
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        printf("Read %lu files in %f seconds (%f files/sec)\n",
+        MFU_LOG(MFU_LOG_INFO, "Read %lu files in %f seconds (%f files/sec)",
                all_count, time_diff, rate
               );
-        fflush(stdout);
     }
 
     /* wait for summary to be printed */
@@ -1278,9 +1275,8 @@ void mfu_flist_write_cache(
     uint64_t all_count = mfu_flist_global_size(flist);
 
     /* report the filename we're writing to */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        printf("Writing to output file: %s\n", name);
-        fflush(stdout);
+    if (mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Writing to output file: %s", name);
     }
 
     if (all_count > 0) {
@@ -1297,16 +1293,15 @@ void mfu_flist_write_cache(
     double end_write = MPI_Wtime();
 
     /* report write count, time, and rate */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+    if (mfu_rank == 0) {
         double secs = end_write - start_write;
         double rate = 0.0;
         if (secs > 0.0) {
             rate = ((double)all_count) / secs;
         }
-        printf("Wrote %lu files in %f seconds (%f files/sec)\n",
+        MFU_LOG(MFU_LOG_INFO, "Wrote %lu files in %f seconds (%f files/sec)",
                all_count, secs, rate
               );
-        fflush(stdout);
     }
 
     /* wait for summary to be printed */
