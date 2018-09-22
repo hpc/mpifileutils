@@ -2292,11 +2292,27 @@ int main(int argc, char **argv)
     int walk_stat = 1;
     int dir_perm  = 0;
 
+    /* walk source path */
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking source path");
     }
-    mfu_flist_walk_param_paths(1,  srcpath, walk_stat, dir_perm, flist1);
+    mfu_flist_walk_param_paths(1, srcpath, walk_stat, dir_perm, flist1);
 
+    /* check that we actually got something so that we don't delete
+     * an entire target directory because of a typo on the source dir */
+    if (mfu_flist_global_size(flist1) == 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "ERROR: No items found at source: `%s'", srcpath->orig);
+        }
+        mfu_param_path_free_all(numargs, paths);
+        mfu_free(&paths);
+        dsync_option_fini();
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
+
+    /* walk destinaton path */
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking destination path");
     }
