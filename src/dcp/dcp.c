@@ -78,6 +78,9 @@ void print_usage(void)
 int main(int argc, \
          char** argv)
 {
+    /* assume we'll exit with success */
+    int rc = 0;
+
     /* initialize MPI */
     MPI_Init(&argc, &argv);
     mfu_init();
@@ -315,7 +318,11 @@ int main(int argc, \
     }
 
     /* copy flist into destination */ 
-    mfu_flist_copy(flist, numpaths_src, paths, destpath, mfu_copy_opts);
+    int tmp_rc = mfu_flist_copy(flist, numpaths_src, paths, destpath, mfu_copy_opts);
+    if (tmp_rc < 0) {
+        /* hit some sort of error during copy */
+        rc = 1;
+    }
 
     /* free the file list */
     mfu_flist_free(&flist);
