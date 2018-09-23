@@ -637,13 +637,16 @@ static uint64_t get_total_bytes_read(mfu_flist src_compare_list) {
 /* given a list of source/destination files to compare, spread file
  * sections to processes to compare in parallel, fill
  * in comparison results in source and dest string maps */
-static void dcmp_strmap_compare_data(
+static int dcmp_strmap_compare_data(
     mfu_flist src_compare_list,
     strmap* src_map,
     mfu_flist dst_compare_list,
     strmap* dst_map,
     size_t strlen_prefix)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+
     /* get chunk size for copying files (just hard-coded for now) */
     uint64_t chunk_size = 1024 * 1024;
 
@@ -673,19 +676,22 @@ static void dcmp_strmap_compare_data(
         
         /* compare the contents of the files */
         int overwrite = 0;
-        int rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length,
+        int compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length,
                 1048576, overwrite, &bytes_read, &bytes_written);
-        if (rc == -1) {
-            /* we hit an error while reading, consider files to be different,
-             * they could be the same, but we'll draw attention to them this way */
-            rc = 1;
+        if (compare_rc == -1) {
+            /* we hit an error while reading */
+            rc = -1;
             MFU_LOG(MFU_LOG_ERR,
               "Failed to open, lseek, or read %s and/or %s. Assuming contents are different.",
                  src_p->name, dst_p->name);
+
+            /* consider files to be different,
+             * they could be the same, but we'll draw attention to them this way */
+            compare_rc = 1;
         }
 
         /* record results of comparison */
-        vals[i] = rc;
+        vals[i] = compare_rc;
 
         /* update pointers for src and dest in linked list */
         src_p = src_p->next;
@@ -729,7 +735,13 @@ static void dcmp_strmap_compare_data(
     mfu_file_chunk_list_free(&src_head);
     mfu_file_chunk_list_free(&dst_head);
 
-    return;
+    /* determine whether any process hit an error,
+     * input is either 0 or -1, so MIN will return -1 if any */
+    int all_rc;
+    MPI_Allreduce(&rc, &all_rc, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+    rc = all_rc;
+
+    return rc;
 }
 
 static void time_strmap_compare(mfu_flist src_list, double start_compare, 
@@ -775,23 +787,21 @@ static void time_strmap_compare(mfu_flist src_list, double start_compare,
        const char* rate_units;
        mfu_format_bw(byte_rate, &total_bytes_tmp, &rate_units);
 
-       MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
-       MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
-       MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", time_diff);
-       MFU_LOG(MFU_LOG_INFO, "  Files: %" PRId64, all_count);
+       MFU_LOG(MFU_LOG_INFO, "Started   : %s", starttime_str);
+       MFU_LOG(MFU_LOG_INFO, "Completed : %s", endtime_str);
+       MFU_LOG(MFU_LOG_INFO, "Seconds   : %.3lf", time_diff);
+       MFU_LOG(MFU_LOG_INFO, "Items     : %" PRId64, all_count);
+       MFU_LOG(MFU_LOG_INFO, "Item Rate : %lu items in %f seconds (%f items/sec)",
+            all_count, time_diff, file_rate);     
        MFU_LOG(MFU_LOG_INFO, "Bytes read: %.3lf %s (%" PRId64 " bytes)",
             size_tmp, size_units, total_bytes_read);
-       MFU_LOG(MFU_LOG_INFO, "Byte Rate: %.3lf %s " \
-            "(%.3" PRId64 " bytes in %.3lf seconds)", \
+       MFU_LOG(MFU_LOG_INFO, "Byte Rate : %.3lf %s (%.3" PRId64 " bytes in %.3lf seconds)",
             total_bytes_tmp, rate_units, total_bytes_read, time_diff); 
-       MFU_LOG(MFU_LOG_INFO, "File Rate: %lu " \
-            "items in %f seconds (%f items/sec)", \
-            all_count, time_diff, file_rate);     
     }
 }
 
 /* compare entries from src into dst */
-static void dcmp_strmap_compare(mfu_flist src_list,
+static int dcmp_strmap_compare(mfu_flist src_list,
                                 strmap* src_map,
                                 mfu_flist dst_list,
                                 strmap* dst_map,
@@ -799,6 +809,10 @@ static void dcmp_strmap_compare(mfu_flist src_list,
                                 const mfu_param_path* src_path,
                                 const mfu_param_path* dest_path)
 {
+    /* assume we'll succeed */
+    int rc = 0;
+    int tmp_rc;
+
     /* wait for all tasks and start timer */
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -820,13 +834,13 @@ static void dcmp_strmap_compare(mfu_flist src_list,
 
         /* get index of source file */
         uint64_t src_index;
-        int rc = dcmp_strmap_item_index(src_map, key, &src_index);
-        assert(rc == 0);
+        tmp_rc = dcmp_strmap_item_index(src_map, key, &src_index);
+        assert(tmp_rc == 0);
 
         /* get index of destination file */
         uint64_t dst_index;
-        rc = dcmp_strmap_item_index(dst_map, key, &dst_index);
-        if (rc) {
+        tmp_rc = dcmp_strmap_item_index(dst_map, key, &dst_index);
+        if (tmp_rc) {
             dcmp_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_ONLY_SRC);
             
             /* skip uncommon files, all other states are DCMPS_INIT */
@@ -842,10 +856,10 @@ static void dcmp_strmap_compare(mfu_flist src_list,
         mode_t dst_mode = (mode_t) mfu_flist_file_get_mode(dst_list,
             dst_index);
 
-        rc = dcmp_compare_metadata(src_list, src_map, src_index,
+        tmp_rc = dcmp_compare_metadata(src_list, src_map, src_index,
              dst_list, dst_map, dst_index,
              key);
-        assert(rc >= 0);
+        assert(tmp_rc >= 0);
 
         if (!dcmp_option_need_compare(DCMPF_TYPE)) {
             /*
@@ -889,8 +903,8 @@ static void dcmp_strmap_compare(mfu_flist src_list,
         }
 
         dcmp_state state;
-        rc = dcmp_strmap_item_state(src_map, key, DCMPF_SIZE, &state);
-        assert(rc == 0);
+        tmp_rc = dcmp_strmap_item_state(src_map, key, DCMPF_SIZE, &state);
+        assert(tmp_rc == 0);
         if (state == DCMPS_DIFFER) {
             /* file size is different, their contents should be different */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
@@ -917,8 +931,12 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     /* compare the contents of the files if we have anything in the compare list */
     uint64_t cmp_global_size = mfu_flist_global_size(src_compare_list);
     if (cmp_global_size > 0) {
-        dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list, 
+        tmp_rc = dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list, 
                 dst_map, strlen_prefix);
+        if (tmp_rc < 0) {
+            /* got a read error, signal that back to caller */
+            rc = -1;
+        }
     }
 
     /* wait for all procs to finish before stopping timer */
@@ -939,8 +957,9 @@ static void dcmp_strmap_compare(mfu_flist src_list,
     
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
-    mfu_flist_free(&src_compare_list); 
-    return;
+    mfu_flist_free(&src_compare_list);
+
+    return rc;
 }
 
 /* loop on the src map to check the results */
@@ -1834,6 +1853,8 @@ out:
 
 int main(int argc, char **argv)
 {
+    int rc = 0;
+
     /* initialize MPI and mfu libraries */
     MPI_Init(&argc, &argv);
     mfu_init();
@@ -1973,7 +1994,15 @@ int main(int argc, char **argv)
     /* walk src and dest paths and fill in file lists */
     int walk_stat = 1;
     int dir_perm  = 0;
+
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Walking source path");
+    }
     mfu_flist_walk_param_paths(1,  srcpath, walk_stat, dir_perm, flist1);
+
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Walking destination path");
+    }
     mfu_flist_walk_param_paths(1, destpath, walk_stat, dir_perm, flist2);
 
     /* store src and dest path strings */
@@ -1989,7 +2018,11 @@ int main(int argc, char **argv)
     strmap* map2 = dcmp_strmap_creat(flist4, path2);
     
     /* compare files in map1 with those in map2 */
-    dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1), srcpath, destpath);
+    int tmp_rc = dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1), srcpath, destpath);
+    if (tmp_rc < 0) {
+        /* hit a read error on at least one file */
+        rc = 1;
+    }
     
     /* check the results are valid */
     if (options.debug) {
@@ -2021,5 +2054,5 @@ int main(int argc, char **argv)
     mfu_finalize();
     MPI_Finalize();
 
-    return 0;
+    return rc;
 }
