@@ -47,4 +47,5 @@ libmfu_la_LDFLAGS = \
      $(MPI_CLDFLAGS) \
      $(archives_LIBS) \
      $(libcircle_LIBS) \
+     $(LUSTRE_LIBS) \
      -lbz2
