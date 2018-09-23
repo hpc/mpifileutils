@@ -201,6 +201,12 @@ int mfu_compare_contents(
     uint64_t* bytes_written /* OUT - number of bytes written to dest */
 );
 
+/* uses the lustre api to obtain stripe count and stripe size of a file */
+int mfu_stripe_get(const char *path, uint64_t *stripe_size, uint64_t *stripe_count);
+
+/* create a striped lustre file at the path provided with the specified stripe size and count */
+void mfu_stripe_set(const char *path, uint64_t stripe_size, int stripe_count);
+
 #endif /* MFU_UTIL_H */
 
 /* enable C++ codes to include this header directly */
