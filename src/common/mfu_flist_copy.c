@@ -498,10 +498,6 @@ static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
-    /* force metadata changes to backend */
-    sync();
-    MPI_Barrier(MPI_COMM_WORLD);
-
     return rc;
 }
 
@@ -640,7 +636,6 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
 
         /* wait for all procs to finish before we start
          * creating directories at next level */
-        sync();
         MPI_Barrier(MPI_COMM_WORLD);
 
         /* stop our timer */
@@ -918,7 +913,6 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
     }
 
     /* force inode info to disk before starting to copy data */
-    sync();
     MPI_Barrier(MPI_COMM_WORLD);
 
     return rc;
@@ -1468,11 +1462,6 @@ static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
     /* free the list of file chunks */
     mfu_file_chunk_list_free(&head);
 
-    /* force data to backend to avoid the following metadata
-     * setting mismatch, which may happen on lustre */
-    sync();
-    MPI_Barrier(MPI_COMM_WORLD);
-
     return rc;
 }
 
@@ -1652,6 +1641,11 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     if (tmp_rc < 0) {
         rc = -1;
     }
+
+    /* force data to backend to avoid the following metadata
+     * setting mismatch, which may happen on lustre */
+    sync();
+    MPI_Barrier(MPI_COMM_WORLD);
 
     /* set permissions, ownership, and timestamps if needed */
     mfu_copy_set_metadata(levels, minlevel, lists, numpaths,
