@@ -427,6 +427,9 @@ static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
     /* assume we'll succeed */
     int rc = 0;
 
+    /* determine whether we should print status messages */
+    int verbose = (mfu_debug_level >= MFU_LOG_VERBOSE);
+
     /* get current rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -439,6 +442,11 @@ static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
             MFU_LOG(MFU_LOG_INFO, "Fixing permissions.");
         }
     }
+
+    /* start timer for entie operation */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_start = MPI_Wtime();
+    uint64_t total_count = 0;
 
     /* now set timestamps on files starting from deepest level */
     int tmp_rc;
@@ -465,6 +473,9 @@ static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
             if (dest == NULL) {
                 continue;
             }
+
+            /* update our running total */
+            total_count++;
 
             if(mfu_copy_opts->preserve) {
                 tmp_rc = mfu_copy_ownership(list, idx, dest);
@@ -496,6 +507,26 @@ static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
         /* wait for all procs to finish before we start
          * with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
+    }
+
+    /* stop timer and report total count */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_end = MPI_Wtime();
+
+    /* print timing statistics */
+    if (verbose) {
+        uint64_t sum;
+        MPI_Allreduce(&total_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+        double rate = 0.0;
+        double secs = total_end - total_start;
+        if (secs > 0.0) {
+          rate = (double)sum / secs;
+        }
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Updated %lu items in %f seconds (%f items/sec)",
+              (unsigned long)sum, secs, rate
+            );
+        }
     }
 
     return rc;
@@ -595,7 +626,7 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
     int rc = 0;
 
     /* determine whether we should print status messages */
-    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
+    int verbose = (mfu_debug_level >= MFU_LOG_VERBOSE);
 
     /* get current rank */
     int rank;
@@ -605,6 +636,11 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Creating directories.");
     }
+
+    /* start timer for entie operation */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_start = MPI_Wtime();
+    uint64_t total_count = 0;
 
     /* work from shallowest level to deepest level */
     int level;
@@ -634,6 +670,9 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
             }
         }
 
+        /* add items to our running total */
+        total_count += count;
+
         /* wait for all procs to finish before we start
          * creating directories at next level */
         MPI_Barrier(MPI_COMM_WORLD);
@@ -657,6 +696,26 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
                   (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
                 );
             }
+        }
+    }
+
+    /* stop timer and report total count */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_end = MPI_Wtime();
+
+    /* print timing statistics */
+    if (verbose) {
+        uint64_t sum;
+        MPI_Allreduce(&total_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+        double rate = 0.0;
+        double secs = total_end - total_start;
+        if (secs > 0.0) {
+          rate = (double)sum / secs;
+        }
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Created %lu directories in %f seconds (%f items/sec)",
+              (unsigned long)sum, secs, rate
+            );
         }
     }
 
@@ -837,7 +896,7 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
     int rc = 0;
 
     /* determine whether we should print status messages */
-    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
+    int verbose = (mfu_debug_level >= MFU_LOG_VERBOSE);
 
     /* get current rank */
     int rank;
@@ -848,7 +907,10 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
         MFU_LOG(MFU_LOG_INFO, "Creating files.");
     }
 
-    /* TODO: we don't need to have a barrier between levels */
+    /* start timer for entie operation */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_start = MPI_Wtime();
+    uint64_t total_count = 0;
 
     int level;
     for (level = 0; level < levels; level++) {
@@ -886,6 +948,9 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
             }
         }
 
+        /* add items to our running total */
+        total_count += count;
+
         /* wait for all procs to finish before we start
          * with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
@@ -912,8 +977,25 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
         }
     }
 
-    /* force inode info to disk before starting to copy data */
+    /* stop timer and report total count */
     MPI_Barrier(MPI_COMM_WORLD);
+    double total_end = MPI_Wtime();
+
+    /* print timing statistics */
+    if (verbose) {
+        uint64_t sum;
+        MPI_Allreduce(&total_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+        double rate = 0.0;
+        double secs = total_end - total_start;
+        if (secs > 0.0) {
+          rate = (double)sum / secs;
+        }
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Created %lu items in %f seconds (%f items/sec)",
+              (unsigned long)sum, secs, rate
+            );
+        }
+    }
 
     return rc;
 }
@@ -1349,6 +1431,9 @@ static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
     /* assume we'll succeed */
     int rc = 0;
 
+    /* determine whether we should print status messages */
+    int verbose = (mfu_debug_level >= MFU_LOG_VERBOSE);
+
     /* get current rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -1361,6 +1446,11 @@ static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
         MFU_LOG(MFU_LOG_INFO, "Copying data.");
     }
     
+    /* start timer for entie operation */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_start = MPI_Wtime();
+    uint64_t total_count = 0;
+
     /* split file list into a linked list of file sections,
      * this evenly spreads the file sections across processes */
     mfu_file_chunk* head = mfu_file_chunk_list_alloc(list, chunk_size);
@@ -1388,6 +1478,9 @@ static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
             p = p->next;
             continue;
         }
+
+        /* add bytes to our running total */
+        total_count += (uint64_t)p->length;
 
         /* copy portion of file corresponding to this chunk,
          * and record whether copy operation succeeded */
@@ -1462,7 +1555,63 @@ static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
     /* free the list of file chunks */
     mfu_file_chunk_list_free(&head);
 
+    /* stop timer and report total count */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_end = MPI_Wtime();
+
+    /* print timing statistics */
+    if (verbose) {
+        uint64_t sum;
+        MPI_Allreduce(&total_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+        double rate = 0.0;
+        double secs = total_end - total_start;
+        if (secs > 0.0) {
+          rate = (double)sum / secs;
+        }
+
+        /* convert bytes to units */
+        double agg_size_tmp;
+        const char* agg_size_units;
+        mfu_format_bytes(sum, &agg_size_tmp, &agg_size_units);
+
+        /* convert bandwidth to units */
+        double agg_rate_tmp;
+        const char* agg_rate_units;
+        mfu_format_bw(rate, &agg_rate_tmp, &agg_rate_units);
+
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Copy data: %.3lf %s (%lu bytes)",
+              agg_size_tmp, agg_size_units, sum
+            );
+            MFU_LOG(MFU_LOG_INFO, "Copy rate: %.3lf %s (%lu bytes in %f seconds)",
+              agg_rate_tmp, agg_rate_units, sum, secs
+            );
+        }
+    }
+
     return rc;
+}
+
+static void mfu_sync_all(const char* msg)
+{
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    double start = MPI_Wtime();
+
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "%s", msg);
+    }
+    sync();
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    double end = MPI_Wtime();
+
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Sync completed in %f seconds.", (end - start));
+    }
 }
 
 static void print_summary(mfu_flist flist)
@@ -1644,8 +1793,7 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
 
     /* force data to backend to avoid the following metadata
      * setting mismatch, which may happen on lustre */
-    sync();
-    MPI_Barrier(MPI_COMM_WORLD);
+    mfu_sync_all("Syncing data to disk.");
 
     /* set permissions, ownership, and timestamps if needed */
     mfu_copy_set_metadata(levels, minlevel, lists, numpaths,
@@ -1659,10 +1807,7 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     mfu_free(&mfu_copy_opts->block_buf2);
 
     /* force updates to disk */
-    if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Syncing updates to disk.");
-    }
-    sync();
+    mfu_sync_all("Syncing updates to disk.");
 
     /* Determine the actual and relative end time for the epilogue. */
     mfu_copy_stats.wtime_ended = MPI_Wtime();
