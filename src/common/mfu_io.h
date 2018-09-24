@@ -100,10 +100,10 @@ ssize_t mfu_read(const char* file, int fd, void* buf, size_t size);
 ssize_t mfu_write(const char* file, int fd, const void* buf, size_t size);
 
 /* truncate a file */
-int truncate(const char* file, off_t length);
+int mfu_truncate(const char* file, off_t length);
 
 /* ftruncate a file */
-int ftruncate(int fd, off_t length);
+int mfu_ftruncate(int fd, off_t length);
 
 /* delete a file */
 int mfu_unlink(const char* file);
