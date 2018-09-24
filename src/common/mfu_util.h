@@ -49,6 +49,10 @@ extern mfu_loglevel mfu_debug_level;
                 fprintf(mfu_debug_stream,"[%s] [%d] [%s:%d] ", \
                         timestamp, mfu_rank, \
                         __FILE__, __LINE__); \
+            } else if(level <= MFU_LOG_ERR) { \
+                fprintf(mfu_debug_stream,"[%s] [%d] [%s:%d] ERROR: ", \
+                        timestamp, mfu_rank, \
+                        __FILE__, __LINE__); \
             } else { \
                 fprintf(mfu_debug_stream,"[%s] [%d] [%s:%d] ", \
                         timestamp, mfu_rank, \
