@@ -472,7 +472,7 @@ static int dsync_compare_data(
     const char* src_name,
     const char* dst_name,
     off_t offset,
-    size_t length,
+    off_t length,
     size_t buff_size,
     mfu_copy_opts_t* mfu_copy_opts,
     uint64_t* count_bytes_read,
@@ -485,7 +485,6 @@ static int dsync_compare_data(
         * src side */
         MFU_LOG(MFU_LOG_ERR, "Failed to open %s, error msg: %s", 
           src_name, strerror(errno));
-        mfu_close(src_name, src_fd);
        return -1;
     }
 
@@ -506,8 +505,8 @@ static int dsync_compare_data(
     }
 
     /* hint that we'll read from file sequentially */
-    posix_fadvise(src_fd, offset, (off_t)length, POSIX_FADV_SEQUENTIAL);
-    posix_fadvise(dst_fd, offset, (off_t)length, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(src_fd, offset, length, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(dst_fd, offset, length, POSIX_FADV_SEQUENTIAL);
 
     /* assume we'll find that file contents are the same */
     int rc = 0;
@@ -516,7 +515,7 @@ static int dsync_compare_data(
     if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
        /* log error if there is an lseek failure on the 
         * src side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %x, error msg: %s",
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",
           src_name, (unsigned long)offset, strerror(errno));
         mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
@@ -527,7 +526,7 @@ static int dsync_compare_data(
     if(mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
        /* log error if there is an lseek failure on the 
         * dst side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %x, error msg: %s",  
+        MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",  
           dst_name, (unsigned long)offset, strerror(errno));
         mfu_close(dst_name, dst_fd);
         mfu_close(src_name, src_fd);
@@ -539,19 +538,16 @@ static int dsync_compare_data(
     void* dest_buf = MFU_MALLOC(buff_size + 1);
 
     /* read and compare data from files */
-    size_t total_bytes = 0;
+    off_t total_bytes = 0;
     while(length == 0 || total_bytes < length) {
         /* whether we should copy the source bytes to the destination as part of sync */
         int copy_src_to_dst = 0;
 
         /* determine number of bytes to read in this iteration */
-        size_t left_to_read;
-        if (length == 0) {
-            left_to_read = buff_size;
-        } else {
-            left_to_read = length - total_bytes;
-            if (left_to_read > buff_size) {
-                left_to_read = buff_size;
+        size_t left_to_read = buff_size;
+        if (length > 0) {
+            if (length - total_bytes < (off_t)buff_size) {
+                 left_to_read = (size_t)(length - total_bytes);
             }
         }
         
@@ -627,21 +623,29 @@ static int dsync_compare_data(
          * then copy the bytes from the source into the destination */
 
         if (!options.dry_run && copy_src_to_dst == 1) {
-            /* number of bytes to write */
-            size_t bytes_to_write = (size_t) src_read;
+            /* seek back to position to write to in destination file */
+            off_t pos = offset + total_bytes;
+            if (mfu_lseek(dst_name, dst_fd, pos, SEEK_SET) == (off_t)-1) {
+                /* log error if there is an lseek failure on the dst side */
+                MFU_LOG(MFU_LOG_ERR, "Failed to lseek %s, offset: %lx, error msg: %s",  
+                  dst_name, (unsigned long)pos, strerror(errno));
+                rc = -1;
+                break;
+            }
 
-            /* seek to position to write to in destination
-             * file */
-            mfu_lseek(dst_name, dst_fd, offset, SEEK_SET); 
-            
             /* write data to destination file */
-            ssize_t num_of_bytes_written = mfu_write(dst_name, dst_fd, src_buf,
-                                      bytes_to_write);
+            size_t bytes_to_write = (size_t) src_read;
+            ssize_t bytes_written = mfu_write(dst_name, dst_fd, src_buf, bytes_to_write);
+            if (bytes_written < 0) {
+                /* hit a write error */
+                MFU_LOG(MFU_LOG_ERR, "Failed to write %s, error msg: %s", 
+                  dst_name, strerror(errno));
+                rc = -1;
+                break;
+            }
 
             /* tally up number of bytes written */
-            if (num_of_bytes_written >= 0) {
-                *count_bytes_written += (uint64_t) num_of_bytes_written;
-            }
+            *count_bytes_written += (uint64_t) bytes_written;
         }
 
         /* add bytes to our total */
@@ -854,7 +858,7 @@ static void dsync_strmap_compare_data(
         
         /* compare the contents of the files */
         int rc = dsync_compare_data(src_p->name, dst_p->name, offset, 
-                (size_t)length, 1048576, mfu_copy_opts,
+                length, 1048576, mfu_copy_opts,
                 count_bytes_read, count_bytes_written);
         if (rc == -1) {
             /* we hit an error while reading, consider files to be different,
