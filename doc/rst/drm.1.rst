@@ -15,6 +15,17 @@ contents.
 drm is a tool for removing files recursively in parallel.
 drm behaves like `rm -rf`, but it is faster.
 
+.. note::
+
+    DO NOT USE SHELL REGEX!!!
+    The --match and --exclude options use POSIX regex syntax. Because of
+    this make sure that the shell does not try to interpret your regex before
+    it gets passed to the program. You can generally use quotes around your
+    regex to prevent the shell from expanding. An example of this using the
+    --match option with --dryrun would be:
+
+    mpirun -np 128 drm --dryrun -v --name --match 'file_.*' /path/to/dir/*
+
 OPTIONS
 -------
 
