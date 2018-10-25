@@ -31,6 +31,7 @@ static void print_usage(void)
     printf("  -t, --text                - change output option to write in text format\n");
     printf("  -b, --base                - enable base checks and normal output with --output\n");
     printf("  -v, --verbose             - verbose output\n");
+    printf("  -l, --lite                - only compares file modification time and size\n");
     //printf("  -d, --debug               - run in debug mode\n");
     printf("  -h, --help                - print usage\n");
     printf("\n");
@@ -155,6 +156,7 @@ struct dcmp_output {
 struct dcmp_options {
     struct list_head outputs;      /* list of outputs */
     int verbose;
+    int lite;
     int format;			   /* output data format, 0 for text, 1 for raw */
     int base;                      /* whether to do base check */
     int debug;                     /* check result after get result */
@@ -164,6 +166,7 @@ struct dcmp_options {
 struct dcmp_options options = {
     .outputs      = LIST_HEAD_INIT(options.outputs),
     .verbose      = 0,
+    .lite         = 0,
     .format       = 1,
     .base         = 0,
     .debug        = 0,
@@ -826,6 +829,12 @@ static int dcmp_strmap_compare(mfu_flist src_list,
     mfu_flist src_compare_list = mfu_flist_subset(src_list);
     mfu_flist dst_compare_list = mfu_flist_subset(dst_list);
   
+    /* get mtime seconds and nsecs to check modification times of src & dst */
+    uint64_t src_mtime;
+    uint64_t src_mtime_nsec;
+    uint64_t dst_mtime;
+    uint64_t dst_mtime_nsec;
+
     /* iterate over each item in source map */
     const strmap_node* node;
     strmap_foreach(src_map, node) {
@@ -859,6 +868,7 @@ static int dcmp_strmap_compare(mfu_flist src_list,
         tmp_rc = dcmp_compare_metadata(src_list, src_map, src_index,
              dst_list, dst_map, dst_index,
              key);
+
         assert(tmp_rc >= 0);
 
         if (!dcmp_option_need_compare(DCMPF_TYPE)) {
@@ -909,9 +919,29 @@ static int dcmp_strmap_compare(mfu_flist src_list,
             /* file size is different, their contents should be different */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
-
             continue;
         }
+
+        /* get mtime seconds and nsecs to check modification times of src & dst */
+        src_mtime      = mfu_flist_file_get_mtime(src_compare_list, src_index);
+        src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_compare_list, src_index);
+        dst_mtime      = mfu_flist_file_get_mtime(dst_compare_list, dst_index);
+        dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(dst_compare_list, dst_index);
+
+        if (options.lite) {
+            if ((src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec)) {
+                /* modification times are different, assume content is different.
+                 * I don't think we can assume contents are different if the
+                 * lite option is not on. Because files can have different
+                 * modification times, but still have the same content. */
+                dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
+                dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
+                continue;
+            }
+        }
+
+        dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+        dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
 
         /* If we get to this point, we need to open files and compare
          * file contents.  We'll first identify all such files so that
@@ -927,15 +957,18 @@ static int dcmp_strmap_compare(mfu_flist src_list,
     /* summarize lists of files for which we need to compare data contents */
     mfu_flist_summarize(src_compare_list);
     mfu_flist_summarize(dst_compare_list);
-    
-    /* compare the contents of the files if we have anything in the compare list */
-    uint64_t cmp_global_size = mfu_flist_global_size(src_compare_list);
-    if (cmp_global_size > 0) {
-        tmp_rc = dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list, 
-                dst_map, strlen_prefix);
-        if (tmp_rc < 0) {
-            /* got a read error, signal that back to caller */
-            rc = -1;
+   
+    uint64_t cmp_global_size = 0;
+    if (!options.lite) {
+        /* compare the contents of the files if we have anything in the compare list */
+        cmp_global_size = mfu_flist_global_size(src_compare_list);
+        if (cmp_global_size > 0) {
+            tmp_rc = dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list, 
+                    dst_map, strlen_prefix);
+            if (tmp_rc < 0) {
+                /* got a read error, signal that back to caller */
+                rc = -1;
+            }
         }
     }
 
@@ -1295,7 +1328,8 @@ static int dcmp_expression_match(
 
     ret = dcmp_strmap_item_state(map, key, expression->field, &state);
     assert(ret == 0);
-    /* All fields should have been compared. */
+
+     /* All fields should have been compared. */
     assert(state == DCMPS_COMMON || state == DCMPS_DIFFER);
     if (expression->state == state) {
         return 1;
@@ -1885,6 +1919,7 @@ int main(int argc, char **argv)
         {"text",     0, 0, 't'},
         {"base",     0, 0, 'b'},
         {"verbose",  0, 0, 'v'},
+        {"lite",     0, 0, 'l'},
         {"debug",    0, 0, 'd'},
         {"help",     0, 0, 'h'},
         {0, 0, 0, 0}
@@ -1897,7 +1932,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "bo:tvdh",
+            argc, argv, "bo:tvldh",
             long_options, &option_index
         );
 
@@ -1921,6 +1956,9 @@ int main(int argc, char **argv)
         case 'v':
             options.verbose++;
             mfu_debug_level = MFU_LOG_VERBOSE;
+            break;
+        case 'l':
+            options.lite++;
             break;
         case 'd':
             options.debug++;
