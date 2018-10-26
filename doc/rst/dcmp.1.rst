@@ -42,6 +42,14 @@ OPTIONS
    command. Files walked, started, completed, seconds, files, bytes
    read, byte rate, and file rate.
 
+.. option:: -l, --lite
+
+  lite mode does a comparison of file modification time and size. If
+  modification time and size are the same, then the contents are assumed
+  to be the same. Similarly, if the modification time or size is different,
+  then the contents are assumed to be different. The lite mode does no comparison
+  of data/content in the file.
+
 .. option:: -h, --help
 
    Print the command usage, and the list of options available.
