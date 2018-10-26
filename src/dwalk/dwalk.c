@@ -289,6 +289,9 @@ int main(int argc, char** argv)
     int text = 0;
     struct distribute_option option;
 
+    /* set debug level to MFU_LOG_INFO since it defaults to ERROR */
+    mfu_debug_level = MFU_LOG_INFO;
+
     int option_index = 0;
     static struct option long_options[] = {
         {"input",        1, 0, 'i'},
@@ -498,7 +501,7 @@ int main(int argc, char** argv)
         mfu_flist_print(flist);
     }
 
-    /* print summary about all files */
+    /* print summary statistics of flist */
     mfu_flist_print_summary(flist);
 
     /* print distribution if user specified this option */
