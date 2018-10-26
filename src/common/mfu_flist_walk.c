@@ -790,9 +790,6 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, 
               );
     }
 
-    /* print statistics about flist */
-    mfu_flist_print_summary(bflist);
-
     /* hold procs here until summary is printed */
     MPI_Barrier(MPI_COMM_WORLD);
 

@@ -1729,7 +1729,7 @@ void mfu_flist_print_summary(mfu_flist flist)
     MPI_Allreduce(&total_bytes,   &all_bytes,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* convert total size to units */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && rank == 0) {
+    if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Items: %llu", (unsigned long long) all_count);
         MFU_LOG(MFU_LOG_INFO, "  Directories: %llu", (unsigned long long) all_dirs);
         MFU_LOG(MFU_LOG_INFO, "  Files: %llu", (unsigned long long) all_files);
