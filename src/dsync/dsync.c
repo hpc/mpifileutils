@@ -2135,8 +2135,7 @@ int main(int argc, char **argv)
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* pointer to mfu_copy opts */
-    mfu_copy_opts_t mfu_cp_opts;
-    mfu_copy_opts_t* mfu_copy_opts = &mfu_cp_opts;
+    mfu_copy_opts_t* mfu_copy_opts = mfu_copy_opts_new();
 
     /* TODO: allow user to specify file lists as input files */
 
@@ -2155,19 +2154,6 @@ int main(int argc, char **argv)
 
     /* By default, sync option will preserve all attributes. */
     mfu_copy_opts->preserve = true;
-
-    /* By default, don't use O_DIRECT. */
-    mfu_copy_opts->synchronous = false;
-
-    /* By default, don't use sparse file. */
-    mfu_copy_opts->sparse = false;
-
-    /* Set default chunk size */
-    uint64_t chunk_size = (1*1024*1024);
-    mfu_copy_opts->chunk_size = chunk_size;
-
-    /* By default, don't have iput file. */
-    mfu_copy_opts->input_file = NULL;
 
     /* flag to check for sync option */
     mfu_copy_opts->do_sync = 1;
@@ -2354,6 +2340,9 @@ int main(int argc, char **argv)
 
     /* free memory allocated to hold params */
     mfu_free(&paths);
+
+    /* free the copy options structure */
+    mfu_copy_opts_delete(&mfu_copy_opts);
 
     dsync_option_fini();
 

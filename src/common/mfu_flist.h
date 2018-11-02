@@ -426,6 +426,13 @@ int mfu_flist_sort(const char* fields, mfu_flist* flist);
  * Functions to create / remove data on file system based on input list
  ****************************************/
 
+/* allocate a new mfu_copy_opts structure,
+ * and set its fields with default values */
+mfu_copy_opts_t* mfu_copy_opts_new(void);
+
+/* free object allocated in mfu_copy_opts_new */
+void mfu_copy_opts_delete(mfu_copy_opts_t** opts);
+
 /* copy items in list from source paths to destination,
  * each item in source list must come from one of the
  * given source paths, returns 0 on success -1 on error */
