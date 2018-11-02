@@ -552,10 +552,10 @@ static int mfu_copy_set_metadata_dirs(int levels, int minlevel, mfu_flist* lists
 
     if (rank == 0) {
         if(mfu_copy_opts->preserve) {
-            MFU_LOG(MFU_LOG_INFO, "Setting ownership, permissions, and timestamps.");
+            MFU_LOG(MFU_LOG_INFO, "Setting ownership, permissions, and timestamps on directories.");
         }
         else {
-            MFU_LOG(MFU_LOG_INFO, "Fixing permissions.");
+            MFU_LOG(MFU_LOG_INFO, "Fixing permissions on directories.");
         }
     }
 
@@ -1899,61 +1899,185 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
         rc = -1;
     }
 
-    uint64_t src_size   = mfu_flist_global_size(src_cp_list);
-    uint64_t src_offset = mfu_flist_global_offset(src_cp_list);
-    uint64_t src_count  = mfu_flist_size(src_cp_list);
-    uint64_t batch_size = 100000; /* every 100 thousand files */
-    uint64_t batch_offset = 0;
-    while (batch_offset < src_size) {
-        /* create temporary list to copy a batch of files into */
-        mfu_flist tmplist = mfu_flist_subset(src_cp_list);
+    /* operate on files in batches if batch size is given */
+    uint64_t batch_size = mfu_copy_opts->batch_files;
+    if (batch_size > 0) {
+        /* operate in batches, get total size of list, our global
+         * offset within it, and the local size of our list to
+         * compute which batch our files are part of */
+        uint64_t src_size   = mfu_flist_global_size(src_cp_list);
+        uint64_t src_offset = mfu_flist_global_offset(src_cp_list);
+        uint64_t src_count  = mfu_flist_size(src_cp_list);
 
-        /* copy a full batch or until we run out of files */
-        uint64_t count = 0;
-        while (count < batch_size && (batch_offset + count) < src_size) {
-            /* compute global index of this file */
-            uint64_t global_idx = batch_offset + count;
+        /* execute our batch copy */
+        uint64_t batch_offset = 0;
+        while (batch_offset < src_size) {
+            /* create temporary list to copy a batch of files into */
+            mfu_flist tmplist = mfu_flist_subset(src_cp_list);
 
-            /* if this global index is in our list, check whether to copy it */
-            if (src_offset <= global_idx && global_idx < (src_offset + src_count)) {
-                /* compute index of this item in our local list */
-                uint64_t idx = global_idx - src_offset;
+            /* copy a full batch or until we run out of files */
+            uint64_t count = 0;
+            while (count < batch_size && (batch_offset + count) < src_size) {
+                /* compute global index of this file */
+                uint64_t global_idx = batch_offset + count;
 
-                /* copy item into temp list if is not a directory */
-                mfu_filetype type = mfu_flist_file_get_type(src_cp_list, idx);
-                if (type != MFU_TYPE_DIR) {
-                    mfu_flist_file_copy(src_cp_list, idx, tmplist);
+                /* if this global index is in our list, check whether to copy it */
+                if (src_offset <= global_idx && global_idx < (src_offset + src_count)) {
+                    /* compute index of this item in our local list */
+                    uint64_t idx = global_idx - src_offset;
+
+                    /* copy item into temp list if is not a directory */
+                    mfu_filetype type = mfu_flist_file_get_type(src_cp_list, idx);
+                    if (type != MFU_TYPE_DIR) {
+                        mfu_flist_file_copy(src_cp_list, idx, tmplist);
+                    }
                 }
+
+                /* move on to next item */
+                count++;
             }
 
-            /* move on to next item */
-            count++;
+            /* finish off our temp list */
+            mfu_flist_summarize(tmplist);
+
+            /* update our offset */
+            batch_offset += count;
+
+            /* if this batch is all directories, skip this part */
+            uint64_t tmplist_size = mfu_flist_global_size(tmplist);
+            if (tmplist_size > 0) {
+                /* spread items evenly over ranks */
+                mfu_flist spreadlist = mfu_flist_spread(tmplist);
+
+                /* split items in file list into sublists depending on their
+                 * directory depth */
+                int levels2, minlevel2;
+                mfu_flist* lists2;
+                mfu_flist_array_by_depth(spreadlist, &levels2, &minlevel2, &lists2);
+
+                /* create files and links */
+                tmp_rc = mfu_create_files(levels2, minlevel2, lists2, numpaths,
+                        paths, destpath, mfu_copy_opts);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
+
+                /* copy data */
+                tmp_rc = mfu_copy_files(spreadlist, mfu_copy_opts->chunk_size, 
+                        numpaths, paths, destpath, mfu_copy_opts);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
+
+                /* force data to backend to avoid the following metadata
+                 * setting mismatch, which may happen on lustre */
+                mfu_sync_all("Syncing data to disk.");
+
+                /* set permissions, ownership, and timestamps if needed */
+                mfu_copy_set_metadata(levels2, minlevel2, lists2, numpaths,
+                        paths, destpath, mfu_copy_opts);
+
+                /* free our lists of levels */
+                mfu_flist_array_free(levels2, &lists2);
+
+                /* free the list of spread items */
+                mfu_flist_free(&spreadlist);
+
+                /* force updates to disk */
+                mfu_sync_all("Syncing updates to disk.");
+            }
+
+            /* done with our batch list */
+            mfu_flist_free(&tmplist);
+
+            /* Determine the actual and relative end time for the epilogue. */
+            mfu_copy_stats.wtime_ended = MPI_Wtime();
+            time(&(mfu_copy_stats.time_ended));
+
+            /* compute time */
+            double rel_time = mfu_copy_stats.wtime_ended - mfu_copy_stats.wtime_started;
+
+            /* prep our values into buffer */
+            int64_t values[5];
+            values[0] = mfu_copy_stats.total_dirs;
+            values[1] = mfu_copy_stats.total_files;
+            values[2] = mfu_copy_stats.total_links;
+            values[3] = mfu_copy_stats.total_size;
+            values[4] = mfu_copy_stats.total_bytes_copied;
+
+            /* sum values across processes */
+            int64_t sums[5];
+            MPI_Allreduce(values, sums, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+            /* extract results from allreduce */
+            int64_t agg_dirs   = sums[0];
+            int64_t agg_files  = sums[1];
+            int64_t agg_links  = sums[2];
+            int64_t agg_size   = sums[3];
+            int64_t agg_copied = sums[4];
+
+            /* compute rate of copy */
+            double agg_rate = (double)agg_copied / rel_time;
+            if (rel_time > 0.0) {
+                agg_rate = (double)agg_copied / rel_time;
+            }
+
+            if(rank == 0) {
+                /* format start time */
+                char starttime_str[256];
+                struct tm* localstart = localtime(&(mfu_copy_stats.time_started));
+                strftime(starttime_str, 256, "%b-%d-%Y,%H:%M:%S", localstart);
+
+                /* format end time */
+                char endtime_str[256];
+                struct tm* localend = localtime(&(mfu_copy_stats.time_ended));
+                strftime(endtime_str, 256, "%b-%d-%Y,%H:%M:%S", localend);
+
+                /* total number of items */
+                int64_t agg_items = agg_dirs + agg_files + agg_links;
+
+                /* convert size to units */
+                double agg_size_tmp;
+                const char* agg_size_units;
+                mfu_format_bytes((uint64_t)agg_size, &agg_size_tmp, &agg_size_units);
+
+                /* convert bandwidth to units */
+                double agg_rate_tmp;
+                const char* agg_rate_units;
+                mfu_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
+
+                MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
+                MFU_LOG(MFU_LOG_INFO, "Current: %s", endtime_str);
+                MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
+                MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
+                MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
+                    agg_size_tmp, agg_size_units, agg_size);
+
+                MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
+                    "(%.3" PRId64 " bytes in %.3lf seconds)", \
+                    agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
+                MFU_LOG(MFU_LOG_INFO, "Copied %" PRId64 " of %" PRId64 " items (%.3lf%%)", agg_items, src_size, (double)agg_items/(double)src_size*100.0);
+            }
         }
 
-        /* finish off our temp list */
-        mfu_flist_summarize(tmplist);
-
-        /* update our offset */
-        batch_offset += count;
-
-        /* spread items evenly over ranks */
-        mfu_flist spreadlist = mfu_flist_spread(tmplist);
-
-        /* split items in file list into sublists depending on their
-         * directory depth */
-        int levels2, minlevel2;
-        mfu_flist* lists2;
-        mfu_flist_array_by_depth(spreadlist, &levels2, &minlevel2, &lists2);
+        /* set permissions, ownership, and timestamps if needed */
+        mfu_copy_set_metadata_dirs(levels, minlevel, lists, numpaths,
+                paths, destpath, mfu_copy_opts);
+    
+        /* force updates to disk */
+        mfu_sync_all("Syncing directory updates to disk.");
+    } else {
+        /* user does not want to batch files, so copy the whole list */
 
         /* create files and links */
-        tmp_rc = mfu_create_files(levels2, minlevel2, lists2, numpaths,
+        tmp_rc = mfu_create_files(levels, minlevel, lists, numpaths,
                 paths, destpath, mfu_copy_opts);
         if (tmp_rc < 0) {
             rc = -1;
         }
 
         /* copy data */
-        tmp_rc = mfu_copy_files(spreadlist, mfu_copy_opts->chunk_size, 
+        tmp_rc = mfu_copy_files(src_cp_list, mfu_copy_opts->chunk_size, 
                 numpaths, paths, destpath, mfu_copy_opts);
         if (tmp_rc < 0) {
             rc = -1;
@@ -1964,94 +2088,12 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
         mfu_sync_all("Syncing data to disk.");
 
         /* set permissions, ownership, and timestamps if needed */
-        mfu_copy_set_metadata(levels2, minlevel2, lists2, numpaths,
+        mfu_copy_set_metadata(levels, minlevel, lists, numpaths,
                 paths, destpath, mfu_copy_opts);
-
-        /* free our lists of levels */
-        mfu_flist_array_free(levels2, &lists2);
-
-        mfu_flist_free(&spreadlist);
-        mfu_flist_free(&tmplist);
-
+    
         /* force updates to disk */
-        mfu_sync_all("Syncing updates to disk.");
-
-        /* Determine the actual and relative end time for the epilogue. */
-        mfu_copy_stats.wtime_ended = MPI_Wtime();
-        time(&(mfu_copy_stats.time_ended));
-
-        /* compute time */
-        double rel_time = mfu_copy_stats.wtime_ended - mfu_copy_stats.wtime_started;
-
-        /* prep our values into buffer */
-        int64_t values[5];
-        values[0] = mfu_copy_stats.total_dirs;
-        values[1] = mfu_copy_stats.total_files;
-        values[2] = mfu_copy_stats.total_links;
-        values[3] = mfu_copy_stats.total_size;
-        values[4] = mfu_copy_stats.total_bytes_copied;
-
-        /* sum values across processes */
-        int64_t sums[5];
-        MPI_Allreduce(values, sums, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-        /* extract results from allreduce */
-        int64_t agg_dirs   = sums[0];
-        int64_t agg_files  = sums[1];
-        int64_t agg_links  = sums[2];
-        int64_t agg_size   = sums[3];
-        int64_t agg_copied = sums[4];
-
-        /* compute rate of copy */
-        double agg_rate = (double)agg_copied / rel_time;
-        if (rel_time > 0.0) {
-            agg_rate = (double)agg_copied / rel_time;
-        }
-
-        if(rank == 0) {
-            /* format start time */
-            char starttime_str[256];
-            struct tm* localstart = localtime(&(mfu_copy_stats.time_started));
-            strftime(starttime_str, 256, "%b-%d-%Y,%H:%M:%S", localstart);
-
-            /* format end time */
-            char endtime_str[256];
-            struct tm* localend = localtime(&(mfu_copy_stats.time_ended));
-            strftime(endtime_str, 256, "%b-%d-%Y,%H:%M:%S", localend);
-
-            /* total number of items */
-            int64_t agg_items = agg_dirs + agg_files + agg_links;
-
-            /* convert size to units */
-            double agg_size_tmp;
-            const char* agg_size_units;
-            mfu_format_bytes((uint64_t)agg_size, &agg_size_tmp, &agg_size_units);
-
-            /* convert bandwidth to units */
-            double agg_rate_tmp;
-            const char* agg_rate_units;
-            mfu_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
-
-            MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
-            MFU_LOG(MFU_LOG_INFO, "Current: %s", endtime_str);
-            MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
-            MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
-            MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
-                agg_size_tmp, agg_size_units, agg_size);
-
-            MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
-                "(%.3" PRId64 " bytes in %.3lf seconds)", \
-                agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
-            MFU_LOG(MFU_LOG_INFO, "Completed %" PRId64 " of %" PRId64 " items (%.3lf%%)", agg_items, src_size, (double)agg_items/(double)src_size*100.0);
-        }
+        mfu_sync_all("Syncing directory updates to disk.");
     }
-
-    /* set permissions, ownership, and timestamps if needed */
-    mfu_copy_set_metadata_dirs(levels, minlevel, lists, numpaths,
-            paths, destpath, mfu_copy_opts);
-
-    /* force updates to disk */
-    mfu_sync_all("Syncing directory updates to disk.");
 
     /* free our lists of levels */
     mfu_flist_array_free(levels, &lists);
@@ -2236,6 +2278,9 @@ mfu_copy_opts_t* mfu_copy_opts_new(void)
 
     /* Lustre grouplock ID */
     opts->grouplock_id  = -1;
+
+    /* By default, do not limit the batch size */
+    opts->batch_files   = 0;
 
     return opts;
 }

@@ -93,6 +93,7 @@ typedef struct {
     char*  block_buf1;    /* buffer to read / write data */
     char*  block_buf2;    /* another buffer to read / write data */
     int    grouplock_id;  /* Lustre grouplock ID */
+    uint64_t batch_files; /* max batch size to copy files, 0 implies no limit */
 } mfu_copy_opts_t;
 
 /* Given a source item name, determine which source path this item
