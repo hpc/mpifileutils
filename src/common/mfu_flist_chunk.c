@@ -442,6 +442,11 @@ void mfu_file_chunk_list_lor(mfu_flist list, const mfu_file_chunk* head, const i
     /* get the largest filename */
     uint64_t max_name = mfu_flist_file_max_name(list);
 
+    /* if list is empty, we can't do much */
+    if (max_name == 0) {
+        return;
+    }
+
     /* get a count of how many items are the chunk list */
     uint64_t list_count = mfu_file_chunk_list_size(head);
 
@@ -453,8 +458,8 @@ void mfu_file_chunk_list_lor(mfu_flist list, const mfu_file_chunk* head, const i
     int* ltr = (int*) MFU_MALLOC(list_count * sizeof(int));
 
     /* create type and comparison operation for file names for the segmented scan */
-    MPI_Datatype keytype;
-    DTCMP_Op keyop;
+    MPI_Datatype keytype = MPI_DATATYPE_NULL;
+    DTCMP_Op keyop = DTCMP_OP_NULL;
     DTCMP_Str_create_ascend((int)max_name, &keytype, &keyop);
 
     /* execute segmented scan of comparison flags across file names */
