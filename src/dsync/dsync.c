@@ -47,11 +47,12 @@ static void print_usage(void)
     printf("Usage: dsync [options] source target\n");
     printf("\n");
     printf("Options:\n");
-    printf("      --dryrun     - show differences, but do not synchronize files\n");
-    printf("  -c, --contents   - read and compare file contents rather than compare size and mtime\n");
-    printf("  -N, --no-delete  - don't delete extraneous files from target\n");
-    printf("  -v, --verbose    - verbose output\n");
-    printf("  -h, --help       - print usage\n");
+    printf("      --dryrun          - show differences, but do not synchronize files\n");
+    printf("  -b  --batch-files <N> - batch files into groups of N during copy\n");
+    printf("  -c, --contents        - read and compare file contents rather than compare size and mtime\n");
+    printf("  -N, --no-delete       - don't delete extraneous files from target\n");
+    printf("  -v, --verbose         - verbose output\n");
+    printf("  -h, --help            - print usage\n");
     printf("\n");
     fflush(stdout);
 }
@@ -2160,13 +2161,14 @@ int main(int argc, char **argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"contents",  0, 0, 'c'},
-        {"dryrun",    0, 0, 'n'},
-        {"no-delete", 0, 0, 'N'},
-        {"output",    1, 0, 'o'},
-        {"debug",     0, 0, 'd'},
-        {"verbose",   0, 0, 'v'},
-        {"help",      0, 0, 'h'},
+        {"batch-files",  1, 0, 'b'},
+        {"contents",     0, 0, 'c'},
+        {"dryrun",       0, 0, 'n'},
+        {"no-delete",    0, 0, 'N'},
+        {"output",       1, 0, 'o'},
+        {"debug",        0, 0, 'd'},
+        {"verbose",      0, 0, 'v'},
+        {"help",         0, 0, 'h'},
         {0, 0, 0, 0}
     };
     int ret = 0;
@@ -2177,7 +2179,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "cNo:dvh",
+            argc, argv, "b:cNo:dvh",
             long_options, &option_index
         );
 
@@ -2186,6 +2188,9 @@ int main(int argc, char **argv)
         }
 
         switch (c) {
+        case 'b':
+            mfu_copy_opts->batch_files = atoi(optarg);
+            break;
         case 'c':
             options.contents++;
             break;
