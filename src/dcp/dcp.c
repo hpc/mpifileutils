@@ -75,8 +75,7 @@ void print_usage(void)
     fflush(stdout);
 }
 
-int main(int argc, \
-         char** argv)
+int main(int argc, char** argv)
 {
     /* assume we'll exit with success */
     int rc = 0;
@@ -90,35 +89,15 @@ int main(int argc, \
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     /* pointer to mfu_copy opts */
-    mfu_copy_opts_t mfu_cp_opts;
-    mfu_copy_opts_t* mfu_copy_opts = &mfu_cp_opts;
+    mfu_copy_opts_t* mfu_copy_opts = mfu_copy_opts_new();
 
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
     mfu_debug_level = MFU_LOG_INFO;
 
-    /* Set default chunk size */
-    uint64_t chunk_size = (1*1024*1024);
-    mfu_copy_opts->chunk_size = chunk_size ;
-
     /* By default, don't have iput file. */
     char* inputname = NULL;
-
-    /* By default, don't bother to preserve all attributes. */
-    mfu_copy_opts->preserve = 0;
-
-    /* Lustre grouplock ID */
-    mfu_copy_opts->grouplock_id;
-
-    /* By default, don't use O_DIRECT. */
-    mfu_copy_opts->synchronous = 0;
-
-    /* By default, don't use sparse file. */
-    mfu_copy_opts->sparse = false;
-
-    /* By default, we want the sync option off */
-    mfu_copy_opts->do_sync = 0;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -335,6 +314,9 @@ int main(int argc, \
 
     /* free the input file name */
     mfu_free(&inputname);
+
+    /* free the copy options */
+    mfu_copy_opts_delete(&mfu_copy_opts);
 
     /* shut down MPI */
     mfu_finalize();

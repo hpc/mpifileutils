@@ -2199,3 +2199,60 @@ int mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist d
 
     return rc;
 }
+
+/* return a newly allocated copy_opts structure, set default values on its fields */
+mfu_copy_opts_t* mfu_copy_opts_new(void)
+{
+    mfu_copy_opts_t* opts = (mfu_copy_opts_t*) MFU_MALLOC(sizeof(mfu_copy_opts_t));
+
+    /* By default, assume we are not copying into a directory */
+    opts->copy_into_dir = 0;
+
+    /* By default, we want the sync option off */
+    opts->do_sync       = 0;
+
+    /* to record destination path that we'll be copying to */
+    opts->dest_path     = NULL;
+
+    /* records name of input file to read source list from (not used?) */
+    opts->input_file    = NULL;
+
+    /* By default, don't bother to preserve all attributes. */
+    opts->preserve      = false;
+
+    /* By default, don't use O_DIRECT. */
+    opts->synchronous   = false;
+
+    /* By default, don't use sparse file. */
+    opts->sparse        = false;
+
+    /* Set default chunk size */
+    opts->chunk_size    = 1*1024*1024;
+
+    /* temporaries used during the copy operation for buffers to read/write data */
+    opts->block_size    = FD_BLOCK_SIZE;
+    opts->block_buf1    = NULL;
+    opts->block_buf2    = NULL;
+
+    /* Lustre grouplock ID */
+    opts->grouplock_id  = -1;
+
+    return opts;
+}
+
+void mfu_copy_opts_delete(mfu_copy_opts_t** popts)
+{
+  if (popts != NULL) {
+    mfu_copy_opts_t* opts = *popts;
+
+    /* free fields allocated on opts */
+    if (opts != NULL) {
+      mfu_free(&opts->dest_path);
+      mfu_free(&opts->input_file);
+      mfu_free(&opts->block_buf1);
+      mfu_free(&opts->block_buf2);
+    }
+
+    mfu_free(popts);
+  }
+}
