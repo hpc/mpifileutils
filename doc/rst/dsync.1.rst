@@ -22,6 +22,10 @@ OPTIONS
 
    Show differences without changing anything.
 
+.. option:: -b, --batch-files N
+
+   Batch files into groups of up to size N during copy operation.
+
 .. option:: -c, --contents
 
    Compare files byte-by-byte rather than checking size and mtime
