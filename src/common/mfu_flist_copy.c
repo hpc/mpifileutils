@@ -879,7 +879,7 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
     }
 
     /* ensure that string ends with NUL */
-    path[rc] = '\0';
+    path[readlink_rc] = '\0';
 
     /* create new link */
     int symlink_rc = mfu_symlink(path, dest_path);
@@ -2056,7 +2056,7 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
                 MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
                     "(%.3" PRId64 " bytes in %.3lf seconds)", \
                     agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
-                MFU_LOG(MFU_LOG_INFO, "Copied %" PRId64 " of %" PRId64 " items (%.3lf%%)", agg_items, src_size, (double)agg_items/(double)src_size*100.0);
+                MFU_LOG(MFU_LOG_INFO, "Copied %" PRId64 " of %" PRId64 " items (%.3lf%%)", batch_offset, src_size, (double)batch_offset/(double)src_size*100.0);
             }
         }
 
