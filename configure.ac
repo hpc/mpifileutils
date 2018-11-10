@@ -90,6 +90,7 @@ AC_CONFIG_FILES([Makefile                \
                  src/dfilemaker/Makefile \
                  src/dfilemaker1/Makefile \
                  src/dfind/Makefile      \
+                 src/dreln/Makefile      \
                  src/drm/Makefile        \
                  src/dstripe/Makefile    \
                  src/dsync/Makefile      \
