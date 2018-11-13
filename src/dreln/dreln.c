@@ -1,6 +1,8 @@
+#include <unistd.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <getopt.h>
 
 #include "mpi.h"
 #include "mfu.h"
@@ -15,7 +17,69 @@ int main (int argc, char* argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-    if (argc != 4) {
+    /* whether path to target should be relative from symlink */
+    char* inputname = NULL;
+
+    /* whether to preserve timestamps on link */
+    int preserve_times = 0;
+
+    /* whether path to target should be relative from symlink */
+    int relative_targets = 0;
+
+    /* set debug level to MFU_LOG_INFO since it defaults to ERROR */
+    mfu_debug_level = MFU_LOG_INFO;
+
+    int option_index = 0;
+    static struct option long_options[] = {
+        {"input",        1, 0, 'i'},
+        {"relative",     0, 0, 'r'},
+        {"verbose",      0, 0, 'v'},
+        {"help",         0, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+
+    int usage = 0;
+    while (1) {
+        int c = getopt_long(
+                    argc, argv, "i:rvh",
+                    long_options, &option_index
+                );
+
+        if (c == -1) {
+            break;
+        }
+
+        switch (c) {
+            case 'i':
+                inputname = MFU_STRDUP(optarg);
+                break;
+            case 'r':
+                relative_targets = 1;
+                break;
+            case 'v':
+                mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'h':
+                usage = 1;
+                break;
+            case '?':
+                usage = 1;
+                break;
+            default:
+                if (rank == 0) {
+                    printf("?? getopt returned character code 0%o ??\n", c);
+                }
+        }
+    }
+
+    /* remaining arguments */
+    int remaining = argc - optind;
+
+    if (remaining != 3) {
+        usage = 1;
+    }
+
+    if (usage) {
         if (rank == 0) {
             printf("Usage: dreln oldprefix newprefix path\n");
             fflush(stdout);
@@ -25,9 +89,9 @@ int main (int argc, char* argv[])
         return 0;
     }
 
-    char* oldpath  = argv[1];
-    char* newpath  = argv[2];
-    char* walkpath = argv[3];
+    char* oldpath  = argv[optind + 0];
+    char* newpath  = argv[optind + 1];
+    char* walkpath = argv[optind + 2];
 
     /* create path objects of old and new prefix */
     mfu_path* path_old = mfu_path_from_str(oldpath);
@@ -38,19 +102,27 @@ int main (int argc, char* argv[])
     /* get number of elements in old prefix */
     int components_old = mfu_path_components(path_old);
 
-    /* process path to be walked */
-    int numpaths = 1;
-    mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
-    mfu_param_path_set_all((uint64_t)numpaths, (const char**)&walkpath, paths);
-
-    /* TODO: check that walk path is valid */
-
+    /* get source file list */
     mfu_flist flist = mfu_flist_new();
+    int numpaths = 0;
+    mfu_param_path* paths = NULL;
+    if (inputname == NULL) {
+        numpaths = 1;
 
-    /* walk list of input paths */
-    int walk_stat = 0;
-    int walk_perm = 0;
-    mfu_flist_walk_param_paths(numpaths, paths, walk_stat, walk_perm, flist);
+        /* process path to be walked */
+        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
+        mfu_param_path_set_all((uint64_t)numpaths, (const char**)&walkpath, paths);
+
+        /* TODO: check that walk path is valid */
+
+        /* walk list of input paths */
+        int walk_stat = 0;
+        int walk_perm = 0;
+        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, walk_perm, flist);
+    } else {
+        /* read cache file */
+        mfu_flist_read_cache(inputname, flist);
+    }
 
     /* create a new list by filtering out links */
     mfu_flist linklist_prestat = mfu_flist_subset(flist);
@@ -109,10 +181,35 @@ int main (int argc, char* argv[])
                       name, errno, strerror(errno));
             }
 
-            /* define new path, chop old prefix, prepend new prefix */
+            /* define target path under new prefix,
+             * chop old prefix, prepend new prefix */
             mfu_path_slice(path_target, components_old, -1);
             mfu_path_prepend(path_target, path_new);
-            const char* target_str = mfu_path_strdup(path_target);
+
+            /* define target string */
+            const char* target_str = NULL;
+            if (relative_targets) {
+                /* build path to the parent directory of the symlink */
+                mfu_path* path_link = mfu_path_from_str(name);
+                mfu_path_dirname(path_link);
+
+                /* build relative path from to target */
+                mfu_path* path_target_rel = mfu_path_relative(path_link, path_target);
+                if (mfu_path_components(path_target_rel) > 0) {
+                    target_str = mfu_path_strdup(path_target_rel);
+                } else {
+                    /* end up with empty string if link points to
+                     * its parent directory */
+                    target_str = strdup(".");
+                }
+
+                /* free paths */
+                mfu_path_delete(&path_target_rel);
+                mfu_path_delete(&path_link);
+            } else {
+                /* otherwise, use the full path to the target */
+                target_str = mfu_path_strdup(path_target);
+            }
 
             /* create new link */
             int symlink_rc = mfu_symlink(target_str, name);
@@ -127,6 +224,9 @@ int main (int argc, char* argv[])
                     );
                 }
             }
+
+            /* done with the target string */
+            mfu_free(&target_str);
 
             /* TODO: copy xattrs */
 
@@ -149,32 +249,32 @@ int main (int argc, char* argv[])
                 }
             }
 
-            /* get atime seconds and nsecs */
-            uint64_t atime      = mfu_flist_file_get_atime(linklist, idx);
-            uint64_t atime_nsec = mfu_flist_file_get_atime_nsec(linklist, idx);
+            if (preserve_times) {
+                /* get atime seconds and nsecs */
+                uint64_t atime      = mfu_flist_file_get_atime(linklist, idx);
+                uint64_t atime_nsec = mfu_flist_file_get_atime_nsec(linklist, idx);
 
-            /* get mtime seconds and nsecs */
-            uint64_t mtime      = mfu_flist_file_get_mtime(linklist, idx);
-            uint64_t mtime_nsec = mfu_flist_file_get_mtime_nsec(linklist, idx);
+                /* get mtime seconds and nsecs */
+                uint64_t mtime      = mfu_flist_file_get_mtime(linklist, idx);
+                uint64_t mtime_nsec = mfu_flist_file_get_mtime_nsec(linklist, idx);
 
-            /* fill in time structures */
-            struct timespec times[2];
-            times[0].tv_sec  = (time_t) atime;
-            times[0].tv_nsec = (long)   atime_nsec;
-            times[1].tv_sec  = (time_t) mtime;
-            times[1].tv_nsec = (long)   mtime_nsec;
+                /* fill in time structures */
+                struct timespec times[2];
+                times[0].tv_sec  = (time_t) atime;
+                times[0].tv_nsec = (long)   atime_nsec;
+                times[1].tv_sec  = (time_t) mtime;
+                times[1].tv_nsec = (long)   mtime_nsec;
 
-            /* set times with nanosecond precision using utimensat,
-             * assume path is relative to current working directory,
-             * if it's not absolute, and set times on link (not target file)
-             * if dest_path refers to a link */
-            if (mfu_utimensat(AT_FDCWD, name, times, AT_SYMLINK_NOFOLLOW) != 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on `%s' utime() (errno=%d %s)",
-                    name, errno, strerror(errno)
-                   );
+                /* set times with nanosecond precision using utimensat,
+                 * assume path is relative to current working directory,
+                 * if it's not absolute, and set times on link (not target file)
+                 * if dest_path refers to a link */
+                if (mfu_utimensat(AT_FDCWD, name, times, AT_SYMLINK_NOFOLLOW) != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on `%s' utime() (errno=%d %s)",
+                        name, errno, strerror(errno)
+                       );
+                }
             }
-
-            mfu_free(&target_str);
         }
 
         mfu_path_delete(&path_target);
