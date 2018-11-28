@@ -923,10 +923,10 @@ static int dcmp_strmap_compare(mfu_flist src_list,
         }
 
         /* get mtime seconds and nsecs to check modification times of src & dst */
-        src_mtime      = mfu_flist_file_get_mtime(src_compare_list, src_index);
-        src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_compare_list, src_index);
-        dst_mtime      = mfu_flist_file_get_mtime(dst_compare_list, dst_index);
-        dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(dst_compare_list, dst_index);
+        src_mtime      = mfu_flist_file_get_mtime(src_list, src_index);
+        src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_list, src_index);
+        dst_mtime      = mfu_flist_file_get_mtime(dst_list, dst_index);
+        dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(dst_list, dst_index);
 
         if (options.lite) {
             if ((src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec)) {
@@ -936,20 +936,17 @@ static int dcmp_strmap_compare(mfu_flist src_list,
                  * modification times, but still have the same content. */
                 dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
                 dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
-                continue;
+            } else {
+                dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+                dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
             }
+            continue;
         }
-
-        dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
-        dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
 
         /* If we get to this point, we need to open files and compare
          * file contents.  We'll first identify all such files so that
          * we can do this comparison in parallel more effectively.  For
          * now copy these files to the list of files we need to compare. */
-
-        /* make a copy of the src and dest files where the data needs
-         * to be compared and store in src & dest compare lists */
         mfu_flist_file_copy(src_list, src_index, src_compare_list);
         mfu_flist_file_copy(dst_list, dst_index, dst_compare_list);
     }
