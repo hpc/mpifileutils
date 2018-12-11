@@ -471,21 +471,6 @@ static strmap* dcmp_strmap_creat(mfu_flist list, const char* prefix)
     return map;
 }
 
-#define dcmp_compare_field(field_name, field)                                \
-do {                                                                         \
-    uint64_t src = mfu_flist_file_get_ ## field_name(src_list, src_index); \
-    uint64_t dst = mfu_flist_file_get_ ## field_name(dst_list, dst_index); \
-    if (src != dst) {                                                        \
-        /* file type is different */                                         \
-        dcmp_strmap_item_update(src_map, key, field, DCMPS_DIFFER);          \
-        dcmp_strmap_item_update(dst_map, key, field, DCMPS_DIFFER);          \
-        diff++;                                                              \
-    } else {                                                                 \
-        dcmp_strmap_item_update(src_map, key, field, DCMPS_COMMON);          \
-        dcmp_strmap_item_update(dst_map, key, field, DCMPS_COMMON);          \
-    }                                                                        \
-} while(0)
-
 static void dcmp_compare_acl(
     const char *key,
     mfu_flist src_list,
@@ -576,29 +561,105 @@ static int dcmp_compare_metadata(
     if (dcmp_option_need_compare(DCMPF_SIZE)) {
         mfu_filetype type = mfu_flist_file_get_type(src_list, src_index);
         if (type != MFU_TYPE_DIR) {
-            dcmp_compare_field(size, DCMPF_SIZE);
+            uint64_t src = mfu_flist_file_get_size(src_list, src_index);
+            uint64_t dst = mfu_flist_file_get_size(dst_list, dst_index);
+            if (src != dst) {
+                /* file size is different */
+                dcmp_strmap_item_update(src_map, key, DCMPF_SIZE, DCMPS_DIFFER);
+                dcmp_strmap_item_update(dst_map, key, DCMPF_SIZE, DCMPS_DIFFER);
+                diff++;
+             } else {
+                dcmp_strmap_item_update(src_map, key, DCMPF_SIZE, DCMPS_COMMON);
+                dcmp_strmap_item_update(dst_map, key, DCMPF_SIZE, DCMPS_COMMON);
+             }
         } else {
             dcmp_strmap_item_update(src_map, key, DCMPF_SIZE, DCMPS_COMMON);
             dcmp_strmap_item_update(dst_map, key, DCMPF_SIZE, DCMPS_COMMON);
         }
     }
     if (dcmp_option_need_compare(DCMPF_GID)) {
-        dcmp_compare_field(gid, DCMPF_GID);
+        uint64_t src = mfu_flist_file_get_gid(src_list, src_index);
+        uint64_t dst = mfu_flist_file_get_gid(dst_list, dst_index);
+        if (src != dst) {
+            /* file gid is different */
+            dcmp_strmap_item_update(src_map, key, DCMPF_GID, DCMPS_DIFFER);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_GID, DCMPS_DIFFER);
+             diff++;
+        } else {
+            dcmp_strmap_item_update(src_map, key, DCMPF_GID, DCMPS_COMMON);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_GID, DCMPS_COMMON);
+        }
     }
     if (dcmp_option_need_compare(DCMPF_UID)) {
-        dcmp_compare_field(uid, DCMPF_UID);
+        uint64_t src = mfu_flist_file_get_uid(src_list, src_index);
+        uint64_t dst = mfu_flist_file_get_uid(dst_list, dst_index);
+        if (src != dst) {
+            /* file uid is different */
+            dcmp_strmap_item_update(src_map, key, DCMPF_UID, DCMPS_DIFFER);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_UID, DCMPS_DIFFER);
+            diff++;
+        } else {
+            dcmp_strmap_item_update(src_map, key, DCMPF_UID, DCMPS_COMMON);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_UID, DCMPS_COMMON);
+        }
     }
     if (dcmp_option_need_compare(DCMPF_ATIME)) {
-        dcmp_compare_field(atime, DCMPF_ATIME);
+        uint64_t src_atime      = mfu_flist_file_get_atime(src_list, src_index);
+        uint64_t src_atime_nsec = mfu_flist_file_get_atime_nsec(src_list, src_index);
+        uint64_t dst_atime      = mfu_flist_file_get_atime(dst_list, dst_index);
+        uint64_t dst_atime_nsec = mfu_flist_file_get_atime_nsec(dst_list, dst_index);
+        if ((src_atime != dst_atime) || (src_atime_nsec != dst_atime_nsec)) {
+            /* file atime is different */
+            dcmp_strmap_item_update(src_map, key, DCMPF_ATIME, DCMPS_DIFFER);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_ATIME, DCMPS_DIFFER);
+            diff++;
+        } else {
+            dcmp_strmap_item_update(src_map, key, DCMPF_ATIME, DCMPS_COMMON);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_ATIME, DCMPS_COMMON);
+        }
     }
     if (dcmp_option_need_compare(DCMPF_MTIME)) {
-        dcmp_compare_field(mtime, DCMPF_MTIME);
+        uint64_t src_mtime      = mfu_flist_file_get_mtime(src_list, src_index);
+        uint64_t src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_list, src_index);
+        uint64_t dst_mtime      = mfu_flist_file_get_mtime(dst_list, dst_index);
+        uint64_t dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(dst_list, dst_index);
+        if ((src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec)) {
+            /* file mtime is different */
+            dcmp_strmap_item_update(src_map, key, DCMPF_MTIME, DCMPS_DIFFER);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_MTIME, DCMPS_DIFFER);
+            diff++;
+        } else {
+            dcmp_strmap_item_update(src_map, key, DCMPF_MTIME, DCMPS_COMMON);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_MTIME, DCMPS_COMMON);
+        }
     }
     if (dcmp_option_need_compare(DCMPF_CTIME)) {
-        dcmp_compare_field(ctime, DCMPF_CTIME);
+        uint64_t src_ctime      = mfu_flist_file_get_ctime(src_list, src_index);
+        uint64_t src_ctime_nsec = mfu_flist_file_get_ctime_nsec(src_list, src_index);
+        uint64_t dst_ctime      = mfu_flist_file_get_ctime(dst_list, dst_index);
+        uint64_t dst_ctime_nsec = mfu_flist_file_get_ctime_nsec(dst_list, dst_index);
+        if ((src_ctime != dst_ctime) || (src_ctime_nsec != dst_ctime_nsec)) {
+            /* file ctime is different */
+            dcmp_strmap_item_update(src_map, key, DCMPF_CTIME, DCMPS_DIFFER);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_CTIME, DCMPS_DIFFER);
+            diff++;
+        } else {
+            dcmp_strmap_item_update(src_map, key, DCMPF_CTIME, DCMPS_COMMON);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_CTIME, DCMPS_COMMON);
+        }
     }
     if (dcmp_option_need_compare(DCMPF_PERM)) {
-        dcmp_compare_field(perm, DCMPF_PERM);
+        uint64_t src = mfu_flist_file_get_perm(src_list, src_index);
+        uint64_t dst = mfu_flist_file_get_perm(dst_list, dst_index);
+        if (src != dst) {
+            /* file perm is different */
+            dcmp_strmap_item_update(src_map, key, DCMPF_PERM, DCMPS_DIFFER);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_PERM, DCMPS_DIFFER);
+            diff++;
+        } else {
+            dcmp_strmap_item_update(src_map, key, DCMPF_PERM, DCMPS_COMMON);
+            dcmp_strmap_item_update(dst_map, key, DCMPF_PERM, DCMPS_COMMON);
+        }
     }
     if (dcmp_option_need_compare(DCMPF_ACL)) {
         dcmp_compare_acl(key, src_list,src_index,
@@ -838,6 +899,7 @@ static int dcmp_strmap_compare(mfu_flist src_list,
     /* iterate over each item in source map */
     const strmap_node* node;
     strmap_foreach(src_map, node) {
+
         /* get file name */
         const char* key = strmap_node_key(node);
 
@@ -849,6 +911,13 @@ static int dcmp_strmap_compare(mfu_flist src_list,
         /* get index of destination file */
         uint64_t dst_index;
         tmp_rc = dcmp_strmap_item_index(dst_map, key, &dst_index);
+
+        /* get mtime seconds and nsecs to check modification times of src & dst */
+        src_mtime      = mfu_flist_file_get_mtime(src_list, src_index);
+        src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_list, src_index);
+        dst_mtime      = mfu_flist_file_get_mtime(dst_list, dst_index);
+        dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(dst_list, dst_index);
+
         if (tmp_rc) {
             dcmp_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_ONLY_SRC);
             
@@ -921,12 +990,6 @@ static int dcmp_strmap_compare(mfu_flist src_list,
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
             continue;
         }
-
-        /* get mtime seconds and nsecs to check modification times of src & dst */
-        src_mtime      = mfu_flist_file_get_mtime(src_list, src_index);
-        src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_list, src_index);
-        dst_mtime      = mfu_flist_file_get_mtime(dst_list, dst_index);
-        dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(dst_list, dst_index);
 
         if (options.lite) {
             if ((src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec)) {
