@@ -49,6 +49,7 @@ static uint64_t CURRENT_NUM_DIRS;
 static const char** CURRENT_DIRS;
 static flist_t* CURRENT_LIST;
 static int SET_DIR_PERMS;
+static int REMOVE_FILES;
 
 /****************************************
  * Global counter and callbacks for LIBCIRCLE reductions
@@ -495,10 +496,16 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
                     mode_t mode;
                     int have_mode = 0;
                     if (entry->d_type != DT_UNKNOWN) {
-                        /* we can read object type from directory entry */
-                        have_mode = 1;
-                        mode = DTTOIF(entry->d_type);
-                        mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, NULL);
+                        /* unlink files here if remove option is on,
+                         * and dtype is known without a stat */
+                        if (REMOVE_FILES && (entry->d_type != DT_DIR)) {
+                            mfu_unlink(newpath);
+                        } else {
+                            /* we can read object type from directory entry */
+                            have_mode = 1;
+                            mode = DTTOIF(entry->d_type);
+                            mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, NULL);
+                        }
                     }
                     else {
                         /* type is unknown, we need to stat it */
@@ -507,7 +514,13 @@ static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
                         if (status == 0) {
                             have_mode = 1;
                             mode = st.st_mode;
-                            mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, &st);
+                            /* unlink files here if remove option is on,
+                             * and stat was necessary to get type */
+                            if (REMOVE_FILES && !S_ISDIR(st.st_mode)) {
+                                mfu_unlink(newpath);
+                            } else {
+                                mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, &st);
+                            }
                         }
                         else {
                             /* error */
@@ -656,8 +669,12 @@ static void walk_stat_process(CIRCLE_handle* handle)
 
     /* TODO: filter items by stat info */
 
-    /* record info for item in list */
-    mfu_flist_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+    if (REMOVE_FILES && !S_ISDIR(st.st_mode)) {
+        mfu_unlink(path);
+    } else {
+        /* record info for item in list */
+        mfu_flist_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+    }
 
     /* recurse into directory */
     if (S_ISDIR(st.st_mode)) {
@@ -682,24 +699,30 @@ static void walk_stat_process(CIRCLE_handle* handle)
 }
 
 /* Set up and execute directory walk */
-void mfu_flist_walk_path(const char* dirpath, int use_stat, int dir_permissions, mfu_flist bflist)
+void mfu_flist_walk_path(const char* dirpath, mfu_walk_opts_t* walk_opts,
+                         mfu_flist bflist)
 {
-    mfu_flist_walk_paths(1, &dirpath, use_stat, dir_permissions, bflist);
+    mfu_flist_walk_paths(1, &dirpath, walk_opts, bflist);
     return;
 }
 
 /* Set up and execute directory walk */
-void mfu_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, int dir_permissions, mfu_flist bflist)
+void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
+                          mfu_walk_opts_t* walk_opts, mfu_flist bflist)
 {
     /* report walk count, time, and rate */
     double start_walk = MPI_Wtime();
 
     /* if dir_permission is set to 1 then set global variable */
-    if (dir_permissions) {
+    SET_DIR_PERMS = 0;
+    if (walk_opts->dir_perms) {
         SET_DIR_PERMS = 1;
     }
-    else {
-        SET_DIR_PERMS = 0;
+
+    /* if remove is set to 1 then set global variable */
+    REMOVE_FILES  = 0;
+    if (walk_opts->remove) {
+        REMOVE_FILES = 1;
     }
 
     /* convert handle to flist_t */
@@ -736,7 +759,7 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, 
     /* we lookup users and groups first in case we can use
      * them to filter the walk */
     flist->detail = 0;
-    if (use_stat) {
+    if (walk_opts->use_stat) {
         flist->detail = 1;
         if (flist->have_users == 0) {
             mfu_flist_usrgrp_get_users(flist);
@@ -747,7 +770,7 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, 
     }
 
     /* register callbacks */
-    if (use_stat) {
+    if (walk_opts->use_stat) {
         /* walk directories by calling stat on every item */
         CIRCLE_cb_create(&walk_stat_create);
         CIRCLE_cb_process(&walk_stat_process);
@@ -797,7 +820,10 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths, int use_stat, 
 }
 
 /* given a list of param_paths, walk each one and add to flist */
-void mfu_flist_walk_param_paths(uint64_t num, const mfu_param_path* params, int walk_stat, int dir_perms, mfu_flist flist)
+void mfu_flist_walk_param_paths(uint64_t num,
+                                const mfu_param_path* params,
+                                mfu_walk_opts_t* walk_opts,
+                                mfu_flist flist)
 {
     /* allocate memory to hold a list of paths */
     const char** path_list = (const char**) MFU_MALLOC(num * sizeof(char*));
@@ -810,7 +836,7 @@ void mfu_flist_walk_param_paths(uint64_t num, const mfu_param_path* params, int 
     }
 
     /* walk file tree and record stat data for each file */
-    mfu_flist_walk_paths((uint64_t) num, path_list, walk_stat, dir_perms, flist);
+    mfu_flist_walk_paths((uint64_t) num, path_list, walk_opts, flist);
 
     /* free the list */
     mfu_free(&path_list);

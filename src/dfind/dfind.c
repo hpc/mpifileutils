@@ -13,10 +13,6 @@
 #include "mfu.h"
 #include "common.h"
 
-/* TODO: change globals to struct */
-static int walk_stat = 1;
-static int dir_perm = 0;
-
 int MFU_PRED_EXEC  (mfu_flist flist, uint64_t idx, void* arg);
 int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg);
 
@@ -167,6 +163,9 @@ int main (int argc, char** argv)
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* pointer to mfu_walk_opts */
+    mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
     /* capture current time for any time based queries,
      * to get a consistent value, capture and bcast from rank 0 */
@@ -452,7 +451,7 @@ int main (int argc, char** argv)
 
     if (walk) {
         /* walk list of input paths */
-        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, dir_perm, flist);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
     }
     else {
         /* read data from cache file */
@@ -492,6 +491,9 @@ int main (int argc, char** argv)
 
     /* free structure holding current time */
     mfu_free(&now_t);
+
+    /* free the walk options */
+    mfu_walk_opts_delete(&walk_opts);
 
     /* shut down MPI */
     mfu_finalize();

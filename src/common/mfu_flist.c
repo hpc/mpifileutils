@@ -50,6 +50,31 @@
 #include <sys/ioctl.h>
 #endif
 
+/* return a newly allocated walk_opts structure, set default values on its fields */
+mfu_walk_opts_t* mfu_walk_opts_new(void)
+{
+    mfu_walk_opts_t* opts = (mfu_walk_opts_t*)MFU_MALLOC(sizeof(mfu_walk_opts_t));
+
+    /* Don't set permissions on walk by default */
+    opts->dir_perms = 0;
+
+    /* Remove files in walk by default */
+    opts->remove = 0;
+
+    /* Don't stat files in walk by default */
+    opts->use_stat = 1;
+
+    return opts;
+}
+
+void mfu_walk_opts_delete(mfu_walk_opts_t** popts)
+{
+  if (popts != NULL) {
+    mfu_walk_opts_t* opts = *popts;
+    mfu_free(popts);
+  }
+}
+
 /****************************************
  * Functions on types
  ***************************************/

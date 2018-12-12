@@ -311,6 +311,9 @@ int main(int argc, char* argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    /* pointer to mfu_walk_opts */
+    mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
     uint64_t idx;
     int option_index = 0;
     int usage = 0;
@@ -450,7 +453,7 @@ int main(int argc, char* argv[])
 
     /* walk list of input paths and stat as we walk */
     mfu_flist flist = mfu_flist_new();
-    mfu_flist_walk_param_paths(numpaths, paths, 1, 0, flist);
+    mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
 
     /* filter down our list to files which don't meet our striping requirements */
     mfu_flist filtered = filter_list(flist, stripes, stripe_size, min_size);
@@ -568,6 +571,9 @@ int main(int argc, char* argv[])
 
     /* wait for everyone to finish */
     MPI_Barrier(MPI_COMM_WORLD);
+
+    /* free the walk options */
+    mfu_walk_opts_delete(&walk_opts);
 
     /* free filtered list, path parameters */
     mfu_flist_free(&filtered);

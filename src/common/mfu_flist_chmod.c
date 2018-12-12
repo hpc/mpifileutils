@@ -399,11 +399,11 @@ int mfu_perms_parse(const char* modestr, mfu_perms** p_head)
  * directories during the walk in this case. Also, check for turning on read and
  * execute for the "all" bits as well because those can also turn on the user's
  * read and execute bits */
-void mfu_perms_need_dir_rx(const mfu_perms* head, int* dir_perms)
+void mfu_perms_need_dir_rx(const mfu_perms* head, mfu_walk_opts_t* walk_opts)
 {
     /* flag to check if the usr read & execute bits are being turned on,
      * assume they are not */
-    *dir_perms = 0;
+    walk_opts->dir_perms = 0;
 
     /* extra flags to check if usr read and execute are being turned on */
     int usr_r = 0;
@@ -457,7 +457,7 @@ void mfu_perms_need_dir_rx(const mfu_perms* head, int* dir_perms)
 
     /* only set the dir_perms flag if both the user execute and user read flags are on */
     if (usr_r && usr_x) {
-        *dir_perms = 1;
+        walk_opts->dir_perms = 1;
     }
 
     return;
