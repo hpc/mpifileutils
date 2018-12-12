@@ -79,7 +79,14 @@ void mfu_param_path_check_copy(
     int* flag_copy_into_dir         /* OUT - flag indicating whether source items should be copied into destination directory (1) or not (0) */
 );
 
-/* options passed to mfu_flist_copy that affect how a copy is executed */
+/* options passed to walk that effect how the walk is executed */
+typedef struct {
+    int    dir_perms;    /* flag option to update dir perms during walk */
+    int    remove;       /* flag option to remove files during walk */
+    int    use_stat;     /* flag option on whether or not to stat files during walk */
+} mfu_walk_opts_t;
+
+/* options passed to mfu_ */
 typedef struct {
     int    copy_into_dir; /* flag indicating whether copying into existing dir */
     int    do_sync;       /* flag option to sync src dir with dest dir */ 

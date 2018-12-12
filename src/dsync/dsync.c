@@ -2135,6 +2135,9 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    /* pointer to mfu_walk_opts */
+    mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
     /* pointer to mfu_copy opts */
     mfu_copy_opts_t* mfu_copy_opts = mfu_copy_opts_new();
 
@@ -2283,15 +2286,12 @@ int main(int argc, char **argv)
     mfu_flist flist1 = mfu_flist_new();
     mfu_flist flist2 = mfu_flist_new();
            
-    /* walk src and dest paths and fill in file lists */
-    int walk_stat = 1;
-    int dir_perm  = 0;
 
     /* walk source path */
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking source path");
     }
-    mfu_flist_walk_param_paths(1, srcpath, walk_stat, dir_perm, flist1);
+    mfu_flist_walk_param_paths(1, srcpath, walk_opts, flist1);
 
     /* check that we actually got something so that we don't delete
      * an entire target directory because of a typo on the source dir */
@@ -2311,7 +2311,7 @@ int main(int argc, char **argv)
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking destination path");
     }
-    mfu_flist_walk_param_paths(1, destpath, walk_stat, dir_perm, flist2);
+    mfu_flist_walk_param_paths(1, destpath, walk_opts, flist2);
 
     /* store src and dest path strings */
     const char* path1 = srcpath->path;
@@ -2354,6 +2354,9 @@ int main(int argc, char **argv)
     mfu_copy_opts_delete(&mfu_copy_opts);
 
     dsync_option_fini();
+
+    /* free the walk options */
+    mfu_walk_opts_delete(&walk_opts);
 
     /* shut down */
     mfu_finalize();

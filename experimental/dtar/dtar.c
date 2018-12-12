@@ -95,6 +95,9 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    /* pointer to mfu_walk_opts */
+    mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
     int option_index = 0;
     static struct option long_options[] = {
         {"create",    0, 0, 'c'},
@@ -249,7 +252,7 @@ int main(int argc, char** argv)
 
         /* walk path to get stats info on all files */
         mfu_flist flist = mfu_flist_new();
-        mfu_flist_walk_param_paths(num_src_params, src_params, 1, 0, flist);
+        mfu_flist_walk_param_paths(num_src_params, src_params, walk_opts, flist);
 
         /* create the archive file */
         mfu_flist_archive_create(flist, opts_tarfile, &archive_opts);
@@ -305,6 +308,9 @@ int main(int argc, char** argv)
             DTAR_exit(EXIT_FAILURE);
         }
     }
+
+    /* free the walk options */
+    mfu_walk_opts_delete(&walk_opts);
 
     /* free context */
     mfu_free(&opts_tarfile);
