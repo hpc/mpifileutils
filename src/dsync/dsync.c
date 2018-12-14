@@ -935,7 +935,7 @@ static int dsync_sync_files(strmap* src_map, strmap* dst_map,
 
     /* delete files from destination if needed */
     uint64_t remove_size = mfu_flist_global_size(dst_remove_list);
-    if (remove_size > 0) {
+    if (remove_size > 0 && options.delete) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Deleting items from destination");
         }
@@ -2161,14 +2161,14 @@ int main(int argc, char **argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"batch-files",  1, 0, 'b'},
-        {"contents",     0, 0, 'c'},
-        {"dryrun",       0, 0, 'n'},
-        {"no-delete",    0, 0, 'N'},
-        {"output",       1, 0, 'o'},
-        {"debug",        0, 0, 'd'},
-        {"verbose",      0, 0, 'v'},
-        {"help",         0, 0, 'h'},
+        {"batch-files",   1, 0, 'b'},
+        {"contents",      0, 0, 'c'},
+        {"dryrun",        0, 0, 'n'},
+        {"delete-dst",    0, 0, 'D'},
+        {"output",        1, 0, 'o'},
+        {"debug",         0, 0, 'd'},
+        {"verbose",       0, 0, 'v'},
+        {"help",          0, 0, 'h'},
         {0, 0, 0, 0}
     };
     int ret = 0;
@@ -2177,9 +2177,13 @@ int main(int argc, char **argv)
     /* read in command line options */
     int usage = 0;
     int help  = 0;
+
+    /* Don't delete dst files by default */
+    options.delete = 0;
+
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cNo:dvh",
+            argc, argv, "b:cDo:dvh",
             long_options, &option_index
         );
 
@@ -2197,8 +2201,8 @@ int main(int argc, char **argv)
         case 'n':
             options.dry_run++;
             break;
-        case 'N':
-            options.delete = 0;
+        case 'D':
+            options.delete = 1;
             break;
         case 'o':
             ret = dsync_option_output_parse(optarg, 0);
