@@ -7,6 +7,22 @@
 #include "mpi.h"
 #include "mfu.h"
 
+static void print_usage(void)
+{
+    printf("\n");
+    printf("Usage: dreln [options] <oldpath> <newpath> <path> ...\n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -i, --input <file> - read list from file\n");
+    printf("  -p, --preserve     - preserve link modification timestamps\n");
+    printf("  -r, --relative     - change targets from absolute to relative paths\n");
+    printf("  -v, --verbose      - verbose output\n");
+    printf("  -h, --help         - print usage\n");
+    printf("\n");
+    fflush(stdout);
+    return;
+}
+
 int main (int argc, char* argv[])
 {
     MPI_Init(&argc, &argv);
@@ -29,19 +45,22 @@ int main (int argc, char* argv[])
     /* set debug level to MFU_LOG_INFO since it defaults to ERROR */
     mfu_debug_level = MFU_LOG_INFO;
 
+    /* define allowed command line optinos */
     int option_index = 0;
     static struct option long_options[] = {
         {"input",        1, 0, 'i'},
+        {"preserve",     0, 0, 'p'},
         {"relative",     0, 0, 'r'},
         {"verbose",      0, 0, 'v'},
         {"help",         0, 0, 'h'},
         {0, 0, 0, 0}
     };
 
+    /* process command line arguments */
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:rvh",
+                    argc, argv, "i:prvh",
                     long_options, &option_index
                 );
 
@@ -52,6 +71,9 @@ int main (int argc, char* argv[])
         switch (c) {
             case 'i':
                 inputname = MFU_STRDUP(optarg);
+                break;
+            case 'p':
+                preserve_times = 1;
                 break;
             case 'r':
                 relative_targets = 1;
@@ -75,23 +97,79 @@ int main (int argc, char* argv[])
     /* remaining arguments */
     int remaining = argc - optind;
 
-    if (remaining != 3) {
+    /* we always require the OLDPATH and NEWPATH args */
+    if (remaining < 2) {
         usage = 1;
     }
 
+    /* print usage and bail out if needed */
     if (usage) {
         if (rank == 0) {
-            printf("Usage: dreln oldprefix newprefix path\n");
-            fflush(stdout);
+            print_usage();
         }
         mfu_finalize();
         MPI_Finalize();
         return 0;
     }
 
-    char* oldpath  = argv[optind + 0];
-    char* newpath  = argv[optind + 1];
-    char* walkpath = argv[optind + 2];
+    /* get pointers to old and new paths */
+    char* oldpath = argv[optind + 0];
+    char* newpath = argv[optind + 1];
+    optind += 2;
+
+    /* determine whether we're walking or reading from an input file */
+    int walk = 0;
+    int numpaths = 0;
+    mfu_param_path* paths = NULL;
+    if (optind < argc) {
+        /* got some paths to walk */
+        walk = 1;
+
+        /* determine number of paths specified by user */
+        numpaths = argc - optind;
+
+        /* process paths to be walked */
+        const char** p = &argv[optind];
+        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
+        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths);
+
+        /* TODO: check that walk paths are valid */
+
+        /* don't allow user to specify input file with walk */
+        if (inputname != NULL) {
+            usage = 1;
+        }
+    } else {
+        /* if we're not walking, we must be reading,
+         * and for that we need a file */
+        if (inputname == NULL) {
+            usage = 1;
+        }
+    }
+
+    /* print usage and bail out if needed */
+    if (usage) {
+        if (rank == 0) {
+            print_usage();
+        }
+        mfu_finalize();
+        MPI_Finalize();
+        return 0;
+    }
+
+    /* create an empty file list */
+    mfu_flist flist = mfu_flist_new();
+
+    /* get source file list */
+    if (walk) {
+        /* walk list of input paths */
+        int walk_stat = 0;
+        int walk_perm = 0;
+        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, walk_perm, flist);
+    } else {
+        /* read cache file */
+        mfu_flist_read_cache(inputname, flist);
+    }
 
     /* create path objects of old and new prefix */
     mfu_path* path_old = mfu_path_from_str(oldpath);
@@ -101,28 +179,6 @@ int main (int argc, char* argv[])
 
     /* get number of elements in old prefix */
     int components_old = mfu_path_components(path_old);
-
-    /* get source file list */
-    mfu_flist flist = mfu_flist_new();
-    int numpaths = 0;
-    mfu_param_path* paths = NULL;
-    if (inputname == NULL) {
-        numpaths = 1;
-
-        /* process path to be walked */
-        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
-        mfu_param_path_set_all((uint64_t)numpaths, (const char**)&walkpath, paths);
-
-        /* TODO: check that walk path is valid */
-
-        /* walk list of input paths */
-        int walk_stat = 0;
-        int walk_perm = 0;
-        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, walk_perm, flist);
-    } else {
-        /* read cache file */
-        mfu_flist_read_cache(inputname, flist);
-    }
 
     /* create a new list by filtering out links */
     mfu_flist linklist_prestat = mfu_flist_subset(flist);
