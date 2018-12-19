@@ -21,10 +21,6 @@
 #include "dtcmp.h"
 #include "mfu.h"
 
-/* TODO: change globals to struct */
-static int walk_stat = 0;
-static int dir_perm = 0;
-
 /*****************************
  * Driver functions
  ****************************/
@@ -42,6 +38,7 @@ static void print_usage(void)
     printf("      --name             - change regex to apply to entry name rather than full pathname\n");
     printf("      --dryrun           - print out list of files that would be deleted\n");
     printf("  -T, --traceless        - remove child items without changing parent directory mtime\n");
+    printf("      --aggressive       - aggressive mode deletes files during the walk. You CANNOT use dryrun with this option. \n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
@@ -62,6 +59,9 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    /* pointer to mfu_walk_opts */
+    mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
     /* parse command line options */
     char* inputname = NULL;
     char* regex_exp = NULL;
@@ -70,18 +70,21 @@ int main(int argc, char** argv)
     int name        = 0;
     int dryrun      = 0;
     int traceless   = 0;
+    /* Don't stat on walk by default */
+    walk_opts->use_stat = 0;
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"input",    1, 0, 'i'},
-        {"lite",     0, 0, 'l'},
-        {"exclude",  1, 0, 'e'},
-        {"match",    1, 0, 'a'},
-        {"name",     0, 0, 'n'},        
-        {"dryrun",   0, 0, 'd'},
-        {"verbose",  0, 0, 'v'},
-        {"traceless",  0, 0, 'T'},
-        {"help",     0, 0, 'h'},
+        {"input",       1, 0, 'i'},
+        {"lite",        0, 0, 'l'},
+        {"exclude",     1, 0, 'e'},
+        {"match",       1, 0, 'a'},
+        {"name",        0, 0, 'n'},
+        {"dryrun",      0, 0, 'd'},
+        {"aggressive",  0, 0, 'A'},
+        {"verbose",     0, 0, 'v'},
+        {"traceless",   0, 0, 'T'},
+        {"help",        0, 0, 'h'},
         {0, 0, 0, 0}
     };
 
@@ -101,7 +104,8 @@ int main(int argc, char** argv)
                 inputname = MFU_STRDUP(optarg);
                 break;
             case 'l':
-                walk_stat = 0;
+                /* don't stat each file during the walk */
+                walk_opts->use_stat = 0;
                 break;
             case 'e':
                 regex_exp = MFU_STRDUP(optarg);
@@ -116,13 +120,24 @@ int main(int argc, char** argv)
                 break;
             case 'd':
                 dryrun = 1;
-                break;            
+                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
+            case 'A':
+                walk_opts->remove = 1;
+                /* Turn on walk stat with aggressive option.
+                 * Stating items will distribute the remove
+                 * workload better in the case that there
+                 * are lots (millions, etc) file in one
+                 * directory. If stat is turned off in
+                 * that case all the work will end up
+                 * on one process */
+                walk_opts->use_stat = 1;
+                break;
             case 'T':
                 traceless = 1;
-                break;            
+                break;
             case 'h':
                 usage = 1;
                 break;
@@ -134,6 +149,13 @@ int main(int argc, char** argv)
                     printf("?? getopt returned character code 0%o ??\n", c);
                 }
         }
+    }
+
+    if (dryrun && walk_opts->remove) {
+        printf("Cannot perform dryrun with aggressive delete option. Program is safely exiting.  Please do a dryrun then run an aggressive delete seperately. These two options cannot both be specified for the same program run \n");
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
     }
 
     /* paths to walk come after the options */
@@ -186,7 +208,7 @@ int main(int argc, char** argv)
      * input file */
     if (walk) {
         /* walk list of input paths */
-        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, dir_perm, flist);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
     }
     else {
         /* read list from file */
@@ -236,6 +258,9 @@ int main(int argc, char** argv)
 
     /* free the input file name */
     mfu_free(&inputname);
+
+    /* free the walk options */
+    mfu_walk_opts_delete(&walk_opts);
 
     /* shut down MPI */
     mfu_finalize();

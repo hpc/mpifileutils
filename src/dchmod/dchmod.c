@@ -21,9 +21,6 @@
 #include "libcircle.h"
 #include "mfu.h"
 
-/* whether to do directory walk with stat of every ite */
-static int walk_stat = 1;
-
 static void print_usage(void)
 {
     printf("\n");
@@ -54,6 +51,9 @@ int main(int argc, char** argv)
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* pointer to mfu_walk_opts */
+    mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
     /* parse command line options */
     char* inputname = NULL;
@@ -193,20 +193,19 @@ int main(int argc, char** argv)
 
     /* flag used to check if permissions need to be
      * set on the walk */
-    int dir_perms = 0;
     if (head != NULL) {
-        mfu_perms_need_dir_rx(head, &dir_perms);
+        mfu_perms_need_dir_rx(head, walk_opts);
     }
 
     /* get our list of files, either by walking or reading an
      * input file */
     if (walk) {
-        /* if in octal mode set walk_stat=0 */
+        /* if in octal mode set use_stat=0 to stat each file on walk */
         if (head != NULL && head->octal && ownername == NULL && groupname == NULL) {
-            walk_stat = 0;
+            walk_opts->use_stat = 0;
         }
         /* walk list of input paths */
-        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, dir_perms, flist);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
     }
     else {
         /* read list from file */
@@ -261,6 +260,9 @@ int main(int argc, char** argv)
 
     /* free the input file name */
     mfu_free(&inputname);
+
+    /* free the walk options */
+    mfu_walk_opts_delete(&walk_opts);
 
     /* shut down MPI */
     mfu_finalize();

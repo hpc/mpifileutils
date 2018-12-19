@@ -167,6 +167,9 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    /* pointer to mfu_walk_opts */
+    mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
     mfu_debug_level = MFU_LOG_INFO;
 
     static struct option long_options[] = {
@@ -284,7 +287,7 @@ int main(int argc, char** argv)
     mfu_flist flist = mfu_flist_new();
 
     /* Walk the path(s) to build the flist */
-    mfu_flist_walk_path(dir, 1, 0, flist);
+    mfu_flist_walk_path(dir, walk_opts, flist);
 
     /* TODO: spread list among procs? */
 
@@ -488,6 +491,9 @@ int main(int argc, char** argv)
         MPI_Allreduce(&checking_files, &sum_checking_files, 1,
                       MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
     }
+
+    /* free the walk options */
+    mfu_walk_opts_delete(&walk_opts);
 
     mfu_free(&group_rank);
     mfu_free(&group_ranks);

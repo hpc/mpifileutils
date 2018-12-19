@@ -26,10 +26,6 @@
 
 // getpwent getgrent to read user and group entries
 
-/* TODO: change globals to struct */
-static int walk_stat = 1;
-static int dir_perm = 0;
-
 /* keep stats during walk */
 uint64_t total_dirs    = 0;
 uint64_t total_files   = 0;
@@ -269,6 +265,9 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    /* pointer to mfu_walk_opts */
+    mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
     /* TODO: extend options
      *   - allow user to cache scan result in file
      *   - allow user to load cached scan as input
@@ -284,9 +283,9 @@ int main(int argc, char** argv)
     char* outputname = NULL;
     char* sortfields = NULL;
     char* distribution = NULL;
-    int walk = 0;
-    int print = 0;
-    int text = 0;
+    int walk                 = 0;
+    int print                = 0;
+    int text                 = 0;
     struct distribute_option option;
 
     /* set debug level to MFU_LOG_INFO since it defaults to ERROR */
@@ -325,7 +324,8 @@ int main(int argc, char** argv)
                 outputname = MFU_STRDUP(optarg);
                 break;
             case 'l':
-                walk_stat = 0;
+                /* don't stat each file on the walk */
+                walk_opts->use_stat = 0;
                 break;
             case 's':
                 sortfields = MFU_STRDUP(optarg);
@@ -391,7 +391,7 @@ int main(int argc, char** argv)
         int maxfields;
         int nfields = 0;
         char* sortfields_copy = MFU_STRDUP(sortfields);
-        if (walk_stat) {
+        if (walk_opts->use_stat) {
             maxfields = 7;
             char* token = strtok(sortfields_copy, ",");
             while (token != NULL) {
@@ -475,12 +475,12 @@ int main(int argc, char** argv)
     /* TODO: check stat fields fit within MPI types */
     // if (sizeof(st_uid) > uint64_t) error(); etc...
 
-    /* create an empty file list */
+    /* create an empty file list with default values */
     mfu_flist flist = mfu_flist_new();
 
     if (walk) {
         /* walk list of input paths */
-        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, dir_perm, flist);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
     }
     else {
         /* read data from cache file */
@@ -532,6 +532,9 @@ int main(int argc, char** argv)
 
     /* free memory allocated to hold params */
     mfu_free(&paths);
+
+    /* free the walk options */
+    mfu_walk_opts_delete(&walk_opts);
 
     /* shut down MPI */
     mfu_finalize();

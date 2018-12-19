@@ -35,8 +35,6 @@
 
 /* TODO: change globals to struct */
 static int verbose   = 0;
-static int walk_stat = 1;
-static int dir_perm  = 0;
 
 /* keep stats during walk */
 uint64_t total_dirs    = 0;
@@ -1583,7 +1581,7 @@ static void print_files(mfu_flist flist, mfu_path* path)
     return;
 }
 
-static int invalid_sortfields(char* sortfields)
+static int invalid_sortfields(char* sortfields, mfu_walk_opts_t* walk_opts)
 {
     /* get our rank */
     int rank;
@@ -1595,7 +1593,7 @@ static int invalid_sortfields(char* sortfields)
         int maxfields;
         int nfields = 0;
         char* sortfields_copy = MFU_STRDUP(sortfields);
-        if (walk_stat) {
+        if (walk_opts->use_stat) {
             maxfields = 7;
             char* token = strtok(sortfields_copy, ",");
             while (token != NULL) {
@@ -1725,6 +1723,9 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    /* pointer to mfu_walk_opts */
+    mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
     /* TODO: extend options
      *   - allow user to cache scan result in file
      *   - allow user to load cached scan as input
@@ -1779,7 +1780,7 @@ int main(int argc, char** argv)
                 outputname = MFU_STRDUP(optarg);
                 break;
             case 'l':
-                walk_stat = 0;
+                walk_opts->use_stat = 0;
                 break;
             case 'h':
                 usage = 1;
@@ -1855,7 +1856,7 @@ int main(int argc, char** argv)
      * input file */
     if (walk) {
         /* walk list of input paths */
-        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, dir_perm, flist);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
     }
     else {
         /* read list from file */
@@ -1961,7 +1962,7 @@ int main(int argc, char** argv)
                 regex = arg_to_regex(ls_args);
 #if 0
                 sortfields = MFU_STRDUP(ls_args);
-                if (invalid_sortfields(sortfields)) {
+                if (invalid_sortfields(sortfields, walk_opts)) {
                     /* disable printing and sorting */
                     mfu_free(&sortfields);
                     print = 0;
@@ -2059,6 +2060,9 @@ int main(int argc, char** argv)
             mfu_flist_write_text(outputname, flist);
         }
     }
+
+    /* free the walk options */
+    mfu_walk_opts_delete(&walk_opts);
 
     /* free users, groups, and files objects */
     mfu_flist_free(&flist);

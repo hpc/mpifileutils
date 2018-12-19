@@ -91,6 +91,9 @@ int main(int argc, char** argv)
     /* pointer to mfu_copy opts */
     mfu_copy_opts_t* mfu_copy_opts = mfu_copy_opts_new();
 
+    /* pointer to mfu_walk opts */
+    mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
@@ -278,11 +281,7 @@ int main(int argc, char** argv)
     mfu_flist flist = mfu_flist_new();
 
     if (inputname == NULL) {
-        /* walk paths and fill in file list */
-        int walk_stat = 1;
-        int dir_perm  = 0;
-
-        mfu_flist_walk_param_paths(numpaths_src, paths, walk_stat, dir_perm, flist);
+        mfu_flist_walk_param_paths(numpaths_src, paths, walk_opts, flist);
     } else {
         struct mfu_flist_skip_args skip_args;
 
@@ -318,6 +317,10 @@ int main(int argc, char** argv)
     /* free the copy options */
     mfu_copy_opts_delete(&mfu_copy_opts);
 
+    /* free the copy options */
+    mfu_walk_opts_delete(&walk_opts);
+
+    /* shut down MPI */
     /* shut down MPI */
     mfu_finalize();
     MPI_Finalize();

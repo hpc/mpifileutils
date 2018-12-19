@@ -144,7 +144,7 @@ int mfu_perms_parse(const char* modestr, mfu_perms** pperms);
  * execute for the "all" bits as well because those can also turn on the user's
  * read and execute bits, sets dir_perms to 1 if "rx" should be set on directories
  * and set to 0 otherwise */
-void mfu_perms_need_dir_rx(const mfu_perms* head, int* dir_perms);
+void mfu_perms_need_dir_rx(const mfu_perms* head, mfu_walk_opts_t* walk_opts);
 
 /* free the permissions linked list allocated in mfu_perms_parse,
  * sets pointer to NULL on return */
@@ -169,27 +169,24 @@ void mfu_flist_free(mfu_flist* flist);
  * set directory permission bits in order to walk into a directory,
  * whose permission bits are otherwise restrictive (e.g., useful for recursive unlink) */
 void mfu_flist_walk_path(
-    const char* path,    /* IN  - path to be walked */
-    int use_stat,        /* IN  - whether to stat each item (1) or not (0) */
-    int dir_permissions, /* IN  - whether to set directory permission bits (1) or not (0) during walk */
-    mfu_flist flist      /* OUT - flist to insert walked items into */
+    const char* path,           /* IN  - path to be walked */
+    mfu_walk_opts_t* walk_opts, /* IN  - functions to perform during the walk */
+    mfu_flist flist             /* OUT - flist to insert walked items into */
 );
 
 /* create file list by walking list of directories */
 void mfu_flist_walk_paths(
-    uint64_t num_paths,  /* IN  - number of paths in array */
-    const char** paths,  /* IN  - array of paths to be walkted */
-    int use_stat,        /* IN  - whether to stat each item (1) or not (0) */
-    int dir_permissions, /* IN  - whether to set directory permission bits (1) or not (0) during walk */
-    mfu_flist flist      /* OUT - flist to insert walked items into */
+    uint64_t num_paths,         /* IN  - number of paths in array */
+    const char** paths,         /* IN  - array of paths to be walkted */
+    mfu_walk_opts_t* walk_opts, /* IN  - functions to perform during the walk */
+    mfu_flist flist             /* OUT - flist to insert walked items into */
 );
 
 /* given a list of param_paths, walk each one and add to flist */
 void mfu_flist_walk_param_paths(
     uint64_t num,                 /* IN  - number of paths in array */
     const mfu_param_path* params, /* IN  - array of paths to be walkted */
-    int use_stat,                 /* IN  - whether to stat each item (1) or not (0) */
-    int dir_perms,                /* IN  - whether to set directory permission bits (1) or not (0) during walk */
+    mfu_walk_opts_t* walk_opts,   /* IN  - functions to perform during the walk */
     mfu_flist flist               /* OUT - flist to insert walked items into */
 );
 
@@ -443,6 +440,13 @@ int mfu_flist_copy(
     const mfu_param_path* destpath, /* IN - destination path */
     mfu_copy_opts_t* mfu_copy_opts  /* IN - options to be used during copy */
 );
+
+/* allocate a new mfu_walk_opts structure,
+ * and set its fields with default values */
+mfu_walk_opts_t* mfu_walk_opts_new(void);
+
+/* free object allocated in mfu_walk_opts_new */
+void mfu_walk_opts_delete(mfu_walk_opts_t** opts);
 
 /* create all directories in flist */
 void mfu_flist_mkdir(mfu_flist flist);
