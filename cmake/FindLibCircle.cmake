@@ -1,8 +1,8 @@
-# - Try to find libdtcmp
+# - Try to find libcircle
 # Once done this will define
-#  LibCircle_FOUND - System has libdtcmp
-#  LibCircle_INCLUDE_DIRS - The libdtcmp include directories
-#  LibCircle_LIBRARIES - The libraries needed to use libdtcmp
+#  LibCircle_FOUND - System has libcircle
+#  LibCircle_INCLUDE_DIRS - The libcircle include directories
+#  LibCircle_LIBRARIES - The libraries needed to use libcircle
 
 FIND_PATH(WITH_LibCircle_PREFIX
     NAMES include/libcircle.h
