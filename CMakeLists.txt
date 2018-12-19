@@ -41,7 +41,7 @@ ENDIF(DTCMP_FOUND)
 
 ## LIBARCHIVE
 # TODO how would we pass a version from spack?
-FIND_PACKAGE(LibArchive REQUIRED)
+FIND_PACKAGE(LibArchiveLocal REQUIRED)
 IF(LibArchive_FOUND)
   INCLUDE_DIRECTORIES(${LibArchive_INCLUDE_DIRS})
   LIST(APPEND MFU_EXTERNAL_LIBS ${LibArchive_LIBRARIES})
