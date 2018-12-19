@@ -83,11 +83,11 @@ Man Pages
    dcp.1
    ddup.1
    dfilemaker.1
+   dfind.1
    drm.1
    dstripe.1
    dsync.1
    dwalk.1
-   dfind.1
    experimental/dgrep.1
    experimental/dparallel.1
    experimental/dtar.1
