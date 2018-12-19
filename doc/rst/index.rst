@@ -86,7 +86,7 @@ Man Pages
    dstripe.1
    dsync.1
    dwalk.1
-   experimental/dfind.1
+   dfind.1
    experimental/dgrep.1
    experimental/dparallel.1
    experimental/dtar.1
