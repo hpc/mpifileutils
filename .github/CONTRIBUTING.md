@@ -84,6 +84,13 @@ that a record of the contribution (including all personal information I submit
 with it, including my sign-off) is maintained indefinitely and may be
 redistributed consistent with this project or the open source license(s) involved."
 
+After reading and agreeing to the Contributor's Declaration, include your
+Signed-off-by text like the following as the last line in your commit message:
+
+```
+Signed-off-by: Random J Developer <random@developer.example.org>
+```
+
 Proposed contributions failing to include a "Signed-off-by:" certification will
 not be accepted into mpiFileUtils. The maintainers reserve the right to revert
 any commit made without the required certification.
