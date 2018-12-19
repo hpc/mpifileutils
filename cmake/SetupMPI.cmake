@@ -44,7 +44,7 @@
 # MPI
 ################################
 
-find_package(MPI)
+find_package(MPI REQUIRED)
 message(STATUS "MPI C Compile Flags:  ${MPI_C_COMPILE_FLAGS}")
 message(STATUS "MPI C Include Path:   ${MPI_C_INCLUDE_PATH}")
 message(STATUS "MPI C Link Flags:     ${MPI_C_LINK_FLAGS}")
