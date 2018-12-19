@@ -35,6 +35,7 @@ Example usage of each tool is provided below.
 - dcp - Copy files.
 - ddup - Find duplicate files.
 - dfilemaker - Generate random files.
+- dreln - Relink symlinks.
 - drm - Remove files.
 - dstripe - Restripe files.
 - dsync - Synchronize files

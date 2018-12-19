@@ -160,6 +160,7 @@ man_pages = [
     ('ddup.1', 'ddup', u'report files with identical content',[author], 1),
     ('dfilemaker.1', 'dfilemaker', u'distributed random file generation program',[author], 1),
     ('dfind.1', 'dfind', u'distributed file filtering',[author], 1),
+    ('dreln.1', 'dreln', u'distributed relink',[author], 1),
     ('drm.1', 'drm', u'distributed remove',[author], 1),
     ('dstripe.1', 'dstripe', u'restripe files on underlying storage',[author], 1),
     ('dsync.1', 'dsync', u'synchronize directory trees',[author], 1),
