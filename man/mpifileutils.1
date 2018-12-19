@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "MPIFILEUTILS" "1" "Aug 28, 2018" "0.8" "mpiFileUtils"
+.TH "MPIFILEUTILS" "1" "Dec 19, 2018" "0.8" "mpiFileUtils"
 .SH NAME
 mpifileutils \- mpiFileUtils Documentation
 .
@@ -238,9 +238,9 @@ entries from one location to another or compare corresponding entries across
 two different lists. A file list can be serialized and written to or read from
 a file.
 .sp
-Each MPI rank “owns” a portion of the list, and there are routines to step
+Each MPI rank "owns" a portion of the list, and there are routines to step
 through the entries owned by that process. This portion is referred to as the
-“local” list. Functions exist to get and set properties of the items in the
+"local" list. Functions exist to get and set properties of the items in the
 local list, for example to get the path name, type, and size of a file.
 Functions dealing with the local list can be called by the MPI process
 independently of other MPI processes.
@@ -299,7 +299,7 @@ number of MPI processes.
 .TP
 .B \-s, \-\-size SIZE
 The chunk size in bytes used to segment files during the broadcast.
-Units like “MB” and “GB” should be immediately follow the number
+Units like "MB" and "GB" should be immediately follow the number
 without spaces (ex. 2MB). The default size is 1MB. It is recommended
 to use the stripe size of a file if this is known.
 .UNINDENT
@@ -331,10 +331,59 @@ To read the current striping parameters of a file on Lustre:
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
+.SS dbz2
+.SS SYNOPSIS
+.sp
+\fBdbz2 [OPTIONS] [\-z|\-d] FILE\fP
+.SS DESCRIPTION
+.sp
+Parallel MPI application to compress or decompress a file.
+.SS OPTIONS
+.INDENT 0.0
+.TP
+.B \-d, \-\-decompress
+Decompress the file
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-z, \-\-compress
+Compress the file
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-k, \-\-keep
+Keep the input file (optional).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-f, \-\-overwrite
+Overwrite the output file, if it exists (optional).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-b, \-\-block SIZE
+Set the compression block size, from 1 to 9.
+Where 1=100kB ... and 9=900kB. Default is 9 (optional).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-m, \-\-memory SIZE
+Limit the memory that can be used by a processs, in bytes (optional).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-v, \-\-verbose
+Verbose output (optional).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-debug
+Show debug output (optional).
+.UNINDENT
 .SS dchmod
 .SS SYNOPSIS
 .sp
-\fBdchmod [OPTION] PATH …\fP
+\fBdchmod [OPTION] PATH ...\fP
 .SS DESCRIPTION
 .sp
 Parallel MPI application to recursively change permissions and/or group
@@ -364,8 +413,8 @@ Change group to specified GROUP name.
 .TP
 .B \-m, \-\-mode MODE
 The mode to apply to each item. MODE may be octal or symbolic syntax
-similar to \fBchmod(1)\fP\&. In symbolic notation, “ugoa” are supported
-as are “rwxX”. As with chmod, if no leading letter “ugoa” is provided,
+similar to \fBchmod(1)\fP\&. In symbolic notation, "ugoa" are supported
+as are "rwxX". As with chmod, if no leading letter "ugoa" is provided,
 mode bits are combined with umask to determine the actual mode.
 .UNINDENT
 .INDENT 0.0
@@ -383,7 +432,7 @@ Only modify items whose full path matches REGEX, processed by
 .INDENT 0.0
 .TP
 .B \-\-name
-Change –exclude and –match to apply to item name rather than its
+Change \-\-exclude and \-\-match to apply to item name rather than its
 full path.
 .UNINDENT
 .INDENT 0.0
@@ -426,7 +475,7 @@ regex:
 .sp
 \fBmpirun \-np 128 dchmod \-\-name \-\-exclude ‘afilename’ \-\-mode u+rw /directory\fP
 .sp
-Note: You can use –match to change file permissions on all of the
+Note: You can use \-\-match to change file permissions on all of the
 files/directories that match the regex.
 .SS SEE ALSO
 .sp
@@ -457,12 +506,12 @@ in which case, each option should provide a different output file name.
 .INDENT 0.0
 .TP
 .B \-t, \-\-text
-Change –output to write files in text format rather than binary.
+Change \-\-output to write files in text format rather than binary.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-b, \-\-base
-Enable base checks and normal stdout results when –output is used.
+Enable base checks and normal stdout results when \-\-output is used.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -479,7 +528,7 @@ Print the command usage, and the list of options available.
 .SS EXPRESSIONS
 .sp
 An expression is made up of one or more conditions, where each condition specifies a field and a state.
-A single condition consists of a field name, an ‘=’ sign, and a state name.
+A single condition consists of a field name, an \(aq=\(aq sign, and a state name.
 .sp
 Valid fields are listed below, along with the property of the entry that is checked.
 .TS
@@ -642,7 +691,7 @@ CONTENT=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON@CONTENT=COMMON
 .sp
 A successful check on any other field also implies that EXIST=COMMON.
 .sp
-When used with the \-o option, one must also specify a file name at the end of the expression, separated with a ‘:’.
+When used with the \-o option, one must also specify a file name at the end of the expression, separated with a \(aq:\(aq.
 The list of any entries that match the expression are written to the named file.
 For example, to list any entries matching the above expression to a file named outfile1,
 one should use the following option:
@@ -657,7 +706,7 @@ one should use the following option:
 .UNINDENT
 .UNINDENT
 .sp
-If the –base option is given or when no output option is specified,
+If the \-\-base option is given or when no output option is specified,
 the following expressions are checked and numeric results are reported to stdout:
 .INDENT 0.0
 .INDENT 3.5
@@ -915,14 +964,28 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS drm
 .SS SYNOPSIS
 .sp
-\fBdrm [OPTION] PATH…\fP
+\fBdrm [OPTION] PATH...\fP
 .SS DESCRIPTION
 .sp
 Parallel MPI application to recursively delete a directory and its
 contents.
 .sp
-drm is a tool for removing files recursively in parallel. Be careful:
-drm behaves like \fIrm \-rf\fP, but it is much faster.
+drm is a tool for removing files recursively in parallel.
+drm behaves like \fIrm \-rf\fP, but it is faster.
+.sp
+\fBNOTE:\fP
+.INDENT 0.0
+.INDENT 3.5
+DO NOT USE SHELL REGEX!!!
+The \-\-match and \-\-exclude options use POSIX regex syntax. Because of
+this make sure that the shell does not try to interpret your regex before
+it gets passed to the program. You can generally use quotes around your
+regex to prevent the shell from expanding. An example of this using the
+\-\-match option with \-\-dryrun would be:
+.sp
+\fBmpirun \-np 128 drm \-\-dryrun \-v \-\-name \-\-match \(aqfile_.*\(aq /path/to/dir/*\fP
+.UNINDENT
+.UNINDENT
 .SS OPTIONS
 .INDENT 0.0
 .TP
@@ -949,15 +1012,20 @@ Only remove items whose full path matches REGEX, processed by
 .INDENT 0.0
 .TP
 .B \-\-name
-Change –exclude and match to apply to item name rather than its
+Change \-\-exclude and match to apply to item name rather than its
 full path.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-d, \-\-dryrun
+.B \-\-dryrun
 Print a list of files that \fBwould\fP be deleted without deleting
-them. This is useful to check list of items satisfying –exclude or
-–match options before actually deleting anything.
+them. This is useful to check list of items satisfying \-\-exclude or
+\-\-match options before actually deleting anything.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-T, \-\-traceless
+Delete child items without updating the mtime on their parent directory.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1002,7 +1070,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dstripe
 .SS SYNOPSIS
 .sp
-\fBdstripe [OPTION] PATH…\fP
+\fBdstripe [OPTION] PATH...\fP
 .SS DESCRIPTION
 .sp
 Parallel MPI application to restripe files.
@@ -1025,20 +1093,16 @@ the lustre file system default is used. The default stripe count is
 .INDENT 0.0
 .TP
 .B \-s, \-\-size STRIPE_SIZE
-The stripe size to use during file restriping. Units like “MB” and
-“GB” can immediately follow the number without spaces (ex. 2MB). The
-.INDENT 7.0
-.INDENT 3.5
+The stripe size to use during file restriping. Units like "MB" and
+"GB" can immediately follow the number without spaces (ex. 2MB). The
 default stripe size is 1MB.
-.UNINDENT
-.UNINDENT
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-m, \-\-minsize SIZE
 The minimum size a file must be to be a candidate for restriping.
-Files smaller than SIZE will not be restriped. Units like “MB” and
-“GB” can immediately follow the number without spaces (ex. 2MB). The
+Files smaller than SIZE will not be restriped. Units like "MB" and
+"GB" can immediately follow the number without spaces (ex. 2MB). The
 default minimum file size is 0MB.
 .UNINDENT
 .INDENT 0.0
@@ -1149,7 +1213,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dwalk
 .SS SYNOPSIS
 .sp
-\fBdwalk [OPTION] PATH …\fP
+\fBdwalk [OPTION] PATH ...\fP
 .SS DESCRIPTION
 .sp
 Parallel MPI application to recursively walk and list contents in a
@@ -1252,7 +1316,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dfind
 .SS SYNOPSIS
 .sp
-\fBdfind [OPTION] [EXPRESSION] PATH …\fP
+\fBdfind [OPTION] [EXPRESSION] PATH ...\fP
 .SS DESCRIPTION
 .sp
 Parallel MPI application to filter a list of files according to an expression.
@@ -1332,22 +1396,22 @@ File was last accessed N days ago.
 .INDENT 0.0
 .TP
 .B \-\-cmin N
-File’s status was last changed N minutes ago.
+File\(aqs status was last changed N minutes ago.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-cnewer FILE
-File’s status was last changed more recently than FILE was modified.
+File\(aqs status was last changed more recently than FILE was modified.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-ctime N
-File’s status was last changed N days ago.
+File\(aqs status was last changed N days ago.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-gid N
-File’s numeric group ID is N.
+File\(aqs numeric group ID is N.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1357,7 +1421,7 @@ File belongs to group NAME.
 .INDENT 0.0
 .TP
 .B \-\-mmin N
-File’s data was last modified N minutes ago.
+File\(aqs data was last modified N minutes ago.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1382,12 +1446,12 @@ File was modified more recently than FILE.
 .INDENT 0.0
 .TP
 .B \-\-mtime N
-File’s data was last modified N days ago.
+File\(aqs data was last modified N days ago.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-size N
-File size is N bytes.  Units can be used like ‘KB’, ‘MB’, ‘GB’.
+File size is N bytes.  Units can be used like \(aqKB\(aq, \(aqMB\(aq, \(aqGB\(aq.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1420,7 +1484,7 @@ _
 .INDENT 0.0
 .TP
 .B \-\-uid N
-File’s numeric user ID is N.
+File\(aqs numeric user ID is N.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1436,7 +1500,7 @@ Print file name to stdout.
 .INDENT 0.0
 .TP
 .B \-\-exec CMD ;
-Execute command CMD on file.  All following arguments are taken as arguments to the command until ‘;’ is encountered.  The string ‘{}’ is replaced by the current file name.
+Execute command CMD on file.  All following arguments are taken as arguments to the command until \(aq;\(aq is encountered.  The string \(aq{}\(aq is replaced by the current file name.
 .UNINDENT
 .SS EXAMPLES
 .INDENT 0.0
@@ -1464,7 +1528,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dgrep
 .SS SYNOPSIS
 .sp
-dgrep …
+dgrep ...
 .SS DESCRIPTION
 .SS OPTIONS
 .INDENT 0.0
@@ -1485,7 +1549,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dparallel
 .SS SYNOPSIS
 .sp
-dparallel …
+dparallel ...
 .SS DESCRIPTION
 .SS OPTIONS
 .INDENT 0.0
@@ -1506,7 +1570,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dtar
 .SS SYNOPSIS
 .sp
-\fBdtar …\fP
+\fBdtar ...\fP
 .SS DESCRIPTION
 .SS OPTIONS
 .INDENT 0.0

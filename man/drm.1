@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DRM" "1" "Aug 28, 2018" "0.8" "mpiFileUtils"
+.TH "DRM" "1" "Dec 19, 2018" "0.8" "mpiFileUtils"
 .SH NAME
 drm \- distributed remove
 .
@@ -32,14 +32,28 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 ..
 .SH SYNOPSIS
 .sp
-\fBdrm [OPTION] PATH…\fP
+\fBdrm [OPTION] PATH...\fP
 .SH DESCRIPTION
 .sp
 Parallel MPI application to recursively delete a directory and its
 contents.
 .sp
-drm is a tool for removing files recursively in parallel. Be careful:
-drm behaves like \fIrm \-rf\fP, but it is much faster.
+drm is a tool for removing files recursively in parallel.
+drm behaves like \fIrm \-rf\fP, but it is faster.
+.sp
+\fBNOTE:\fP
+.INDENT 0.0
+.INDENT 3.5
+DO NOT USE SHELL REGEX!!!
+The \-\-match and \-\-exclude options use POSIX regex syntax. Because of
+this make sure that the shell does not try to interpret your regex before
+it gets passed to the program. You can generally use quotes around your
+regex to prevent the shell from expanding. An example of this using the
+\-\-match option with \-\-dryrun would be:
+.sp
+\fBmpirun \-np 128 drm \-\-dryrun \-v \-\-name \-\-match \(aqfile_.*\(aq /path/to/dir/*\fP
+.UNINDENT
+.UNINDENT
 .SH OPTIONS
 .INDENT 0.0
 .TP
@@ -66,15 +80,20 @@ Only remove items whose full path matches REGEX, processed by
 .INDENT 0.0
 .TP
 .B \-\-name
-Change –exclude and match to apply to item name rather than its
+Change \-\-exclude and match to apply to item name rather than its
 full path.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-d, \-\-dryrun
+.B \-\-dryrun
 Print a list of files that \fBwould\fP be deleted without deleting
-them. This is useful to check list of items satisfying –exclude or
-–match options before actually deleting anything.
+them. This is useful to check list of items satisfying \-\-exclude or
+\-\-match options before actually deleting anything.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-T, \-\-traceless
+Delete child items without updating the mtime on their parent directory.
 .UNINDENT
 .INDENT 0.0
 .TP

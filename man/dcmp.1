@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DCMP" "1" "Aug 28, 2018" "0.8" "mpiFileUtils"
+.TH "DCMP" "1" "Dec 19, 2018" "0.8" "mpiFileUtils"
 .SH NAME
 dcmp \- distributed compare
 .
@@ -54,12 +54,12 @@ in which case, each option should provide a different output file name.
 .INDENT 0.0
 .TP
 .B \-t, \-\-text
-Change –output to write files in text format rather than binary.
+Change \-\-output to write files in text format rather than binary.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-b, \-\-base
-Enable base checks and normal stdout results when –output is used.
+Enable base checks and normal stdout results when \-\-output is used.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -76,7 +76,7 @@ Print the command usage, and the list of options available.
 .SH EXPRESSIONS
 .sp
 An expression is made up of one or more conditions, where each condition specifies a field and a state.
-A single condition consists of a field name, an ‘=’ sign, and a state name.
+A single condition consists of a field name, an \(aq=\(aq sign, and a state name.
 .sp
 Valid fields are listed below, along with the property of the entry that is checked.
 .TS
@@ -239,7 +239,7 @@ CONTENT=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON@CONTENT=COMMON
 .sp
 A successful check on any other field also implies that EXIST=COMMON.
 .sp
-When used with the \-o option, one must also specify a file name at the end of the expression, separated with a ‘:’.
+When used with the \-o option, one must also specify a file name at the end of the expression, separated with a \(aq:\(aq.
 The list of any entries that match the expression are written to the named file.
 For example, to list any entries matching the above expression to a file named outfile1,
 one should use the following option:
@@ -254,7 +254,7 @@ one should use the following option:
 .UNINDENT
 .UNINDENT
 .sp
-If the –base option is given or when no output option is specified,
+If the \-\-base option is given or when no output option is specified,
 the following expressions are checked and numeric results are reported to stdout:
 .INDENT 0.0
 .INDENT 3.5
