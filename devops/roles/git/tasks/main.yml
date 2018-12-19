@@ -1,7 +1,0 @@
----
-# This playbook will install git
-
-- name: Install git package
-  action: apt pkg={{ item }} state=installed
-  with_items:
-   - git
