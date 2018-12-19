@@ -31,7 +31,7 @@ OPTIONS
    Compare files byte-by-byte rather than checking size and mtime
    to determine whether file contents are different.
 
-.. option:: -D, --delete-dst
+.. option:: -D, --delete
 
    Delete extraneous files from destination.
 
