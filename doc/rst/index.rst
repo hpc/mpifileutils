@@ -77,6 +77,7 @@ Man Pages
    :maxdepth: 2
 
    dbcast.1
+   dbz2.1
    dchmod.1
    dcmp.1
    dcp.1
