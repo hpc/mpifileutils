@@ -50,7 +50,7 @@ static void print_usage(void)
     printf("      --dryrun          - show differences, but do not synchronize files\n");
     printf("  -b  --batch-files <N> - batch files into groups of N during copy\n");
     printf("  -c, --contents        - read and compare file contents rather than compare size and mtime\n");
-    printf("  -N, --no-delete       - don't delete extraneous files from target\n");
+    printf("  -D, --delete          - delete extraneous files from target\n");
     printf("  -v, --verbose         - verbose output\n");
     printf("  -h, --help            - print usage\n");
     printf("\n");
@@ -166,7 +166,7 @@ struct dsync_options options = {
     .dry_run      = 0,
     .verbose      = 0,
     .debug        = 0,
-    .delete       = 1,
+    .delete       = 0,
     .need_compare = {0,}
 };
 
@@ -935,7 +935,7 @@ static int dsync_sync_files(strmap* src_map, strmap* dst_map,
 
     /* delete files from destination if needed */
     uint64_t remove_size = mfu_flist_global_size(dst_remove_list);
-    if (remove_size > 0 && options.delete) {
+    if (remove_size > 0) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Deleting items from destination");
         }
@@ -2167,7 +2167,7 @@ int main(int argc, char **argv)
         {"batch-files",   1, 0, 'b'},
         {"contents",      0, 0, 'c'},
         {"dryrun",        0, 0, 'n'},
-        {"delete-dst",    0, 0, 'D'},
+        {"delete",        0, 0, 'D'},
         {"output",        1, 0, 'o'},
         {"debug",         0, 0, 'd'},
         {"verbose",       0, 0, 'v'},
@@ -2286,7 +2286,6 @@ int main(int argc, char **argv)
     mfu_flist flist1 = mfu_flist_new();
     mfu_flist flist2 = mfu_flist_new();
            
-
     /* walk source path */
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking source path");
