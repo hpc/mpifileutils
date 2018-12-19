@@ -4,7 +4,7 @@ mpiFileUtils provides both a library called [libmfu](src/common/README.md) and a
 Documentation is available on [ReadTheDocs](http://mpifileutils.readthedocs.io).
 
 ## Contributors
-We welcome contributions to the project.  For details on how to help, see our [Contributor Guide](.github/CONTRIBUTORS.md)
+We welcome contributions to the project.  For details on how to help, see our [Contributor Guide](.github/CONTRIBUTING.md)
 
 ### Copyrights
 
