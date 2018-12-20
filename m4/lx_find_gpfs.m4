@@ -2,10 +2,23 @@ dnl #
 dnl # Determines if GPFS API is installed.
 dnl #
 AC_DEFUN([X_AC_GPFS], [
+
+  AC_ARG_WITH([gpfs], [AC_HELP_STRING([--with-gpfs=PATH],
+	  [path to GPFS installion [default=/usr/lpp/mmfs]])], [
+  	GPFS_INCLUDE="${withval}/include"
+	  GPFS_LIB="${withval}/lib"
+	  AC_MSG_RESULT("${withval}")
+  ], [
+    GPFS_INCLUDE="/usr/lpp/mmfs/include"
+    GPFS_LIB="/usr/lpp/mmfs/lib"
+  ])
+
 	AC_ARG_ENABLE(gpfs,
 		AC_HELP_STRING([--enable-gpfs],
 		[enable GPFS/Spectrum Scale support]),
 		[], [enable_gpfs=no])
+
+
 
 	AS_CASE(["x$enable_gpfs"],
 		["xcheck"],
@@ -24,6 +37,9 @@ AC_DEFUN([X_AC_GPFS], [
 		AS_IF([test "x$gpfs_found" != "xno"], [
 			AC_DEFINE([GPFS_SUPPORT], [1],
 			    [Define to 1 if GPFS can be used])
+		  CFLAGS="$CFLAGS -I${GPFS_INCLUDE} ${MPI_CFLAGS}"
+		  CXXFLAGS="$CXXFLAGS -I${GPFS_INCLUDE} ${MPI_CXXFLAGS}"
+			LDFLAGS="$LDFLAGS -L${GPFS_LIB} ${MPI_CLDFLAGS}"
 			GPFS_LIBS="-lgpfs"
 			AC_SUBST(GPFS_LIBS)
 		])
@@ -36,4 +52,9 @@ AC_DEFUN([X_AC_GPFS], [
 	  ])
 	])
 	AC_MSG_RESULT([$gpfs_found])
+	AS_IF([test "x$enable_gpfs" != "xno"], [
+  	AC_SEARCH_LIBS([gpfs_fgetattrs], [gpfs], [], [
+      AC_MSG_ERROR(
+				[couldn't find a suitable GPFS library, use --with-gpfs=PATH])], [])
+  ])
 ])
