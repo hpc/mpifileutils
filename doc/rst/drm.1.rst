@@ -58,6 +58,12 @@ OPTIONS
    them. This is useful to check list of items satisfying --exclude or
    --match options before actually deleting anything.
 
+.. option:: --aggressive
+
+   This option will delete files during the walk phase, and then
+   delete directories by level after the walk in drm. You cannot
+   use this option with --dryrun.
+
 .. option:: -T, --traceless
 
    Delete child items without updating the mtime on their parent directory.
