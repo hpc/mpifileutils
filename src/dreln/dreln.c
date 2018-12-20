@@ -33,6 +33,9 @@ int main (int argc, char* argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    /* pointer to mfu_walk_opts */
+    mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
     /* whether path to target should be relative from symlink */
     char* inputname = NULL;
 
@@ -163,9 +166,7 @@ int main (int argc, char* argv[])
     /* get source file list */
     if (walk) {
         /* walk list of input paths */
-        int walk_stat = 0;
-        int walk_perm = 0;
-        mfu_flist_walk_param_paths(numpaths, paths, walk_stat, walk_perm, flist);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
     } else {
         /* read cache file */
         mfu_flist_read_cache(inputname, flist);
@@ -340,7 +341,14 @@ int main (int argc, char* argv[])
 
     mfu_flist_free(&linklist);
 
+    /* free the path parameters */
     mfu_param_path_free_all(numpaths, paths);
+
+    /* free memory allocated to hold params */
+    mfu_free(&paths);
+
+    /* free the walk options */
+    mfu_walk_opts_delete(&walk_opts);
 
     mfu_path_delete(&path_new);
     mfu_path_delete(&path_old);
