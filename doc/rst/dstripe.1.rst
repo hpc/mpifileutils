@@ -32,7 +32,7 @@ OPTIONS
 
    The stripe size to use during file restriping. Units like "MB" and
    "GB" can immediately follow the number without spaces (ex. 2MB). The
-    default stripe size is 1MB.
+   default stripe size is 1MB.
 
 .. option:: -m, --minsize SIZE
 

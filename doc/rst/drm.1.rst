@@ -24,7 +24,7 @@ drm behaves like `rm -rf`, but it is faster.
     regex to prevent the shell from expanding. An example of this using the
     --match option with --dryrun would be:
 
-    mpirun -np 128 drm --dryrun -v --name --match 'file_.*' /path/to/dir/*
+    ``mpirun -np 128 drm --dryrun -v --name --match 'file_.*' /path/to/dir/*``
 
 OPTIONS
 -------
