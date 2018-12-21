@@ -2356,8 +2356,8 @@ mfu_copy_opts_t* mfu_copy_opts_new(void)
     opts->block_buf1    = NULL;
     opts->block_buf2    = NULL;
 
-    /* Lustre grouplock ID */
-    opts->grouplock_id  = -1;
+    /* Zero is invalid for the Lustre grouplock ID. */
+    opts->grouplock_id  = 0;
 
     /* By default, do not limit the batch size */
     opts->batch_files   = 0;
