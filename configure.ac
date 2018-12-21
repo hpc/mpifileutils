@@ -69,6 +69,9 @@ PKG_CHECK_MODULES([libcircle], libcircle)
 # Check for libdtcmp.
 X_AC_DTCMP
 
+# Check for GPFS
+X_AC_GPFS
+
 # Check for Lustre
 X_AC_LUSTRE
 

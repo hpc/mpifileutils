@@ -18,6 +18,9 @@
 #include <time.h> /* asctime / localtime */
 #include <regex.h>
 
+/* Autotool defines. */
+#include "../../config.h"
+
 /* These headers are needed to query the Lustre MDS for stat
  * information.  This information may be incomplete, but it
  * is faster than a normal stat, which requires communication
@@ -51,6 +54,10 @@
 #ifdef LUSTRE_SUPPORT
 #include <lustre/lustre_user.h>
 #include <sys/ioctl.h>
+#endif
+
+#ifdef GPFS_SUPPORT
+#include <gpfs.h>
 #endif
 
 /****************************************
@@ -88,7 +95,7 @@ static mfu_copy_stats_t mfu_copy_stats;
 static mfu_copy_file_cache_t mfu_copy_src_cache;
 static mfu_copy_file_cache_t mfu_copy_dst_cache;
 
-static int mfu_copy_open_file(const char* file, int read_flag, 
+static int mfu_copy_open_file(const char* file, int read_flag,
         mfu_copy_file_cache_t* cache, mfu_copy_opts_t* mfu_copy_opts)
 {
     int newfd = -1;
@@ -294,6 +301,7 @@ static int mfu_copy_xattrs(
     /* free space allocated for list */
     mfu_free(&list);
     list_bufsize = 0;
+
 #endif /* DCOPY_USE_XATTR */
 
     return rc;
@@ -351,6 +359,78 @@ static int mfu_copy_permissions(
                );
             rc = -1;
         }
+
+#ifdef GPFS_SUPPORT
+    /* if we have GPFS support enabled, then we'll use the GPFS API to read
+       the ACL from the src_path and write to the dest_path.
+       We use the opaque method as we are not trying to alter the ACL contents.
+       Note that if the source is not a GPFS file-system, then the call will
+       fail with EINVAL and so we never try to apply this to the dest_path    */
+
+    /* need the file path to read the existing ACL */
+    const char* src_path = mfu_flist_file_get_name(flist, idx);
+
+    int aclflags = 0; /* acl param mapped with gpfs_opaque_acl_t structure */
+    unsigned char acltype = GPFS_ACL_TYPE_ACCESS;
+    /* initial size of the struct for gpfs_opaque_acl, 512 bytes should
+     * be large enough for a fairly large ACL anyway */
+    size_t bufsize = 512;
+    unsigned int *len; // pointer to length of struct
+    /* gpfs_getacl needs a *void for where it will place the data, so we need
+     * to allocate some memory and then place a gpfs_opaque_acl into the
+     * memory as aclflags is set to 0 to indicate gpfs_opaque_acl_t */
+    void *aclbufmem = MFU_MALLOC(bufsize); // allocate some memory for the buffer
+    memset(aclbufmem, 0, bufsize);
+
+    /* initialise emptry struct into the memory */
+    struct gpfs_opaque_acl *aclbuffer = (struct gpfs_opaque_acl *) aclbufmem;
+    /* we need a pointer to the length for later use */
+    len = (unsigned int *) &(aclbuffer->acl_buffer_len);
+    aclbuffer->acl_buffer_len = (int) (bufsize - sizeof(struct gpfs_opaque_acl));
+    aclbuffer->acl_type = acltype;
+
+    /* try and get the ACL */
+    MFU_LOG(MFU_LOG_INFO, "Getting GPFS ACL on %s for %s", src_path, dest_path);
+    int r = gpfs_getacl(src_path, aclflags, aclbufmem);
+
+    /* the buffer may not be big enough, if not, we'll get EONSPC and
+     * the first 4 bytes (acl_buffer_len) will tell us how much space we need */
+    if ((r != 0) && (errno == ENOSPC)) {
+      /* make a buffer which is exactly the right size */
+      bufsize = *len + sizeof(struct gpfs_opaque_acl);
+      MFU_LOG(MFU_LOG_INFO, "GPFS Buffer too small, needs to be %i",
+              (int) bufsize);
+      /* free the old buffer, then malloc the new size */
+      free(aclbufmem);
+      aclbufmem = MFU_MALLOC(bufsize);
+      memset(aclbufmem, 0, bufsize);
+      /* initialise emptry struct into the memory */
+      aclbuffer = (struct gpfs_opaque_acl *) aclbufmem;
+      aclbuffer->acl_buffer_len = (int) bufsize;
+      aclbuffer->acl_type = acltype;
+
+      /* once again try and get the ACL */
+      r = gpfs_getacl(src_path, aclflags, aclbufmem);
+    }
+
+    /* Assuming we now have a valid call to an ACL,
+     * try to place it on dest_path */
+    if (r == 0) {
+      MFU_LOG(MFU_LOG_INFO, "Sucessfully got ACL from %s", src_path);
+      r = gpfs_putacl(dest_path, aclflags, aclbufmem);
+      if (r != 0) {
+        MFU_LOG(MFU_LOG_WARN, "Failed to copy ACL from %s to %s with %i",
+                src_path, dest_path, r);
+      }
+    } else {
+      MFU_LOG(MFU_LOG_INFO, "Failed to get GPFS ACL on %s with %i ",
+              src_path, r);
+    }
+
+    /* free the memory from the buffer */
+    free(aclbufmem);
+#endif /* GPFS_SUPPORT */
+
     }
 
     return rc;
@@ -421,7 +501,7 @@ static int mfu_copy_close_file(mfu_copy_file_cache_t* cache)
  * we go in this direction in case updating a file updates its
  * parent directory */
 static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
-        int numpaths, const mfu_param_path* paths, 
+        int numpaths, const mfu_param_path* paths,
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
     /* assume we'll succeed */
@@ -466,7 +546,7 @@ static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
             const char* name = mfu_flist_file_get_name(list, idx);
 
             /* get destination name of item */
-            char* dest = mfu_param_path_copy_dest(name, numpaths, 
+            char* dest = mfu_param_path_copy_dest(name, numpaths,
                     paths, destpath, mfu_copy_opts);
 
             /* No need to copy it */
@@ -503,7 +583,7 @@ static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
             /* free destination item */
             mfu_free(&dest);
         }
-        
+
         /* wait for all procs to finish before we start
          * with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
@@ -537,7 +617,7 @@ static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
  * we go in this direction in case updating a file updates its
  * parent directory */
 static int mfu_copy_set_metadata_dirs(int levels, int minlevel, mfu_flist* lists,
-        int numpaths, const mfu_param_path* paths, 
+        int numpaths, const mfu_param_path* paths,
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
     /* assume we'll succeed */
@@ -582,7 +662,7 @@ static int mfu_copy_set_metadata_dirs(int levels, int minlevel, mfu_flist* lists
             const char* name = mfu_flist_file_get_name(list, idx);
 
             /* get destination name of item */
-            char* dest = mfu_param_path_copy_dest(name, numpaths, 
+            char* dest = mfu_param_path_copy_dest(name, numpaths,
                     paths, destpath, mfu_copy_opts);
 
             /* No need to copy it */
@@ -625,7 +705,7 @@ static int mfu_copy_set_metadata_dirs(int levels, int minlevel, mfu_flist* lists
             /* free destination item */
             mfu_free(&dest);
         }
-        
+
         /* wait for all procs to finish before we start
          * with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
@@ -741,7 +821,7 @@ static int mfu_create_directory(mfu_flist list, uint64_t idx,
  * a child directory until the parent exists,
  * returns 0 on success and -1 on failure */
 static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
-        int numpaths, const mfu_param_path* paths, 
+        int numpaths, const mfu_param_path* paths,
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
     /* assume we'll succeed */
@@ -782,7 +862,7 @@ static int mfu_create_directories(int levels, int minlevel, mfu_flist* lists,
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
             if (type == MFU_TYPE_DIR) {
                 /* create the directory */
-                int tmp_rc = mfu_create_directory(list, idx, numpaths, 
+                int tmp_rc = mfu_create_directory(list, idx, numpaths,
                         paths, destpath, mfu_copy_opts);
                 if (tmp_rc < 0) {
                     rc = -1;
@@ -859,7 +939,7 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
     const char* src_path = mfu_flist_file_get_name(list, idx);
 
     /* get destination name */
-    const char* dest_path = mfu_param_path_copy_dest(src_path, numpaths, 
+    const char* dest_path = mfu_param_path_copy_dest(src_path, numpaths,
            paths, destpath, mfu_copy_opts);
 
     /* No need to copy it */
@@ -920,7 +1000,7 @@ static int mfu_create_link(mfu_flist list, uint64_t idx,
  * when preserving permissions, which contains file striping info on Lustre,
  * returns 0 on success and -1 on error */
 static int mfu_create_file(mfu_flist list, uint64_t idx,
-        int numpaths, const mfu_param_path* paths, 
+        int numpaths, const mfu_param_path* paths,
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
     /* assume we'll succeed */
@@ -1530,14 +1610,14 @@ static int mfu_copy_file(
 
     if (mfu_copy_opts->sparse) {
         ret = mfu_copy_file_fiemap(src, dest, in_fd, out_fd, offset,
-                               length, file_size, 
+                               length, file_size,
                                &normal_copy_required, mfu_copy_opts);
         if (!ret || !normal_copy_required) {
             return ret;
         }
     }
 
-    ret = mfu_copy_file_normal(src, dest, in_fd, out_fd, 
+    ret = mfu_copy_file_normal(src, dest, in_fd, out_fd,
             offset, length, file_size, mfu_copy_opts);
 
     return ret;
@@ -1546,7 +1626,7 @@ static int mfu_copy_file(
 /* slices files in list at boundaries of chunk size, evenly distributes
  * chunks, and copies data from source to destination file,
  * returns 0 on success and -1 on error */
-static int mfu_copy_files(mfu_flist list, uint64_t chunk_size, 
+static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
         int numpaths, const mfu_param_path* paths,
         const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
 {
@@ -1567,7 +1647,7 @@ static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Copying data.");
     }
-    
+
     /* start timer for entie operation */
     MPI_Barrier(MPI_COMM_WORLD);
     double total_start = MPI_Wtime();
@@ -1606,7 +1686,7 @@ static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
 
         /* copy portion of file corresponding to this chunk,
          * and record whether copy operation succeeded */
-        int copy_rc = mfu_copy_file(p->name, dest, (uint64_t)p->offset, 
+        int copy_rc = mfu_copy_file(p->name, dest, (uint64_t)p->offset,
                 (uint64_t)p->length, (uint64_t)p->file_size, mfu_copy_opts);
         if (copy_rc < 0) {
             /* error copying file */
@@ -1837,7 +1917,7 @@ static void print_summary(mfu_flist flist)
 }
 
 int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
-        const mfu_param_path* paths, const mfu_param_path* destpath, 
+        const mfu_param_path* paths, const mfu_param_path* destpath,
         mfu_copy_opts_t* mfu_copy_opts)
 {
     /* assume we'll succeed */
@@ -1846,12 +1926,12 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     /* get our rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-     
-    /* set mfu_copy options in mfu_copy_opts_t struct */  
+
+    /* set mfu_copy options in mfu_copy_opts_t struct */
 
     /* copy the destination path to user opts structure */
     mfu_copy_opts->dest_path = MFU_STRDUP((*destpath).path);
-    
+
     /* print note about what we're doing and the amount of files/data to be moved */
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Copying to %s", mfu_copy_opts->dest_path);
@@ -1963,7 +2043,7 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
                 }
 
                 /* copy data */
-                tmp_rc = mfu_copy_files(spreadlist, mfu_copy_opts->chunk_size, 
+                tmp_rc = mfu_copy_files(spreadlist, mfu_copy_opts->chunk_size,
                         numpaths, paths, destpath, mfu_copy_opts);
                 if (tmp_rc < 0) {
                     rc = -1;
@@ -2063,7 +2143,7 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
         /* set permissions, ownership, and timestamps if needed */
         mfu_copy_set_metadata_dirs(levels, minlevel, lists, numpaths,
                 paths, destpath, mfu_copy_opts);
-    
+
         /* force updates to disk */
         mfu_sync_all("Syncing directory updates to disk.");
     } else {
@@ -2077,7 +2157,7 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
         }
 
         /* copy data */
-        tmp_rc = mfu_copy_files(src_cp_list, mfu_copy_opts->chunk_size, 
+        tmp_rc = mfu_copy_files(src_cp_list, mfu_copy_opts->chunk_size,
                 numpaths, paths, destpath, mfu_copy_opts);
         if (tmp_rc < 0) {
             rc = -1;
@@ -2090,7 +2170,7 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
         /* set permissions, ownership, and timestamps if needed */
         mfu_copy_set_metadata(levels, minlevel, lists, numpaths,
                 paths, destpath, mfu_copy_opts);
-    
+
         /* force updates to disk */
         mfu_sync_all("Syncing directory updates to disk.");
     }
