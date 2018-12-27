@@ -22,6 +22,47 @@ extern "C" {
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* hard code this until we get configuration check added */
+#define HAVE_BYTESWAP_H
+
+/* adds byte swapping routines */
+#if defined(__APPLE__)
+#include "machine/endian.h"
+#else
+#include "endian.h"
+#endif
+
+#ifdef HAVE_BYTESWAP_H
+#include "byteswap.h"
+//#else
+//#include "mfu_byteswap.h"
+#endif
+
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+#ifdef HAVE_BYTESWAP_H
+# define mfu_ntoh16(x) bswap_16(x)
+# define mfu_ntoh32(x) bswap_32(x)
+# define mfu_ntoh64(x) bswap_64(x)
+# define mfu_hton16(x) bswap_16(x)
+# define mfu_hton32(x) bswap_32(x)
+# define mfu_hton64(x) bswap_64(x)
+#else
+# define mfu_ntoh16(x) mfu_bswap_16(x)
+# define mfu_ntoh32(x) mfu_bswap_32(x)
+# define mfu_ntoh64(x) mfu_bswap_64(x)
+# define mfu_hton16(x) mfu_bswap_16(x)
+# define mfu_hton32(x) mfu_bswap_32(x)
+# define mfu_hton64(x) mfu_bswap_64(x)
+#endif
+#else
+# define mfu_ntoh16(x) (x)
+# define mfu_ntoh32(x) (x)
+# define mfu_ntoh64(x) (x)
+# define mfu_hton16(x) (x)
+# define mfu_hton32(x) (x)
+# define mfu_hton64(x) (x)
+#endif
+
 typedef enum {
     MFU_LOG_FATAL   = 1,
     MFU_LOG_ERR     = 2,
