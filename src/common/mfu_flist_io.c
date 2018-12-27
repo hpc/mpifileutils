@@ -38,6 +38,83 @@
 #include "mfu.h"
 #include "mfu_flist_internal.h"
 
+static void mfu_pack_io_uint32(char** pptr, uint32_t value)
+{
+    /* convert from host to network order */
+    uint32_t* ptr = *(uint32_t**)pptr;
+    *ptr = mfu_hton32(value);
+    *pptr += 4;
+}
+
+static void mfu_unpack_io_uint32(const char** pptr, uint32_t* value)
+{
+    /* convert from network to host order */
+    const uint32_t* ptr = *(const uint32_t**)pptr;
+    *value = mfu_ntoh32(*ptr);
+    *pptr += 4;
+}
+
+static void mfu_pack_io_uint64(char** pptr, uint64_t value)
+{
+    /* convert from host to network order */
+    uint64_t* ptr = *(uint64_t**)pptr;
+    *ptr = mfu_hton64(value);
+    *pptr += 8;
+}
+
+static void mfu_unpack_io_uint64(const char** pptr, uint64_t* value)
+{
+    /* convert from network to host order */
+    const uint64_t* ptr = *(const uint64_t**)pptr;
+    *value = mfu_ntoh64(*ptr);
+    *pptr += 8;
+}
+
+static size_t buft_pack_size(const buf_t* items)
+{
+    size_t elem_size = items->chars + sizeof(uint64_t);
+    size_t pack_size = items->count * elem_size;
+    return pack_size;
+}
+
+static void buft_pack(void* buf, const buf_t* items)
+{
+    char* dptr = (char*)buf;
+    const char* sptr = (const char*)items->buf;
+
+    uint64_t i;
+    for (i = 0; i < items->count; i++) {
+        /* copy path from source to destination buffer */
+        strncpy(dptr, sptr, items->chars);
+        sptr += items->chars;
+        dptr += items->chars;
+
+        /* pack uint64 into destionation */
+        mfu_pack_io_uint64(&dptr, *(const uint64_t*)sptr);
+        sptr += sizeof(uint64_t);
+    }
+    return;
+}
+
+static void buft_unpack(const void* buf, buf_t* items)
+{
+    const char* buf_ptr = (const char*)buf;
+    char* buft_ptr = (char*)items->buf;
+
+    uint64_t i;
+    for (i = 0; i < items->count; i++) {
+        /* copy path from buffer to buft */
+        strncpy(buft_ptr, buf_ptr, items->chars);
+        buft_ptr += items->chars;
+        buf_ptr  += items->chars;
+
+        /* pack uint64 from buf into buft */
+        mfu_unpack_io_uint64(&buf_ptr, (uint64_t*)buft_ptr);
+        buft_ptr += sizeof(uint64_t);
+    }
+    return;
+}
+
 /* create a datatype to hold file name and stat info */
 static void create_stattype(int detail, int chars, MPI_Datatype* dt_stat)
 {
@@ -177,20 +254,20 @@ static size_t list_elem_pack(void* buf, int detail, uint64_t chars, const elem_t
     ptr += chars;
 
     if (detail) {
-        mfu_pack_uint64(&ptr, elem->mode);
-        mfu_pack_uint64(&ptr, elem->uid);
-        mfu_pack_uint64(&ptr, elem->gid);
-        mfu_pack_uint64(&ptr, elem->atime);
-        mfu_pack_uint64(&ptr, elem->atime_nsec);
-        mfu_pack_uint64(&ptr, elem->mtime);
-        mfu_pack_uint64(&ptr, elem->mtime_nsec);
-        mfu_pack_uint64(&ptr, elem->ctime);
-        mfu_pack_uint64(&ptr, elem->ctime_nsec);
-        mfu_pack_uint64(&ptr, elem->size);
+        mfu_pack_io_uint64(&ptr, elem->mode);
+        mfu_pack_io_uint64(&ptr, elem->uid);
+        mfu_pack_io_uint64(&ptr, elem->gid);
+        mfu_pack_io_uint64(&ptr, elem->atime);
+        mfu_pack_io_uint64(&ptr, elem->atime_nsec);
+        mfu_pack_io_uint64(&ptr, elem->mtime);
+        mfu_pack_io_uint64(&ptr, elem->mtime_nsec);
+        mfu_pack_io_uint64(&ptr, elem->ctime);
+        mfu_pack_io_uint64(&ptr, elem->ctime_nsec);
+        mfu_pack_io_uint64(&ptr, elem->size);
     }
     else {
         /* just have the file type */
-        mfu_pack_uint32(&ptr, elem->type);
+        mfu_pack_io_uint32(&ptr, elem->type);
     }
 
     size_t bytes = (size_t)(ptr - start);
@@ -217,22 +294,22 @@ static size_t list_elem_unpack(const void* buf, int detail, uint64_t chars, elem
 
     if (detail) {
         /* extract fields */
-        mfu_unpack_uint64(&ptr, &elem->mode);
-        mfu_unpack_uint64(&ptr, &elem->uid);
-        mfu_unpack_uint64(&ptr, &elem->gid);
-        mfu_unpack_uint64(&ptr, &elem->atime);
-        mfu_unpack_uint64(&ptr, &elem->atime_nsec);
-        mfu_unpack_uint64(&ptr, &elem->mtime);
-        mfu_unpack_uint64(&ptr, &elem->mtime_nsec);
-        mfu_unpack_uint64(&ptr, &elem->ctime);
-        mfu_unpack_uint64(&ptr, &elem->ctime_nsec);
-        mfu_unpack_uint64(&ptr, &elem->size);
+        mfu_unpack_io_uint64(&ptr, &elem->mode);
+        mfu_unpack_io_uint64(&ptr, &elem->uid);
+        mfu_unpack_io_uint64(&ptr, &elem->gid);
+        mfu_unpack_io_uint64(&ptr, &elem->atime);
+        mfu_unpack_io_uint64(&ptr, &elem->atime_nsec);
+        mfu_unpack_io_uint64(&ptr, &elem->mtime);
+        mfu_unpack_io_uint64(&ptr, &elem->mtime_nsec);
+        mfu_unpack_io_uint64(&ptr, &elem->ctime);
+        mfu_unpack_io_uint64(&ptr, &elem->ctime_nsec);
+        mfu_unpack_io_uint64(&ptr, &elem->size);
 
         /* use mode to set file type */
         elem->type = mfu_flist_mode_to_filetype((mode_t)elem->mode);
     }
     else {
-        mfu_unpack_uint32(&ptr, &elem->type);
+        mfu_unpack_io_uint32(&ptr, &elem->type);
     }
 
     size_t bytes = (size_t)(ptr - start);
@@ -709,6 +786,221 @@ static void read_cache_v3(
     return;
 }
 
+/* file format:
+ * all integer values stored in network byte order
+ *
+ *   uint64_t file version
+ *   uint64_t total number of users
+ *   uint64_t max username length
+ *   uint64_t total number of groups
+ *   uint64_t max groupname length
+ *   uint64_t total number of files
+ *   uint64_t max filename length
+ *   list of <username(str), userid(uint64_t)>
+ *   list of <groupname(str), groupid(uint64_t)>
+ *   list of <files(str)>
+ *   */
+static void read_cache_v4(
+    const char* name,
+    MPI_Offset* outdisp,
+    MPI_File fh,
+    char* datarep,
+    flist_t* flist)
+{
+    MPI_Status status;
+
+    MPI_Offset disp = *outdisp;
+
+    /* indicate that we have stat data */
+    flist->detail = 1;
+
+    /* pointer to users, groups, and file buffer data structure */
+    buf_t* users  = &flist->users;
+    buf_t* groups = &flist->groups;
+
+    /* get our rank */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* rank 0 reads and broadcasts header */
+    uint64_t header[6];
+    int header_size = 6 * 8; /* 6 consecutive uint64_t */
+    MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    if (rank == 0) {
+        uint64_t header_packed[6];
+        MPI_File_read_at(fh, 0, header_packed, header_size, MPI_BYTE, &status);
+        const char* ptr = (const char*) header_packed;
+        mfu_unpack_io_uint64(&ptr, &header[0]);
+        mfu_unpack_io_uint64(&ptr, &header[1]);
+        mfu_unpack_io_uint64(&ptr, &header[2]);
+        mfu_unpack_io_uint64(&ptr, &header[3]);
+        mfu_unpack_io_uint64(&ptr, &header[4]);
+        mfu_unpack_io_uint64(&ptr, &header[5]);
+    }
+    MPI_Bcast(header, 6, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+    disp += header_size;
+
+    uint64_t all_count;
+    users->count     = header[0];
+    users->chars     = header[1];
+    groups->count    = header[2];
+    groups->chars    = header[3];
+    all_count        = header[4];
+    uint64_t chars   = header[5];
+
+    /* compute count for each process */
+    uint64_t count = all_count / (uint64_t)ranks;
+    uint64_t remainder = all_count - count * (uint64_t)ranks;
+    if ((uint64_t)rank < remainder) {
+        count++;
+    }
+
+    /* get our offset */
+    uint64_t offset;
+    MPI_Exscan(&count, &offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    if (rank == 0) {
+        offset = 0;
+    }
+
+    /* read users, if any */
+    if (users->count > 0 && users->chars > 0) {
+        /* create type */
+        mfu_flist_usrgrp_create_stridtype((int)users->chars,  &(users->dt));
+
+        /* get extent */
+        MPI_Aint lb_user, extent_user;
+        MPI_Type_get_extent(users->dt, &lb_user, &extent_user);
+
+        /* allocate memory to hold data */
+        size_t bufsize_user = users->count * (size_t)extent_user;
+        users->buf = (void*) MFU_MALLOC(bufsize_user);
+        users->bufsize = bufsize_user;
+
+        /* read data */
+        MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+        int user_buf_size = (int) buft_pack_size(users);
+        if (rank == 0) {
+            char* user_buf = (char*) MFU_MALLOC(user_buf_size);
+            MPI_File_read_at(fh, 0, user_buf, user_buf_size, MPI_BYTE, &status);
+            buft_unpack(user_buf, users);
+            mfu_free(&user_buf);
+        }
+        MPI_Bcast(users->buf, (int)users->count, users->dt, 0, MPI_COMM_WORLD);
+        disp += (MPI_Offset) user_buf_size;
+    }
+
+    /* read groups, if any */
+    if (groups->count > 0 && groups->chars > 0) {
+        /* create type */
+        mfu_flist_usrgrp_create_stridtype((int)groups->chars, &(groups->dt));
+
+        /* get extent */
+        MPI_Aint lb_group, extent_group;
+        MPI_Type_get_extent(groups->dt, &lb_group, &extent_group);
+
+        /* allocate memory to hold data */
+        size_t bufsize_group = groups->count * (size_t)extent_group;
+        groups->buf = (void*) MFU_MALLOC(bufsize_group);
+        groups->bufsize = bufsize_group;
+
+        /* read data */
+        MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+        int group_buf_size = (int) buft_pack_size(groups);
+        if (rank == 0) {
+            char* group_buf = (char*) MFU_MALLOC(group_buf_size);
+            MPI_File_read_at(fh, 0, group_buf, group_buf_size, MPI_BYTE, &status);
+            buft_unpack(group_buf, groups);
+            mfu_free(&group_buf);
+        }
+        MPI_Bcast(groups->buf, (int)groups->count, groups->dt, 0, MPI_COMM_WORLD);
+        disp += (MPI_Offset) group_buf_size;
+    }
+
+    /* read files, if any */
+    if (all_count > 0 && chars > 0) {
+        /* get size of file element */
+        size_t elem_size = list_elem_pack_size(flist->detail, (int)chars, NULL);
+
+        /* in order to avoid blowing out memory, we'll pack into a smaller
+         * buffer and iteratively make many collective reads */
+
+        /* allocate a buffer, ensure it's large enough to hold at least one
+         * complete record */
+        size_t bufsize = 1024 * 1024;
+        if (bufsize < elem_size) {
+            bufsize = elem_size;
+        }
+        void* buf = MFU_MALLOC(bufsize);
+
+        /* compute number of items we can fit in each read iteration */
+        uint64_t bufcount = (uint64_t)bufsize / (uint64_t)elem_size;
+
+        /* determine number of iterations we need to read all items */
+        uint64_t iters = count / bufcount;
+        if (iters * bufcount < count) {
+            iters++;
+        }
+
+        /* compute max iterations across all procs */
+        uint64_t all_iters;
+        MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+
+        /* set file view to be sequence of datatypes past header */
+        MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+
+        /* compute byte offset to read our element */
+        MPI_Offset read_offset = (MPI_Offset)offset * elem_size;
+
+        /* iterate with multiple reads until all records are read */
+        uint64_t totalcount = 0;
+        while (all_iters > 0) {
+            /* determine number to read */
+            int read_count = (int) bufcount;
+            uint64_t remaining = count - totalcount;
+            if (remaining < bufcount) {
+                read_count = (int) remaining;
+            }
+
+            /* TODO: read_at_all w/ external32 is broken in ROMIO as of MPICH-3.2rc1 */
+
+            /* compute number of bytes to read */
+            int read_size = read_count * (int)elem_size;
+
+            /* issue a collective read */
+            //MPI_File_read_at_all(fh, read_offset, buf, read_size, MPI_BYTE, &status);
+            MPI_File_read_at(fh, read_offset, buf, read_size, MPI_BYTE, &status);
+
+            /* update our offset with the number of items we just read */
+            read_offset += (MPI_Offset)read_size;
+            totalcount += (uint64_t) read_count;
+
+            /* unpack data from buffer into list */
+            char* ptr = (char*) buf;
+            uint64_t packcount = 0;
+            while (packcount < (uint64_t) read_count) {
+                /* unpack item from buffer and advance pointer */
+                list_insert_ptr(flist, ptr, 1, chars);
+                ptr += elem_size;
+                packcount++;
+            }
+
+            /* one less iteration */
+            all_iters--;
+        }
+
+        /* free buffer */
+        mfu_free(&buf);
+    }
+
+    /* create maps of users and groups */
+    mfu_flist_usrgrp_create_map(&flist->users, flist->user_id2name);
+    mfu_flist_usrgrp_create_map(&flist->groups, flist->group_id2name);
+
+    *outdisp = disp;
+    return;
+}
+
 void mfu_flist_read_cache(
     const char* name,
     mfu_flist bflist)
@@ -747,19 +1039,32 @@ void mfu_flist_read_cache(
 
     /* rank 0 reads and broadcasts version */
     uint64_t version;
+    MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    if (rank == 0) {
+        /* read version from file */
+        uint64_t version_packed;
+        MPI_File_read_at(fh, 0, &version_packed, 8, MPI_BYTE, &status);
+
+        /* convert version into host format */
+        const char* ptr = (const char*) &version_packed;
+        mfu_unpack_io_uint64(&ptr, &version);
+    }
+#if 0
     MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
     if (rank == 0) {
         MPI_File_read_at(fh, 0, &version, 1, MPI_UINT64_T, &status);
     }
+#endif
     MPI_Bcast(&version, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
     disp += 1 * 8; /* 9 consecutive uint64_t types in external32 */
 
-    /* need a couple of dummy params to record walk start and end times */
-    uint64_t outstart = 0;
-    uint64_t outend = 0;
-
     /* read data from file */
-    if (version == 3) {
+    if (version == 4) {
+        read_cache_v4(name, &disp, fh, datarep, flist);
+    } else if (version == 3) {
+        /* need a couple of dummy params to record walk start and end times */
+        uint64_t outstart = 0;
+        uint64_t outend = 0;
         read_cache_v3(name, &disp, fh, datarep, &outstart, &outend, flist);
     }
     else {
@@ -1084,7 +1389,139 @@ static void write_cache_readdir(
     return;
 }
 
-static void write_cache_stat(
+static void write_cache_readdir_packed(
+    const char* name,
+    flist_t* flist)
+{
+    /* get our rank in job & number of ranks */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* use mpi io hints to stripe across OSTs */
+    MPI_Info info;
+    MPI_Info_create(&info);
+
+    /* get number of items in our list and total file count */
+    uint64_t count     = flist->list_count;
+    uint64_t all_count = flist->total_files;
+    uint64_t offset    = flist->offset;
+
+    /* find smallest length that fits max and consists of integer
+     * number of 8 byte segments */
+    int max = (int) flist->max_file_name;
+    int chars = max / 8;
+    if (chars * 8 < max) {
+        chars++;
+    }
+    chars *= 8;
+
+    /* compute size of each element */
+    size_t elem_size = list_elem_pack_size(flist->detail, chars, NULL);
+
+    /* open file */
+    MPI_Status status;
+    MPI_File fh;
+    char datarep[] = "external32";
+    //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
+    int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
+
+    /* change number of ranks to string to pass to MPI_Info */
+    char str_buf[12];
+    sprintf(str_buf, "%d", ranks);
+
+    /* no. of I/O devices for lustre striping is number of ranks */
+    MPI_Info_set(info, "striping_factor", str_buf);
+
+    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
+
+    /* truncate file to 0 bytes */
+    MPI_File_set_size(fh, 0);
+
+    /* prepare header */
+    uint64_t header[3];
+    char* ptr = (char*)header;
+    mfu_pack_io_uint64(&ptr, 100);             /* file version */
+    mfu_pack_io_uint64(&ptr, all_count);       /* total number of stat entries */
+    mfu_pack_io_uint64(&ptr, (uint64_t)chars); /* number of chars in file name */
+
+    /* write the header */
+    MPI_Offset disp = 0;
+    int header_bytes = 3 * 8;
+    MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    if (rank == 0) {
+        MPI_File_write_at(fh, 0, header, header_bytes, MPI_BYTE, &status);
+    }
+    disp += header_bytes;
+
+    /* in order to avoid blowing out memory, we'll pack into a smaller
+     * buffer and iteratively make many collective writes */
+
+    /* allocate a buffer, ensure it's large enough to hold at least one
+     * complete record */
+    size_t bufsize = 1024 * 1024;
+    if (bufsize < elem_size) {
+        bufsize = elem_size;
+    }
+    void* buf = MFU_MALLOC(bufsize);
+
+    /* compute number of items we can fit in each write iteration */
+    uint64_t bufcount = (uint64_t)bufsize / (uint64_t)elem_size;
+
+    /* determine number of iterations we need to write all items */
+    uint64_t iters = count / bufcount;
+    if (iters * bufcount < count) {
+        iters++;
+    }
+
+    /* compute max iterations across all procs */
+    uint64_t all_iters;
+    MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+
+    /* set file view to be sequence of datatypes past header */
+    MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+
+    /* compute byte offset to write our element */
+    MPI_Offset write_offset = (MPI_Offset)offset * elem_size;
+
+    /* iterate with multiple writes until all records are written */
+    const elem_t* current = flist->list_head;
+    while (all_iters > 0) {
+        /* copy stat data into write buffer */
+        ptr = (char*) buf;
+        uint64_t packcount = 0;
+        while (current != NULL && packcount < bufcount) {
+            /* pack item into buffer and advance pointer */
+            size_t pack_bytes = list_elem_pack(ptr, flist->detail, (uint64_t)chars, current);
+            ptr += pack_bytes;
+            packcount += (uint64_t)pack_bytes;
+            current = current->next;
+        }
+
+        /* collective write of file info */
+        int write_count = (int) packcount;
+        MPI_File_write_at_all(fh, write_offset, buf, write_count, MPI_BYTE, &status);
+
+        /* update our offset with the number of bytes we just wrote */
+        write_offset += (MPI_Offset)packcount;
+
+        /* one less iteration */
+        all_iters--;
+    }
+
+    /* free write buffer */
+    mfu_free(&buf);
+
+    /* close file */
+    MPI_File_close(&fh);
+
+    /* free mpi info */
+    MPI_Info_free(&info);
+
+    return;
+}
+
+static void write_cache_stat_v3(
     const char* name,
     uint64_t walk_start,
     uint64_t walk_end,
@@ -1261,6 +1698,171 @@ static void write_cache_stat(
     return;
 }
 
+static void write_cache_stat_v4(
+    const char* name,
+    flist_t* flist)
+{
+    buf_t* users  = &flist->users;
+    buf_t* groups = &flist->groups;
+
+    /* get our rank in job & number of ranks */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* use mpi io hints to stripe across OSTs */
+    MPI_Info info;
+    MPI_Info_create(&info);
+
+    /* get number of items in our list and total file count */
+    uint64_t count     = flist->list_count;
+    uint64_t all_count = flist->total_files;
+    uint64_t offset    = flist->offset;
+
+    /* find smallest length that fits max and consists of integer
+     * number of 8 byte segments */
+    int max = (int) flist->max_file_name;
+    int chars = max / 8;
+    if (chars * 8 < max) {
+        chars++;
+    }
+    chars *= 8;
+
+    /* compute size of each element */
+    size_t elem_size = list_elem_pack_size(flist->detail, chars, NULL);
+
+    /* open file */
+    MPI_Status status;
+    MPI_File fh;
+    char datarep[] = "external32";
+    //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
+    int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
+
+    /* change number of ranks to string to pass to MPI_Info */
+    char str_buf[12];
+    sprintf(str_buf, "%d", ranks);
+
+    /* no. of I/O devices for lustre striping is number of ranks */
+    MPI_Info_set(info, "striping_factor", str_buf);
+
+    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
+
+    /* truncate file to 0 bytes */
+    MPI_File_set_size(fh, 0);
+
+    /* prepare header */
+    uint64_t header[7];
+    char* ptr = (char*) header;
+    mfu_pack_io_uint64(&ptr, 4);               /* file version */
+    mfu_pack_io_uint64(&ptr, users->count);    /* number of user records */
+    mfu_pack_io_uint64(&ptr, users->chars);    /* number of chars in user name */
+    mfu_pack_io_uint64(&ptr, groups->count);   /* number of group records */
+    mfu_pack_io_uint64(&ptr, groups->chars);   /* number of chars in group name */
+    mfu_pack_io_uint64(&ptr, all_count);       /* total number of stat entries */
+    mfu_pack_io_uint64(&ptr, (uint64_t)chars); /* number of chars in file name */
+
+    /* write the header */
+    MPI_Offset disp = 0;
+    int header_bytes = 7 * 8;
+    MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    if (rank == 0) {
+        MPI_File_write_at(fh, 0, header, header_bytes, MPI_BYTE, &status);
+    }
+    disp += header_bytes;
+
+    if (users->dt != MPI_DATATYPE_NULL) {
+        /* write out users */
+        MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+        int user_buf_size = (int) buft_pack_size(users);
+        if (rank == 0) {
+            char* user_buf = (char*) MFU_MALLOC(user_buf_size);
+            buft_pack(user_buf, users);
+            MPI_File_write_at(fh, 0, user_buf, user_buf_size, MPI_BYTE, &status);
+            mfu_free(&user_buf);
+        }
+        disp += (MPI_Offset)user_buf_size;
+    }
+
+    if (groups->dt != MPI_DATATYPE_NULL) {
+        /* write out groups */
+        MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+        int group_buf_size = (int) buft_pack_size(groups);
+        if (rank == 0) {
+            char* group_buf = (char*) MFU_MALLOC(group_buf_size);
+            buft_pack(group_buf, groups);
+            MPI_File_write_at(fh, 0, group_buf, group_buf_size, MPI_BYTE, &status);
+            mfu_free(&group_buf);
+        }
+        disp += (MPI_Offset)group_buf_size;
+    }
+
+    /* in order to avoid blowing out memory, we'll pack into a smaller
+     * buffer and iteratively make many collective writes */
+
+    /* allocate a buffer, ensure it's large enough to hold at least one
+     * complete record */
+    size_t bufsize = 1024 * 1024;
+    if (bufsize < elem_size) {
+        bufsize = elem_size;
+    }
+    void* buf = MFU_MALLOC(bufsize);
+
+    /* compute number of items we can fit in each write iteration */
+    uint64_t bufcount = (uint64_t)bufsize / (uint64_t)elem_size;
+
+    /* determine number of iterations we need to write all items */
+    uint64_t iters = count / bufcount;
+    if (iters * bufcount < count) {
+        iters++;
+    }
+
+    /* compute max iterations across all procs */
+    uint64_t all_iters;
+    MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+
+    /* set file view to be sequence of datatypes past header */
+    MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+
+    /* compute byte offset to write our element */
+    MPI_Offset write_offset = (MPI_Offset)offset * elem_size;
+
+    /* iterate with multiple writes until all records are written */
+    const elem_t* current = flist->list_head;
+    while (all_iters > 0) {
+        /* copy stat data into write buffer */
+        ptr = (char*) buf;
+        uint64_t packcount = 0;
+        while (current != NULL && packcount < bufcount) {
+            /* pack item into buffer and advance pointer */
+            size_t pack_bytes = list_elem_pack(ptr, flist->detail, (uint64_t)chars, current);
+            ptr += pack_bytes;
+            packcount += (uint64_t)pack_bytes;
+            current = current->next;
+        }
+
+        /* collective write of file info */
+        int write_count = (int) packcount;
+        MPI_File_write_at_all(fh, write_offset, buf, write_count, MPI_BYTE, &status);
+
+        /* update our offset with the number of bytes we just wrote */
+        write_offset += (MPI_Offset)packcount;
+
+        /* one less iteration */
+        all_iters--;
+    }
+
+    /* free write buffer */
+    mfu_free(&buf);
+
+    /* close file */
+    MPI_File_close(&fh);
+
+    /* free mpi info */
+    MPI_Info_free(&info);
+
+    return;
+}
+
 void mfu_flist_write_cache(
     const char* name,
     mfu_flist bflist)
@@ -1281,10 +1883,12 @@ void mfu_flist_write_cache(
 
     if (all_count > 0) {
         if (flist->detail) {
-            write_cache_stat(name, 0, 0, flist);
+            //write_cache_stat_v3(name, 0, 0, flist);
+            write_cache_stat_v4(name, flist);
         }
         else {
             //write_cache_readdir(name, 0, 0, flist);
+            //write_cache_readdir_packed(name, flist);
             write_cache_readdir_variable(name, flist);
         }
     }
