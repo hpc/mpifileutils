@@ -15,6 +15,10 @@ or to enable all features:
 
     $ spack install mpifileutils +lustre +experimental
 
+To build from a release tarball, use CMake. Note that this requires the manual
+installation of the dependencies. One can also use spack to create an environment.
+
+
 To build from a release tarball, there are two scripts: buildme_dependencies and
 buildme. The buildme_dependencies script downloads and installs all the
 necessary libraries. The buildme script then builds mpiFileUtils assuming the

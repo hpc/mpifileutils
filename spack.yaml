@@ -1,0 +1,11 @@
+spack:
+  specs:
+  - dtcmp
+  - libarchive
+  - libcircle
+  mirrors: {}
+  modules:
+    enable: []
+  repos: []
+  packages: {}
+  config: {}

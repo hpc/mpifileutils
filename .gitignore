@@ -67,3 +67,7 @@ Makefile.in
 
 # documentation build
 doc/build
+
+# spack files
+.spack*
+spack.lock
