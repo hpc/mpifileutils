@@ -187,7 +187,7 @@ int main(int argc, char** argv)
                 }
                 break;
             case 'p':
-                mfu_copy_opts->preserve = 1;
+                mfu_copy_opts->preserve = true;
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Preserving file attributes.");
                 }
