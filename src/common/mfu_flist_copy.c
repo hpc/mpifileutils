@@ -18,6 +18,9 @@
 #include <time.h> /* asctime / localtime */
 #include <regex.h>
 
+/* Autotool defines. */
+#include "../../config.h"
+
 /* These headers are needed to query the Lustre MDS for stat
  * information.  This information may be incomplete, but it
  * is faster than a normal stat, which requires communication
