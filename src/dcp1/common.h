@@ -31,9 +31,6 @@
 #define _GNU_SOURCE
 #endif
 
-/* Autotool defines. */
-#include "../../config.h"
-
 #include "mpi.h"
 
 #include "mfu.h"

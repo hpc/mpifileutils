@@ -1,7 +1,6 @@
 #ifndef _DPARALLEL_DPARALLEL_H
 #define _DPARALLEL_DPARALLEL_H
 
-#include <config.h>
 #include <libcircle.h>
 
 #include "log.h"

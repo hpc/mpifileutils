@@ -20,19 +20,8 @@ File utilities designed for scalability and performance.
 #topdir=`pwd`
 #installdir=$topdir/install
 
-#export PATH="${topdir}/autotools/install/bin:$PATH"
-export PKG_CONFIG_PATH="$PKG_CONFIG_PATH:${installdir}/lib/pkgconfig"
-export CC=mpicc
-# hack to get things to build after common library
-export CFLAGS="-I${topdir}/src/common -DDCOPY_USE_XATTRS"
-export LDFLAGS="-Wl,-rpath,-lcircle"
-
-%configure \
-  --bindir=%{_bindir} \
-  --enable-lustre \
-  --disable-silent-rules \
-  --with-dtcmp=${installdir} && \
-make %{?_smp_mflags}
+cmake ./ -DWITH_DTCMP_PREFIX=${installdir} -DWITH_LibCircle_PREFIX=${installdir} -DCMAKE_INSTALL_PREFIX=%{buildroot} -DENABLE_LUSTRE=ON -DENABLE_XATTRS=ON
+make
 
 %install
 rm -rf %{buildroot}
@@ -47,4 +36,3 @@ make install DESTDIR=%{buildroot}
 %{_mandir}/*
 
 %changelog
-

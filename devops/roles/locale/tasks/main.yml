@@ -1,7 +1,0 @@
----
-# This playbook will configure the locale.
-
-- name: Configure locale
-  action: apt pkg={{ item }} state=installed
-  with_items:
-   - language-pack-en

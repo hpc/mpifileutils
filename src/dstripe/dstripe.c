@@ -1,7 +1,5 @@
 // mpicc -g -O0 -o restripe restripe.c -llustreapi
 
-#include "config.h"
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>

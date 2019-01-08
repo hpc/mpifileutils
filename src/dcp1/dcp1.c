@@ -248,14 +248,6 @@ static void DCOPY_epilogue(void)
 }
 
 /**
- * Print the current version.
- */
-static void DCOPY_print_version(void)
-{
-    fprintf(stdout, "%s-%s\n", PACKAGE_NAME, PACKAGE_VERSION);
-}
-
-/**
  * Print a usage message.
  */
 void DCOPY_print_usage(void)
@@ -279,7 +271,6 @@ void DCOPY_print_usage(void)
     printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
     printf("  -k, --chunksize     - specify chunksize in MB unit (default 1MB)\n");
     printf("  -b, --blocksize     - specify blocksize in MB unit (default 1MB)\n");
-    printf("  -v, --version       - print version info\n");
     printf("  -h, --help          - print usage\n");
     printf("\n");
     printf("Level: dbg,info,warn,err,fatal\n");
@@ -352,7 +343,6 @@ int main(int argc, \
         {"preserve"             , no_argument      , 0, 'p'},
         {"unreliable-filesystem", no_argument      , 0, 'u'},
         {"synchronous"          , no_argument      , 0, 's'},
-        {"version"              , no_argument      , 0, 'v'},
         {0                      , 0                , 0, 0  }
     };
 
@@ -471,15 +461,6 @@ int main(int argc, \
                     MFU_LOG(MFU_LOG_INFO, "Using synchronous read/write (O_DIRECT)");
                 }
 
-                break;
-
-            case 'v':
-
-                if(DCOPY_global_rank == 0) {
-                    DCOPY_print_version();
-                }
-
-                DCOPY_exit(EXIT_SUCCESS);
                 break;
 
             case 'k':

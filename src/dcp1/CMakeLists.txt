@@ -1,0 +1,18 @@
+INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR})
+
+# MFU_ADD_TOOL(dcp1)
+
+LIST(APPEND dcp1_srcs
+  dcp1.c
+  cleanup.c
+  common.c
+  compare.c
+  copy.c
+  handle_args.c
+  treewalk.c
+  )
+
+ADD_EXECUTABLE(dcp1 ${dcp1_srcs})
+TARGET_LINK_LIBRARIES(dcp1 mfu)
+SET_TARGET_PROPERTIES(dcp1 PROPERTIES C_STANDARD 99)
+INSTALL(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/dcp1 DESTINATION ${CMAKE_INSTALL_BINDIR})
