@@ -22,9 +22,6 @@ extern "C" {
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* hard code this until we get configuration check added */
-#define HAVE_BYTESWAP_H
-
 /* adds byte swapping routines */
 #if defined(__APPLE__)
 #include "machine/endian.h"
@@ -34,8 +31,8 @@ extern "C" {
 
 #ifdef HAVE_BYTESWAP_H
 #include "byteswap.h"
-//#else
-//#include "mfu_byteswap.h"
+#else
+#error Failed to find required byteswap
 #endif
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
