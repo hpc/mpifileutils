@@ -74,7 +74,7 @@ Man Pages
 ***************************
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    dbcast.1
    dbz2.1
