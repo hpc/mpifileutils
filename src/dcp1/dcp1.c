@@ -347,6 +347,7 @@ int main(int argc, \
     };
 
     /* Parse options */
+    unsigned long long bytes;
     while((c = getopt_long(argc, argv, "cb:d:fhpusvk:", \
                            long_options, &option_index)) != -1) {
         switch(c) {
@@ -464,21 +465,23 @@ int main(int argc, \
                 break;
 
             case 'k':
-                if (mfu_abtoull(optarg, &DCOPY_chunksize) != MFU_SUCCESS) {
+                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS) {
                     if (DCOPY_global_rank == 0) {
                         fprintf(stderr, "Failed to convert -k: %s\n", optarg);
                         DCOPY_exit(EXIT_FAILURE);
                     }
                 }
+                DCOPY_chunksize = (size_t)bytes;
                 break;
             case 'b':
-                if (mfu_abtoull(optarg, &DCOPY_blocksize) != MFU_SUCCESS) {
+                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS) {
                     if (DCOPY_global_rank == 0) {
                         fprintf(stderr, "Failed to convert -b: %s\n", optarg);
                         DCOPY_exit(EXIT_FAILURE);
                     }
                 }
-               break;
+                DCOPY_blocksize = (size_t)bytes;
+                break;
             case '?':
             default:
 
