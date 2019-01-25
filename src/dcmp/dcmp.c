@@ -2108,8 +2108,8 @@ int main(int argc, char **argv)
     const char* path2 = destpath->path;
     
     /* map files to ranks based on portion following prefix directory */
-    mfu_flist flist3 = mfu_flist_remap(flist1, dcmp_map_fn, (const void*)path1);
-    mfu_flist flist4 = mfu_flist_remap(flist2, dcmp_map_fn, (const void*)path2);
+    mfu_flist flist3 = mfu_flist_remap(flist1, (mfu_flist_map_fn)dcmp_map_fn, (const void*)path1);
+    mfu_flist flist4 = mfu_flist_remap(flist2, (mfu_flist_map_fn)dcmp_map_fn, (const void*)path2);
 
     /* map each file name to its index and its comparison state */
     strmap* map1 = dcmp_strmap_creat(flist3, path1);
