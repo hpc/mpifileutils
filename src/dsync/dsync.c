@@ -1191,7 +1191,7 @@ static int dsync_strmap_compare(mfu_flist src_list,
 
     if (!options.dry_run) {
         /* sync the files that are in the source and destination directories */
-        tmp_rc = dsync_sync_files(src_map, dst_map, src_path, dest_path, dst_list, dst_remove_list, src_cp_list, mfu_copy_opts);
+        tmp_rc = dsync_sync_files(src_map, dst_map, (mfu_param_path*)src_path, (mfu_param_path*)dest_path, dst_list, dst_remove_list, src_cp_list, mfu_copy_opts);
         if (tmp_rc < 0) {
             rc = -1;
         }

@@ -719,7 +719,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
     /* unpack recv buffer into caller's params */
     ptr = recvbuf;
     for (i = 0; i < num; i++) {
-        mfu_unpack_param(&ptr, &params[i]);
+        mfu_unpack_param((const char**)(&ptr), &params[i]);
     }
 
     /* Loop through the list of files &/or directories, and check the params 

@@ -24,14 +24,14 @@ static int input_flist_skip(const char* name, void *args)
     struct mfu_flist_skip_args *sk_args = (struct mfu_flist_skip_args *)args;
 
     /* create mfu_path from name */
-    const mfu_path* path = mfu_path_from_str(name);
+    mfu_path* path = mfu_path_from_str(name);
 
     /* iterate over each source path */
     int i;
     for (i = 0; i < sk_args->numpaths; i++) {
         /* create mfu_path of source path */
         const char* src_name = sk_args->paths[i].path;
-        const mfu_path* src_path = mfu_path_from_str(src_name);
+        mfu_path* src_path = mfu_path_from_str(src_name);
 
         /* check whether path is contained within or equal to
          * source path and if so, we need to copy this file */
