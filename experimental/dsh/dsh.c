@@ -591,7 +591,7 @@ static void sort_scan_sort(mfu_path* origpath, uint64_t allmax,
     /* copy items into buffer */
     uint64_t idx = 0;
     char* ptr = (char*) buf;
-    strmap_node* elem;
+    const strmap_node* elem;
     for (elem  = strmap_node_first(children);
          elem != NULL;
          elem  = strmap_node_next(elem))
@@ -865,7 +865,7 @@ static void summarize_children(mfu_flist flist, mfu_path* path, int print_defaul
     }
 
     /* free data structure allocated for each child */
-    strmap_node* elem;
+    const strmap_node* elem;
     for (elem  = strmap_node_first(children);
          elem != NULL;
          elem  = strmap_node_next(elem))
@@ -1657,7 +1657,7 @@ static char* arg_to_regex(const char* arg)
 {
     /* count number of bytes we need */
     size_t count = 2; /* for ^ and $ at ends of regex */
-    char* str = arg;
+    char* str = (char*)arg;
     char* tok = strchr(str, '*');
     while (tok != NULL) {
       count += tok - str; /* copy text leading up to * */
@@ -1675,7 +1675,7 @@ static char* arg_to_regex(const char* arg)
     strcpy(regex, "^");
 
     /* replace each * with .* */
-    str = arg;
+    str = (char*)arg;
     tok = strchr(str, '*');
     while (tok != NULL) {
       strncat(regex, str, tok - str);
@@ -1815,7 +1815,7 @@ int main(int argc, char** argv)
         paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
         /* process each path */
-        char** argpaths = &argv[optind];
+        const char** argpaths = (const char**)(&argv[optind]);
         mfu_param_path_set_all(numpaths, argpaths, paths);
 
         /* advance to next set of options */
