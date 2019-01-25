@@ -90,7 +90,30 @@ INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/src/common)
 
 ADD_SUBDIRECTORY(src)
 ADD_SUBDIRECTORY(test)
+LIST(APPEND MAN_FILES
+  doc/man/man1/dbcast.1
+  doc/man/man1/dbz2.1
+  doc/man/man1/dchmod.1
+  doc/man/man1/dcmp.1
+  doc/man/man1/dcp.1
+  doc/man/man1/ddup.1
+  doc/man/man1/dfilemaker.1
+  doc/man/man1/dfind.1
+  doc/man/man1/dreln.1
+  doc/man/man1/drm.1
+  doc/man/man1/dstripe.1
+  doc/man/man1/dsync.1
+  doc/man/man1/dwalk.1
+  doc/man/man1/mpifileutils.1
+)
 
 IF(ENABLE_EXPERIMENTAL)
   ADD_SUBDIRECTORY(experimental)
+  #LIST(APPEND MAN_FILES
+  #  doc/man/man1/dgrep.1
+  #  doc/man/man1/dparallel.1
+  #  doc/man/man1/dtar.1
+  #)
 ENDIF(ENABLE_EXPERIMENTAL)
+
+INSTALL(FILES ${MAN_FILES} DESTINATION ${CMAKE_INSTALL_PREFIX}/share/man/man1)

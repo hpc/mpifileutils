@@ -1,0 +1,317 @@
+.\" Man page generated from reStructuredText.
+.
+.TH "DCMP" "1" "Jan 25, 2019" "0.8" "mpiFileUtils"
+.SH NAME
+dcmp \- distributed compare
+.
+.nr rst2man-indent-level 0
+.
+.de1 rstReportMargin
+\\$1 \\n[an-margin]
+level \\n[rst2man-indent-level]
+level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
+-
+\\n[rst2man-indent0]
+\\n[rst2man-indent1]
+\\n[rst2man-indent2]
+..
+.de1 INDENT
+.\" .rstReportMargin pre:
+. RS \\$1
+. nr rst2man-indent\\n[rst2man-indent-level] \\n[an-margin]
+. nr rst2man-indent-level +1
+.\" .rstReportMargin post:
+..
+.de UNINDENT
+. RE
+.\" indent \\n[an-margin]
+.\" old: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.nr rst2man-indent-level -1
+.\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
+.in \\n[rst2man-indent\\n[rst2man-indent-level]]u
+..
+.SH SYNOPSIS
+.sp
+\fBdcmp [OPTION] SRC DEST\fP
+.SH DESCRIPTION
+.sp
+Parallel MPI application to compare two files or to recursively compare
+files with same relative paths within two different directories.
+.sp
+dcmp provides functionality similar to a recursive \fBcmp(1)\fP\&. It reports
+how many files in two different directories are the same or different.
+.sp
+dcmp can be configured to compare a number of different file properties.
+.SH OPTIONS
+.INDENT 0.0
+.TP
+.B \-o, \-\-output EXPR:FILE
+Writes list of files matching expression EXPR to specified FILE.
+The expression consists of a set of fields and states described below.
+More than one \-o option is allowed in a single invocation,
+in which case, each option should provide a different output file name.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-t, \-\-text
+Change –output to write files in text format rather than binary.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-b, \-\-base
+Enable base checks and normal stdout results when –output is used.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-v, \-\-verbose
+Run in verbose mode. Prints a list of statistics/timing data for the
+command. Files walked, started, completed, seconds, files, bytes
+read, byte rate, and file rate.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-l, \-\-lite
+lite mode does a comparison of file modification time and size. If
+modification time and size are the same, then the contents are assumed
+to be the same. Similarly, if the modification time or size is different,
+then the contents are assumed to be different. The lite mode does no comparison
+of data/content in the file.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print the command usage, and the list of options available.
+.UNINDENT
+.SH EXPRESSIONS
+.sp
+An expression is made up of one or more conditions, where each condition specifies a field and a state.
+A single condition consists of a field name, an ‘=’ sign, and a state name.
+.sp
+Valid fields are listed below, along with the property of the entry that is checked.
+.TS
+center;
+|l|l|.
+_
+T{
+Field
+T}	T{
+Property of entry
+T}
+_
+T{
+EXIST
+T}	T{
+whether entry exists
+T}
+_
+T{
+TYPE
+T}	T{
+type of entry, e.g., regular file, directory, symlink
+T}
+_
+T{
+SIZE
+T}	T{
+size of entry in bytes, if a regular file
+T}
+_
+T{
+UID
+T}	T{
+user id of entry
+T}
+_
+T{
+GID
+T}	T{
+group id of entry
+T}
+_
+T{
+ATIME
+T}	T{
+time of last access
+T}
+_
+T{
+MTIME
+T}	T{
+time of last modification
+T}
+_
+T{
+CTIME
+T}	T{
+time of last status change
+T}
+_
+T{
+PERM
+T}	T{
+permission bits of entry
+T}
+_
+T{
+ACL
+T}	T{
+ACLs associated with entry, if any
+T}
+_
+T{
+CONTENT
+T}	T{
+file contents of entry, byte\-for\-byte comparision, if a regular file
+T}
+_
+.TE
+.sp
+Valid conditions for the EXIST field are:
+.TS
+center;
+|l|l|.
+_
+T{
+Condition
+T}	T{
+Meaning
+T}
+_
+T{
+EXIST=SRC_ONLY
+T}	T{
+entry exists only in source path
+T}
+_
+T{
+EXIST=DST_ONLY
+T}	T{
+entry exists only in destination path
+T}
+_
+T{
+EXIST=DIFFER
+T}	T{
+entry exists in either source or destination, but not both
+T}
+_
+T{
+EXIST=COMMON
+T}	T{
+entry exists in both source and destination
+T}
+_
+.TE
+.sp
+All other fields may only specify the DIFFER and COMMON states.
+.sp
+Conditions can be joined together with AND (@) and OR (,) operators without spaces to build complex expressions.
+For example, the following expression reports entries that exist in both source and destination paths, but are of different types:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+EXIST=COMMON@TYPE=DIFFER
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+The AND operator binds with higher precedence than the OR operator.
+For example, the following expression matches on entries which either (exist in both soure and destination and whose types differ) or (only exist in the source):
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Some conditions imply others.
+For example, for CONTENT to be considered the same,
+the entry must exist in both source and destination, the types must match, the sizes must match, and finally the contents must match:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+SIZE=COMMON    => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON
+CONTENT=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON@CONTENT=COMMON
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+A successful check on any other field also implies that EXIST=COMMON.
+.sp
+When used with the \-o option, one must also specify a file name at the end of the expression, separated with a ‘:’.
+The list of any entries that match the expression are written to the named file.
+For example, to list any entries matching the above expression to a file named outfile1,
+one should use the following option:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+\-o EXIST=COMMON@TYPE=DIFFER:outfile1
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+If the –base option is given or when no output option is specified,
+the following expressions are checked and numeric results are reported to stdout:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+EXIST=COMMON
+EXIST=DIFFER
+EXIST=COMMON@TYPE=COMMON
+EXIST=COMMON@TYPE=DIFFER
+EXIST=COMMON@CONTENT=COMMON
+EXIST=COMMON@CONTENT=DIFFER
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.SH EXAMPLES
+.INDENT 0.0
+.IP 1. 3
+Compare two files in different directories:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dcmp /src1/file1 /src2/file2\fP
+.INDENT 0.0
+.IP 2. 3
+Compare two directories with verbose output. The verbose output prints timing and number of bytes read:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dcmp \-v /src1 /src2\fP
+.INDENT 0.0
+.IP 3. 3
+Write list of entries to outfile1 that are only in src1 or whose names exist in both src1 and src2 but whose types differ:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 /src1 /src2\fP
+.INDENT 0.0
+.IP 4. 3
+Same as above but also write list of entries to outfile2 that exist in either src1 or src2 but not both:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 \-o EXIST=DIFFER:outfile2 /src1 /src2\fP
+.SH SEE ALSO
+.sp
+The mpiFileUtils source code and all documentation may be downloaded
+from <\fI\%https://github.com/hpc/mpifileutils\fP>
+.SH AUTHOR
+HPC
+.SH COPYRIGHT
+2018, LLNL/LANL/UT-Battelle/DDN
+.\" Generated by docutils manpage writer.
+.
