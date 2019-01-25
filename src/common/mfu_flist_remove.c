@@ -567,7 +567,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
             times[0].tv_nsec = mfu_flist_file_get_atime_nsec(newlist, idx);
             times[1].tv_nsec = mfu_flist_file_get_mtime_nsec(newlist, idx);
 
-            if(utimensat(AT_FDCWD, pdir, times, AT_SYMLINK_NOFOLLOW) != 0) {
+            if(mfu_utimensat(AT_FDCWD, pdir, times, AT_SYMLINK_NOFOLLOW) != 0) {
                 MFU_LOG(MFU_LOG_DBG,
                         "Failed to changeback timestamps with utimesat() `%s' (errno=%d %s)",
                         pdir, errno, strerror(errno));
