@@ -145,7 +145,7 @@ int main(int argc, char** argv)
         paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
         /* process each path */
-        char** argpaths = &argv[optind];
+        const char** argpaths = (const char**)(&argv[optind]);
         mfu_param_path_set_all(numpaths, argpaths, paths);
 
         /* advance to next set of options */

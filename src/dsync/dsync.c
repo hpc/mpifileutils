@@ -2272,7 +2272,7 @@ int main(int argc, char **argv)
     mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
             
     /* process each path */
-    const char** argpaths = &argv[optind];
+    const char** argpaths = (const char**)(&argv[optind]);
     mfu_param_path_set_all(numargs, argpaths, paths);
 
     /* advance to next set of options */
