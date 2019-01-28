@@ -319,6 +319,7 @@ int main(int argc, char* argv[])
     int verbose = 0;
     unsigned int numpaths = 0;
     mfu_param_path* paths = NULL;
+    unsigned long long bytes;
 
     /* default to 1MB stripe size, stripe across all OSTs, and all files are candidates */
     int stripes = -1;
@@ -349,23 +350,25 @@ int main(int argc, char* argv[])
                 break;
             case 's':
                 /* stripe size in bytes */
-                if (mfu_abtoull(optarg, &stripe_size) != MFU_SUCCESS) {
+                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS) {
                     if (rank == 0) {
                         printf("Failed to parse stripe size: %s\n", optarg);
                         fflush(stdout);
                     }
                     MPI_Abort(MPI_COMM_WORLD, 1);
                 }
+                stripe_size = (uint64_t)bytes;
                 break;
             case 'm':
                 /* min file size in bytes */
-                if (mfu_abtoull(optarg, &min_size) != MFU_SUCCESS) {
+                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS) {
                     if (rank == 0) {
                         printf("Failed to parse minimum file size: %s\n", optarg);
                         fflush(stdout);
                     }
                     MPI_Abort(MPI_COMM_WORLD, 1);
                 }
+                min_size = (uint64_t)bytes;
                 break;
             case 'r':
                 /* report striping info */

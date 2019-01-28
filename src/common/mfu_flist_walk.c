@@ -170,7 +170,7 @@ static int lustre_mds_stat(int fd, char* fname, struct stat* sb)
     return ret;
 }
 
-static void walk_lustrestat_process_dir(char* dir, CIRCLE_handle* handle)
+static void walk_lustrestat_process_dir(const char* dir, CIRCLE_handle* handle)
 {
     /* TODO: may need to try these functions multiple times */
     DIR* dirp = mfu_opendir(dir);
@@ -443,7 +443,7 @@ static void walk_getdents_process(CIRCLE_handle* handle)
  * Walk directory tree using stat at top level and readdir
  ***************************************/
 
-static void walk_readdir_process_dir(char* dir, CIRCLE_handle* handle)
+static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
 {
     /* TODO: may need to try these functions multiple times */
     DIR* dirp = mfu_opendir(dir);
@@ -555,7 +555,7 @@ static void walk_readdir_create(CIRCLE_handle* handle)
 {
     uint64_t i;
     for (i = 0; i < CURRENT_NUM_DIRS; i++) {
-        char* path = CURRENT_DIRS[i];
+        const char* path = CURRENT_DIRS[i];
 
         /* stat top level item */
         struct stat st;
@@ -645,7 +645,7 @@ static void walk_stat_create(CIRCLE_handle* handle)
     for (i = 0; i < CURRENT_NUM_DIRS; i++) {
         /* we'll call stat on every item */
         const char* path = CURRENT_DIRS[i];
-        handle->enqueue(path);
+        handle->enqueue((char*)path);
     }
 }
 

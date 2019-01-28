@@ -2078,7 +2078,7 @@ int main(int argc, char **argv)
     mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
             
     /* process each path */
-    const char** argpaths = &argv[optind];
+    const char** argpaths = (const char**)(&argv[optind]);
     mfu_param_path_set_all(numargs, argpaths, paths);
 
     /* advance to next set of options */
@@ -2108,8 +2108,8 @@ int main(int argc, char **argv)
     const char* path2 = destpath->path;
     
     /* map files to ranks based on portion following prefix directory */
-    mfu_flist flist3 = mfu_flist_remap(flist1, dcmp_map_fn, (const void*)path1);
-    mfu_flist flist4 = mfu_flist_remap(flist2, dcmp_map_fn, (const void*)path2);
+    mfu_flist flist3 = mfu_flist_remap(flist1, (mfu_flist_map_fn)dcmp_map_fn, (const void*)path1);
+    mfu_flist flist4 = mfu_flist_remap(flist2, (mfu_flist_map_fn)dcmp_map_fn, (const void*)path2);
 
     /* map each file name to its index and its comparison state */
     strmap* map1 = dcmp_strmap_creat(flist3, path1);

@@ -390,13 +390,13 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
     mfu_flist_array_by_depth(flist, &levels, &minlevel, &lists);
     mfu_flist pstatlist;
     uint64_t size = mfu_flist_size(flist);
-    const char** strings;
+    char** strings = NULL;
 
     /* if traceless, dump the stat of each item's pdir */
     if (traceless) {
         uint64_t idx;
 
-        strings = (const char **) MFU_MALLOC(size * sizeof(char *));
+        strings = (char **) MFU_MALLOC(size * sizeof(char *));
         for (idx = 0; idx < size; idx++) {
             /* stat the item */
             struct stat st;
@@ -427,7 +427,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
         uint64_t* group_ranks = (uint64_t*) MFU_MALLOC(output_bytes);
         uint64_t* group_rank  = (uint64_t*) MFU_MALLOC(output_bytes);
 
-        DTCMP_Rankv_strings((int)size, strings, &groups, group_ids, group_ranks,
+        DTCMP_Rankv_strings((int)size, (const char**)strings, &groups, group_ids, group_ranks,
                            group_rank, DTCMP_FLAG_NONE, MPI_COMM_WORLD);
 
         for (idx = 0; idx < size; idx++) {
@@ -567,7 +567,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
             times[0].tv_nsec = mfu_flist_file_get_atime_nsec(newlist, idx);
             times[1].tv_nsec = mfu_flist_file_get_mtime_nsec(newlist, idx);
 
-            if(utimensat(AT_FDCWD, pdir, times, AT_SYMLINK_NOFOLLOW) != 0) {
+            if(mfu_utimensat(AT_FDCWD, pdir, times, AT_SYMLINK_NOFOLLOW) != 0) {
                 MFU_LOG(MFU_LOG_DBG,
                         "Failed to changeback timestamps with utimesat() `%s' (errno=%d %s)",
                         pdir, errno, strerror(errno));

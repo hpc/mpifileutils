@@ -132,7 +132,7 @@ int main (int argc, char* argv[])
         numpaths = argc - optind;
 
         /* process paths to be walked */
-        const char** p = &argv[optind];
+        const char** p = (const char**)(&argv[optind]);
         paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
         mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths);
 
