@@ -37,7 +37,7 @@ OPTIONS
 
 .. option:: -m, --memory SIZE
 
-   Limit the memory that can be used by a processs, in bytes (optional).
+   Limit the memory that can be used by a process, in bytes (optional).
 
 .. option:: -v, --verbose
 
