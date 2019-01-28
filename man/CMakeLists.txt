@@ -11,9 +11,6 @@ LIST(APPEND man_pages
   dstripe.1
   dsync.1
   dwalk.1
-  experimental/dbz2.1
-  experimental/dgrep.1
-  experimental/dparallel.1
-  experimental/dtar.1
   )
+
 INSTALL(FILES ${man_pages} DESTINATION ${X_DATADIR}/man/man1)
