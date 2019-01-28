@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DRM" "1" "Dec 19, 2018" "0.8" "mpiFileUtils"
+.TH "DRM" "1" "Jan 28, 2019" "0.9" "mpiFileUtils"
 .SH NAME
 drm \- distributed remove
 .
@@ -89,6 +89,13 @@ full path.
 Print a list of files that \fBwould\fP be deleted without deleting
 them. This is useful to check list of items satisfying \-\-exclude or
 \-\-match options before actually deleting anything.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-aggressive
+This option will delete files during the walk phase, and then
+delete directories by level after the walk in drm. You cannot
+use this option with \-\-dryrun.
 .UNINDENT
 .INDENT 0.0
 .TP

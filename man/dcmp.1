@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DCMP" "1" "Dec 19, 2018" "0.8" "mpiFileUtils"
+.TH "DCMP" "1" "Jan 28, 2019" "0.9" "mpiFileUtils"
 .SH NAME
 dcmp \- distributed compare
 .
@@ -67,6 +67,15 @@ Enable base checks and normal stdout results when \-\-output is used.
 Run in verbose mode. Prints a list of statistics/timing data for the
 command. Files walked, started, completed, seconds, files, bytes
 read, byte rate, and file rate.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-l, \-\-lite
+lite mode does a comparison of file modification time and size. If
+modification time and size are the same, then the contents are assumed
+to be the same. Similarly, if the modification time or size is different,
+then the contents are assumed to be different. The lite mode does no comparison
+of data/content in the file.
 .UNINDENT
 .INDENT 0.0
 .TP

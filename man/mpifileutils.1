@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "MPIFILEUTILS" "1" "Dec 19, 2018" "0.8" "mpiFileUtils"
+.TH "MPIFILEUTILS" "1" "Jan 28, 2019" "0.9" "mpiFileUtils"
 .SH NAME
 mpifileutils \- mpiFileUtils Documentation
 .
@@ -62,6 +62,8 @@ ddup \- Find duplicate files.
 .IP \(bu 2
 dfilemaker \- Generate random files.
 .IP \(bu 2
+dreln \- Relink symlinks.
+.IP \(bu 2
 drm \- Remove files.
 .IP \(bu 2
 dstripe \- Restripe files.
@@ -75,14 +77,13 @@ dwalk \- List files.
 Experimental utilities are under active development. They are not considered to
 be production worthy, but they are available in the distribution for those
 interested in developing them further or to provide additional examples. To
-enable experimental utilities, run configure with the enable experimental
-option.
+build the experimental utilities, turn on the CMake option.
 .INDENT 0.0
 .INDENT 3.5
 .sp
 .nf
 .ft C
-$ ./configure \-\-enable\-experimental
+$ cmake \-DENABLE_EXPERIMENTAL=ON ...
 .ft P
 .fi
 .UNINDENT
@@ -129,40 +130,57 @@ $ spack install mpifileutils +lustre +experimental
 .UNINDENT
 .UNINDENT
 .sp
-To build from a release tarball, there are two scripts: buildme_dependencies and
-buildme. The buildme_dependencies script downloads and installs all the
-necessary libraries. The buildme script then builds mpiFileUtils assuming the
-libraries have been installed. Both scripts require that mpicc is in your path,
-and that it is for an MPI library that supports at least v2.2 of the MPI
-standard. Please review each buildme script, and edit if necessary. Then run
-them in sequence:
+To build from a release tarball, use CMake. Note that this requires the manual
+installation of the dependencies. Assuming the dependencies have been placed in
+an \fIinstall\fP directory the build commands are thus:
 .INDENT 0.0
 .INDENT 3.5
 .sp
 .nf
 .ft C
-$ ./buildme_dependencies
-$ ./buildme
+$ git clone https://github.com/hpc/mpifileutils
+$ mkdir build install
+$ # build DTCMP and other dependencies
+$ cd build
+$ cmake ../mpifileutils \-DWITH_DTCMP_PREFIX=../install \-DWITH_LibCircle_PREFIX=../install \-DCMAKE_INSTALL_PREFIX=../install
 .ft P
 .fi
 .UNINDENT
 .UNINDENT
 .sp
-To build from a clone, it may also be necessary to first run the
-buildme_autotools script to obtain the required set of autotools, then use
-buildme_dependencies_dev and buildme_dev:
+One can also use spack to create an environment and view with the provided \fIspack.yaml\fP file.
+First, make sure that you\(aqve set up spack in your shell (see \fI\%these instructions\fP).
+Next, be sure that your \fI~/.spack/packages.yaml\fP is configured to ensure that spack can detect system\-provided packages.
+.sp
+From the root directory of mpifileutils, run the command \fIspack find\fP to determine which packages spack will install.
+Next, run \fIspack concretize\fP to build have spack perform dependency analysis.
+Finally, run \fIspack install\fP to build the dependencies.
+.sp
+There are two ways to tell CMake about the dependencies.
+First, you can use \fIspack load [depname]\fP to put the installed dependency into your environment paths.
+Then, at configure time, CMake will automatically detect the location of these dependencies.
+Thus, the commands to build become:
 .INDENT 0.0
 .INDENT 3.5
 .sp
 .nf
 .ft C
-$ ./buildme_autotools
-$ ./buildme_dependencies_dev
-$ ./buildme_dev
+$ git clone https://github.com/hpc/mpifileutils
+$ mkdir build install
+$ cd mpifileutils
+$ spack install
+$ spack load dtcmp
+$ spack load libcircle
+$ spack load libarchive
+$ cd ../build
+$ cmake ../mpifileutils
 .ft P
 .fi
 .UNINDENT
 .UNINDENT
+.sp
+The other way to use spack is to create a "view" to the installed dependencies.
+Details on this are coming soon.
 .SS Project Design Principles
 .sp
 The following principles drive design decisions in the project.
@@ -331,55 +349,6 @@ To read the current striping parameters of a file on Lustre:
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dbz2
-.SS SYNOPSIS
-.sp
-\fBdbz2 [OPTIONS] [\-z|\-d] FILE\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to compress or decompress a file.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-d, \-\-decompress
-Decompress the file
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-z, \-\-compress
-Compress the file
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-k, \-\-keep
-Keep the input file (optional).
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-f, \-\-overwrite
-Overwrite the output file, if it exists (optional).
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-b, \-\-block SIZE
-Set the compression block size, from 1 to 9.
-Where 1=100kB ... and 9=900kB. Default is 9 (optional).
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-m, \-\-memory SIZE
-Limit the memory that can be used by a processs, in bytes (optional).
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Verbose output (optional).
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-debug
-Show debug output (optional).
-.UNINDENT
 .SS dchmod
 .SS SYNOPSIS
 .sp
@@ -519,6 +488,15 @@ Enable base checks and normal stdout results when \-\-output is used.
 Run in verbose mode. Prints a list of statistics/timing data for the
 command. Files walked, started, completed, seconds, files, bytes
 read, byte rate, and file rate.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-l, \-\-lite
+lite mode does a comparison of file modification time and size. If
+modification time and size are the same, then the contents are assumed
+to be the same. Similarly, if the modification time or size is different,
+then the contents are assumed to be different. The lite mode does no comparison
+of data/content in the file.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -961,358 +939,6 @@ Print version information and exit.
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS drm
-.SS SYNOPSIS
-.sp
-\fBdrm [OPTION] PATH...\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to recursively delete a directory and its
-contents.
-.sp
-drm is a tool for removing files recursively in parallel.
-drm behaves like \fIrm \-rf\fP, but it is faster.
-.sp
-\fBNOTE:\fP
-.INDENT 0.0
-.INDENT 3.5
-DO NOT USE SHELL REGEX!!!
-The \-\-match and \-\-exclude options use POSIX regex syntax. Because of
-this make sure that the shell does not try to interpret your regex before
-it gets passed to the program. You can generally use quotes around your
-regex to prevent the shell from expanding. An example of this using the
-\-\-match option with \-\-dryrun would be:
-.sp
-\fBmpirun \-np 128 drm \-\-dryrun \-v \-\-name \-\-match \(aqfile_.*\(aq /path/to/dir/*\fP
-.UNINDENT
-.UNINDENT
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-i, \-\-input FILE
-Read source list from FILE. FILE must be generated by another tool
-from the mpiFileUtils suite.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-l, \-\-lite
-Walk file system without stat.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-exclude REGEX
-Do not remove items whose full path matches REGEX, processed by \fBregexec(3)\fP\&.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-match REGEX
-Only remove items whose full path matches REGEX, processed by
-\fBregexec(3)\fP\&.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-name
-Change \-\-exclude and match to apply to item name rather than its
-full path.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-dryrun
-Print a list of files that \fBwould\fP be deleted without deleting
-them. This is useful to check list of items satisfying \-\-exclude or
-\-\-match options before actually deleting anything.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-T, \-\-traceless
-Delete child items without updating the mtime on their parent directory.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print a brief message listing the \fBdrm(1)\fP options and usage.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-To delete a directory and its contents:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 drm \-v /dir/to/delete\fP
-.INDENT 0.0
-.IP 2. 3
-Delete all items (files and directories) ending with .core from
-directory tree:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 drm \-\-match \(aq.core$\(aq /dir/to/delete/from\fP
-.INDENT 0.0
-.IP 3. 3
-List items that would be deleted without removing them:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 drm \-\-dryrun \-\-match \(aq.core$\(aq /dir/to/delete/from\fP
-.INDENT 0.0
-.IP 4. 3
-Delete all items named foo:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 drm \-\-name \-\-match \(aq^foo$\(aq /dir/to/delete/from\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dstripe
-.SS SYNOPSIS
-.sp
-\fBdstripe [OPTION] PATH...\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to restripe files.
-.sp
-This tool is in active development. It currently only works on Lustre.
-.sp
-dstripe enables one to restripe file(s) across the underlying storage
-devices. One must specify a list of paths. All files in those paths can
-be restriped. By default, stripe size is 1MB and stripe count is \-1
-allowing dstripe to use all available stripes.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-c, \-\-count STRIPE_COUNT
-The number of stripes to use during file restriping. If STRIPE_COUNT
-is \-1, then all available stripes are used. If STRIPE_COUNT is 0,
-the lustre file system default is used. The default stripe count is
-\-1.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-s, \-\-size STRIPE_SIZE
-The stripe size to use during file restriping. Units like "MB" and
-"GB" can immediately follow the number without spaces (ex. 2MB). The
-default stripe size is 1MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-m, \-\-minsize SIZE
-The minimum size a file must be to be a candidate for restriping.
-Files smaller than SIZE will not be restriped. Units like "MB" and
-"GB" can immediately follow the number without spaces (ex. 2MB). The
-default minimum file size is 0MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-r, \-\-report
-Display the file size, stripe count, and stripe size of all files
-found in PATH. No restriping is performed when using this option.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the command usage, and the list of options available.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-To stripe a file on all storage devices using a 1MB stripe size:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dstripe \-s 1MB /path/to/file\fP
-.INDENT 0.0
-.IP 2. 3
-To stripe a file across 20 storage devices with a 1GB stripe size:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dstripe \-c 20 \-s 1GB /path/to/file\fP
-.INDENT 0.0
-.IP 3. 3
-To restripe all files in /path/to/files/ that are at least 1GB in
-size:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dstripe \-m 1GB /path/to/files/\fP
-.INDENT 0.0
-.IP 4. 3
-To restripe all files in /path/to/files/ across 10 storage devices
-with 2MB stripe size:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dstripe \-c 10 \-s 2MB /path/to/files/\fP
-.INDENT 0.0
-.IP 5. 3
-To display the current stripe count and stripe size of all files in
-/path/to/files/:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dstripe \-r /path/to/files/\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dsync
-.SS SYNOPSIS
-.sp
-\fBdsync [OPTION] SRC DEST\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to synchronize two files or two directory trees.
-.sp
-dsync makes DEST match SRC, adding missing entries from DEST, removing
-extra entries from DEST, and updating existing entries in DEST as necessary
-so that SRC and DEST have identical content, ownership, timestamps, and permissions.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-\-dryrun
-Show differences without changing anything.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-c, \-\-contents
-Compare files byte\-by\-byte rather than checking size and mtime
-to determine whether file contents are different.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-N, \-\-no\-delete
-Do not delete extraneous files from destination.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode. Prints a list of statistics/timing data for the
-command. Files walked, started, completed, seconds, files, bytes
-read, byte rate, and file rate.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the command usage, and the list of options available.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-Synchronize dir2 to match dir1:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dsync /path/to/dir1 /path/to/dir2\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dwalk
-.SS SYNOPSIS
-.sp
-\fBdwalk [OPTION] PATH ...\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to recursively walk and list contents in a
-directory.
-.sp
-dwalk provides functionality similar to \fBls(1)\fP and \fBdu(1)\fP\&. Like
-\fBdu(1)\fP, the tool reports a summary of the total number of files and
-bytes. Like \fBls(1)\fP, the tool sorts and prints information about
-individual files.
-.sp
-The output can be sorted on different fields (e.g, name, user, group,
-size, etc). A histogram of file sizes can be computed listing the number
-of files that fall into user\-defined bins.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-i, \-\-input FILE
-Read source list from FILE. FILE must be generated by another tool
-from the mpiFileUtils suite.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-o, \-\-output FILE
-Write the processed list to a file.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-l, \-\-lite
-Walk file system without stat.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-s, \-\-sort FIELD
-Sort output by comma\-delimited fields (see below).
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-d, \-\-distribution size:SEPARATORS
-Print the distribution of file sizes. For example, specifying
-size:0,80,100 will report the number of files that have size 0
-bytes, between 1\-80 bytes, between 81\-99 bytes, and 100 bytes or
-greater.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-p, \-\-print
-Print files to the screen.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print usage.
-.UNINDENT
-.SS SORT FIELDS
-.sp
-By default, the list of files dwalk captures is not sorted. To sort the
-list, one or more fields can be specified in a comma\-delimited list:
-.sp
-name,user,group,uid,gid,atime,mtime,ctime,size
-.sp
-A field name can be preceded with ‘\-’ to sort by that field in reverse
-order.
-.sp
-A lexicographic sort is executed if more than one field is given.
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-To print summary information for a directory:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dwalk \-v /dir/to/walk\fP
-.INDENT 0.0
-.IP 2. 3
-To print a list of files, sorted by file size, then by file name:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dwalk –print –sort size,name /dir/to/walk\fP
-.INDENT 0.0
-.IP 3. 3
-To save the list of files:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dwalk –output out.dwalk /dir/to/walk\fP
-.INDENT 0.0
-.IP 4. 3
-Print the file distribution for specified histogram based on the size
-field from the top level directory.
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dwalk \-v –print \-d size:0,20,1G src/\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dfind
 .SS SYNOPSIS
 .sp
@@ -1525,6 +1151,489 @@ Filter list in infile to find all regular files not changed in the past 180 days
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
 from <\fI\%https://github.com/hpc/mpifileutils\fP>
+.SS dreln
+.SS SYNOPSIS
+.sp
+\fBdreln [OPTION] OLDPATH NEWPATH PATH ...\fP
+.SS DESCRIPTION
+.sp
+Parallel MPI application to recursively update symlinks within a
+directory.
+.sp
+dreln walks the specified PATH and updates any symlink whose target
+includes an absolute path to OLDPATH and replaces that symlink
+with a new link whose target points to NEWPATH instead.
+.sp
+This is useful to update symlinks after migrating a large
+directory from one file system to another, whose links specify
+absolute paths to the original file system.
+.SS OPTIONS
+.INDENT 0.0
+.TP
+.B \-i, \-\-input FILE
+Read source list from FILE. FILE must be generated by another tool
+from the mpiFileUtils suite.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-p, \-\-preserve
+Preserve existing modification times on links.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-r, \-\-relative
+Replace links using target paths that are relative to NEWPATH.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-v, \-\-verbose
+Run in verbose mode.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print a brief message listing the \fBdrm(1)\fP options and usage.
+.UNINDENT
+.SS EXAMPLES
+.sp
+1. To update all links under /walk/path whose targets point to /orig/path
+and replace them with targets that point to /new/path:
+.sp
+\fBmpirun \-np 128 dreln \-v /orig/path /new/path /walk/path\fP
+.sp
+2. Same as above, but replace each link target with a relative path
+from the link to its new target under /new/path:
+.sp
+\fBmpirun \-np 128 dreln \-v \-\-relative /orig/path /new/path /walk/path\fP
+.INDENT 0.0
+.IP 3. 3
+One can preserve existing modification times on links:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dreln \-v \-\-preserve /orig/path /new/path /walk/path\fP
+.INDENT 0.0
+.IP 4. 3
+One can specifiy multiple paths to walk:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dreln \-v /orig/path /new/path /walk/path1 /walk/path2\fP
+.SS SEE ALSO
+.sp
+The mpiFileUtils source code and all documentation may be downloaded
+from <\fI\%https://github.com/hpc/mpifileutils\fP>
+.SS drm
+.SS SYNOPSIS
+.sp
+\fBdrm [OPTION] PATH...\fP
+.SS DESCRIPTION
+.sp
+Parallel MPI application to recursively delete a directory and its
+contents.
+.sp
+drm is a tool for removing files recursively in parallel.
+drm behaves like \fIrm \-rf\fP, but it is faster.
+.sp
+\fBNOTE:\fP
+.INDENT 0.0
+.INDENT 3.5
+DO NOT USE SHELL REGEX!!!
+The \-\-match and \-\-exclude options use POSIX regex syntax. Because of
+this make sure that the shell does not try to interpret your regex before
+it gets passed to the program. You can generally use quotes around your
+regex to prevent the shell from expanding. An example of this using the
+\-\-match option with \-\-dryrun would be:
+.sp
+\fBmpirun \-np 128 drm \-\-dryrun \-v \-\-name \-\-match \(aqfile_.*\(aq /path/to/dir/*\fP
+.UNINDENT
+.UNINDENT
+.SS OPTIONS
+.INDENT 0.0
+.TP
+.B \-i, \-\-input FILE
+Read source list from FILE. FILE must be generated by another tool
+from the mpiFileUtils suite.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-l, \-\-lite
+Walk file system without stat.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-exclude REGEX
+Do not remove items whose full path matches REGEX, processed by \fBregexec(3)\fP\&.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-match REGEX
+Only remove items whose full path matches REGEX, processed by
+\fBregexec(3)\fP\&.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-name
+Change \-\-exclude and match to apply to item name rather than its
+full path.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-dryrun
+Print a list of files that \fBwould\fP be deleted without deleting
+them. This is useful to check list of items satisfying \-\-exclude or
+\-\-match options before actually deleting anything.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-aggressive
+This option will delete files during the walk phase, and then
+delete directories by level after the walk in drm. You cannot
+use this option with \-\-dryrun.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-T, \-\-traceless
+Delete child items without updating the mtime on their parent directory.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-v, \-\-verbose
+Run in verbose mode.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print a brief message listing the \fBdrm(1)\fP options and usage.
+.UNINDENT
+.SS EXAMPLES
+.INDENT 0.0
+.IP 1. 3
+To delete a directory and its contents:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 drm \-v /dir/to/delete\fP
+.INDENT 0.0
+.IP 2. 3
+Delete all items (files and directories) ending with .core from
+directory tree:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 drm \-\-match \(aq.core$\(aq /dir/to/delete/from\fP
+.INDENT 0.0
+.IP 3. 3
+List items that would be deleted without removing them:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 drm \-\-dryrun \-\-match \(aq.core$\(aq /dir/to/delete/from\fP
+.INDENT 0.0
+.IP 4. 3
+Delete all items named foo:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 drm \-\-name \-\-match \(aq^foo$\(aq /dir/to/delete/from\fP
+.SS SEE ALSO
+.sp
+The mpiFileUtils source code and all documentation may be downloaded
+from <\fI\%https://github.com/hpc/mpifileutils\fP>
+.SS dstripe
+.SS SYNOPSIS
+.sp
+\fBdstripe [OPTION] PATH...\fP
+.SS DESCRIPTION
+.sp
+Parallel MPI application to restripe files.
+.sp
+This tool is in active development. It currently only works on Lustre.
+.sp
+dstripe enables one to restripe file(s) across the underlying storage
+devices. One must specify a list of paths. All files in those paths can
+be restriped. By default, stripe size is 1MB and stripe count is \-1
+allowing dstripe to use all available stripes.
+.SS OPTIONS
+.INDENT 0.0
+.TP
+.B \-c, \-\-count STRIPE_COUNT
+The number of stripes to use during file restriping. If STRIPE_COUNT
+is \-1, then all available stripes are used. If STRIPE_COUNT is 0,
+the lustre file system default is used. The default stripe count is
+\-1.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-s, \-\-size STRIPE_SIZE
+The stripe size to use during file restriping. Units like "MB" and
+"GB" can immediately follow the number without spaces (ex. 2MB). The
+default stripe size is 1MB.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-m, \-\-minsize SIZE
+The minimum size a file must be to be a candidate for restriping.
+Files smaller than SIZE will not be restriped. Units like "MB" and
+"GB" can immediately follow the number without spaces (ex. 2MB). The
+default minimum file size is 0MB.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-r, \-\-report
+Display the file size, stripe count, and stripe size of all files
+found in PATH. No restriping is performed when using this option.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-v, \-\-verbose
+Run in verbose mode.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print the command usage, and the list of options available.
+.UNINDENT
+.SS EXAMPLES
+.INDENT 0.0
+.IP 1. 3
+To stripe a file on all storage devices using a 1MB stripe size:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dstripe \-s 1MB /path/to/file\fP
+.INDENT 0.0
+.IP 2. 3
+To stripe a file across 20 storage devices with a 1GB stripe size:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dstripe \-c 20 \-s 1GB /path/to/file\fP
+.INDENT 0.0
+.IP 3. 3
+To restripe all files in /path/to/files/ that are at least 1GB in
+size:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dstripe \-m 1GB /path/to/files/\fP
+.INDENT 0.0
+.IP 4. 3
+To restripe all files in /path/to/files/ across 10 storage devices
+with 2MB stripe size:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dstripe \-c 10 \-s 2MB /path/to/files/\fP
+.INDENT 0.0
+.IP 5. 3
+To display the current stripe count and stripe size of all files in
+/path/to/files/:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dstripe \-r /path/to/files/\fP
+.SS SEE ALSO
+.sp
+The mpiFileUtils source code and all documentation may be downloaded
+from <\fI\%https://github.com/hpc/mpifileutils\fP>
+.SS dsync
+.SS SYNOPSIS
+.sp
+\fBdsync [OPTION] SRC DEST\fP
+.SS DESCRIPTION
+.sp
+Parallel MPI application to synchronize two files or two directory trees.
+.sp
+dsync makes DEST match SRC, adding missing entries from DEST, and updating
+existing entries in DEST as necessary so that SRC and DEST have identical
+content, ownership, timestamps, and permissions.
+.SS OPTIONS
+.INDENT 0.0
+.TP
+.B \-\-dryrun
+Show differences without changing anything.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-b, \-\-batch\-files N
+Batch files into groups of up to size N during copy operation.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-c, \-\-contents
+Compare files byte\-by\-byte rather than checking size and mtime
+to determine whether file contents are different.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-D, \-\-delete
+Delete extraneous files from destination.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-v, \-\-verbose
+Run in verbose mode. Prints a list of statistics/timing data for the
+command. Files walked, started, completed, seconds, files, bytes
+read, byte rate, and file rate.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print the command usage, and the list of options available.
+.UNINDENT
+.SS EXAMPLES
+.INDENT 0.0
+.IP 1. 3
+Synchronize dir2 to match dir1:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dsync /path/to/dir1 /path/to/dir2\fP
+.SS SEE ALSO
+.sp
+The mpiFileUtils source code and all documentation may be downloaded
+from <\fI\%https://github.com/hpc/mpifileutils\fP>
+.SS dwalk
+.SS SYNOPSIS
+.sp
+\fBdwalk [OPTION] PATH ...\fP
+.SS DESCRIPTION
+.sp
+Parallel MPI application to recursively walk and list contents in a
+directory.
+.sp
+dwalk provides functionality similar to \fBls(1)\fP and \fBdu(1)\fP\&. Like
+\fBdu(1)\fP, the tool reports a summary of the total number of files and
+bytes. Like \fBls(1)\fP, the tool sorts and prints information about
+individual files.
+.sp
+The output can be sorted on different fields (e.g, name, user, group,
+size, etc). A histogram of file sizes can be computed listing the number
+of files that fall into user\-defined bins.
+.SS OPTIONS
+.INDENT 0.0
+.TP
+.B \-i, \-\-input FILE
+Read source list from FILE. FILE must be generated by another tool
+from the mpiFileUtils suite.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-o, \-\-output FILE
+Write the processed list to a file.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-l, \-\-lite
+Walk file system without stat.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-s, \-\-sort FIELD
+Sort output by comma\-delimited fields (see below).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-d, \-\-distribution size:SEPARATORS
+Print the distribution of file sizes. For example, specifying
+size:0,80,100 will report the number of files that have size 0
+bytes, between 1\-80 bytes, between 81\-99 bytes, and 100 bytes or
+greater.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-p, \-\-print
+Print files to the screen.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-v, \-\-verbose
+Run in verbose mode.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-h, \-\-help
+Print usage.
+.UNINDENT
+.SS SORT FIELDS
+.sp
+By default, the list of files dwalk captures is not sorted. To sort the
+list, one or more fields can be specified in a comma\-delimited list:
+.sp
+name,user,group,uid,gid,atime,mtime,ctime,size
+.sp
+A field name can be preceded with ‘\-’ to sort by that field in reverse
+order.
+.sp
+A lexicographic sort is executed if more than one field is given.
+.SS EXAMPLES
+.INDENT 0.0
+.IP 1. 3
+To print summary information for a directory:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dwalk \-v /dir/to/walk\fP
+.INDENT 0.0
+.IP 2. 3
+To print a list of files, sorted by file size, then by file name:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dwalk –print –sort size,name /dir/to/walk\fP
+.INDENT 0.0
+.IP 3. 3
+To save the list of files:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dwalk –output out.dwalk /dir/to/walk\fP
+.INDENT 0.0
+.IP 4. 3
+Print the file distribution for specified histogram based on the size
+field from the top level directory.
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dwalk \-v –print \-d size:0,20,1G src/\fP
+.SS SEE ALSO
+.sp
+The mpiFileUtils source code and all documentation may be downloaded
+from <\fI\%https://github.com/hpc/mpifileutils\fP>
+.SS dbz2
+.SS SYNOPSIS
+.sp
+\fBdbz2 [OPTIONS] [\-z|\-d] FILE\fP
+.SS DESCRIPTION
+.sp
+Parallel MPI application to compress or decompress a file.
+.SS OPTIONS
+.INDENT 0.0
+.TP
+.B \-d, \-\-decompress
+Decompress the file
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-z, \-\-compress
+Compress the file
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-k, \-\-keep
+Keep the input file (optional).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-f, \-\-overwrite
+Overwrite the output file, if it exists (optional).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-b, \-\-block SIZE
+Set the compression block size, from 1 to 9.
+Where 1=100kB ... and 9=900kB. Default is 9 (optional).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-m, \-\-memory SIZE
+Limit the memory that can be used by a processs, in bytes (optional).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-v, \-\-verbose
+Verbose output (optional).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-debug
+Show debug output (optional).
+.UNINDENT
 .SS dgrep
 .SS SYNOPSIS
 .sp

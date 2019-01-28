@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DSYNC" "1" "Dec 19, 2018" "0.8" "mpiFileUtils"
+.TH "DSYNC" "1" "Jan 28, 2019" "0.9" "mpiFileUtils"
 .SH NAME
 dsync \- synchronize directory trees
 .
@@ -37,14 +37,19 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .sp
 Parallel MPI application to synchronize two files or two directory trees.
 .sp
-dsync makes DEST match SRC, adding missing entries from DEST, removing
-extra entries from DEST, and updating existing entries in DEST as necessary
-so that SRC and DEST have identical content, ownership, timestamps, and permissions.
+dsync makes DEST match SRC, adding missing entries from DEST, and updating
+existing entries in DEST as necessary so that SRC and DEST have identical
+content, ownership, timestamps, and permissions.
 .SH OPTIONS
 .INDENT 0.0
 .TP
 .B \-\-dryrun
 Show differences without changing anything.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-b, \-\-batch\-files N
+Batch files into groups of up to size N during copy operation.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -54,8 +59,8 @@ to determine whether file contents are different.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-N, \-\-no\-delete
-Do not delete extraneous files from destination.
+.B \-D, \-\-delete
+Delete extraneous files from destination.
 .UNINDENT
 .INDENT 0.0
 .TP
