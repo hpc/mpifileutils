@@ -110,7 +110,7 @@ For example, the following expression reports entries that exist in both source 
     EXIST=COMMON@TYPE=DIFFER
 
 The AND operator binds with higher precedence than the OR operator.
-For example, the following expression matches on entries which either (exist in both soure and destination and whose types differ) or (only exist in the source)::
+For example, the following expression matches on entries which either (exist in both source and destination and whose types differ) or (only exist in the source)::
 
     EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY
 
