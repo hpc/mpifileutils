@@ -49,7 +49,7 @@ independently of other MPI processes.
 
 Other functions operate on the global list in a collective fashion, such as
 deleting all items in a file list. All processes in the MPI job must invoke
-these functions simultaenously.
+these functions simultaneously.
 
 For full details, see `mfu_flist.h <https://github.com/hpc/mpifileutils/blob/master/src/common/mfu_flist.h>`_
 and refer to its usage in existing tools.
