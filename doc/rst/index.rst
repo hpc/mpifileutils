@@ -77,17 +77,18 @@ Man Pages
    :maxdepth: 1
 
    dbcast.1
-   dbz2.1
    dchmod.1
    dcmp.1
    dcp.1
    ddup.1
    dfilemaker.1
    dfind.1
+   dreln.1
    drm.1
    dstripe.1
    dsync.1
    dwalk.1
+   experimental/dbz2.1
    experimental/dgrep.1
    experimental/dparallel.1
    experimental/dtar.1
