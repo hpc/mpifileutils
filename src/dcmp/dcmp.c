@@ -1536,8 +1536,19 @@ static void dcmp_disjunction_print(
                         linkage) {
         dcmp_conjunction_print(conjunction, simple);
 
-        printf(": [%lu/%lu]", mfu_flist_global_size(conjunction->src_matched_list),
-                              mfu_flist_global_size(conjunction->dst_matched_list));
+        int size_src_matched = mfu_flist_global_size(conjunction->src_matched_list);
+        int size_dst_matched = mfu_flist_global_size(conjunction->dst_matched_list);
+
+        /* if src and dst don't match src and dest numbers need to
+         * be reported seperately */
+        if (size_src_matched == size_dst_matched) {
+            printf(": %lu (Src: %lu Dest: %lu)", size_src_matched,
+                   size_src_matched, size_dst_matched);
+        } else {
+            printf(": N/A (Src: %lu Dest: %lu)", size_src_matched,
+                   size_dst_matched);
+        }
+
         if (conjunction->linkage.next != &disjunction->conjunctions) {
 
             if (simple) {
@@ -1687,7 +1698,7 @@ static int dcmp_output_flist_match(
     return 0;
 }
 
-#define DCMP_OUTPUT_PREFIX "Files which "
+#define DCMP_OUTPUT_PREFIX "Number of files that "
 
 static int dcmp_output_write(
     struct dcmp_output *output,
