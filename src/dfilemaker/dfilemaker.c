@@ -612,6 +612,9 @@ int main(int narg, char **arg)
     int rank, nrank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &nrank);
+    MPI_Datatype dirname_type;
+    MPI_Type_contiguous(dnamlen, MPI_CHAR, &dirname_type);
+    MPI_Type_commit(&dirname_type);
 
     /*----------------------------------------------
      * get nfiles = number of files to create basic
@@ -629,7 +632,8 @@ int main(int narg, char **arg)
     /*------------------------------------------
     /*  create directory name compare function
     /*------------------------------------------*/
-    if (DTCMP_Op_create(MPI_DOUBLE,&dnamcomp,&op_dnamcomp) !=DTCMP_SUCCESS)
+    //jll if (DTCMP_Op_create(MPI_DOUBLE,&dnamcomp,&op_dnamcomp) !=DTCMP_SUCCESS)
+    if (DTCMP_Op_create(dirname_type,&dnamcomp,&op_dnamcomp) !=DTCMP_SUCCESS)
     {
         printf("Failed to create string sort\n");
         exit(0);
@@ -803,11 +807,12 @@ int main(int narg, char **arg)
        // sort dnames so that randir always points to same directory path
        //---------------------------------------------------------------------
        darray = (char**) MFU_MALLOC(dirtot * sizeof(char*));
-       for (i = 0; i < dirtot; i++) darray[i] = (char*) MFU_MALLOC(dnamlen * sizeof(char));
-       for (i = 0; i < dirtot; i++) strncpy(darray[i], dnames + i * dnamlen, dnamlen);
+    //jll for (i = 0; i < dirtot; i++) darray[i] = (char*) MFU_MALLOC(dnamlen * sizeof(char));
+    //jll for (i = 0; i < dirtot; i++) strncpy(darray[i], dnames + i * dnamlen, dnamlen);
        //jll dnamsort(darray, dirtot);
-       DTCMP_Sort_local(DTCMP_IN_PLACE, darray, dirtot, MPI_DOUBLE, MPI_DOUBLE, op_dnamcomp, 0x0);
-       for (i = 0; i < dirtot; i++) strncpy(dnames + i * dnamlen,darray[i], dnamlen);
+    //jll   DTCMP_Sort_local(DTCMP_IN_PLACE, darray, dirtot, MPI_DOUBLE, MPI_DOUBLE, op_dnamcomp, 0x0);
+       DTCMP_Sort_local(DTCMP_IN_PLACE, dnames, dirtot, dirname_type, dirname_type, op_dnamcomp, DTCMP_FLAG_NONE);
+     //jll  for (i = 0; i < dirtot; i++) strncpy(dnames + i * dnamlen,darray[i], dnamlen);
        // if (rank==0) for (i=0;i<dirtot;i++) printf("%s\n",dnames+i*dnamlen);
 
        //-----------------------------------------------------------
