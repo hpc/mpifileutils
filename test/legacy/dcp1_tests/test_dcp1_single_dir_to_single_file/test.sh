@@ -20,7 +20,6 @@
 
 # Print out the basic paths we'll be using.
 echo "Using dcp1 binary at: $DCP_TEST_BIN"
-echo "Using mpirun binary at: $DCP_MPIRUN_BIN"
 echo "Using tmp directory at: $DCP_TEST_TMP"
 
 ##############################################################################
@@ -46,7 +45,7 @@ dd if=/dev/urandom of=$PATH_C_RANDOM bs=4M count=5
 ##############################################################################
 # Test copying the directory to an empty file. The result should be an error.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_A_DIRECTORY $PATH_B_EMPTY
+mpirun -n 3 $DCP_TEST_BIN $PATH_A_DIRECTORY $PATH_B_EMPTY
 if [[ $? -eq 0 ]]; then
     echo "Unexpectedd success when copying a directory to an empty file. (A -> B)."
     exit 1;
@@ -55,7 +54,7 @@ fi
 ##############################################################################
 # Test copying a directory to a random file. The result should be an error.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_A_DIRECTORY $PATH_C_RANDOM
+mpirun -n 3 $DCP_TEST_BIN $PATH_A_DIRECTORY $PATH_C_RANDOM
 if [[ $? -eq 0 ]]; then
     echo "Unexpected success when copying a directory to a random file (A -> C)."
     exit 1;

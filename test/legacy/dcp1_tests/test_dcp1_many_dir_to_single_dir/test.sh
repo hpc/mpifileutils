@@ -20,7 +20,6 @@
 
 # Print out the basic paths we'll be using.
 echo "Using dcp1 binary at: $DCP_TEST_BIN"
-echo "Using mpirun binary at: $DCP_MPIRUN_BIN"
 echo "Using tmp directory at: $DCP_TEST_TMP"
 
 ##############################################################################
@@ -59,7 +58,7 @@ dd if=/dev/urandom of=$PATH_G_RANDOM bs=3M count=2
 # Test copying several directories to a directory. The result should be the directories
 # placed inside the directory.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN -R $PATH_A_DIRECTORY $PATH_B_DIRECTORY $PATH_C_DIRECTORY $PATH_D_DIRECTORY
+mpirun -n 3 $DCP_TEST_BIN $PATH_A_DIRECTORY $PATH_B_DIRECTORY $PATH_C_DIRECTORY $PATH_D_DIRECTORY
 if [[ $? -ne 0 ]]; then
     echo "Error returned when copying an several directories to a directory (A,B,C -> D)."
     exit 1;

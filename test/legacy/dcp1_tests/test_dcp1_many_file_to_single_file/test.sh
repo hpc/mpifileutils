@@ -20,7 +20,6 @@
 
 # Print out the basic paths we'll be using.
 echo "Using dcp1 binary at: $DCP_TEST_BIN"
-echo "Using mpirun binary at: $DCP_MPIRUN_BIN"
 echo "Using tmp directory at: $DCP_TEST_TMP"
 
 ##############################################################################
@@ -64,7 +63,7 @@ dd if=/dev/urandom of=$PATH_H_RANDOM bs=6M count=2
 # Test copying several empty files into an empty file. This should result in
 # an error.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_A_EMPTY $PATH_B_EMPTY $PATH_C_EMPTY $PATH_D_EMPTY
+mpirun -n 3 $DCP_TEST_BIN $PATH_A_EMPTY $PATH_B_EMPTY $PATH_C_EMPTY $PATH_D_EMPTY
 if [[ $? -eq 0 ]]; then
     echo "Unexpected success when copying empty files to an empty file. (A,B,C -> D)."
     exit 1;
@@ -74,7 +73,7 @@ fi
 # Test copying several empty files into a random file. This should result in
 # an error.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_A_EMPTY $PATH_B_EMPTY $PATH_C_EMPTY $PATH_E_EMPTY
+mpirun -n 3 $DCP_TEST_BIN $PATH_A_EMPTY $PATH_B_EMPTY $PATH_C_EMPTY $PATH_E_EMPTY
 if [[ $? -eq 0 ]]; then
     echo "Unexpected success when copying empty files to a random file (A,B,C -> E)."
     exit 1;
@@ -84,7 +83,7 @@ fi
 # Test copying several random files into an empty file. This should result in
 # an error.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_E_RANDOM $PATH_F_RANDOM $PATH_G_RANDOM $PATH_A_EMPTY
+mpirun -n 3 $DCP_TEST_BIN $PATH_E_RANDOM $PATH_F_RANDOM $PATH_G_RANDOM $PATH_A_EMPTY
 if [[ $? -eq 0 ]]; then
     echo "Unexpected success when copying random files to an empty file (E,F,G -> A)."
     exit 1;
@@ -94,7 +93,7 @@ fi
 # Test copying several random files into a file that doesn't exist. This
 # should result in an error.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_E_RANDOM $PATH_F_RANDOM $PATH_G_RANDOM $PATH_I_NOEXIST
+mpirun -n 3 $DCP_TEST_BIN $PATH_E_RANDOM $PATH_F_RANDOM $PATH_G_RANDOM $PATH_I_NOEXIST
 if [[ $? -eq 0 ]]; then
     echo "Unexpected success when copying random files to a no-exist file (E,F,G -> I)."
     exit 1;
