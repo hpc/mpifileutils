@@ -23,7 +23,6 @@
 
 # Print out the basic paths we'll be using.
 echo "Using dcp1 binary at: $DCP_TEST_BIN"
-echo "Using mpirun binary at: $DCP_MPIRUN_BIN"
 echo "Using cmp binary at: $DCP_CMP_BIN"
 echo "Using tmp directory at: $DCP_TEST_TMP"
 
@@ -61,7 +60,7 @@ stat $PATH_E_RANDOM
 # Test copying an empty file to an empty file. The result should be two files
 # which remain empty with no error output.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_B_EMPTY $PATH_C_EMPTY
+mpirun -n 3 $DCP_TEST_BIN $PATH_B_EMPTY $PATH_C_EMPTY
 
 if [[ $? -ne 0 ]]; then
     echo "Error returned when copying empty file to empty file (B -> C)."
@@ -78,7 +77,7 @@ fi
 # Test copying a random file to an empty file. The result should be two files
 # which both contain the contents of the first random file.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_D_RANDOM $PATH_B_EMPTY
+mpirun -n 3 $DCP_TEST_BIN $PATH_D_RANDOM $PATH_B_EMPTY
 if [[ $? -ne 0 ]]; then
     echo "Error returned when copying random file to empty file (D -> B)."
     exit 1;
@@ -94,7 +93,7 @@ fi
 # Test copying a random file to another random  file. The result should be two
 # files which both contain the contents of the first random file.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_D_RANDOM $PATH_E_RANDOM
+mpirun -n 3 $DCP_TEST_BIN $PATH_D_RANDOM $PATH_E_RANDOM
 if [[ $? -ne 0 ]]; then
     echo "Error returned when copying random file to random file (D -> E)."
     exit 1;

@@ -20,7 +20,6 @@
 
 # Print out the basic paths we'll be using.
 echo "Using dcp1 binary at: $DCP_TEST_BIN"
-echo "Using mpirun binary at: $DCP_MPIRUN_BIN"
 echo "Using cmp binary at: $DCP_CMP_BIN"
 echo "Using tmp directory at: $DCP_TEST_TMP"
 
@@ -52,7 +51,7 @@ mkdir $PATH_D_DIRECTORY
 ##############################################################################
 # Test copying a no-exist file to a directory. The result should be an error.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_A_NOEXIST $PATH_D_DIRECTORY
+mpirun -n 3 $DCP_TEST_BIN $PATH_A_NOEXIST $PATH_D_DIRECTORY
 
 if [[ $? -eq 0 ]]; then
     echo "Unexpected success when copying a no-exist file to a directory (A -> D)."
@@ -63,7 +62,7 @@ fi
 # Test copying an empty file to a directory. The result should be the empty
 # file placed inside the directory.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_B_EMPTY $PATH_D_DIRECTORY
+mpirun -n 3 $DCP_TEST_BIN $PATH_B_EMPTY $PATH_D_DIRECTORY
 if [[ $? -ne 0 ]]; then
     echo "Error returned when copying an empty file to a directory (B -> D)."
     exit 1;
@@ -79,7 +78,7 @@ fi
 # Test copying an empty file to a directory. The result should be the empty
 # file placed inside the directory.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_C_RANDOM $PATH_D_DIRECTORY
+mpirun -n 3 $DCP_TEST_BIN $PATH_C_RANDOM $PATH_D_DIRECTORY
 if [[ $? -ne 0 ]]; then
     echo "Error returned when copying a random file to a directory (C -> D)."
     exit 1;

@@ -20,7 +20,6 @@
 
 # Print out the basic paths we'll be using.
 echo "Using dcp1 binary at: $DCP_TEST_BIN"
-echo "Using mpirun binary at: $DCP_MPIRUN_BIN"
 echo "Using tmp directory at: $DCP_TEST_TMP"
 
 ##############################################################################
@@ -47,7 +46,7 @@ dd if=/dev/urandom of=$PATH_C_RANDOM bs=3M count=2
 # Test copying a directory to a directory. The result should be the directory
 # placed inside the directory.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN -R $PATH_A_DIRECTORY $PATH_B_DIRECTORY
+mpirun -n 3 $DCP_TEST_BIN $PATH_A_DIRECTORY $PATH_B_DIRECTORY
 if [[ $? -ne 0 ]]; then
     echo "Error returned when copying a directory to a directory (A -> B)."
     exit 1;

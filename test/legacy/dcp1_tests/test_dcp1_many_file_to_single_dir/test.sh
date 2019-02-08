@@ -20,7 +20,6 @@
 
 # Print out the basic paths we'll be using.
 echo "Using dcp1 binary at: $DCP_TEST_BIN"
-echo "Using mpirun binary at: $DCP_MPIRUN_BIN"
 echo "Using tmp directory at: $DCP_TEST_TMP"
 
 ##############################################################################
@@ -56,7 +55,7 @@ mkdir $PATH_E_DIRECTORY
 # Test copying several files to a directory. The result should be the files
 # placed inside the directory.
 
-$DCP_MPIRUN_BIN -np 3 $DCP_TEST_BIN $PATH_A_EMPTY $PATH_C_RANDOM $PATH_B_EMPTY $PATH_D_RANDOM $PATH_E_DIRECTORY
+mpirun -n 3 $DCP_TEST_BIN $PATH_A_EMPTY $PATH_C_RANDOM $PATH_B_EMPTY $PATH_D_RANDOM $PATH_E_DIRECTORY
 if [[ $? -ne 0 ]]; then
     echo "Error returned when copying an several files to a directory (A,B,C,D -> E)."
     exit 1;

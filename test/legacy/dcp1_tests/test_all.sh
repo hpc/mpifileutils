@@ -9,14 +9,15 @@
 # Turn this on if you want output from each test printed out.
 DEBUG=1
 
-# A temporary directory that all tests can use for scratch files.
-TEST_TMP_DIR=../tmp
+# set environment variables (TEST_TMP_DIR & TEST_DCP_BIN to run tests)
+TEST_TMP_DIR=$1
+TEST_DCP_BIN=$2
 
-# The dcp1 binary path to use. This must be relative to the test_all.sh script.
-TEST_DCP_BIN=../src/dcp1
-
-# The mpirun binary to use.
-TEST_MPIRUN_BIN=/usr/bin/mpirun
+if [ -z $TEST_TMP_DIR ] || [ -z $TEST_DCP_BIN ]; then
+    echo 'Please set TEST_TMP_DIR and TEST_DCP_BIN'
+    echo 'i.e ./test_all.sh /tmp/<username> /path/to/dcp1/install'
+    exit 1
+fi
 
 # The cmp binary to use.
 TEST_CMP_BIN=/usr/bin/cmp
@@ -39,7 +40,7 @@ pushd $TESTS_DIR > /dev/null
 mkdir $TEST_TMP_DIR
 
 echo "# =============================================================================="
-echo "# Running ALL tests for DCP."
+echo "# Running ALL tests for DCP1."
 echo "# =============================================================================="
 echo "# Tests started at: $(date)"
 echo "# =============================================================================="
@@ -47,7 +48,7 @@ echo "# ========================================================================
 # Fix up the tmp and bin paths for subshells.
 export DCP_TEST_BIN=$(readlink -f $TEST_DCP_BIN)
 export DCP_TEST_TMP=$(readlink -f $TEST_TMP_DIR)
-export DCP_MPIRUN_BIN=$(readlink -f $TEST_MPIRUN_BIN)
+#export DCP_MPIRUN_BIN=$(readlink -f $TEST_MPIRUN_BIN)
 export DCP_CMP_BIN=$(readlink -f $TEST_CMP_BIN)
 
 # Tell the tests what mode we're in
