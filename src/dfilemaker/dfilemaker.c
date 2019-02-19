@@ -613,7 +613,7 @@ int main(int narg, char **arg)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &nrank);
     MPI_Datatype dirname_type;
-    MPI_Type_contiguous(dnamlen, MPI_CHAR, &dirname_type);
+    MPI_Type_contiguous(2048, MPI_CHAR, &dirname_type);
     MPI_Type_commit(&dirname_type);
 
     /*----------------------------------------------
