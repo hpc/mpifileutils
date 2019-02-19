@@ -638,7 +638,8 @@ int main(int narg, char **arg)
         printf("Failed to create string sort\n");
         exit(0);
     }
-    if (DTCMP_Op_create(MPI_DOUBLE,&tnamcomp,&op_tnamcomp) !=DTCMP_SUCCESS)
+    //jll if (DTCMP_Op_create(MPI_DOUBLE,&tnamcomp,&op_tnamcomp) !=DTCMP_SUCCESS)
+    if (DTCMP_Op_create(dirname_type,&tnamcomp,&op_tnamcomp) !=DTCMP_SUCCESS)
     {
         printf("Failed to create string sort\n");
         exit(0);
@@ -978,7 +979,8 @@ int main(int narg, char **arg)
        for (i = 0; i < nitot; i++) strncpy(tarray[i], tnames[ilev] + i * tnamlen, tnamlen);
      //if (rank==0) for (i=0;i<nitot;i++) printf("%s\n",tarray[i]);
        //jll tnamsort(tarray, nitot);
-       DTCMP_Sort_local(DTCMP_IN_PLACE, tarray, nitot, MPI_DOUBLE, MPI_DOUBLE, op_tnamcomp, 0x0);
+       //jll DTCMP_Sort_local(DTCMP_IN_PLACE, tarray, nitot, MPI_DOUBLE, MPI_DOUBLE, op_tnamcomp, 0x0);
+       DTCMP_Sort_local(DTCMP_IN_PLACE, tarray, nitot, dirname_type, dirname_type, op_tnamcomp, 0x0);
        for (i = 0; i < nitot; i++) strncpy(tnames[ilev] + i * tnamlen, tarray[i], tnamlen);
        for (i = 0; i < nitot; i++) mfu_free(&tarray[i]);
        mfu_free(&itemnames);
