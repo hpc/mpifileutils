@@ -23,14 +23,14 @@ DTCMP_Op op_dnamcomp,op_tnamcomp;
 /*------------------------------------------------------------*/
 int dnamcomp(const void* a, const void* b)
 {
-   const char **adir,**bdir;
-   adir = (const char**)a;
-   bdir = (const char**)b;
+   const char *adir,*bdir;
+   adir = (const char*)a;
+   bdir = (const char*)b;
    const char *adir2,*bdir2;
-   adir2 = *adir;
-   if (strchr(*adir,'/'))  adir2 =  1 + strrchr(*adir,'/');
-   bdir2 = *bdir;
-   if (strchr(*bdir,'/'))  bdir2 =  1 + strrchr(*bdir,'/');
+   adir2 = adir;
+   if (strchr(adir,'/'))  adir2 =  1 + strrchr(adir,'/');
+   bdir2 = bdir;
+   if (strchr(bdir,'/'))  bdir2 =  1 + strrchr(bdir,'/');
    int rc = strcmp(adir2,bdir2);
    if (rc>0) rc=1;
    if (rc<0) rc=-1;
@@ -42,14 +42,14 @@ int dnamcomp(const void* a, const void* b)
 /*------------------------------------------------------------*/
 int tnamcomp(const void* a, const void* b)
 {
-   const char **adir,**bdir;
-   adir = (const char**)a;
-   bdir = (const char**)b;
+   const char *adir,*bdir;
+   adir = (const char*)a;
+   bdir = (const char*)b;
    const char *adir2,*bdir2;
-   adir2 = *adir;
-   if (strchr(*adir,'_'))  adir2 =  1 + strrchr(*adir,'_');
-   bdir2 = *bdir;
-   if (strchr(*bdir,'_'))  bdir2 =  1 + strrchr(*bdir,'_');
+   adir2 = adir;
+   if (strchr(adir,'_'))  adir2 =  1 + strrchr(adir,'_');
+   bdir2 = bdir;
+   if (strchr(bdir,'_'))  bdir2 =  1 + strrchr(bdir,'_');
    int rc = strcmp(adir2,bdir2);
    if (rc>0) rc=1;
    if (rc<0) rc=-1;
@@ -613,8 +613,7 @@ int main(int narg, char **arg)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &nrank);
     MPI_Datatype dirname_type;
-    MPI_Type_contiguous(2048, MPI_CHAR, &dirname_type);
-    MPI_Type_commit(&dirname_type);
+    MPI_Datatype tname_type;
 
     /*----------------------------------------------
      * get nfiles = number of files to create basic
@@ -628,22 +627,6 @@ int main(int narg, char **arg)
     ntotal  = atoi(arg[1]);
     nlevels = atoi(arg[2]);
     maxflen = atoi(arg[3]);
-
-    /*------------------------------------------
-    /*  create directory name compare function
-    /*------------------------------------------*/
-    //jll if (DTCMP_Op_create(MPI_DOUBLE,&dnamcomp,&op_dnamcomp) !=DTCMP_SUCCESS)
-    if (DTCMP_Op_create(dirname_type,&dnamcomp,&op_dnamcomp) !=DTCMP_SUCCESS)
-    {
-        printf("Failed to create string sort\n");
-        exit(0);
-    }
-    //jll if (DTCMP_Op_create(MPI_DOUBLE,&tnamcomp,&op_tnamcomp) !=DTCMP_SUCCESS)
-    if (DTCMP_Op_create(dirname_type,&tnamcomp,&op_tnamcomp) !=DTCMP_SUCCESS)
-    {
-        printf("Failed to create string sort\n");
-        exit(0);
-    }
 
     /*-------------------------------------------------------
      * each level has nfiles[0] more than the one above
@@ -807,6 +790,19 @@ int main(int narg, char **arg)
        //---------------------------------------------------------------------
        // sort dnames so that randir always points to same directory path
        //---------------------------------------------------------------------
+       MPI_Type_contiguous(dnamlen, MPI_CHAR, &dirname_type);
+       MPI_Type_commit(&dirname_type);
+
+       /*------------------------------------------
+       /*  create directory name compare function
+       /*------------------------------------------*/
+       //jll if (DTCMP_Op_create(MPI_DOUBLE,&dnamcomp,&op_dnamcomp) !=DTCMP_SUCCESS)
+       if (DTCMP_Op_create(dirname_type,&dnamcomp,&op_dnamcomp) !=DTCMP_SUCCESS)
+       {
+           printf("Failed to create string sort\n");
+           exit(0);
+       }
+
        darray = (char**) MFU_MALLOC(dirtot * sizeof(char*));
     //jll for (i = 0; i < dirtot; i++) darray[i] = (char*) MFU_MALLOC(dnamlen * sizeof(char));
     //jll for (i = 0; i < dirtot; i++) strncpy(darray[i], dnames + i * dnamlen, dnamlen);
@@ -815,6 +811,9 @@ int main(int narg, char **arg)
        DTCMP_Sort_local(DTCMP_IN_PLACE, dnames, dirtot, dirname_type, dirname_type, op_dnamcomp, DTCMP_FLAG_NONE);
      //jll  for (i = 0; i < dirtot; i++) strncpy(dnames + i * dnamlen,darray[i], dnamlen);
        // if (rank==0) for (i=0;i<dirtot;i++) printf("%s\n",dnames+i*dnamlen);
+
+       DTCMP_Op_free(&op_dnamcomp);
+       MPI_Type_free(&dirname_type);
 
        //-----------------------------------------------------------
        // get first and last dir for this processor at this level
@@ -971,6 +970,16 @@ int main(int narg, char **arg)
        tnames[ilev] = (char*) MFU_MALLOC(nitot * tnamlen); // length of names of all items in this level
        MPI_Allgatherv(itemnames, nitem * tnamlen, MPI_CHAR, tnames[ilev], lnitems, tdispls, MPI_CHAR, MPI_COMM_WORLD);
        
+       MPI_Type_contiguous(tnamlen, MPI_CHAR, &tname_type);
+       MPI_Type_commit(&tname_type);
+
+       //jll if (DTCMP_Op_create(MPI_DOUBLE,&tnamcomp,&op_tnamcomp) !=DTCMP_SUCCESS)
+       if (DTCMP_Op_create(tname_type,&tnamcomp,&op_tnamcomp) !=DTCMP_SUCCESS)
+       {
+           printf("Failed to create string sort\n");
+           exit(0);
+       }
+
        //-------------------------
        // sort tnames[ilev]
        //-------------------------
@@ -980,9 +989,11 @@ int main(int narg, char **arg)
      //if (rank==0) for (i=0;i<nitot;i++) printf("%s\n",tarray[i]);
        //jll tnamsort(tarray, nitot);
        //jll DTCMP_Sort_local(DTCMP_IN_PLACE, tarray, nitot, MPI_DOUBLE, MPI_DOUBLE, op_tnamcomp, 0x0);
-       DTCMP_Sort_local(DTCMP_IN_PLACE, tarray, nitot, dirname_type, dirname_type, op_tnamcomp, 0x0);
+       DTCMP_Sort_local(DTCMP_IN_PLACE, tnames[ilev], nitot, tname_type, tname_type, op_tnamcomp, DTCMP_FLAG_NONE);
        for (i = 0; i < nitot; i++) strncpy(tnames[ilev] + i * tnamlen, tarray[i], tnamlen);
        for (i = 0; i < nitot; i++) mfu_free(&tarray[i]);
+       DTCMP_Op_free(&op_tnamcomp);
+       MPI_Type_free(&tname_type);
        mfu_free(&itemnames);
        mfu_free(&tarray);
        MPI_Barrier(MPI_COMM_WORLD);
@@ -1135,8 +1146,6 @@ int main(int narg, char **arg)
      *------------*/
     mfu_flist_free((void**)&mybflist);
 
-    DTCMP_Op_free(&op_dnamcomp);
-    DTCMP_Op_free(&op_tnamcomp);
     mfu_finalize();
     DTCMP_Finalize();
     MPI_Finalize();
