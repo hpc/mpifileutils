@@ -591,7 +591,6 @@ int main(int narg, char** arg)
     int* lnlinks, *ldispls; // directory displacements for each proc
     int* lnitems, *tdispls; // directory displacements for each proc
     char* ldnames, *dnames; // lists of directory paths
-    char** darray;
     char** larray;
     char** tarray;
     char* lnames; // global lists of link names
@@ -818,25 +817,11 @@ int main(int narg, char** arg)
         //---------------------------------------------------------------------
         MPI_Type_contiguous(dnamlen, MPI_CHAR, &dirname_type);
         MPI_Type_commit(&dirname_type);
-
-        /*------------------------------------------
-        /*  create directory name compare function
-        /*------------------------------------------*/
-        //jll if (DTCMP_Op_create(MPI_DOUBLE,&dnamcomp,&op_dnamcomp) !=DTCMP_SUCCESS)
         if (DTCMP_Op_create(dirname_type, &dnamcomp, &op_dnamcomp) != DTCMP_SUCCESS) {
             printf("Failed to create string sort\n");
             exit(0);
         }
-
-        darray = (char**) MFU_MALLOC(dirtot * sizeof(char*));
-        //jll for (i = 0; i < dirtot; i++) darray[i] = (char*) MFU_MALLOC(dnamlen * sizeof(char));
-        //jll for (i = 0; i < dirtot; i++) strncpy(darray[i], dnames + i * dnamlen, dnamlen);
-        //jll dnamsort(darray, dirtot);
-        //jll   DTCMP_Sort_local(DTCMP_IN_PLACE, darray, dirtot, MPI_DOUBLE, MPI_DOUBLE, op_dnamcomp, 0x0);
         DTCMP_Sort_local(DTCMP_IN_PLACE, dnames, dirtot, dirname_type, dirname_type, op_dnamcomp, DTCMP_FLAG_NONE);
-        //jll  for (i = 0; i < dirtot; i++) strncpy(dnames + i * dnamlen,darray[i], dnamlen);
-        // if (rank==0) for (i=0;i<dirtot;i++) printf("%s\n",dnames+i*dnamlen);
-
         DTCMP_Op_free(&op_dnamcomp);
         MPI_Type_free(&dirname_type);
 
@@ -919,7 +904,6 @@ int main(int narg, char** arg)
         mfu_free(&ndirs);
         mfu_free(&ldnames);
         mfu_free(&dnames);
-        mfu_free(&darray);
 
         //---------------------------------------------------------
         /* get number of levels and number of files at each level */
@@ -1009,39 +993,20 @@ int main(int narg, char** arg)
         tnames[ilev] = (char*) MFU_MALLOC(nitot * tnamlen); // length of names of all items in this level
         MPI_Allgatherv(itemnames, nitem * tnamlen, MPI_CHAR, tnames[ilev], lnitems, tdispls, MPI_CHAR, MPI_COMM_WORLD);
 
+        //-------------------------
+        // sort tnames[ilev]
+        //-------------------------
         MPI_Type_contiguous(tnamlen, MPI_CHAR, &tname_type);
         MPI_Type_commit(&tname_type);
-
-        //jll if (DTCMP_Op_create(MPI_DOUBLE,&tnamcomp,&op_tnamcomp) !=DTCMP_SUCCESS)
         if (DTCMP_Op_create(tname_type, &tnamcomp, &op_tnamcomp) != DTCMP_SUCCESS) {
             printf("Failed to create string sort\n");
             exit(0);
         }
-
-        //-------------------------
-        // sort tnames[ilev]
-        //-------------------------
-        tarray = (char**) MFU_MALLOC(nitot * sizeof(char*));
-        for (i = 0; i < nitot; i++) {
-            tarray[i] = (char*) MFU_MALLOC(tnamlen * sizeof(char));
-        }
-        for (i = 0; i < nitot; i++) {
-            strncpy(tarray[i], tnames[ilev] + i * tnamlen, tnamlen);
-        }
-        //if (rank==0) for (i=0;i<nitot;i++) printf("%s\n",tarray[i]);
-        //jll tnamsort(tarray, nitot);
-        //jll DTCMP_Sort_local(DTCMP_IN_PLACE, tarray, nitot, MPI_DOUBLE, MPI_DOUBLE, op_tnamcomp, 0x0);
         DTCMP_Sort_local(DTCMP_IN_PLACE, tnames[ilev], nitot, tname_type, tname_type, op_tnamcomp, DTCMP_FLAG_NONE);
-        for (i = 0; i < nitot; i++) {
-            strncpy(tnames[ilev] + i * tnamlen, tarray[i], tnamlen);
-        }
-        for (i = 0; i < nitot; i++) {
-            mfu_free(&tarray[i]);
-        }
         DTCMP_Op_free(&op_tnamcomp);
         MPI_Type_free(&tname_type);
+
         mfu_free(&itemnames);
-        mfu_free(&tarray);
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
