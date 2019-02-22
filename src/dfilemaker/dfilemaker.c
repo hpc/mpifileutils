@@ -576,7 +576,7 @@ int main(int narg, char** arg)
     uint64_t idx;
     uint64_t* idlist;
     int ndir = 0, *ndirs;
-    uint64_t size, gsize, goffset;
+    uint64_t size;
     uint64_t* randir;
     int dirtot;
     int linktot;
@@ -762,9 +762,6 @@ int main(int narg, char** arg)
         //-------------------------------------------------
         mfu_flist list = outlists[ilev - 1];
         size = mfu_flist_size(list);
-        gsize = mfu_flist_global_size(list);
-        goffset = mfu_flist_global_offset(list);
-        // printf("ilev=%d, rank=%d, size=%d, gsize=%d, goffset=%d\n",ilev,rank,size,gsize,goffset);
 
         //------------------------------------------------
         // list each directory for this level
@@ -905,11 +902,8 @@ int main(int narg, char** arg)
         mfu_free(&ldnames);
         mfu_free(&dnames);
 
-        //---------------------------------------------------------
-        /* get number of levels and number of files at each level */
-        //---------------------------------------------------------
-        mfu_flist_array_by_depth(mybflist, &outlevels, &outmin, &outlists);
-        // if ( rank == 0 ) printf("\nnum levels: %d\nminlevel: %d\n\n",outlevels,outmin);
+        mfu_flist_array_free(outlevels, &outlists);
+
         iseed += 3;
     }  // end of ilev loop for creating files and directories
 
@@ -919,7 +913,10 @@ int main(int narg, char** arg)
     //---------------------------------
     mfu_flist_mkdir(mybflist);
     mfu_flist_mknod(mybflist);
+
+    mfu_flist_array_by_depth(mybflist, &outlevels, &outmin, &outlists);
     write_files(outlevels, outmin, outlists);
+    mfu_flist_array_free(outlevels, &outlists);
 
     //------------------------------------
     //  reset statistics at this point
@@ -932,7 +929,6 @@ int main(int narg, char** arg)
     total_bytes   = 0;
     // print_summary(mybflist);
     // printf("rank = %d, total_files = %d\n",rank,total_files);
-
 
     //*****************************************************************************
     //
@@ -957,9 +953,6 @@ int main(int narg, char** arg)
         //------------------------------------------------
         mfu_flist list = outlists[ilev];
         size = mfu_flist_size(list);
-        gsize = mfu_flist_global_size(list);
-        goffset = mfu_flist_global_offset(list);
-        // printf("ilev=%d, rank=%d, size=%d, gsize=%d, goffset=%d\n",ilev,rank,size,gsize,goffset);
 
         //----------------------------------------------------
         // get number everthing at this level on a processor
@@ -982,7 +975,6 @@ int main(int narg, char** arg)
         for (i = 0; i < nrank; i++) {
             nitot += itemsg[i];
         }
-        //      printf("nitot = %d, gsize = %d, nfiles[%d] = %d\n",nitot,gsize,ilev,nfiles[ilev]); // compare sum with global size, hope same
         tdispls[0] = 0;
         for (i = 0; i < nrank; i++) {
             lnitems[i] = itemsg[i] * tnamlen;    // total length of all item names on each proc
@@ -1009,6 +1001,7 @@ int main(int narg, char** arg)
         mfu_free(&itemnames);
         MPI_Barrier(MPI_COMM_WORLD);
     }
+    mfu_flist_array_free(outlevels, &outlists);
 
     //**********************************************************************************************************
     //
@@ -1025,24 +1018,17 @@ int main(int narg, char** arg)
     //--------------------------------
     // generate links
     //--------------------------------
+    mfu_flist_array_by_depth(mybflist, &outlevels, &outmin, &outlists);
     for (ilev = 0; ilev < nlevels; ilev++) {
         if (rank == 0) {
             printf("ilev=%d\n", ilev);
         }
-
-        /*--------------------------------------------------------*/
-        /* get number of levels and number of files at each level */
-        /*--------------------------------------------------------*/
-        mfu_flist_array_by_depth(mybflist, &outlevels, &outmin, &outlists);
 
         //------------------------------------------------
         // list items at this level for each processor
         //------------------------------------------------
         mfu_flist list = outlists[ilev];
         size = mfu_flist_size(list);
-        gsize = mfu_flist_global_size(list);
-        goffset = mfu_flist_global_offset(list);
-        // printf("ilev=%d, rank=%d, size=%d, gsize=%d, goffset=%d\n",ilev,rank,size,gsize,goffset);
 
         //------------------------------------------------
         // get  number links at this level on a processor
@@ -1162,6 +1148,7 @@ int main(int narg, char** arg)
         /* write links with targets        */
         /*---------------------------------*/
         write_links(nlink, linknames, itemnames); // write links for this processor
+
         mfu_free(&linknames);
         mfu_free(&tnamelist);
         mfu_free(&nlinksg);
@@ -1172,6 +1159,7 @@ int main(int narg, char** arg)
         iseed++;
         MPI_Barrier(MPI_COMM_WORLD);
     } /* end of ilev loop for links */
+    mfu_flist_array_free(outlevels, &outlists);
     mfu_free(&tnames);
 
     //****************************************************************************************************
