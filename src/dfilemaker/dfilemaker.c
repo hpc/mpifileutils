@@ -319,77 +319,36 @@ static int write_file(mfu_flist list, uint64_t idx)
 /*----------------------------------------------*/
 /* add content to nodes created by create_files */
 /*----------------------------------------------*/
-static int write_files(int levels, int minlevel, mfu_flist* lists)
+static int write_files(mfu_flist list)
 {
     int rc = 0;
-    int i;
 
-    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
-
-    /* get our rank and number of ranks in job */
-    int rank, ranks;
+    /* get our rank */
+    int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* indicate to user what phase we're in */
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Writing content to files.");
     }
 
-    int level;
-    for (level = 0; level < levels; level++) {
-        /* time how long this takes */
-        double start = MPI_Wtime();
+    /* iterate over items and set write bit on directories if needed */
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(list);
+    for (idx = 0; idx < size; idx++) {
+        /* get type of item */
+        mfu_filetype type = mfu_flist_file_get_type(list, idx);
 
-        /* get list of items for this level */
-        mfu_flist list = lists[level];
-
-        /* iterate over items and set write bit on directories if needed */
-        uint64_t idx;
-        uint64_t size = mfu_flist_size(list);
-        uint64_t count = 0;
-        for (idx = 0; idx < size; idx++) {
-            /* get type of item */
-            mfu_filetype type = mfu_flist_file_get_type(list, idx);
-
-            /* process files and links */
-            if (type == MFU_TYPE_FILE) {
-                /* TODO: skip file if it's not readable */
-                write_file(list, idx);
-                count++;
-            }
-            else if (type == MFU_TYPE_LINK) {
-                // write_link(list, idx);  // nothing for now
-                count++;
-            }
-        }
-
-        /* wait for all procs to finish before we start
-         * with files at next level */
-        MPI_Barrier(MPI_COMM_WORLD);
-
-        /* stop our timer */
-        double end = MPI_Wtime();
-
-        /* print timing statistics */
-        if (verbose) {
-            uint64_t min, max, sum;
-            MPI_Allreduce(&count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-            double rate = 0.0;
-            double secs = end - start;
-            if (secs > 0.0) {
-                rate = (double)sum / secs;
-            }
-            if (rank == 0) {
-                printf("  level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f\n",
-                       (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
-                      );
-                fflush(stdout);
-            }
+        /* process files and links */
+        if (type == MFU_TYPE_FILE) {
+            /* TODO: skip file if it's not readable */
+            write_file(list, idx);
         }
     }
+
+    /* wait for all procs to finish before we start
+     * with files at next level */
+    MPI_Barrier(MPI_COMM_WORLD);
 
     return rc;
 }
@@ -913,10 +872,7 @@ int main(int narg, char** arg)
     //---------------------------------
     mfu_flist_mkdir(mybflist);
     mfu_flist_mknod(mybflist);
-
-    mfu_flist_array_by_depth(mybflist, &outlevels, &outmin, &outlists);
-    write_files(outlevels, outmin, outlists);
-    mfu_flist_array_free(outlevels, &outlists);
+    write_files(mybflist);
 
     //------------------------------------
     //  reset statistics at this point
