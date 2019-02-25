@@ -175,7 +175,7 @@ static void find_wave_size(int b_size, int opts_memory)
     MFU_LOG(MFU_LOG_INFO, "The total number of blocks in a wave=%" PRId64 ",The number of blocks in this rank=%" PRId64 "Each wave size on this node=%" PRId64, wave_blocks, blocks_pn_pw, wave_size_approx);
 }
 
-void mfu_compress_bz2(int b_size, const char* src_name, ssize_t opts_memory)
+void mfu_compress_bz2_libcircle(const char* src_name, int b_size, ssize_t opts_memory)
 {
     /* set rank global variable */
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);

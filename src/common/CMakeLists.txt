@@ -14,6 +14,8 @@ INSTALL(FILES ${libmfu_install_headers} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 # common library
 LIST(APPEND libmfu_srcs
+  mfu_bz2.c
+  mfu_bz2_static.c
   mfu_compress_bz2_libcircle.c
   mfu_decompress_bz2_libcircle.c
   mfu_flist.c
