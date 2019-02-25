@@ -132,7 +132,12 @@ int main(int argc, char** argv)
 
     /* TODO: also bail if we can't find the file */
     /* print usage if we don't have a file name */
-    if (argc != 2) {
+    if (argc - optind != 1) {
+        usage = 1;
+    }
+
+    if (!opts_compress && !opts_decompress) {
+        MFU_LOG(MFU_LOG_ERR, "Must use either compression or decompression");
         usage = 1;
     }
 
@@ -146,49 +151,88 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    char fname[50];
-    char fname_out[50];
-    strncpy(fname,     argv[1], 50);
-    strncpy(fname_out, argv[1], 50);
+    /* stat the input file name */
+    int numpaths = 0;
+    mfu_param_path* paths = NULL;
+    if (optind < argc) {
+        /* determine number of paths specified by user */
+        numpaths = argc - optind;
 
-    if (opts_compress) {
-        /* If file exists and we are not supposed to overwrite */
-        struct stat st;
-        if ((stat(strcat(argv[1], ".bz2"), &st) == 0) && (! opts_force)) {
-            MFU_LOG(MFU_LOG_ERR, "Output file already exists\n");
-            exit(0);
+        /* allocate space for each path */
+        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
+
+        /* process each path */
+        char** p = &argv[optind];
+        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths);
+        optind += numpaths;
+    }
+
+    /* check that file named on command line exists */
+    if (! paths[0].path_stat_valid) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Input file does not exist: `%s'", paths[0].orig);
         }
-
-        int b_size = (int)opts_blocksize;
-        mfu_compress_bz2(b_size, fname_out, opts_memory);
-
-        /* If we are to remove the input file */
-        if (! opts_keep) {
-            mfu_unlink(fname);
-        }
-    } else if (opts_decompress) {
-        /* remove the trailing .bz2 from the string */
-        size_t len = strlen(fname_out);
-        fname_out[len - 4] = '\0';
-        MFU_LOG(MFU_LOG_INFO, "The file name is:%s %s %d", fname, fname_out, (int)len);
-
-        /* If file exists and we are not supposed to overwrite */
-        struct stat st;
-        if ((stat(fname_out, &st) == 0) && (! opts_force)) {
-            MFU_LOG(MFU_LOG_ERR, "Output file already exisis\n");
-            exit(0);
-        }
-
-        mfu_decompress_bz2(fname, fname_out);
-
-        /* If we are to remove the input file */
-        if (! opts_keep) {
-            mfu_unlink(fname);
-        }
-    } else {
-        MFU_LOG(MFU_LOG_ERR, "Must use either compression or decompression\n");
+        mfu_param_path_free_all(numpaths, paths);
+        mfu_finalize();
+        MPI_Finalize();
         return 1;
     }
+
+    char* source_file = paths[0].path;
+
+    /* generate target file name based on source file and operation */
+    char fname_out[PATH_MAX];
+    if (opts_compress) {
+        /* generate source file namem with .bz2 extension */
+        strncpy(fname_out, source_file, sizeof(fname_out));
+        strcat(fname_out, ".bz2");
+    } else {
+        /* generate file name without .bz2 extension */
+        strncpy(fname_out, source_file, sizeof(fname_out));
+        size_t len = strlen(fname_out);
+        fname_out[len - 4] = '\0';
+    }
+
+    /* delete target file if --force thrown */
+    if (opts_force) {
+        if (rank == 0) {
+            mfu_unlink(fname_out);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+
+    /* If file exists and we are not supposed to overwrite */
+    int access_rc;
+    if (rank == 0) {
+        access_rc = mfu_access(fname_out, F_OK);
+    }
+    MPI_Bcast(&access_rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    if ((access_rc == 0) && (! opts_force)) {
+        MFU_LOG(MFU_LOG_ERR, "Output file already exisis: `%s'", fname_out);
+        mfu_param_path_free_all(numpaths, paths);
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
+
+    /* compress or decompress file */
+    if (opts_compress) {
+        int b_size = (int)opts_blocksize;
+        mfu_compress_bz2(source_file, fname_out, b_size);
+    } else {
+        mfu_decompress_bz2(source_file, fname_out);
+    }
+
+    /* delete source file if --keep to thrown */
+    if (! opts_keep) {
+        if (rank == 0) {
+            mfu_unlink(source_file);
+        }
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+
+    /* free the path parameters */
+    mfu_param_path_free_all(numpaths, paths);
 
     /* shut down MPI */
     mfu_finalize();

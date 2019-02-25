@@ -142,7 +142,7 @@ static void DBz2_decompDequeue(CIRCLE_handle* handle)
     mfu_free(&obuf);
 }
 
-void mfu_decompress_bz2(const char* src_name, const char* fname_op)
+void mfu_decompress_bz2_libcircle(const char* src_name, const char* fname_op)
 {
     /* make a copy of the target file name */
     strncpy(fname,     src_name, 49);
