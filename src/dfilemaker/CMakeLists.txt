@@ -1,1 +1,4 @@
-MFU_ADD_TOOL(dfilemaker)
+BLT_ADD_EXECUTABLE(NAME dfilemaker
+  SOURCES dfilemaker.c
+  DEPENDS_ON mfu)
+INSTALL(TARGETS dfilemaker RUNTIME DESTINATION ${X_BINDIR})

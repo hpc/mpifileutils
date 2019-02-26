@@ -1,1 +1,4 @@
-MFU_ADD_TOOL(dparallel)
+BLT_ADD_EXECUTABLE(NAME dparallel
+  SOURCES dparallel.c
+  DEPENDS_ON mfu)
+INSTALL(TARGETS dparallel RUNTIME DESTINATION ${X_BINDIR})
