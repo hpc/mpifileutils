@@ -31,6 +31,7 @@ static void print_usage(void)
     printf("  -t, --text                - change output option to write in text format\n");
     printf("  -b, --base                - enable base checks and normal output with --output\n");
     printf("  -v, --verbose             - verbose output\n");
+    printf("  -q, --quiet               - quiet output\n");
     printf("  -l, --lite                - only compares file modification time and size\n");
     //printf("  -d, --debug               - run in debug mode\n");
     printf("  -h, --help                - print usage\n");
@@ -156,6 +157,7 @@ struct dcmp_output {
 struct dcmp_options {
     struct list_head outputs;      /* list of outputs */
     int verbose;
+    int quiet;
     int lite;
     int format;			   /* output data format, 0 for text, 1 for raw */
     int base;                      /* whether to do base check */
@@ -166,6 +168,7 @@ struct dcmp_options {
 struct dcmp_options options = {
     .outputs      = LIST_HEAD_INIT(options.outputs),
     .verbose      = 0,
+    .quiet        = 0,
     .lite         = 0,
     .format       = 1,
     .base         = 0,
@@ -1985,7 +1988,7 @@ int main(int argc, char **argv)
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
-    mfu_debug_level = MFU_LOG_INFO;
+    mfu_debug_level = MFU_LOG_VERBOSE;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -1993,6 +1996,7 @@ int main(int argc, char **argv)
         {"text",     0, 0, 't'},
         {"base",     0, 0, 'b'},
         {"verbose",  0, 0, 'v'},
+        {"quiet",    0, 0, 'q'},
         {"lite",     0, 0, 'l'},
         {"debug",    0, 0, 'd'},
         {"help",     0, 0, 'h'},
@@ -2006,7 +2010,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "bo:tvldh",
+            argc, argv, "bo:tvqldh",
             long_options, &option_index
         );
 
@@ -2030,6 +2034,10 @@ int main(int argc, char **argv)
         case 'v':
             options.verbose++;
             mfu_debug_level = MFU_LOG_VERBOSE;
+            break;
+        case 'q':
+            options.quiet++;
+            mfu_debug_level = MFU_LOG_NONE;
             break;
         case 'l':
             options.lite++;

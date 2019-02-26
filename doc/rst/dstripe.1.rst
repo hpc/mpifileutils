@@ -50,6 +50,10 @@ OPTIONS
 
    Run in verbose mode.
 
+.. option:: -q, --quiet
+
+   Run tool silently. No output is printed.
+
 .. option:: -h, --help
 
    Print the command usage, and the list of options available.

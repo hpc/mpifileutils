@@ -35,6 +35,7 @@ static void print_usage(void)
     printf("      --match   <regex>  - match a list of files from command\n");
     printf("  -n, --name             - exclude a list of files from command\n");
     printf("  -v, --verbose          - verbose output\n");
+    printf("  -q, --quiet            - quiet output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -66,6 +67,9 @@ int main(int argc, char** argv)
     int exclude     = 0;
     int name        = 0;
 
+    /* verbose by default */
+    mfu_debug_level = MFU_LOG_VERBOSE;
+
     int option_index = 0;
     static struct option long_options[] = {
         {"input",    1, 0, 'i'},
@@ -77,13 +81,14 @@ int main(int argc, char** argv)
         {"name",     0, 0, 'n'},
         {"help",     0, 0, 'h'},
         {"verbose",  0, 0, 'v'},
+        {"quiet",    0, 0, 'q'},
         {0, 0, 0, 0}
     };
 
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:g:m:nlhv",
+                    argc, argv, "i:g:m:nlhvq",
                     long_options, &option_index
                 );
 
@@ -120,6 +125,9 @@ int main(int argc, char** argv)
                 break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'q':
+                mfu_debug_level = MFU_LOG_NONE;
                 break;
             case '?':
                 usage = 1;

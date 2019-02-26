@@ -52,6 +52,7 @@ static void print_usage(void)
     printf("  -c, --contents        - read and compare file contents rather than compare size and mtime\n");
     printf("  -D, --delete          - delete extraneous files from target\n");
     printf("  -v, --verbose         - verbose output\n");
+    printf("  -q, --quiet           - quiet output\n");
     printf("  -h, --help            - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -155,6 +156,7 @@ struct dsync_options {
     int contents;                  /* check file contents rather than size and mtime */
     int dry_run;                   /* dry run */
     int verbose;
+    int quiet;
     int debug;                     /* check result after get result */
     int delete;                    /* delete extraneous files from destination dirs */
     int need_compare[DCMPF_MAX];   /* fields that need to be compared  */
@@ -165,6 +167,7 @@ struct dsync_options options = {
     .contents     = 0,
     .dry_run      = 0,
     .verbose      = 0,
+    .quiet        = 0,
     .debug        = 0,
     .delete       = 0,
     .need_compare = {0,}
@@ -2154,7 +2157,9 @@ int main(int argc, char **argv)
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
-    mfu_debug_level = MFU_LOG_INFO;
+
+    /* verbose by default */
+    mfu_debug_level = MFU_LOG_VERBOSE;
 
     /* By default, sync option will preserve all attributes. */
     mfu_copy_opts->preserve = true;
@@ -2171,6 +2176,7 @@ int main(int argc, char **argv)
         {"output",        1, 0, 'o'},
         {"debug",         0, 0, 'd'},
         {"verbose",       0, 0, 'v'},
+        {"quiet",         0, 0, 'q'},
         {"help",          0, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -2186,7 +2192,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDo:dvh",
+            argc, argv, "b:cDo:dvqh",
             long_options, &option_index
         );
 
@@ -2219,6 +2225,10 @@ int main(int argc, char **argv)
         case 'v':
             options.verbose++;
             mfu_debug_level = MFU_LOG_VERBOSE;
+            break;
+        case 'q':
+            options.quiet++;
+            mfu_debug_level = MFU_LOG_NONE;
             break;
         case 'h':
         case '?':

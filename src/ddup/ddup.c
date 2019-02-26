@@ -25,6 +25,8 @@ static void print_usage(void)
     printf("Options:\n");
     printf("  -d, --debug <DEBUG>  - set verbosity, one of: fatal,err,warn,info,dbg\n");
     printf("  -h, --help           - print usage\n");
+    printf("  -v, --verbose        - verbose output\n");
+    printf("  -q, --quiet          - quiet output\n");
     printf("\n");
     fflush(stdout);
 }
@@ -170,11 +172,13 @@ int main(int argc, char** argv)
     /* pointer to mfu_walk_opts */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
-    mfu_debug_level = MFU_LOG_INFO;
+    mfu_debug_level = MFU_LOG_VERBOSE;
 
     static struct option long_options[] = {
         {"debug",    0, 0, 'd'},
         {"help",     0, 0, 'h'},
+        {"verbose",  0, 0, 'v'},
+        {"quiet",    0, 0, 'q'},
         {0, 0, 0, 0}
     };
 
@@ -183,7 +187,7 @@ int main(int argc, char** argv)
     int help  = 0;
     int c;
     int option_index = 0;
-    while ((c = getopt_long(argc, argv, "d:h", \
+    while ((c = getopt_long(argc, argv, "d:hvq", \
                             long_options, &option_index)) != -1)
     {
         switch (c) {
@@ -233,6 +237,12 @@ int main(int argc, char** argv)
                               "`info'.", optarg);
             }
         case 'h':
+        case 'v':
+            mfu_debug_level = MFU_LOG_VERBOSE;
+            break;
+        case 'q':
+            mfu_debug_level = MFU_LOG_NONE;
+            break;
         case '?':
             usage = 1;
             help  = 1;

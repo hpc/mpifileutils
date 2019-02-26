@@ -40,6 +40,7 @@ static void print_usage(void)
     printf("  -T, --traceless        - remove child items without changing parent directory mtime\n");
     printf("      --aggressive       - aggressive mode deletes files during the walk. You CANNOT use dryrun with this option. \n");
     printf("  -v, --verbose          - verbose output\n");
+    printf("  -q, --quiet            - quiet output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -73,6 +74,9 @@ int main(int argc, char** argv)
     /* Don't stat on walk by default */
     walk_opts->use_stat = 0;
 
+    /* verbose by default */
+    mfu_debug_level = MFU_LOG_VERBOSE;
+
     int option_index = 0;
     static struct option long_options[] = {
         {"input",       1, 0, 'i'},
@@ -83,6 +87,7 @@ int main(int argc, char** argv)
         {"dryrun",      0, 0, 'd'},
         {"aggressive",  0, 0, 'A'},
         {"verbose",     0, 0, 'v'},
+        {"quiet",       0, 0, 'q'},
         {"traceless",   0, 0, 'T'},
         {"help",        0, 0, 'h'},
         {0, 0, 0, 0}
@@ -91,7 +96,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:lhvT",
+                    argc, argv, "i:lhvqT",
                     long_options, &option_index
                 );
 
@@ -123,6 +128,9 @@ int main(int argc, char** argv)
                 break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'q':
+                mfu_debug_level = MFU_LOG_NONE;
                 break;
             case 'A':
                 walk_opts->remove = 1;

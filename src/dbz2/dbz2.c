@@ -39,6 +39,7 @@ static void print_usage(void)
     printf("  -b, --blocksize <num>  - block size (1-9)\n");
     printf("  -m, --memory <size>    - memory limit in bytes\n");
     printf("  -v, --verbose          - verbose output\n");
+    printf("  -q, --quiet            - quiet output\n");
     printf("      --debug            - debug output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
@@ -66,15 +67,19 @@ int main(int argc, char** argv)
         {"blocksize",  1, 0, 'b'},        
         {"memory",     1, 0, 'm'},
         {"verbose",    0, 0, 'v'},
+        {"quiet",      0, 0, 'q'},
         {"debug",      0, 0, 'y'},
         {"help",       0, 0, 'h'},
         {0, 0, 0, 0}
     };
 
+    /* verbose by default */
+    mfu_debug_level = MFU_LOG_VERBOSE;
+
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "cdkfb:m:vyh",
+                    argc, argv, "cdkfb:m:vqyh",
                     long_options, &option_index
                 );
 
@@ -104,10 +109,13 @@ int main(int argc, char** argv)
                 opts_memory = (ssize_t) bytes;
                 break;            
             case 'v':
-                opts_verbose = 1;
+                mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'q':
+                mfu_debug_level = MFU_LOG_NONE;
                 break;
             case 'y':
-                opts_debug = 1;
+                mfu_debug_level = MFU_LOG_DBG;
                 break;
             case 'h':
                 usage = 1;
@@ -120,15 +128,6 @@ int main(int argc, char** argv)
                     printf("?? getopt returned character code 0%o ??\n", c);
                 }
         }
-    }
-
-    /* Set the log level to control the messages that will be printed */
-    if (opts_debug) {
-        mfu_debug_level = MFU_LOG_DBG;
-    } else if (opts_verbose) {
-        mfu_debug_level = MFU_LOG_INFO;
-    } else {
-        mfu_debug_level = MFU_LOG_ERR;
     }
 
     /* TODO: also bail if we can't find the file */
