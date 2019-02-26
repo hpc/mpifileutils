@@ -56,6 +56,10 @@ OPTIONS
 
    Run in verbose mode.
 
+.. option:: -q, --quiet
+
+   Run tool silently. No output is printed.
+
 .. option:: -h, --help
 
    Print usage.

@@ -70,6 +70,7 @@ void print_usage(void)
     printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
     printf("  -S, --sparse        - create sparse files when possible\n");
     printf("  -v, --verbose       - verbose output\n");
+    printf("  -q, --quiet         - quiet output\n");
     printf("  -h, --help          - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -97,7 +98,9 @@ int main(int argc, char** argv)
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
-    mfu_debug_level = MFU_LOG_INFO;
+
+    /* verbose by default */
+    mfu_debug_level = MFU_LOG_VERBOSE;
 
     /* By default, don't have iput file. */
     char* inputname = NULL;
@@ -111,6 +114,7 @@ int main(int argc, char** argv)
         {"synchronous"          , no_argument      , 0, 's'},
         {"sparse"               , no_argument      , 0, 'S'},
         {"verbose"              , no_argument      , 0, 'v'},
+        {"quiet"                , no_argument      , 0, 'q'},
         {"help"                 , no_argument      , 0, 'h'},
         {0                      , 0                , 0, 0  }
     };
@@ -119,7 +123,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while(1) {
         int c = getopt_long(
-                    argc, argv, "d:g:hi:pusSv",
+                    argc, argv, "d:g:hi:pusSvq",
                     long_options, &option_index
                 );
 
@@ -206,6 +210,9 @@ int main(int argc, char** argv)
                 break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'q':
+                mfu_debug_level = MFU_LOG_NONE;
                 break;
             case 'h':
                 usage = 1;

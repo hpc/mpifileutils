@@ -64,6 +64,7 @@ static void print_usage(void)
     printf("  -i, --input <file>                      - read list from file\n");
     printf("  -o, --output <file>                     - write processed list to file\n");
     printf("  -v, --verbose                           - verbose output\n");
+    printf("  -q, --quiet                             - quiet output\n");
     printf("  -h, --help                              - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -183,6 +184,7 @@ int main (int argc, char** argv)
         {"input",     1, 0, 'i'},
         {"output",    1, 0, 'o'},
         {"verbose",   0, 0, 'v'},
+        {"quiet",     0, 0, 'q'},
         {"help",      0, 0, 'h'},
 
         { "maxdepth", required_argument, NULL, 'd' },
@@ -222,7 +224,7 @@ int main (int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:t:",
+                    argc, argv, "i:o:t:vqh",
                     long_options, NULL
                 );
 
@@ -237,6 +239,10 @@ int main (int argc, char** argv)
         mfu_pred_times_rel* tr;
         regex_t* r;
         int ret;
+
+        /* verbose by default */
+        mfu_debug_level = MFU_LOG_VERBOSE;
+
     	switch (c) {
     	case 'e':
             space = 1024 * 1024;
@@ -389,6 +395,9 @@ int main (int argc, char** argv)
             break;
         case 'v':
             mfu_debug_level = MFU_LOG_VERBOSE;
+            break;
+        case 'q':
+            mfu_debug_level = MFU_LOG_NONE;
             break;
         case 'h':
             usage = 1;

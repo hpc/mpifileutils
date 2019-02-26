@@ -268,6 +268,8 @@ void DCOPY_print_usage(void)
     printf("  -d, --debug <level> - specify debug verbosity level (default info)\n");
     printf("  -f, --force         - delete destination file if error on open\n");
     printf("  -p, --preserve      - preserve permissions, ownership, timestamps, extended attributes\n");
+    printf("  -p, --verbose       - verbose output\n");
+    printf("  -p, --quiet         - quiet output\n");
     printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
     printf("  -k, --chunksize     - specify chunksize in MB unit (default 1MB)\n");
     printf("  -b, --blocksize     - specify blocksize in MB unit (default 1MB)\n");
@@ -319,7 +321,9 @@ int main(int argc, \
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
-    mfu_debug_level = MFU_LOG_INFO;
+
+    /* verbose by default */
+    mfu_debug_level = MFU_LOG_VERBOSE;
 
     /* By default, don't unlink destination files if an open() fails. */
     DCOPY_user_opts.force = false;
@@ -341,6 +345,8 @@ int main(int argc, \
         {"help"                 , no_argument      , 0, 'h'},
         {"chunksize"            , required_argument, 0, 'k'},
         {"preserve"             , no_argument      , 0, 'p'},
+        {"verbose"              , no_argument      , 0, 'v'},
+        {"quiet"                , no_argument      , 0, 'q'},
         {"unreliable-filesystem", no_argument      , 0, 'u'},
         {"synchronous"          , no_argument      , 0, 's'},
         {0                      , 0                , 0, 0  }
@@ -348,7 +354,7 @@ int main(int argc, \
 
     /* Parse options */
     unsigned long long bytes;
-    while((c = getopt_long(argc, argv, "cb:d:fhpusvk:", \
+    while((c = getopt_long(argc, argv, "cb:d:fhpusvqk:", \
                            long_options, &option_index)) != -1) {
         switch(c) {
 
@@ -443,6 +449,14 @@ int main(int argc, \
                     MFU_LOG(MFU_LOG_INFO, "Preserving file attributes.");
                 }
 
+                break;
+
+            case 'v':
+                mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+
+            case 'q':
+                mfu_debug_level = MFU_LOG_NONE;
                 break;
 
             case 'u':

@@ -17,6 +17,7 @@ static void print_usage(void)
     printf("  -p, --preserve     - preserve link modification timestamps\n");
     printf("  -r, --relative     - change targets from absolute to relative paths\n");
     printf("  -v, --verbose      - verbose output\n");
+    printf("  -q, --quiet        - quiet output\n");
     printf("  -h, --help         - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -45,8 +46,8 @@ int main (int argc, char* argv[])
     /* whether path to target should be relative from symlink */
     int relative_targets = 0;
 
-    /* set debug level to MFU_LOG_INFO since it defaults to ERROR */
-    mfu_debug_level = MFU_LOG_INFO;
+    /* set debug level to verbose by default */
+    mfu_debug_level = MFU_LOG_VERBOSE;
 
     /* define allowed command line optinos */
     int option_index = 0;
@@ -55,6 +56,7 @@ int main (int argc, char* argv[])
         {"preserve",     0, 0, 'p'},
         {"relative",     0, 0, 'r'},
         {"verbose",      0, 0, 'v'},
+        {"quiet",        0, 0, 'q'},
         {"help",         0, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -63,7 +65,7 @@ int main (int argc, char* argv[])
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:prvh",
+                    argc, argv, "i:prvqh",
                     long_options, &option_index
                 );
 
@@ -83,6 +85,9 @@ int main (int argc, char* argv[])
                 break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'q':
+                mfu_debug_level = MFU_LOG_NONE;
                 break;
             case 'h':
                 usage = 1;

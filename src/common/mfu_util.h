@@ -61,6 +61,7 @@ extern "C" {
 #endif
 
 typedef enum {
+    MFU_LOG_NONE    = 0,
     MFU_LOG_FATAL   = 1,
     MFU_LOG_ERR     = 2,
     MFU_LOG_WARN    = 3,

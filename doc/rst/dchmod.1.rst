@@ -62,6 +62,10 @@ OPTIONS
    directory tree, and the number of files the command operated on, and
    the files/sec rate for each of those.
 
+.. option:: -q, --quiet
+
+   Run tool silently. No output is printed.
+
 .. option:: -h, --help
 
    Print the command usage, and the list of options available.

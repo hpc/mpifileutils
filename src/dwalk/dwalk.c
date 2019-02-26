@@ -244,6 +244,7 @@ static void print_usage(void)
     printf("  -d, --distribution <field>:<separators> - print distribution by field\n");
     printf("  -p, --print                             - print files to screen\n");
     printf("  -v, --verbose                           - verbose output\n");
+    printf("  -q, --quiet                             - quiet output\n");
     printf("  -h, --help                              - print usage\n");
     printf("\n");
     printf("Fields: name,user,group,uid,gid,atime,mtime,ctime,size\n");
@@ -288,8 +289,8 @@ int main(int argc, char** argv)
     int text                 = 0;
     struct distribute_option option;
 
-    /* set debug level to MFU_LOG_INFO since it defaults to ERROR */
-    mfu_debug_level = MFU_LOG_INFO;
+    /* verbose by default */
+    mfu_debug_level = MFU_LOG_VERBOSE;
 
     int option_index = 0;
     static struct option long_options[] = {
@@ -300,6 +301,7 @@ int main(int argc, char** argv)
         {"distribution", 1, 0, 'd'},
         {"print",        0, 0, 'p'},
         {"verbose",      0, 0, 'v'},
+        {"quiet",        0, 0, 'q'},
         {"help",         0, 0, 'h'},
         {"text",         0, 0, 't'},
         {0, 0, 0, 0}
@@ -308,7 +310,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:ls:d:pvht",
+                    argc, argv, "i:o:ls:d:pvqht",
                     long_options, &option_index
                 );
 
@@ -338,6 +340,9 @@ int main(int argc, char** argv)
                 break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'q':
+                mfu_debug_level = 0;
                 break;
             case 't':
                 text = 1;

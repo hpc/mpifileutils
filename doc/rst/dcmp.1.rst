@@ -42,6 +42,10 @@ OPTIONS
    command. Files walked, started, completed, seconds, files, bytes
    read, byte rate, and file rate.
 
+.. option:: -q, --quiet
+
+   Run tool silently. No output is printed.
+
 .. option:: -l, --lite
 
   lite mode does a comparison of file modification time and size. If

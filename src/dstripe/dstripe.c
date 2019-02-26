@@ -26,6 +26,7 @@ static void print_usage(void)
     printf("  -m, --minsize <SIZE>   - minimum file size (default 0MB)\n");
     printf("  -r, --report           - display file size and stripe info\n");
     printf("  -v, --verbose          - verbose output\n");
+    printf("  -q, --quiet            - quiet output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -316,10 +317,12 @@ int main(int argc, char* argv[])
     int option_index = 0;
     int usage = 0;
     int report = 0;
-    int verbose = 0;
     unsigned int numpaths = 0;
     mfu_param_path* paths = NULL;
     unsigned long long bytes;
+
+    /* verbose by default */
+    mfu_debug_level = MFU_LOG_VERBOSE;
 
     /* default to 1MB stripe size, stripe across all OSTs, and all files are candidates */
     int stripes = -1;
@@ -331,12 +334,14 @@ int main(int argc, char* argv[])
         {"size",     1, 0, 's'},
         {"minsize",  1, 0, 'm'},
         {"help",     0, 0, 'h'},
+        {"verbose",  0, 0, 'v'},
+        {"quiet",    0, 0, 'q'},
         {"report",   0, 0, 'r'},
         {0, 0, 0, 0}
     };
 
     while (1) {
-        int c = getopt_long(argc, argv, "c:s:m:rhv",
+        int c = getopt_long(argc, argv, "c:s:m:rhvq",
                     long_options, &option_index);
 
         if (c == -1) {
@@ -375,8 +380,10 @@ int main(int argc, char* argv[])
 		report = 1;
                 break;
             case 'v':
-                /* verbose output */
-                verbose = 1;
+                mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'q':
+                mfu_debug_level = MFU_LOG_NONE;
                 break;
             case 'h':
                 /* display usage */

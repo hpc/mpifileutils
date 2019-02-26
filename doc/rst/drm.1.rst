@@ -72,6 +72,10 @@ OPTIONS
 
    Run in verbose mode.
 
+.. option:: -q, --quiet
+
+   Run tool silently. No output is printed.
+
 .. option:: -h, --help
 
    Print a brief message listing the :manpage:`drm(1)` options and usage.
