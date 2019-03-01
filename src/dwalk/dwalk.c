@@ -18,6 +18,7 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <string.h>
+#include <math.h>
 
 #include "libcircle.h"
 #include "dtcmp.h"
@@ -39,18 +40,69 @@ struct distribute_option {
     uint64_t separators[MAX_DISTRIBUTE_SEPARATORS];
 };
 
-static int print_flist_distribution(struct distribute_option *option, mfu_flist* pflist, int rank)
+static void create_default_separators(struct distribute_option *option,
+                                      mfu_flist* flist,
+                                      uint64_t* size,
+                                      int* separators,
+                                      uint64_t* global_max_file_size)
+{
+    /* get local max file size for Allreduce */
+    uint64_t local_max_file_size = 0;
+    for (int i = 0; i < *size; i++) {
+        uint64_t file_size = mfu_flist_file_get_size(*flist, i);
+        if (file_size > local_max_file_size) {
+            local_max_file_size = file_size;
+        }
+    }
+
+    /* get the max file size across all ranks */
+    MPI_Allreduce(&local_max_file_size, global_max_file_size, 1,
+                  MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+
+    /* print and convert max file size to appropriate units */
+    double max_size_tmp;
+    const char* max_size_units;
+    mfu_format_bytes(*global_max_file_size, &max_size_tmp, &max_size_units);
+    printf("Max File Size: %.3lf %s\n", max_size_tmp, max_size_units);
+
+    /* round next_pow_2 to next multiple of 10 */
+    uint64_t max_magnitude_bin = (ceil(log2(*global_max_file_size) / 10 )) * 10;
+
+    /* get bin ranges based on max file size */
+    option->separators[0] = 1;
+
+    /* plus one is for zero count bin */
+    *separators = max_magnitude_bin / 10;
+    int power = 10;
+    for (int i = 1; power <= max_magnitude_bin; i++) {
+        option->separators[i] = pow(2, power);
+        power+=10;
+    }
+}
+
+static int print_flist_distribution(int file_histogram,
+                                    struct distribute_option *option,
+                                    mfu_flist* pflist, int rank)
 {
     /* file list to use */
     mfu_flist flist = *pflist;
 
-    /* get local size for each rank */
+    /* get local size for each rank, and max file sizes */
     uint64_t size = mfu_flist_size(flist);
+    uint64_t global_max_file_size;
+
+    int separators = 0;
+    if (file_histogram) {
+        /* create default separators */
+        create_default_separators(option, &flist, &size, &separators,
+                                  &global_max_file_size);
+    } else {
+        separators = option->separator_number;
+    }
 
     /* allocate a count for each bin, initialize the bin counts to 0
      * it is separator + 1 because the last bin is the last separator
      * to the DISTRIBUTE_MAX */
-    int separators = option->separator_number;
     uint64_t* dist = (uint64_t*) MFU_MALLOC((separators + 1) * sizeof(uint64_t));
 
     /* initialize the bin counts to 0 */
@@ -94,24 +146,39 @@ static int print_flist_distribution(struct distribute_option *option, mfu_flist*
     if (rank == 0) {
          /* number of files in a bin */
          uint64_t number;
-         printf("Range\tNumber\n");
-         for (int i = 0; i <= option->separator_number; i++) {
-             printf("[");
+         double size_tmp;
+         const char* size_units;
+         printf("%-27s %s\n", "Range", "Number");
+         for (int i = 0; i <= separators; i++) {
+             printf("%s", "[ ");
              if (i == 0) {
-                 printf("0");
+                 printf("%7.3lf %2s", 0.000, "B");
              } else {
-                 printf("%"PRIu64, option->separators[i - 1] + 1);
+                 mfu_format_bytes((uint64_t)option->separators[i - 1],
+                                  &size_tmp, &size_units);
+                 printf("%7.3lf %2s", size_tmp, size_units);
              }
 
-             printf("~");
+             printf("%s", " - ");
 
-             if (i == option->separator_number) {
-                 number = disttotal[i];
-                 printf("MAX]\t%"PRIu64"\n", number);
+             if (file_histogram) {
+                mfu_format_bytes((uint64_t)option->separators[i],
+                                 &size_tmp, &size_units);
+                number = disttotal[i];
+                mfu_format_bytes((uint64_t)option->separators[i],
+                                 &size_tmp, &size_units);
+                printf("%7.3lf %2s ) %"PRIu64"\n", size_tmp,
+                       size_units, number);
              } else {
-                 number = disttotal[i];
-                 printf("%"PRIu64"]\t%"PRIu64"\n",
-                 option->separators[i], number);
+                if (i == separators) {
+                    number = disttotal[i];
+                    printf("%10s ) %"PRIu64"\n", "MAX", number);
+                } else {
+                    number = disttotal[i];
+                    mfu_format_bytes((uint64_t)option->separators[i],
+                              &size_tmp, &size_units);
+                    printf("%7.3lf %2s ) %"PRIu64"\n", size_tmp, size_units, number);
+                }
              }
          }
     }
@@ -123,10 +190,7 @@ static int print_flist_distribution(struct distribute_option *option, mfu_flist*
     return 0;
 }
 
-/*
- * Search the right position to insert the separator
- * If the separator exists already, return failure
- * Otherwise, locate the right position, and move the array forward to
+/* * Search the right position to insert the separator * If the separator exists already, return failure * Otherwise, locate the right position, and move the array forward to
  * save the separator.
  */
 static int distribute_separator_add(struct distribute_option *option, uint64_t separator)
@@ -237,16 +301,16 @@ static void print_usage(void)
     printf("Usage: dwalk [options] <path> ...\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -i, --input <file>    - read list from file\n");
-    printf("  -o, --output <file>   - write processed list to file in binary format\n");
-    printf("  -t, --text            - use with -o; write processed list to file in ascii format\n");
-    printf("  -l, --lite            - walk file system without stat\n");
-    printf("  -s, --sort <fields>   - sort output by comma-delimited fields\n");
-    printf("  -d, --distribution <field>:<separators>\n                        - print distribution by field\n");
-    printf("  -p, --print           - print files to screen\n");
-    printf("  -v, --verbose         - verbose output\n");
-    printf("  -q, --quiet           - quiet output\n");
-    printf("  -h, --help            - print usage\n");
+    printf("  -i, --input <file>                      - read list from file\n");
+    printf("  -o, --output <file>                     - write processed list to file\n");
+    printf("  -l, --lite                              - walk file system without stat\n");
+    printf("  -s, --sort <fields>                     - sort output by comma-delimited fields\n");
+    printf("  -f, --file_histogram                    - print default size distribution of items\n");
+    printf("  -d, --distribution <field>:<separators> - print distribution by field\n");
+    printf("  -p, --print                             - print files to screen\n");
+    printf("  -v, --verbose                           - verbose output\n");
+    printf("  -q, --quiet                             - quiet output\n");
+    printf("  -h, --help                              - print usage\n");
     printf("\n");
     printf("Fields: name,user,group,uid,gid,atime,mtime,ctime,size\n");
     printf("\n");
@@ -281,13 +345,16 @@ int main(int argc, char** argv)
      *   - allow user to sort by different fields
      *   - allow user to group output (sum all bytes, group by user) */
 
-    char* inputname  = NULL;
-    char* outputname = NULL;
-    char* sortfields = NULL;
-    char* distribution = NULL;
+    char* inputname      = NULL;
+    char* outputname     = NULL;
+    char* sortfields     = NULL;
+    char* distribution   = NULL;
+
+    int file_histogram       = 0;
     int walk                 = 0;
     int print                = 0;
     int text                 = 0;
+
     struct distribute_option option;
 
     /* verbose by default */
@@ -295,23 +362,23 @@ int main(int argc, char** argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"input",        1, 0, 'i'},
-        {"output",       1, 0, 'o'},
-        {"lite",         0, 0, 'l'},
-        {"sort",         1, 0, 's'},
-        {"distribution", 1, 0, 'd'},
-        {"print",        0, 0, 'p'},
-        {"verbose",      0, 0, 'v'},
-        {"quiet",        0, 0, 'q'},
-        {"help",         0, 0, 'h'},
-        {"text",         0, 0, 't'},
+        {"input",          1, 0, 'i'},
+        {"output",         1, 0, 'o'},
+        {"lite",           0, 0, 'l'},
+        {"sort",           1, 0, 's'},
+        {"distribution",   1, 0, 'd'},
+        {"file_histogram", 0, 0, 'f'},
+        {"print",          0, 0, 'p'},
+        {"verbose",        0, 0, 'v'},
+        {"help",           0, 0, 'h'},
+        {"text",           0, 0, 't'},
         {0, 0, 0, 0}
     };
 
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:ls:d:pvqht",
+                    argc, argv, "i:o:ls:d:pvhtf",
                     long_options, &option_index
                 );
 
@@ -335,6 +402,9 @@ int main(int argc, char** argv)
                 break;
             case 'd':
                 distribution = MFU_STRDUP(optarg);
+                break;
+            case 'f':
+                file_histogram = 1;
                 break;
             case 'p':
                 print = 1;
@@ -513,8 +583,8 @@ int main(int argc, char** argv)
     mfu_flist_print_summary(flist);
 
     /* print distribution if user specified this option */
-    if (distribution != NULL) {
-        print_flist_distribution(&option, &flist, rank);
+    if (distribution != NULL || file_histogram) {
+        print_flist_distribution(file_histogram, &option, &flist, rank);
     }
 
     /* write data to cache file */

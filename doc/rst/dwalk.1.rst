@@ -54,6 +54,18 @@ OPTIONS
    bytes, between 1-80 bytes, between 81-99 bytes, and 100 bytes or
    greater.
 
+.. option:: -f, --file-histogram
+
+   Creates a file histogram without requiring the user to provide
+   the bin sizes. The bins are created dynamically based on the
+   max file size. The first bin is always for only zero byte
+   files, and the rest go up until the max file size is included
+   in the very last bin. It always goes up by orders of magnitude
+   in powers of two. So, an example of bin separators would be:
+   0, 2^10, 2^20, 2^30. Assuming the max file size was somewhere
+   within the 2^20 - 2^30 range. The histogram also includes both
+   files and directories.
+
 .. option:: -p, --print
 
    Print files to the screen.
