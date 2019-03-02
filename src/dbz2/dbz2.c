@@ -183,14 +183,14 @@ int main(int argc, char** argv)
     /* generate target file name based on source file and operation */
     char fname_out[PATH_MAX];
     if (opts_compress) {
-        /* generate source file namem with .bz2 extension */
+        /* generate source file namem with .dbz2 extension */
         strncpy(fname_out, source_file, sizeof(fname_out));
-        strcat(fname_out, ".bz2");
+        strcat(fname_out, ".dbz2");
     } else {
-        /* generate file name without .bz2 extension */
+        /* generate file name without .dbz2 extension */
         strncpy(fname_out, source_file, sizeof(fname_out));
         size_t len = strlen(fname_out);
-        fname_out[len - 4] = '\0';
+        fname_out[len - 5] = '\0';
     }
 
     /* delete target file if --force thrown */
@@ -216,15 +216,16 @@ int main(int argc, char** argv)
     }
 
     /* compress or decompress file */
+    int rc;
     if (opts_compress) {
         int b_size = (int)opts_blocksize;
-        mfu_compress_bz2(source_file, fname_out, b_size);
+        rc = mfu_compress_bz2(source_file, fname_out, b_size);
     } else {
-        mfu_decompress_bz2(source_file, fname_out);
+        rc = mfu_decompress_bz2(source_file, fname_out);
     }
 
     /* delete source file if --keep to thrown */
-    if (! opts_keep) {
+    if (rc == MFU_SUCCESS && !opts_keep) {
         if (rank == 0) {
             mfu_unlink(source_file);
         }
