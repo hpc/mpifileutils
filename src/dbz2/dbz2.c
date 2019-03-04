@@ -224,10 +224,20 @@ int main(int argc, char** argv)
         rc = mfu_decompress_bz2(source_file, fname_out);
     }
 
-    /* delete source file if --keep to thrown */
-    if (rc == MFU_SUCCESS && !opts_keep) {
+    /* check whether we created target file */
+    if (rc == MFU_SUCCESS) {
+        /* created target file successfully,
+         * now delete source file if --keep to thrown */
+        if (! opts_keep) {
+            if (rank == 0) {
+                mfu_unlink(source_file);
+            }
+            MPI_Barrier(MPI_COMM_WORLD);
+        }
+    } else {
+        /* failed to generate target file, so delete it */
         if (rank == 0) {
-            mfu_unlink(source_file);
+            mfu_unlink(fname_out);
         }
         MPI_Barrier(MPI_COMM_WORLD);
     }
