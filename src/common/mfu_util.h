@@ -249,6 +249,10 @@ int mfu_stripe_get(const char *path, uint64_t *stripe_size, uint64_t *stripe_cou
 /* create a striped lustre file at the path provided with the specified stripe size and count */
 void mfu_stripe_set(const char *path, uint64_t stripe_size, int stripe_count);
 
+/* executes a logical AND operation on flag on all procs on comm,
+ * returns 1 if all true and 0 otherwise */
+int mfu_alltrue(int flag, MPI_Comm comm);
+
 #endif /* MFU_UTIL_H */
 
 /* enable C++ codes to include this header directly */
