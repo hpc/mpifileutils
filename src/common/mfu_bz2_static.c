@@ -27,14 +27,6 @@
 #define O_BINARY 0
 #endif
 
-int mfu_alltrue(int flag, MPI_Comm comm)
-{
-    /* check that all processes wrote successfully */
-    int alltrue;
-    MPI_Allreduce(&flag, &alltrue, 1, MPI_INT, MPI_LAND, comm);
-    return alltrue;
-}
-
 int mfu_create_fully_striped(const char* name)
 {
     /* get our rank */
@@ -483,7 +475,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
         /* seek to read footer from end of file */
         size_t footer_size = 6 * 8;
         off_t lseek_rc = mfu_lseek(src_name, fd, -footer_size, SEEK_END);
-        if (lseek_rc = (off_t)-1) {
+        if (lseek_rc == (off_t)-1) {
             /* failed to seek to position to read footer */
             footer_flag = 0;
             MFU_LOG(MFU_LOG_ERR, "Failed to seek to read footer: %s errno=%d (%s)",

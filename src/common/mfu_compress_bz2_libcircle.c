@@ -171,36 +171,39 @@ static void find_wave_size(int b_size, int opts_memory)
 
     /* find minimum across all processes */
     MPI_Allreduce(&blocks_pn_pw, &wave_blocks, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
-
-    MFU_LOG(MFU_LOG_INFO, "The total number of blocks in a wave=%" PRId64 ",The number of blocks in this rank=%" PRId64 "Each wave size on this node=%" PRId64, wave_blocks, blocks_pn_pw, wave_size_approx);
 }
 
-void mfu_compress_bz2_libcircle(const char* src_name, int b_size, ssize_t opts_memory)
+int mfu_compress_bz2_libcircle(const char* src_name, const char* dst_name, int b_size, ssize_t opts_memory)
 {
+    int rc = MFU_SUCCESS;
+
     /* set rank global variable */
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    /* define name of output file (source file + .bz2 extension) */
-    strncpy(fname, src_name, 49);
-    strncpy(fname_out, src_name, 49);
-    strcat(fname_out, ".bz2");
-
-    /* get size of the communicator */
-    int size;
+    /* get rank and size of the communicator */
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    /* read stat info for source file */
+    /* read stat info for source file on rank 0 */
     struct stat st;
-    stat(fname, &st);
+    int64_t filesize = 0;
+    if (rank == 0) {
+        /* TODO: check that stat succeeds */
+        mfu_lstat(src_name, &st);
+        filesize = (int64_t) st.st_size;
+    }
+
+    /* broadcast filesize to all ranks */
+    MPI_Bcast(&filesize, 1, MPI_INT64_T, 0, MPI_COMM_WORLD);
 
     /* compute block size in bytes */
     block_size = (int64_t)b_size * 100 * 1024;
 
     /* compute total number of blocks in the file */
-    if (st.st_size % block_size == 0) {
-        tot_blocks = (int64_t)(st.st_size) / block_size;
-    } else {
-        tot_blocks = (int64_t)(st.st_size) / block_size + 1;
+    int64_t tot_blocks = filesize / block_size;
+    if (tot_blocks * block_size < filesize) {
+        tot_blocks++;
     }
 
     /* compute number of blocks we can handle in a wave
@@ -208,36 +211,22 @@ void mfu_compress_bz2_libcircle(const char* src_name, int b_size, ssize_t opts_m
     find_wave_size(b_size, opts_memory);
 
     /* open the source file for readhing */
-    MFU_LOG(MFU_LOG_INFO, "The file name is:%s\n", fname);
-    fd = mfu_open(fname, O_RDONLY | O_BINARY | O_LARGEFILE);
+    fd = mfu_open(src_name, O_RDONLY | O_BINARY | O_LARGEFILE);
     if (fd < 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading rank %d", rank);
+        MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading: %s errno=%d (%s)",
+            src_name, errno, strerror(errno));
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
-
-    /* stat source file again? */
-    stat(fname, &st);
 
     /* The file for output is opened and options set */
     if (rank == 0) {
         /* open file */
-        fd_out = mfu_open(fname_out, O_CREAT | O_RDWR | O_TRUNC | O_BINARY | O_LARGEFILE, FILE_MODE);
+        fd_out = mfu_open(dst_name, O_CREAT | O_RDWR | O_TRUNC | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
+            MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
+                dst_name, errno, strerror(errno));
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
-
-        /* TODO: are these meant to be on the output file instead? */
-
-        /* set mode and group */
-        chmod(fname, st.st_mode);
-        chown(fname, st.st_uid, st.st_gid);
-
-        /* set timestamps, mode, and group */
-        struct utimbuf uTimBuf;
-        uTimBuf.actime  = st.st_atime;
-        uTimBuf.modtime = st.st_mtime;
-        utime(fname, &uTimBuf);
     }
 
     /* wait for rank 0 to finish operations */
@@ -245,9 +234,10 @@ void mfu_compress_bz2_libcircle(const char* src_name, int b_size, ssize_t opts_m
 
     /* have rest of ranks open the file */
     if (rank != 0) {
-        fd_out = mfu_open(fname_out, O_RDWR | O_BINARY | O_LARGEFILE, FILE_MODE);
+        fd_out = mfu_open(dst_name, O_RDWR | O_BINARY | O_LARGEFILE, FILE_MODE);
         if (fd_out < 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing rank %d", rank);
+            MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
+                dst_name, errno, strerror(errno));
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
@@ -257,24 +247,14 @@ void mfu_compress_bz2_libcircle(const char* src_name, int b_size, ssize_t opts_m
     blocks_done      = 0;
     my_tot_blocks    = 0;
 
-    /* BZ2 requires block size + 1% plus 600 bytes */
-    int64_t comp_buff_size = 1.01 * block_size + 600;
-
-    /* Set the number of blocks in the file */
-    if (st.st_size % block_size == 0) {
-        tot_blocks = (int64_t)(st.st_size) / block_size;
-    } else {
-        tot_blocks = (int64_t)(st.st_size) / block_size + 1;
-    }
-
-    MFU_LOG(MFU_LOG_INFO, "size of file=%lu\n", (unsigned long)st.st_size);
+    /* given original data of size B, BZ2 compressed data can take up to B * 1.01 + 600 bytes,
+     * we use 2% to be on safe side */
+    int64_t comp_buff_size = (int64_t) (1.02 * (double)block_size + 600.0);
 
     /* compute number of waves to finish file */
-    int64_t num_waves;
-    if (tot_blocks % wave_blocks == 0) {
-        num_waves = tot_blocks / wave_blocks;
-    } else {
-        num_waves = tot_blocks / wave_blocks + 1;
+    int64_t num_waves = tot_blocks / wave_blocks;
+    if (num_waves * wave_blocks < tot_blocks) {
+        num_waves += 1;
     }
 
     /* stores metadata of all blocks processed by this process */
@@ -408,6 +388,21 @@ void mfu_compress_bz2_libcircle(const char* src_name, int b_size, ssize_t opts_m
     mfu_free(&my_blocks);
 
     /* close source and target files */
-    mfu_close(fname, fd);
-    mfu_close(fname_out, fd_out);
+    mfu_fsync(dst_name, fd_out);
+    mfu_close(dst_name, fd_out);
+    mfu_close(src_name, fd);
+
+    if (rank == 0) {
+        /* set mode and group */
+        mfu_chmod(dst_name, st.st_mode);
+        mfu_lchown(dst_name, st.st_uid, st.st_gid);
+
+        /* set timestamps, mode, and group */
+        struct utimbuf uTimBuf;
+        uTimBuf.actime  = st.st_atime;
+        uTimBuf.modtime = st.st_mtime;
+        utime(dst_name, &uTimBuf);
+    }
+
+    return rc;
 }

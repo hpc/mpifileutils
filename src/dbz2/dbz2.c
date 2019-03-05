@@ -244,6 +244,7 @@ int main(int argc, char** argv)
 
     /* free the path parameters */
     mfu_param_path_free_all(numpaths, paths);
+    mfu_free(&paths);
 
     /* shut down MPI */
     mfu_finalize();
