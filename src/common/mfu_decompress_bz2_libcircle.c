@@ -22,10 +22,7 @@
 #include "mfu.h"
 #include "mfu_bz2.h"
 
-#define FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
-#ifndef O_BINARY
-#define O_BINARY 0
-#endif
+#define FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)
 
 int64_t block_meta;
 int64_t block_total;
@@ -185,7 +182,7 @@ int mfu_decompress_bz2_libcircle(const char* src, const char* dst)
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     /* open compressed file for reading */
-    fd = mfu_open(src_name, O_RDONLY | O_BINARY | O_LARGEFILE);
+    fd = mfu_open(src_name, O_RDONLY);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading: %s errno=%d (%s)",
             src_name, errno, strerror(errno));
@@ -289,7 +286,7 @@ int mfu_decompress_bz2_libcircle(const char* src, const char* dst)
     }
 
     /* open destination file for writing */
-    fd_out = mfu_create_fully_striped(dst_name);
+    fd_out = mfu_create_fully_striped(dst_name, FILE_MODE);
     if (fd_out < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
             dst_name, errno, strerror(errno));
