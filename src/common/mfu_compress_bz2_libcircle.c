@@ -40,13 +40,14 @@ char** a;
 int64_t my_prev_blocks = 0;
 int64_t blocks_pn_pw;
 int64_t block_size;
+int64_t comp_buff_size;
 int64_t blocks_done = 0;
 int64_t wave_blocks;
 int64_t tot_blocks;
 int bc_size;
-int rank;
-char fname[50];
-char fname_out[50];
+int64_t filesize;
+char* src_name;
+char* dst_name;
 int fd;
 int fd_out;
 int64_t my_tot_blocks = 0;
@@ -71,6 +72,8 @@ static void DBz2_Enqueue(CIRCLE_handle* handle)
         handle->enqueue(newop);
 
         MFU_LOG(MFU_LOG_INFO, "Blocks queued=%" PRId64 "\n", block_no);
+
+        mfu_free(&newop);
     }
 }
 
@@ -80,6 +83,9 @@ static void DBz2_Dequeue(CIRCLE_handle* handle)
     /* used to check whether memory is full because the number of blocks
     to be processed in a wave have been completed for this wave */
 
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
     /* dequeue an item */
     char newop[10];
     handle->dequeue(newop);
@@ -88,22 +94,48 @@ static void DBz2_Dequeue(CIRCLE_handle* handle)
     int64_t block_no;
     sscanf(newop, "%" PRId64, &block_no);
 
+    /* compute starting offset in source file to read from */
+    off_t pos = block_no * block_size;
+
     /* seek to offset in source file for this block */
-    lseek64(fd, block_no * block_size, SEEK_SET);
+    off_t lseek_rc = mfu_lseek(src_name, fd, pos, SEEK_SET);
+    if (lseek_rc == (off_t)-1) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to seek in source file: %s offset=%lx errno=%d (%s)",
+            src_name, pos, errno, strerror(errno));
+        //rc = MFU_FAILURE;
+        //continue;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    /* compute number of bytes to read from input file */
+    size_t nread = (size_t) block_size;
+    size_t remainder = (size_t) (filesize - pos);
+    if (remainder < nread) {
+        nread = remainder;
+    }
+
+    /* allocate a buffer to hold data from file */
+    char* ibuf = MFU_MALLOC(nread);
 
     /* read block from input file */
-    char* ibuf = (char*)MFU_MALLOC(sizeof(char) * block_size); /*Input buffer*/
-    ssize_t inSize = mfu_read(fname, fd, (char*)ibuf, (size_t)block_size);
+    ssize_t inSize = mfu_read(src_name, fd, ibuf, nread);
+    if (inSize != nread) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to read from source file: %s offset=%lx got=%d expected=%d errno=%d (%s)",
+            src_name, pos, inSize, nread, errno, strerror(errno));
+        //rc = MFU_FAILURE;
+        //continue;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
 
-    /* Guaranteed max output size */
-    unsigned int outSize = (unsigned int)((block_size * 1.01) + 600);
-    //a[blocks_processed]=malloc(sizeof(char)*outSize);
+    /* Guaranteed max output size after compression for bz2 */
+    unsigned int outSize = (unsigned int)comp_buff_size;
 
     /* compress block from read buffer into next compression buffer */
     int ret = BZ2_bzBuffToBuffCompress(a[blocks_processed], &outSize, ibuf, (int)inSize, bc_size, 0, 30);
-    MFU_LOG(MFU_LOG_DBG, "After compresssion=%s,size=%u\n", a[blocks_processed], outSize);
     if (ret != 0) {
         MFU_LOG(MFU_LOG_ERR, "Error in compression for rank %d", rank);
+        //rc = MFU_FAILURE;
+        //continue;
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
@@ -121,14 +153,8 @@ static void DBz2_Dequeue(CIRCLE_handle* handle)
     mfu_free(&ibuf);
 }
 
-static void find_wave_size(int b_size, int opts_memory)
+static void find_wave_size(int64_t size, int opts_memory)
 {
-    /* setting this for libcircle? */
-    bc_size = b_size;
-
-    /* compute block size in bytes */
-    block_size = (int64_t)b_size * 100 * 1024;
-
     /* get process memory limit from rlimit, if one is set */
     struct rlimit limit;
     getrlimit(RLIMIT_DATA, &limit);
@@ -138,29 +164,26 @@ static void find_wave_size(int b_size, int opts_memory)
     struct sysinfo info;
     sysinfo(&info);
     MFU_LOG(MFU_LOG_INFO, "The free and total ram are:%lu,%lu", info.freeram, info.totalram);
-    MFU_LOG(MFU_LOG_INFO, "The block size is:%" PRId64, block_size);
+    MFU_LOG(MFU_LOG_INFO, "The block size is:%" PRId64, size);
 
     /* TODO: what about other procs on the same node? */
 
     /* set our memory limit to minimum of rlimit and free memory */
-    int64_t mem_limit;
+    int64_t mem_limit = info.freeram;
     if ((unsigned long)limit.rlim_cur < info.freeram) {
         mem_limit = (int64_t)limit.rlim_cur;
-    } else {
-        mem_limit = (int64_t)info.freeram;
     }
 
     /* go lower still if user gave us a lower limit */
-    if (opts_memory < mem_limit && opts_memory > 0) {
+    if (opts_memory > 0 && opts_memory < mem_limit) {
         mem_limit = (int64_t)opts_memory;
     }
 
     /* memory is computed as the mem_limit is max memory for a process.
-     * We leave 2% of totalram free, then 8*block_size +400*1024 is the
+     * We leave 2% of totalram free, then 8*size +400*1024 is the
      * memory required to do compression, keep 128B for variables,etc.
      * The block itself must be in memory before compression. */
-    int64_t wave_size_approx = mem_limit - (int64_t)info.totalram * 2 / 100 - 8 * block_size - 400 * 1024 - 128 - block_size;
-    int64_t comp_buff_size = 1.01 * block_size + 600; /* Compressed buffer size is the max size of a compressed block */
+    int64_t wave_size_approx = mem_limit - (int64_t)info.totalram * 2 / 100 - 8 * size - 400 * 1024 - 128 - size;
     int64_t waves_blocks_approx = wave_size_approx / comp_buff_size;
     int64_t wave_size = wave_size_approx - 2 * tot_blocks * sizeof(struct block_info);
     blocks_pn_pw = (int64_t)(0.4 * wave_size / comp_buff_size);
@@ -173,83 +196,116 @@ static void find_wave_size(int b_size, int opts_memory)
     MPI_Allreduce(&blocks_pn_pw, &wave_blocks, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
 }
 
-int mfu_compress_bz2_libcircle(const char* src_name, const char* dst_name, int b_size, ssize_t opts_memory)
+int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssize_t opts_memory)
 {
     int rc = MFU_SUCCESS;
 
-    /* set rank global variable */
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    /* copy source and target file names */
+    src_name = MFU_STRDUP(src);
+    dst_name = MFU_STRDUP(dst);
 
     /* get rank and size of the communicator */
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    /* read stat info for source file on rank 0 */
+    /* read stat info for source file */
     struct stat st;
-    int64_t filesize = 0;
+    int stat_flag = 1;
+    filesize = 0;
     if (rank == 0) {
-        /* TODO: check that stat succeeds */
-        mfu_lstat(src_name, &st);
-        filesize = (int64_t) st.st_size;
+        /* stat file to get file size */
+        int lstat_rc = mfu_lstat(src_name, &st);
+        if (lstat_rc == 0) {
+            filesize = (int64_t) st.st_size;
+        } else {
+            /* failed to stat file for file size */
+            stat_flag = 0;
+            MFU_LOG(MFU_LOG_ERR, "Failed to stat file: %s errno=%d (%s)",
+                src_name, errno, strerror(errno));
+        }
     }
 
     /* broadcast filesize to all ranks */
+    MPI_Bcast(&stat_flag, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&filesize, 1, MPI_INT64_T, 0, MPI_COMM_WORLD);
 
-    /* compute block size in bytes */
-    block_size = (int64_t)b_size * 100 * 1024;
-
-    /* compute total number of blocks in the file */
-    int64_t tot_blocks = filesize / block_size;
-    if (tot_blocks * block_size < filesize) {
-        tot_blocks++;
+    /* check that we could stat file */
+    if (! stat_flag) {
+        mfu_free(&src_name);
+        mfu_free(&dst_name);
+        return MFU_FAILURE;
     }
 
-    /* compute number of blocks we can handle in a wave
-     * based on allowed memory per process */
-    find_wave_size(b_size, opts_memory);
-
-    /* open the source file for readhing */
+    /* open the source file for reading */
     fd = mfu_open(src_name, O_RDONLY | O_BINARY | O_LARGEFILE);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading: %s errno=%d (%s)",
             src_name, errno, strerror(errno));
-        MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    /* The file for output is opened and options set */
-    if (rank == 0) {
-        /* open file */
-        fd_out = mfu_open(dst_name, O_CREAT | O_RDWR | O_TRUNC | O_BINARY | O_LARGEFILE, FILE_MODE);
-        if (fd_out < 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
-                dst_name, errno, strerror(errno));
-            MPI_Abort(MPI_COMM_WORLD, 1);
+    /* check that all processes were able to open the file */
+    if (! mfu_alltrue(fd >= 0, MPI_COMM_WORLD)) {
+        /* some process failed to open so bail with error,
+         * if we opened ok, close file */
+        if (fd >= 0) {
+            mfu_close(src_name, fd);
         }
+        mfu_free(&src_name);
+        mfu_free(&dst_name);
+        return MFU_FAILURE;
     }
 
-    /* wait for rank 0 to finish operations */
-    MPI_Barrier(MPI_COMM_WORLD);
+    /* open destination file for writing */
+    fd_out = mfu_create_fully_striped(dst_name);
+    if (fd_out < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
+            dst_name, errno, strerror(errno));
+    }
 
-    /* have rest of ranks open the file */
-    if (rank != 0) {
-        fd_out = mfu_open(dst_name, O_RDWR | O_BINARY | O_LARGEFILE, FILE_MODE);
-        if (fd_out < 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
-                dst_name, errno, strerror(errno));
-            MPI_Abort(MPI_COMM_WORLD, 1);
+    /* check that all processes were able to open the file */
+    if (! mfu_alltrue(fd_out >= 0, MPI_COMM_WORLD)) {
+        /* some process failed to open so bail with error,
+         * if we opened ok, close file */
+        if (fd_out >= 0) {
+            mfu_close(dst_name, fd_out);
         }
+        mfu_free(&src_name);
+        mfu_free(&dst_name);
+        mfu_close(src_name, fd);
+        return MFU_FAILURE;
     }
+
+    /* ensure that b_size is in range of [1,9] */
+    if (b_size < 1) {
+        b_size = 1;
+    }
+    if (b_size > 9) {
+        b_size = 9;
+    }
+    bc_size = b_size;
+
+    /* compute block size in bytes */
+    block_size = (int64_t)b_size * 100 * 1000;
+
+    /* compute total number of blocks in the file */
+    tot_blocks = filesize / block_size;
+    if (tot_blocks * block_size < filesize) {
+        tot_blocks++;
+    }
+
+    /* given original data of size B, BZ2 compressed data can take up to B * 1.01 + 600 bytes,
+     * we use 2% to be on safe side */
+    comp_buff_size = (int64_t) (1.02 * (double)block_size + 600.0);
+
+    /* compute number of blocks we can handle in a wave
+     * based on allowed memory per process */
+    find_wave_size(block_size, opts_memory);
 
     blocks_processed = 0;
     my_prev_blocks   = 0;
     blocks_done      = 0;
     my_tot_blocks    = 0;
-
-    /* given original data of size B, BZ2 compressed data can take up to B * 1.01 + 600 bytes,
-     * we use 2% to be on safe side */
-    int64_t comp_buff_size = (int64_t) (1.02 * (double)block_size + 600.0);
 
     /* compute number of waves to finish file */
     int64_t num_waves = tot_blocks / wave_blocks;
@@ -284,24 +340,24 @@ int mfu_compress_bz2_libcircle(const char* src_name, const char* dst_name, int b
 
     struct block_info rbuf[wave_blocks];
 
+    /* allocate a compression buffer for each block */
+    a = (char**)MFU_MALLOC(sizeof(char*) * wave_blocks);
+    for (int i = 0; i < wave_blocks; i++) {
+        a[i] = (char*)MFU_MALLOC(comp_buff_size);
+        //memset(a[i],1,comp_buff_size*sizeof(char));
+    }
+
     /* Call libcircle in a loop to work each wave as a single instance of libcircle */
     int64_t last_offset = 0;
     for (blocks_done = 0; blocks_done < tot_blocks; blocks_done += wave_blocks) {
-        /* compute number of blocksi n this wave */
-        int blocks_for_wave;
-        if ((tot_blocks - blocks_done) < wave_blocks) {
-            blocks_for_wave = tot_blocks - blocks_done;
-        } else {
-            blocks_for_wave = wave_blocks;
+        /* compute number of blocks in this wave */
+        int blocks_for_wave = wave_blocks;
+        int blocks_remaining = tot_blocks - blocks_done;
+        if (blocks_remaining < blocks_for_wave) {
+            blocks_for_wave = blocks_remaining;
         }
 
-        /* allocate a compression buffer for each block */
-        a = (char**)MFU_MALLOC(sizeof(char*)*blocks_for_wave);
-        for (int i = 0; i < blocks_for_wave; i++) {
-            a[i] = (char*)MFU_MALLOC(comp_buff_size * sizeof(char));
-            //memset(a[i],1,comp_buff_size*sizeof(char));
-        }
-
+        /* execute libcircle to compress blocks */
         CIRCLE_init(0, NULL, CIRCLE_DEFAULT_FLAGS);
         CIRCLE_cb_create(&DBz2_Enqueue);
         CIRCLE_cb_process(&DBz2_Dequeue);
@@ -328,9 +384,6 @@ int mfu_compress_bz2_libcircle(const char* src_name, const char* dst_name, int b
         /* Gather metadata of all blocks processed in this wave */
         MPI_Gatherv(&my_blocks[my_prev_blocks], blocks_processed, metatype, rbuf, rcount, displs, metatype, 0, MPI_COMM_WORLD);
 
-        //memset(this_wave_blocks,0,sizeof(this_wave_blocks));
-        MPI_Barrier(MPI_COMM_WORLD);
-
         /* compute the offset of all blocks processed in current wave */
         if (rank == 0) {
             for (int k = 0; k < actual_wave_blocks; k++) {
@@ -351,18 +404,36 @@ int mfu_compress_bz2_libcircle(const char* src_name, const char* dst_name, int b
 
         /* Each process writes out the blocks it processed in current wave at the correct offset */
         for (int k = 0; k < blocks_processed; k++) {
-            lseek64(fd_out, my_blocks[my_prev_blocks + k].offset, SEEK_SET);
-            MFU_LOG(MFU_LOG_DBG, "Data to be written=%s,%u\n", a[k], my_blocks[my_prev_blocks + k].length);
-            mfu_write(fname_out, fd_out, a[k], my_blocks[my_prev_blocks + k].length);
+            /* compute offset into compressed file for our block */
+            off_t pos = my_blocks[my_prev_blocks + k].offset;
+
+            /* seek to position in destination file for this block */
+            off_t lseek_rc = mfu_lseek(dst_name, fd_out, pos, SEEK_SET);
+            if (lseek_rc == (off_t)-1) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to seek to compressed block in target file: %s offset=%lx errno=%d (%s)",
+                    dst_name, pos, errno, strerror(errno));
+                rc = MFU_FAILURE;
+            }
+
+            /* write out block */
+            size_t my_length = (size_t) my_blocks[my_prev_blocks + k].length;
+            ssize_t nwritten = mfu_write(dst_name, fd_out, a[k], my_length);
+            if (nwritten != my_length) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to write compressed block to target file: %s offset=%lx got=%d expected=%d errno=%d (%s)",
+                    dst_name, pos, nwritten, my_length, errno, strerror(errno));
+                rc = MFU_FAILURE;
+            }
         }
 
         my_prev_blocks = my_tot_blocks;
         blocks_processed = 0;
-        for (int i = 0; i < blocks_for_wave; i++) {
-            mfu_free(&a[i]);
-        }
-        mfu_free(&a);
     }
+
+    /* free buffers used to hold compressed data */
+    for (int i = 0; i < wave_blocks; i++) {
+        mfu_free(&a[i]);
+    }
+    mfu_free(&a);
 
     /* End of all waves */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -372,25 +443,79 @@ int mfu_compress_bz2_libcircle(const char* src_name, const char* dst_name, int b
 
     /* Each process writes the offset of all blocks processed by it at corect location in trailer */
     for (int k = 0; k < my_tot_blocks; k++) {
-        lseek64(fd_out, last_offset + my_blocks[k].sno * 8, SEEK_SET);
-        int64_t this_offset = (int64_t)my_blocks[k].offset;
-        mfu_write(fname_out, fd_out, &this_offset, 8);
+        /* seek to metadata location for this block */
+        off_t pos = last_offset + my_blocks[k].sno * 16;
+        off_t lseek_rc = mfu_lseek(dst_name, fd_out, pos, SEEK_SET);
+        if (lseek_rc == (off_t)-1) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to seek to block metadata in target file: %s offset=%lx errno=%d (%s)",
+                dst_name, pos, errno, strerror(errno));
+            rc = MFU_FAILURE;
+        }
+
+        /* write offset of block in destination file */
+        int64_t my_offset = my_blocks[k].offset;
+        int64_t net_offset = mfu_hton64(my_offset);
+        ssize_t nwritten = mfu_write(dst_name, fd_out, &net_offset, 8);
+        if (nwritten != 8) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to write block offset to target file: %s pos=%lx got=%d expected=%d errno=%d (%s)",
+                dst_name, pos, nwritten, 8, errno, strerror(errno));
+            rc = MFU_FAILURE;
+        }
+
+        /* write length of block in destination file */
+        int64_t my_length = my_blocks[k].length;
+        int64_t net_length = mfu_hton64(my_length);
+        nwritten = mfu_write(dst_name, fd_out, &net_length, 8);
+        if (nwritten != 8) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to write block length to target file: %s pos=%lx got=%d expected=%d errno=%d (%s)",
+                dst_name, pos+8, nwritten, 8, errno, strerror(errno));
+            rc = MFU_FAILURE;
+        }
     }
 
     /* root writes the locaion of trailer start to last 8 bytes of the file */
     if (rank == 0) {
-        lseek64(fd_out, last_offset + tot_blocks * 8, SEEK_SET);
-        int64_t trailer_offset = (int64_t)last_offset;
-        mfu_write(fname_out, fd_out, &trailer_offset, 8);
+        /* convert header fields to network order */
+        uint64_t footer[6];
+        footer[0] = mfu_hton64(last_offset); /* offset to start of block metadata */
+        footer[1] = mfu_hton64(tot_blocks);  /* number of blocks in the file */
+        footer[2] = mfu_hton64(block_size);  /* max size of uncompressed block */
+        footer[3] = mfu_hton64(filesize);    /* size with all blocks decompressed */
+        footer[4] = mfu_hton64(1);           /* file version number */
+        footer[5] = mfu_hton64(0x3141314131413141); /* magic number (repeating pi: 3.141) */
+
+        /* seek to position to write footer */
+        off_t pos = last_offset + tot_blocks * 16;
+        off_t lseek_rc = mfu_lseek(dst_name, fd_out, pos, SEEK_SET);
+        if (lseek_rc == (off_t)-1) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to seek to footer in target file: %s offset=%lx errno=%d (%s)",
+                dst_name, pos, errno, strerror(errno));
+            rc = MFU_FAILURE;
+        }
+
+        /* write footer */
+        size_t footer_size = 6 * 8;
+        ssize_t nwritten = mfu_write(dst_name, fd_out, footer, footer_size);
+        if (nwritten != footer_size) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to write footer to target file: %s pos=%lx got=%d expected=%d errno=%d (%s)",
+                dst_name, pos, nwritten, footer_size, errno, strerror(errno));
+            rc = MFU_FAILURE;
+        }
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
+
     /* free memory for compress blocks */
+    mfu_free(&this_wave_blocks);
     mfu_free(&my_blocks);
 
     /* close source and target files */
     mfu_fsync(dst_name, fd_out);
     mfu_close(dst_name, fd_out);
     mfu_close(src_name, fd);
+
+    /* ensure that everyone has closed and synced before updating timestamps */
+    MPI_Barrier(MPI_COMM_WORLD);
 
     if (rank == 0) {
         /* set mode and group */
@@ -403,6 +528,9 @@ int mfu_compress_bz2_libcircle(const char* src_name, const char* dst_name, int b
         uTimBuf.modtime = st.st_mtime;
         utime(dst_name, &uTimBuf);
     }
+
+    mfu_free(&src_name);
+    mfu_free(&dst_name);
 
     return rc;
 }

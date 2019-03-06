@@ -10,7 +10,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name);
 
 int mfu_compress_bz2(const char* src_name, const char* dst_name, int b_size)
 {
-    //mfu_compress_bz2_libcircle(src_name, dst_name, b_size, opts_memory);
+    //return mfu_compress_bz2_libcircle(src_name, dst_name, b_size, 0);
     return mfu_compress_bz2_static(src_name, dst_name, b_size);
 }
 
