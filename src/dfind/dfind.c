@@ -177,7 +177,7 @@ int main (int argc, char** argv)
     char* inputname  = NULL;
     char* outputname = NULL;
     int walk = 0;
-    int text = 1;
+    int text = 0;
 
     static struct option long_options[] = {
         {"input",     1, 0, 'i'},
