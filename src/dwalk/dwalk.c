@@ -445,7 +445,9 @@ int main(int argc, char** argv)
             }
         }
         if (nfields > maxfields) {
-            printf("Exceeded maximum number of sort fields: %d\n", maxfields);
+            if (rank == 0) {
+                printf("Exceeded maximum number of sort fields: %d\n", maxfields);
+            }
             usage = 1;
         }
         mfu_free(&sortfields_copy);
@@ -455,8 +457,8 @@ int main(int argc, char** argv)
         if (distribution_parse(&option, distribution) != 0) {
             if (rank == 0) {
                 printf("Invalid distribution argument: %s\n", distribution);
-                usage = 1;
             }
+            usage = 1;
         } else if (rank == 0 && option.separator_number != 0) {
             printf("Seperators: ");
             for (i = 0; i < option.separator_number; i++) {
