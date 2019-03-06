@@ -22,59 +22,7 @@
 #include "mfu.h"
 #include "mfu_bz2.h"
 
-#define FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
-#ifndef O_BINARY
-#define O_BINARY 0
-#endif
-
-int mfu_create_fully_striped(const char* name)
-{
-    /* get our rank */
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-#if LUSTRE_SUPPORT
-    /* have rank 0 create the file with striping */
-    if (rank == 0) {
-        mfu_stripe_set(name, 1024*1024, -1);
-    }
-
-    /* wait for rank 0 to finish operations */
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    /* open the file */
-    int fd = mfu_open(dst, O_WRONLY);
-    if (fd < 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
-            name, errno, strerror(errno));
-    }
-#else
-    /* The file for output is opened and options set */
-    int fd = -1;
-    if (rank == 0) {
-        /* open file */
-        fd = mfu_open(name, O_WRONLY | O_CREAT | O_TRUNC, FILE_MODE);
-        if (fd < 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
-                name, errno, strerror(errno));
-        }
-    }
-
-    /* wait for rank 0 to finish operations */
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    /* have rest of ranks open the file */
-    if (rank != 0) {
-        fd = mfu_open(name, O_WRONLY);
-        if (fd < 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
-                name, errno, strerror(errno));
-        }
-    }
-#endif
-
-    return fd;
-}
+#define FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)
 
 int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_size)
 {
@@ -140,7 +88,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
     }
 
     /* open the source file for reading */
-    int fd = mfu_open(src_name, O_RDONLY | O_BINARY | O_LARGEFILE);
+    int fd = mfu_open(src_name, O_RDONLY | O_LARGEFILE);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading: %s errno=%d (%s)",
             src_name, errno, strerror(errno));
@@ -157,7 +105,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
     }
 
     /* open destination file for writing */
-    int fd_out = mfu_create_fully_striped(dst_name);
+    int fd_out = mfu_create_fully_striped(dst_name, FILE_MODE);
     if (fd_out < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
             dst_name, errno, strerror(errno));
@@ -449,7 +397,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* open compressed file for reading */
-    int fd = mfu_open(src_name, O_RDONLY | O_BINARY | O_LARGEFILE);
+    int fd = mfu_open(src_name, O_RDONLY | O_LARGEFILE);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading: %s errno=%d (%s)",
             src_name, errno, strerror(errno));
@@ -553,7 +501,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
     }
 
     /* open destination file for writing */
-    int fd_out = mfu_create_fully_striped(dst_name);
+    int fd_out = mfu_create_fully_striped(dst_name, FILE_MODE);
     if (fd_out < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
             dst_name, errno, strerror(errno));
