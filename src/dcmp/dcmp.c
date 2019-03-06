@@ -1543,7 +1543,7 @@ static void dcmp_disjunction_print(
         int size_dst_matched = mfu_flist_global_size(conjunction->dst_matched_list);
 
         /* if src and dst don't match src and dest numbers need to
-         * be reported seperately */
+         * be reported separately */
         if (size_src_matched == size_dst_matched) {
             printf(": %lu (Src: %lu Dest: %lu)", size_src_matched,
                    size_src_matched, size_dst_matched);
