@@ -455,7 +455,7 @@ int main(int argc, char** argv)
             }
             usage = 1;
         } else if (rank == 0 && option.separator_number != 0) {
-            printf("Seperators: ");
+            printf("Separators: ");
             for (i = 0; i < option.separator_number; i++) {
                 if (i != 0) {
                     printf(", ");

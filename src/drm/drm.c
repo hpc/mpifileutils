@@ -152,7 +152,7 @@ int main(int argc, char** argv)
     }
 
     if (dryrun && walk_opts->remove) {
-        printf("Cannot perform dryrun with aggressive delete option. Program is safely exiting.  Please do a dryrun then run an aggressive delete seperately. These two options cannot both be specified for the same program run \n");
+        printf("Cannot perform dryrun with aggressive delete option. Program is safely exiting.  Please do a dryrun then run an aggressive delete separately. These two options cannot both be specified for the same program run \n");
         mfu_finalize();
         MPI_Finalize();
         return 1;
