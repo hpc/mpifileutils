@@ -92,9 +92,8 @@ extern mfu_loglevel mfu_debug_level;
                         timestamp, mfu_rank, \
                         __FILE__, __LINE__); \
             } else { \
-                fprintf(mfu_debug_stream,"[%s] [%d] [%s:%d] ", \
-                        timestamp, mfu_rank, \
-                        __FILE__, __LINE__); \
+                fprintf(mfu_debug_stream,"[%s] ", \
+                        timestamp); \
             } \
             fprintf(mfu_debug_stream, __VA_ARGS__); \
             fprintf(mfu_debug_stream, "\n"); \
