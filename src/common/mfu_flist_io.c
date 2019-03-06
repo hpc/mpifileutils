@@ -1678,6 +1678,9 @@ static void write_cache_stat_v4(
     /* compute number of items we can fit in each write iteration */
     uint64_t bufcount = (uint64_t)bufsize / (uint64_t)elem_size;
 
+    /* compute number of bytes that adds up to */
+    uint64_t bufbytes = bufcount * elem_size;
+
     /* determine number of iterations we need to write all items */
     uint64_t iters = count / bufcount;
     if (iters * bufcount < count) {
@@ -1700,7 +1703,7 @@ static void write_cache_stat_v4(
         /* copy stat data into write buffer */
         ptr = (char*) buf;
         uint64_t packcount = 0;
-        while (current != NULL && packcount < bufcount) {
+        while (current != NULL && packcount < bufbytes) {
             /* pack item into buffer and advance pointer */
             size_t pack_bytes = list_elem_pack(ptr, flist->detail, (uint64_t)chars, current);
             ptr += pack_bytes;
