@@ -1869,6 +1869,17 @@ void mfu_flist_write_text(
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    /* start timer */
+    double start_write = MPI_Wtime();
+
+    /* total list items */
+    uint64_t all_count = mfu_flist_global_size(flist);
+
+    /* report the filename we're writing to */
+    if (mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Writing to output file: %s", name);
+    }
+
     /* compute size of buffer needed to hold all data */
     size_t bufsize = 0;
     uint64_t idx;
@@ -1969,6 +1980,21 @@ void mfu_flist_write_text(
 
     /* free buffer */
     mfu_free(&buf);
+
+    /* end timer */
+    double end_write = MPI_Wtime();
+
+    /* report write count, time, and rate */
+    if (mfu_rank == 0) {
+        double secs = end_write - start_write;
+        double rate = 0.0;
+        if (secs > 0.0) {
+            rate = ((double)all_count) / secs;
+        }
+        MFU_LOG(MFU_LOG_INFO, "Wrote %lu files in %f seconds (%f files/sec)",
+               all_count, secs, rate
+              );
+    }
 
     return;
 }
