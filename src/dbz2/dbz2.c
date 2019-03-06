@@ -34,13 +34,13 @@ static void print_usage(void)
     printf("Options:\n");
     printf("  -c, --compress         - compress file\n");
     printf("  -d, --decompress       - decompress file\n");
-    printf("  -k, --keep             - keep existing input file(s)\n");
+    printf("  -k, --keep             - keep existing input file\n");
     printf("  -f, --force            - overwrite output file\n");
     printf("  -b, --blocksize <num>  - block size (1-9)\n");
-    printf("  -m, --memory <size>    - memory limit in bytes\n");
+    //printf("  -m, --memory <size>    - memory limit in bytes\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -q, --quiet            - quiet output\n");
-    printf("      --debug            - debug output\n");
+    //printf("      --debug            - debug output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -136,7 +136,7 @@ int main(int argc, char** argv)
         usage = 1;
     }
 
-    if (!opts_compress && !opts_decompress) {
+    if (!usage && !opts_compress && !opts_decompress) {
         MFU_LOG(MFU_LOG_ERR, "Must use either compression or decompression");
         usage = 1;
     }
