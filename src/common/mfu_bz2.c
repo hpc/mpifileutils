@@ -43,7 +43,7 @@ int mfu_create_fully_striped(const char* name, mode_t mode)
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* open the file */
-    int fd = mfu_open(dst, O_WRONLY);
+    int fd = mfu_open(name, O_WRONLY);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
             name, errno, strerror(errno));
