@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include <errno.h>
 //#include "handle_args.h"
@@ -532,6 +533,8 @@ int main(int narg, char** arg)
     char* cp;
     char* dirname;
     unsigned int iseed = 1;
+    unsigned int jseed = 0;
+    int c;
     uint64_t idx;
     uint64_t* idlist;
     int ndir = 0, *ndirs;
@@ -582,7 +585,7 @@ int main(int narg, char** arg)
      *----------------------------------------------*/
     if (narg < 4) {
         if (rank == 0) {
-            printf("Usage: dfilemaker <nitems> <nlevels> <maxflen>\n");
+            printf("Usage: dfilemaker <nitems> <nlevels> <maxflen> [-i seed]\n");
         }
         MPI_Finalize();
         exit(0);
@@ -590,6 +593,12 @@ int main(int narg, char** arg)
     ntotal  = atoi(arg[1]);
     nlevels = atoi(arg[2]);
     maxflen = atoi(arg[3]);
+    c=getopt(narg,arg,"i:");
+    if (narg > 1)
+    {
+       if (c=='i') jseed = atoi(optarg);
+       if (jseed) iseed=jseed;
+    }
 
     /*-------------------------------------------------------
      * each level has nfiles[0] more than the one above
