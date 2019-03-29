@@ -2,37 +2,104 @@
 Build
 ==============================
 
-mpiFileUtils depends on several libraries. mpiFileUtils is available in
-`Spack <https://github.com/spack/spack>`_, which simplifies the install to just:
+mpiFileUtils and its dependencies can be installed with and without Spack.
+There are several common variations described here:
+* install both mpiFileUtils and its dependencies with Spack
+* install both mpiFileUtils and its dependencies directly
+* install mpiFileUtis directly after installing its dependencies with Spack
+
+---------------------------
+Build everything with Spack
+---------------------------
+
+To use `Spack <https://github.com/spack/spack>`_, it is recommended that one first create a `packages.yaml` file to list system-provided packages, like MPI.
+Without doing this, Spack will fetch and install an MPI library that may not work on your system.
+Make sure that you've set up spack in your shell (see `these instructions <https://spack.readthedocs.io/en/latest/getting_started.html>`_).
+
+Once Spack has been configured, mpiFileUtils can be installed as:
 
 .. code-block:: Bash
 
-    $ spack install mpifileutils
+    spack install mpifileutils
 
 or to enable all features:
 
 .. code-block:: Bash
 
-    $ spack install mpifileutils +lustre +experimental
+    spack install mpifileutils +lustre +experimental
 
-To build from a release tarball, use CMake. Note that this requires the manual
-installation of the dependencies. Assuming the dependencies have been placed in
-an `install` directory the build commands are thus:
+-------------------------
+Build everything directly
+-------------------------
+
+To build without Spack, first ensure MPI wrapper scripts like mpicc are loaded in your environment.
+Then to install the dependencies, run the following commands:
 
 .. code-block:: Bash
 
-   $ git clone https://github.com/hpc/mpifileutils
-   $ mkdir build install
-   $ # build DTCMP and other dependencies
-   $ cd build
-   $ cmake ../mpifileutils -DWITH_DTCMP_PREFIX=../install -DWITH_LibCircle_PREFIX=../install -DCMAKE_INSTALL_PREFIX=../install
+   #!/bin/bash
+   mkdir install
+   installdir=`pwd`/install
+   
+   mkdir deps
+   pushd deps
+     # fetch dependencies
+     wget https://github.com/hpc/libcircle/releases/download/0.2.1-rc.1/libcircle-0.2.1-rc.1.tar.gz
+     wget https://github.com/llnl/lwgrp/releases/download/v1.0.2/lwgrp-1.0.2.tar.gz
+     wget https://github.com/llnl/dtcmp/releases/download/v1.1.0/dtcmp-1.1.0.tar.gz
+     
+     # build dependencies
+     tar -zxf libcircle-0.2.1-rc.1.tar.gz
+     pushd libcircle-0.2.1-rc.1
+       ./configure --prefix=${installdir}
+       make
+       make install
+     popd
+     
+     tar -zxf lwgrp-1.0.2.tar.gz
+     pushd lwgrp-1.0.2
+       ./configure --prefix=${installdir}
+       make
+       make install
+     popd
+     
+     tar -zxf dtcmp-1.1.0.tar.gz
+     pushd dtcmp-1.1.0
+       ./configure --prefix=${installdir} --with-lwgrp=${installdir}
+       make
+       make install
+     popd
+   popd
 
-One can also use spack to create an environment and view with the provided `spack.yaml` file.
-First, make sure that you've set up spack in your shell (see `these instructions <https://spack.readthedocs.io/en/latest/getting_started.html>`_).
-Next, be sure that your `~/.spack/packages.yaml` is configured to ensure that spack can detect system-provided packages.
+Assuming the dependencies have been placed in
+an `install` directory as shown above, build mpiFileUtils from a release like v0.9:
 
-From the root directory of mpifileutils, run the command `spack find` to determine which packages spack will install.
-Next, run `spack concretize` to build have spack perform dependency analysis.
+.. code-block:: Bash
+
+   wget https://github.com/hpc/mpifileutils/archive/v0.9.tar.gz
+   tar -zxf v0.9.tar.gz
+   mkdir build install
+   cd build
+   cmake ../mpifileutils-0.9 -DWITH_DTCMP_PREFIX=../install -DWITH_LibCircle_PREFIX=../install -DCMAKE_INSTALL_PREFIX=../install
+   make install
+
+or to build the latest mpiFileUtils from the master branch:
+
+.. code-block:: Bash
+
+   git clone https://github.com/hpc/mpifileutils
+   mkdir build install
+   cd build
+   cmake ../mpifileutils -DWITH_DTCMP_PREFIX=../install -DWITH_LibCircle_PREFIX=../install -DCMAKE_INSTALL_PREFIX=../install
+   make install
+
+--------------------------------------------------------------
+Build mpiFileUtils directly, build its dependencies with Spack
+--------------------------------------------------------------
+
+One can use Spack to install mpiFileUtils dependencies using the `spack.yaml` file distributed with mpiFileUtils.
+From the root directory of mpiFileUtils, run the command `spack find` to determine which packages spack will install.
+Next, run `spack concretize` to have spack perform dependency analysis.
 Finally, run `spack install` to build the dependencies.
 
 There are two ways to tell CMake about the dependencies.
@@ -42,15 +109,15 @@ Thus, the commands to build become:
 
 .. code-block:: Bash
 
-   $ git clone https://github.com/hpc/mpifileutils
-   $ mkdir build install
-   $ cd mpifileutils
-   $ spack install
-   $ spack load dtcmp
-   $ spack load libcircle
-   $ spack load libarchive
-   $ cd ../build
-   $ cmake ../mpifileutils
+   git clone https://github.com/hpc/mpifileutils
+   mkdir build install
+   cd mpifileutils
+   spack install
+   spack load dtcmp
+   spack load libcircle
+   spack load libarchive
+   cd ../build
+   cmake ../mpifileutils
 
 The other way to use spack is to create a "view" to the installed dependencies.
 Details on this are coming soon.
