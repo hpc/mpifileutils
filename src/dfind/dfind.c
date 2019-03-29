@@ -58,7 +58,7 @@ int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg)
 static void print_usage(void)
 {
     printf("\n");
-    printf("Usage: dfind [options] <path> ...\n");
+    printf("Usage: dfind [options] <path> EXPRESSIONS...\n");
     printf("\n");
     printf("Options:\n");
     printf("  -i, --input <file>                      - read list from file\n");
@@ -66,6 +66,35 @@ static void print_usage(void)
     printf("  -v, --verbose                           - verbose output\n");
     printf("  -q, --quiet                             - quiet output\n");
     printf("  -h, --help                              - print usage\n");
+    printf("\n");
+    printf("Tests:\n");
+    printf("  --amin N       - last accessed N minutes ago\n");
+    printf("  --anewer FILE  - last accessed more recently than FILE modified\n");
+    printf("  --atime N      - last accessed N days ago\n");
+    printf("  --cmin N       - status last changed N minutes ago\n");
+    printf("  --cnewer FILE  - status last changed more recently than FILE modified\n");
+    printf("  --ctime N      - status last changed N days ago\n");
+    printf("  --mmin N       - data last modified N minutes ago\n");
+    printf("  --newer FILE   - modified more recently than FILE\n");
+    printf("  --mtime N      - data last modified N days ago\n");
+    printf("\n");
+    printf("  --gid N        - numeric group ID is N\n");
+    printf("  --group NAME   - belongs to group NAME\n");
+    printf("  --uid N        - numeric user ID is N\n");
+    printf("  --user NAME    - owned by user NAME\n");
+    printf("\n");
+    printf("  --name PATTERN - base name matches shell pattern PATTERN\n");
+    printf("  --path PATTERN - full path matches shell pattern PATTERN\n");
+    printf("  --regex REGEX  - full path matches POSIX regex REGEX\n");
+    printf("\n");
+    printf("  --size N       - size is N bytes.  Supports attached units like KB, MB, GB\n");
+    printf("  --type C       - of type C: d=dir, f=file, l=symlink\n");
+    printf("\n");
+    printf("  Tests with N can use -N (less than N), N (exactly N), +N (more than N)\n");
+    printf("\n");
+    printf("Actions:\n");
+    printf("  --print        - print item name to stdout\n");
+    printf("  --exec CMD ;   - execute CMD on item\n");
     printf("\n");
     fflush(stdout);
     return;
