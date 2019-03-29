@@ -12,3 +12,4 @@
 --align-pointer=type
 --mode=c
 --lineend=linux
+--break-one-line-headers
