@@ -4,9 +4,10 @@ Build
 
 mpiFileUtils and its dependencies can be installed with and without Spack.
 There are several common variations described here:
-* install both mpiFileUtils and its dependencies with Spack
-* install both mpiFileUtils and its dependencies directly
-* install mpiFileUtis directly after installing its dependencies with Spack
+
+- install both mpiFileUtils and its dependencies with Spack
+- install both mpiFileUtils and its dependencies directly
+- install mpiFileUtis directly after installing its dependencies with Spack
 
 ---------------------------
 Build everything with Spack
@@ -52,21 +53,18 @@ Then to install the dependencies, run the following commands:
      tar -zxf libcircle-0.2.1-rc.1.tar.gz
      pushd libcircle-0.2.1-rc.1
        ./configure --prefix=${installdir}
-       make
        make install
      popd
      
      tar -zxf lwgrp-1.0.2.tar.gz
      pushd lwgrp-1.0.2
        ./configure --prefix=${installdir}
-       make
        make install
      popd
      
      tar -zxf dtcmp-1.1.0.tar.gz
      pushd dtcmp-1.1.0
        ./configure --prefix=${installdir} --with-lwgrp=${installdir}
-       make
        make install
      popd
    popd
@@ -80,7 +78,10 @@ an `install` directory as shown above, build mpiFileUtils from a release like v0
    tar -zxf v0.9.tar.gz
    mkdir build install
    cd build
-   cmake ../mpifileutils-0.9 -DWITH_DTCMP_PREFIX=../install -DWITH_LibCircle_PREFIX=../install -DCMAKE_INSTALL_PREFIX=../install
+   cmake ../mpifileutils-0.9 \
+     -DWITH_DTCMP_PREFIX=../install \
+     -DWITH_LibCircle_PREFIX=../install \
+     -DCMAKE_INSTALL_PREFIX=../install
    make install
 
 or to build the latest mpiFileUtils from the master branch:
@@ -90,8 +91,18 @@ or to build the latest mpiFileUtils from the master branch:
    git clone https://github.com/hpc/mpifileutils
    mkdir build install
    cd build
-   cmake ../mpifileutils -DWITH_DTCMP_PREFIX=../install -DWITH_LibCircle_PREFIX=../install -DCMAKE_INSTALL_PREFIX=../install
+   cmake ../mpifileutils \
+     -DWITH_DTCMP_PREFIX=../install \
+     -DWITH_LibCircle_PREFIX=../install \
+     -DCMAKE_INSTALL_PREFIX=../install
    make install
+
+To enable Lustre and experimental tools, add the following flags during cmake:
+
+.. code-block:: Bash
+
+    -DENABLE_LUSTRE=ON
+    -DENABLE_EXPERIMENTAL=ON
 
 --------------------------------------------------------------
 Build mpiFileUtils directly, build its dependencies with Spack
