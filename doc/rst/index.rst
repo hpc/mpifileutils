@@ -17,48 +17,8 @@ parallel applications that run with many processes (millions in some cases).
 However those users are then stuck with single-process tools like cp and rm to
 manage their datasets. This suite provides MPI-based tools to handle typical
 jobs like copy, remove, and compare for such datasets, providing speedups of up
-to 50x. It also provides a library that simplifies the creation of new tools
-or can be used in applications
-
-Utilities
-***************
-
-The tools in mpiFileUtils are actually MPI applications. They must be launched
-as MPI applications, e.g., within a compute allocation on a cluster using
-mpirun. The tools do not currently checkpoint, so one must be careful that an
-invocation of the tool has sufficient time to complete before it is killed.
-Example usage of each tool is provided below.
-
-- dbcast - Broadcast files to compute nodes.
-- dchmod - Change owner, group, and permissions on files.
-- dcmp - Compare files.
-- dcp - Copy files.
-- ddup - Find duplicate files.
-- dfilemaker - Generate random files.
-- dreln - Relink symlinks.
-- drm - Remove files.
-- dstripe - Restripe files.
-- dsync - Synchronize files
-- dwalk - List files.
-
-Experimental Utilities
-***************************
-
-Experimental utilities are under active development. They are not considered to
-be production worthy, but they are available in the distribution for those
-interested in developing them further or to provide additional examples. To
-build the experimental utilities, turn on the CMake option.
-
-.. code-block:: Bash
-
-    $ cmake -DENABLE_EXPERIMENTAL=ON ...
-
-- dbz2 - Compress a file with bz2.
-- dfind - Search for files in parallel.
-- dgrep - Run grep on files in parallel.
-- dparallel - Perform commands in parallel. experimental/dparallel.1
-- dsh - List and remove files with interactive commands.
-- dtar - Create file tape archives.
+to 50x. The libmfu library simplifies the creation of new tools
+and it can be called directly from within HPC applications.
 
 User Guide
 ***************************
@@ -66,9 +26,10 @@ User Guide
 .. toctree::
    :maxdepth: 3
 
+   tools.rst
+   libmfu.rst
    build.rst
    proj-design.rst
-   libmfu.rst
 
 Man Pages
 ***************************
@@ -77,6 +38,7 @@ Man Pages
    :maxdepth: 1
 
    dbcast.1
+   dbz2.1
    dchmod.1
    dcmp.1
    dcp.1
@@ -88,7 +50,6 @@ Man Pages
    dstripe.1
    dsync.1
    dwalk.1
-   experimental/dbz2.1
    experimental/dgrep.1
    experimental/dparallel.1
    experimental/dtar.1
