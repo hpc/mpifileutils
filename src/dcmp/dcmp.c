@@ -1701,7 +1701,7 @@ static int dcmp_output_flist_match(
     return 0;
 }
 
-#define DCMP_OUTPUT_PREFIX "Number of files that "
+#define DCMP_OUTPUT_PREFIX "Number of items that "
 
 static int dcmp_output_write(
     struct dcmp_output *output,
