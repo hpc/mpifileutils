@@ -50,9 +50,9 @@ Man Pages
    dstripe.1
    dsync.1
    dwalk.1
-   experimental/dgrep.1
-   experimental/dparallel.1
-   experimental/dtar.1
+   dgrep.1
+   dparallel.1
+   dtar.1
 
 Indices and tables
 *********************
