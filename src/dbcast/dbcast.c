@@ -32,22 +32,6 @@
  * and send data to each other.  The writer flow controls these worker
  * processes with messages. */
 
-#define DEBUGMSG(msg) \
-    if (rank == 0) \
-    { \
-        char *s = msg; \
-        current_time = time(NULL);\
-        local_time = localtime(&current_time);\
-        if (local_time == NULL)\
-            snprintf(time_string, 8192, "NULL");\
-        else\
-            strftime(time_string, 8192, time_format, local_time);\
-        printf("%s: %s\n", time_string, s); \
-    }
-
-static char error_msg[8192];
-static char hostname[HOST_NAME_MAX+1];
-
 #define GCS_SUCCESS (0)
 
 static int gcs_shm_file_key = MPI_KEYVAL_INVALID;
@@ -391,8 +375,7 @@ static int GCS_Shmem_free(void* ptr, MPI_Comm comm)
 int file_bcast_exit()
 {
     MPI_Abort(MPI_COMM_WORLD, 1);
-    printf("MPI Abort failed\n");
-    fflush(stdout);
+    MFU_LOG(MFU_LOG_ERR, "MPI Abort failed");
     exit(1);
 }
 
@@ -460,20 +443,14 @@ int mkdirp(const char* path)
     }
   
     /* if we can write to path, try to create subdir within path */
-    if (mfu_access(parent_str, W_OK) == 0 && rc == 0) {
-      int tmp_rc = mfu_mkdir(path, mode);
-      if (tmp_rc < 0) {
-        if (errno != EEXIST) {
-          /* don't complain about mkdir for a directory that already exists */
-          snprintf(error_msg, 8192, "%s: Failed to create directory %s", hostname, path);
-          perror(error_msg);
-          rc = tmp_rc;
-        }
+    errno = 0;
+    int tmp_rc = mfu_mkdir(path, mode);
+    if (tmp_rc < 0) {
+      if (errno != EEXIST) {
+        /* don't complain about mkdir for a directory that already exists */
+        MFU_LOG(MFU_LOG_ERR, "Failed to create directory `%s` (%s)", path, strerror(errno));
+        rc = tmp_rc;
       }
-    } else {
-      snprintf(error_msg, 8192, "%s: Cannot write to directory %s", hostname, parent_str);
-      perror(error_msg);
-      rc = 1;
     }
 
     /* free parent directory */
@@ -512,13 +489,13 @@ int main (int argc, char *argv[])
     MPI_Init(&argc, &argv);
     mfu_init();
 
+    /* verbose by default */
+    mfu_debug_level = MFU_LOG_VERBOSE; 
+
     /* get our rank and number of ranks in job */
     int rank, ranks;
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    /* get our hostname for error reporting */
-    gethostname(hostname, sizeof(hostname));
 
     /* TODO: set this to size of lustre stripe of the file/system */
     uint64_t stripe_size = 1024 * 1024;
@@ -548,8 +525,7 @@ int main (int argc, char *argv[])
                 /* parse stripe_size from command line */
                 if (mfu_abtoull(optarg, &byte_val) != MFU_SUCCESS) {
                     if (rank == 0) {
-                        printf("ERROR: Failed to parse stripe size: %s\n", optarg);
-                        fflush(stdout);
+                        MFU_LOG(MFU_LOG_ERR, "Failed to parse stripe size: %s", optarg);
                     }
                     usage = 1;
                 }
@@ -563,14 +539,14 @@ int main (int argc, char *argv[])
                 break;
             default:
                 if (rank == 0) {
-                    printf("?? getopt returned character code 0%o ??\n", c);
+                    MFU_LOG(MFU_LOG_ERR, "?? getopt returned character code 0%o ??", c);
                 }
         }
     }
 
     /* need source and destination file names */
     if (!usage && (argc - optind) < 2) {
-        printf("ERROR: Failed to find source and/or destination file names\n");
+        MFU_LOG(MFU_LOG_ERR, "Failed to find source and/or destination file names");
         usage = 1;
     }
 
@@ -586,6 +562,10 @@ int main (int argc, char *argv[])
     /* get source and destination paths */
     char* in_file_path  = mfu_path_strdup_abs_reduce_str(argv[optind]);
     char* out_file_path = mfu_path_strdup_abs_reduce_str(argv[optind + 1]);
+
+    /* get our hostname for error reporting */
+    char hostname[HOST_NAME_MAX+1];
+    gethostname(hostname, sizeof(hostname));
 
     /* put procs on same node into a subcommunicator */
     /* split on hostname */
@@ -629,8 +609,7 @@ int main (int argc, char *argv[])
     /* bail out if we have different nodes have different numbers of procs */
     if (! all_same_count) {
         if (rank == 0) {
-            printf("ERROR: Must run with same number of tasks on all nodes\n");
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Must run with same number of tasks on all nodes");
         }
         MPI_Finalize();
         mfu_free(&out_file_path);
@@ -641,8 +620,7 @@ int main (int argc, char *argv[])
     /* ensure that each node has at least two procs */
     if (node_size < 2) {
         if (rank == 0) {
-            printf("ERROR: Must run with at least two tasks per node\n");
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Must run with at least two tasks per node");
         }
         MPI_Finalize();
         mfu_free(&out_file_path);
@@ -661,8 +639,7 @@ int main (int argc, char *argv[])
     MPI_Bcast(&readable, 1, MPI_INT, 0, MPI_COMM_WORLD);
     if (! readable) {
         if (rank == 0) {
-            printf("ERROR: Cannot read input file %s\n", in_file_path);
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Cannot read input file `%s`", in_file_path);
         }
         MPI_Finalize();
         mfu_free(&out_file_path);
@@ -673,8 +650,7 @@ int main (int argc, char *argv[])
     /* create destination directory (if needed) */
     int mkdir_rc = 0;
     if (rank == 0) {
-        printf("Creating destination directory for %s\n", out_file_path);
-        fflush(stdout);
+        MFU_LOG(MFU_LOG_INFO, "Creating destination directories for `%s`", out_file_path);
     }
     if (node_rank == 0) {
         /* define path to destination file */
@@ -692,7 +668,7 @@ int main (int argc, char *argv[])
     if (gcs_anytrue((mkdir_rc != 0), MPI_COMM_WORLD)) {
         /* someone failed to create the directory */
         if (rank == 0) {
-            printf("ERROR: Failed to create directory for %s\n", out_file_path);
+            MFU_LOG(MFU_LOG_ERR, "Failed to create directory for `%s`", out_file_path);
         }
         MPI_Finalize();
         mfu_free(&out_file_path);
@@ -728,26 +704,16 @@ int main (int argc, char *argv[])
     /* rank 0 reads flie size and mode */
     int mode;
     uint64_t file_size;
-    time_t current_time;
-    struct tm *local_time;
-    char time_string[8192];
     const char *time_format = "%b %d %T";
     if (rank == 0) {
         /* post message to user about the file we're bcasting */
-        current_time = time(NULL);
-        local_time = localtime(&current_time);
-        if (local_time == NULL) {
-            snprintf(time_string, 8192, "NULL");
-        } else {
-            strftime(time_string, 8192, time_format, local_time);
-        }
-        printf("%s: Broadcasting contents of %s to %s\n", time_string, in_file_path, out_file_path);
+        MFU_LOG(MFU_LOG_INFO, "Broadcasting contents of `%s` to `%s`", in_file_path, out_file_path);
 
         /* get file size */
+        errno = 0;
         struct stat file_stat;
         if (stat(in_file_path, &file_stat) < 0) {
-            snprintf(error_msg, 8192, "Failed to stat file %s", in_file_path);
-            perror(error_msg);
+            MFU_LOG(MFU_LOG_ERR, "Failed to stat file `%s` (%s)", in_file_path, strerror(errno));
             file_bcast_exit();
         }
 
@@ -781,11 +747,11 @@ int main (int argc, char *argv[])
             file_exists = 1;
 
             /* get size of existing file */
+            errno = 0;
             struct stat file_stat;
             if (mfu_lstat(out_file_path, &file_stat) < 0) {
                 /* can't measure free space so assume we have none */
-                snprintf(error_msg, 8192, "%s: Failed to stat file %s", hostname, out_file_path);
-                perror(error_msg);
+                MFU_LOG(MFU_LOG_ERR, "Failed to stat file `%s` (%s)", out_file_path, strerror(errno));
             } else {
                 /* we'll overwrite the existing file, so include its
                  * size in our measure of free space */
@@ -814,19 +780,17 @@ int main (int argc, char *argv[])
             /* don't treat this as fatal incase just this node has
              * the problem, but remember that we hit the error to
              * report it at the end */
-            snprintf(error_msg, 8192, "%s: Failed to open file %s for writing", hostname, out_file_path);
-            perror(error_msg);
             write_error = 1;
         } else {
             /* open worked, so now we have an output file that we can
              * call statfs on to compute free space left on device */
+            errno = 0;
             uint64_t free_size = 0;
             struct statfs fs_stat;
             if (statfs(out_file_path, &fs_stat) == 0) {
                 free_size = (uint64_t)fs_stat.f_bavail * (uint64_t)fs_stat.f_bsize;
             } else {
-                snprintf(error_msg, 8192, "%s: Failed to stat file system", hostname);
-                perror(error_msg);
+                MFU_LOG(MFU_LOG_ERR, "Failed to stat file system for `%s` (%s)", out_file_path, strerror(errno));
             }
 
             /* we'll overwrite any existing file, so include its
@@ -838,17 +802,16 @@ int main (int argc, char *argv[])
             /* check whether we have space to write the file */
             if (file_size > free_size) {
                 /* not enough space for file */
-                printf("ERROR: %s: Insufficient space for file %s\n", hostname, out_file_path);
-                fflush(stdout);
+                MFU_LOG(MFU_LOG_ERR, "Insufficient space for file `%s` filesize=%llu free=%llu", out_file_path, file_size, free_size);
                 write_error = 1;
             }
         }
     } else {
         /* open input file for reading if we're a reader */
+        errno = 0;
         in_file = mfu_open(in_file_path, O_RDONLY);
         if (in_file < 0) {
-            snprintf(error_msg, 8192, "%s: Failed to open file %s for reading", hostname, in_file_path);
-            perror(error_msg);
+            MFU_LOG(MFU_LOG_ERR, "Failed to open file `%s` for reading (%s)", in_file_path, strerror(errno));
             file_bcast_exit();
         }
     }
@@ -857,7 +820,6 @@ int main (int argc, char *argv[])
 
     /* first phase: all tasks read data and write to their local file */
     MPI_Barrier(MPI_COMM_WORLD);
-    DEBUGMSG("Starting bcast");
 
     double time_start = MPI_Wtime();
 
@@ -900,18 +862,18 @@ if (node_rank != 0) {
 
             /* seek to offset in input file */
             if (size1 > 0) {
+                errno = 0;
                 off_t rc = mfu_lseek(in_file_path, in_file, pos1, SEEK_SET);
                 if (rc == (off_t)-1) {
-                    snprintf(error_msg, 8192, "%s: Seek failed on file %s", hostname, out_file_path);
-                    perror(error_msg);
+                    MFU_LOG(MFU_LOG_ERR, "Seek failed on file `%s` (%s)", out_file_path, strerror(errno));
                     file_bcast_exit();
                 }
 
                 /* read chunk from file */
+                errno = 0;
                 ssize_t return_size = mfu_read(in_file_path, in_file, buf1, size1);
                 if (return_size != (ssize_t)size1) {
-                    snprintf(error_msg, 8192, "%s: Failed to read contents from %s", hostname, out_file_path);
-                    perror(error_msg);
+                    MFU_LOG(MFU_LOG_ERR, "Failed to read contents from `%s` (%s)", out_file_path, strerror(errno));
                     file_bcast_exit();
                 }
             }
@@ -1031,16 +993,17 @@ if (node_rank == 0) {
                             write_data = 0;
 
                             /* seek to offset in output file */
+                            errno = 0;
                             int rc = mfu_lseek(out_file_path, out_file, pos, SEEK_SET);
                             if (rc == (off_t)-1) {
                                 /* consider this a write error since we can't read
                                  * to determine whether we need to write */
-                                snprintf(error_msg, 8192, "%s: Seek failed on file %s", hostname, out_file_path);
-                                perror(error_msg);
+                                MFU_LOG(MFU_LOG_ERR, "Seek failed on file `%s` (%s)", out_file_path, strerror(errno));
                                 write_error = 1;
                             }
 
                             /* read chunk from file */
+                            errno = 0;
                             ssize_t return_size = mfu_read(out_file_path, out_file, readbuf, size);
                             if (return_size == (ssize_t)size) {
                                 /* we read the correct number of bytes, now compare them */
@@ -1056,8 +1019,7 @@ if (node_rank == 0) {
                                 } else {
                                     /* consider this a write error since we can't read
                                      * to determine whether we need to write */
-                                    snprintf(error_msg, 8192, "%s: Failed to read from existing file %s", hostname, out_file_path);
-                                    perror(error_msg);
+                                    MFU_LOG(MFU_LOG_ERR, "Failed to read from existing file `%s` (%s)", out_file_path, strerror(errno));
                                     write_error = 1;
                                 }
                             }
@@ -1066,10 +1028,10 @@ if (node_rank == 0) {
                         /* write data to output file */
                         if (write_data && !write_error) {
                             /* seek to offset in output file */
+                            errno = 0;
                             int rc = mfu_lseek(out_file_path, out_file, pos, SEEK_SET);
                             if (rc == (off_t)-1) {
-                                snprintf(error_msg, 8192, "%s: Seek failed on file %s", hostname, out_file_path);
-                                perror(error_msg);
+                                MFU_LOG(MFU_LOG_ERR, "Seek failed on file `%s` (%s)", out_file_path, strerror(errno));
                                 write_error = 1;
                             }
 
@@ -1077,21 +1039,20 @@ if (node_rank == 0) {
                             if (size != chunk_size) {
                                 if (pos + size < file_size) {
                                     /* this is bad, so consider it to be fatal */
-                                    snprintf(error_msg, 8192, "%s: Trying to write past end of chunk in middle block %s", hostname, out_file_path);
-                                    perror(error_msg);
+                                    MFU_LOG(MFU_LOG_ERR, "Trying to write past end of chunk in middle block `%s`", out_file_path);
                                     file_bcast_exit();
                                 }
                                 size = chunk_size;
                             }
 
                             /* write chunk to output file */
+                            errno = 0;
                             ssize_t return_size = mfu_write(out_file_path, out_file, copybuf, size);
                             if (return_size == -1) {
                                 /* remember that we had a write error,
                                  * we'll keep going and delete the
                                  * file at the end */
-                                snprintf(error_msg, 8192, "%s: Failed to write contents to %s", hostname, out_file_path);
-                                perror(error_msg);
+                                MFU_LOG(MFU_LOG_ERR, "Failed to write contents to `%s` (%s)", out_file_path, strerror(errno));
                                 write_error = 1;
                             }
                         }
@@ -1118,10 +1079,9 @@ if (node_rank == 0) {
                 double time_diff = time_end - time_start;
                 double rate = (double)report_read / (time_diff * 1024.0 * 1024.0);
                 double time_remaining = ((double)(file_size - report_read)) / (rate * 1024.0 * 1024.0);
-                snprintf(error_msg, 8192, "Progress: %0.1f%% %f MB/s %0.1f secs remaining",
+                MFU_LOG(MFU_LOG_INFO, "Progress: %0.1f%% %f MB/s %0.1f secs remaining",
                     percent_read, rate, time_remaining
                 );
-                DEBUGMSG(error_msg);
 
                 percent = percent_read + 2.0;
                 if (percent > 100.0) {
@@ -1135,52 +1095,51 @@ if (node_rank == 0) {
 }
 
     MPI_Barrier(MPI_COMM_WORLD);
-    DEBUGMSG("Closing output file");
 
     /* every rank closes output file */
     if (node_rank == 0) {
         /* if we have a file open, sync and close it */
         if (out_file >= 0) {
+            errno = 0;
             if (mfu_fsync(out_file_path, out_file) != 0) {
-                snprintf(error_msg, 8192, "%s: Failed to fsync file %s", hostname, out_file_path);
-                perror(error_msg);
+                MFU_LOG(MFU_LOG_ERR, "Failed to fsync file `%s` (%s)", out_file_path, strerror(errno));
                 write_error = 1;
             }
 
+            errno = 0;
             if (mfu_close(out_file_path, out_file) != 0) {
-                snprintf(error_msg, 8192, "%s: Failed to close file %s", hostname, out_file_path);
-                perror(error_msg);
+                MFU_LOG(MFU_LOG_ERR, "Failed to close file `%s` (%s)", out_file_path, strerror(errno));
                 write_error = 1;
             }
         }
 
         /* every writer truncates file, we do this in case the user is copying
          * a file by the same name but of different size than a previous copy */
-        if (truncate(out_file_path, (off_t) file_size) != 0) {
-            snprintf(error_msg, 8192, "%s: Failed to truncate file %s", hostname, out_file_path);
-            perror(error_msg);
+        errno = 0;
+        if (mfu_truncate(out_file_path, (off_t) file_size) != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to truncate file `%s`", out_file_path, strerror(errno));
             write_error = 1;
         }
 
         /* have every writer update file mode */
+        errno = 0;
         if (mfu_chmod(out_file_path, (mode_t) mode) != 0) {
-            snprintf(error_msg, 8192, "%s: Failed to chmod file %s", hostname, out_file_path);
-            perror(error_msg);
+            MFU_LOG(MFU_LOG_ERR, "Failed to chmod file `%s`", out_file_path, strerror(errno));
             write_error = 1;
         }
 
         /* delete file if we hit an error while writing */
         if (write_error) {
+            errno = 0;
             if (mfu_unlink(out_file_path) != 0) {
-                snprintf(error_msg, 8192, "%s: Failed to unlink file %s", hostname, out_file_path);
-                perror(error_msg);
+                MFU_LOG(MFU_LOG_ERR, "Failed to unlink file `%s`", out_file_path, strerror(errno));
             }
         }
     } else {
         /* readers close input file */
+        errno = 0;
         if (mfu_close(in_file_path, in_file) != 0) {
-            snprintf(error_msg, 8192, "%s: Failed to close file %s", hostname, in_file_path);
-            perror(error_msg);
+            MFU_LOG(MFU_LOG_ERR, "Failed to close file `%s`", in_file_path, strerror(errno));
         }
     }
 
@@ -1189,7 +1148,7 @@ if (node_rank == 0) {
     if (rank == 0) {
         double time_end = MPI_Wtime();
         double time_diff = time_end - time_start;
-        printf("Bcast complete: size=%llu, time=%f secs, speed=%f MB/sec\n",
+        MFU_LOG(MFU_LOG_INFO, "Bcast complete: size=%llu, time=%f secs, speed=%f MB/sec",
             (unsigned long long) file_size, time_diff, (double) file_size / (time_diff * 1024.0 * 1024.0)
         );
     }
@@ -1198,12 +1157,10 @@ if (node_rank == 0) {
 
     /* if we failed to write the file, print an error message */
     if (write_error) {
-        printf("ERROR: %s: Failed to write %s\n", hostname, out_file_path);
+        MFU_LOG(MFU_LOG_ERR, "Failed to write `%s`", out_file_path);
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
-
-    DEBUGMSG("Done");
 
     /* free shared memory segments */
     for (i = 0; i < bufcounts; i++) {
