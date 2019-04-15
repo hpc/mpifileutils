@@ -242,8 +242,7 @@ static void print_usage(void)
     printf("  -t, --text            - use with -o; write processed list to file in ascii format\n");
     printf("  -l, --lite            - walk file system without stat\n");
     printf("  -s, --sort <fields>   - sort output by comma-delimited fields\n");
-    printf("  -d, --distribution <field>:<separators>\n
-                        - print distribution by field\n");
+    printf("  -d, --distribution <field>:<separators>\n                        - print distribution by field\n");
     printf("  -p, --print           - print files to screen\n");
     printf("  -v, --verbose         - verbose output\n");
     printf("  -q, --quiet           - quiet output\n");
