@@ -39,7 +39,7 @@ before_install:
  - sudo ldconfig
 
 before_script:
- - git show --summary HEAD | grep -q "Signed-off-by:"
+ - 'if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then git show --summary HEAD | grep -q "Signed-off-by:"; fi'
 
 script:
  - mkdir build && cd build
