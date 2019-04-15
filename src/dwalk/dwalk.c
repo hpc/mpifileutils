@@ -42,12 +42,12 @@ struct distribute_option {
 static int print_flist_distribution(struct distribute_option *option, mfu_flist* pflist, int rank)
 {
     /* file list to use */
-    mfu_flist flist = *pflist;  
+    mfu_flist flist = *pflist;
 
     /* get local size for each rank */
     uint64_t size = mfu_flist_size(flist);
-    
-    /* allocate a count for each bin, initialize the bin counts to 0 
+
+    /* allocate a count for each bin, initialize the bin counts to 0
      * it is separator + 1 because the last bin is the last separator
      * to the DISTRIBUTE_MAX */
     int separators = option->separator_number;
@@ -62,9 +62,9 @@ static int print_flist_distribution(struct distribute_option *option, mfu_flist*
     for (int i = 0; i < size; i++) {
          /* get the size of the file */
          uint64_t file_size = mfu_flist_file_get_size(flist, i);
-         
+
          /* loop through the bins and find the one the file belongs to,
-          * set last bin to -1, if a bin is not found while looping through the 
+          * set last bin to -1, if a bin is not found while looping through the
           * list of file size separators, then it belongs in the last bin
           * so (last file size - MAX bin) */
          int max_bin_flag = -1;
@@ -72,24 +72,24 @@ static int print_flist_distribution(struct distribute_option *option, mfu_flist*
              if (file_size <= option->separators[j]) {
                  /* found the bin set bin index & increment its count */
                  dist[j]++;
- 
-                 /* a file for this bin was found so can't belong to 
+
+                 /* a file for this bin was found so can't belong to
                   * last bin (so set the flag) & exit the loop */
                  max_bin_flag = 1;
                  break;
-             }       
+             }
          }
- 
+
          /* if max_bin_flag is still -1 then the file belongs to the last bin */
          if (max_bin_flag < 0) {
              dist[separators]++;
          }
     }
- 
+
     /* get the total sum across all of the bins */
     uint64_t* disttotal = (uint64_t*) MFU_MALLOC((separators + 1) * sizeof(uint64_t));
     MPI_Allreduce(dist, disttotal, (uint64_t)separators + 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
- 
+
     /* Print the file distribution */
     if (rank == 0) {
          /* number of files in a bin */
@@ -102,9 +102,9 @@ static int print_flist_distribution(struct distribute_option *option, mfu_flist*
              } else {
                  printf("%"PRIu64, option->separators[i - 1] + 1);
              }
- 
+
              printf("~");
- 
+
              if (i == option->separator_number) {
                  number = disttotal[i];
                  printf("MAX]\t%"PRIu64"\n", number);
@@ -115,7 +115,7 @@ static int print_flist_distribution(struct distribute_option *option, mfu_flist*
              }
          }
     }
- 
+
     /* free the memory used to hold bin counts */
     mfu_free(&disttotal);
     mfu_free(&dist);
@@ -143,7 +143,7 @@ static int distribute_separator_add(struct distribute_option *option, uint64_t s
         printf("Too many separators");
         return -1;
     }
-    
+
     if (count == 0) {
         option->separators[0] = separator;
         return 0;
@@ -237,16 +237,17 @@ static void print_usage(void)
     printf("Usage: dwalk [options] <path> ...\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -i, --input <file>                      - read list from file\n");
-    printf("  -o, --output <file>                     - write processed list to FILE in binary format\n");
-    printf("  -t, --text                              - use with -o; write processed list to FILE in ascii format\n");
-    printf("  -l, --lite                              - walk file system without stat\n");
-    printf("  -s, --sort <fields>                     - sort output by comma-delimited fields\n");
-    printf("  -d, --distribution <field>:<separators> - print distribution by field\n");
-    printf("  -p, --print                             - print files to screen\n");
-    printf("  -v, --verbose                           - verbose output\n");
-    printf("  -q, --quiet                             - quiet output\n");
-    printf("  -h, --help                              - print usage\n");
+    printf("  -i, --input <file>    - read list from file\n");
+    printf("  -o, --output <file>   - write processed list to FILE in binary format\n");
+    printf("  -t, --text            - use with -o; write processed list to FILE in ascii format\n");
+    printf("  -l, --lite            - walk file system without stat\n");
+    printf("  -s, --sort <fields>   - sort output by comma-delimited fields\n");
+    printf("  -d, --distribution <field>:<separators>\n
+                        - print distribution by field\n");
+    printf("  -p, --print           - print files to screen\n");
+    printf("  -v, --verbose         - verbose output\n");
+    printf("  -q, --quiet           - quiet output\n");
+    printf("  -h, --help            - print usage\n");
     printf("\n");
     printf("Fields: name,user,group,uid,gid,atime,mtime,ctime,size\n");
     printf("\n");
