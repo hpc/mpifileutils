@@ -31,7 +31,13 @@ OPTIONS
 
 .. option:: -o, --output FILE
 
-   Write the processed list to a file.
+   Write the processed list to FILE in binary format. Format can be changed
+   With --text option.
+
+.. option:: -t, --text
+
+   Must be used with the --output option. Write processed list of files to
+   FILE in ascii text format.
 
 .. option:: -l, --lite
 
@@ -51,7 +57,7 @@ OPTIONS
 .. option:: -p, --print
 
    Print files to the screen.
-
+   
 .. option:: -v, --verbose
 
    Run in verbose mode.

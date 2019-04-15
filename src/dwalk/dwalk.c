@@ -238,7 +238,8 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("  -i, --input <file>                      - read list from file\n");
-    printf("  -o, --output <file>                     - write processed list to file\n");
+    printf("  -o, --output <file>                     - write processed list to FILE in binary format\n");
+    printf("  -t, --text                              - use with -o; write processed list to FILE in ascii format\n");
     printf("  -l, --lite                              - walk file system without stat\n");
     printf("  -s, --sort <fields>                     - sort output by comma-delimited fields\n");
     printf("  -d, --distribution <field>:<separators> - print distribution by field\n");
