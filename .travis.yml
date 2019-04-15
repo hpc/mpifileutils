@@ -38,6 +38,9 @@ before_install:
  - popd
  - sudo ldconfig
 
+before_script:
+ - git show --summary HEAD | grep -q "Signed-off-by:"
+
 script:
  - mkdir build && cd build
  - cmake ../
