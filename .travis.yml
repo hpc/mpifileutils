@@ -38,6 +38,9 @@ before_install:
  - popd
  - sudo ldconfig
 
+before_script:
+ - 'if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then git show --summary HEAD | grep -q "Signed-off-by:"; fi'
+
 script:
  - mkdir build && cd build
  - cmake ../
