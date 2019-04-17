@@ -76,11 +76,11 @@ pygments_style = 'sphinx'
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = False
 
-from recommonmark.parser import CommonMarkParser
+#from recommonmark.parser import CommonMarkParser
 
-source_parsers = {
-    '.md': CommonMarkParser,
-}
+# source_parsers = {
+#     '.md': CommonMarkParser,
+# }
 
 source_suffix = ['.rst', '.md']
 
