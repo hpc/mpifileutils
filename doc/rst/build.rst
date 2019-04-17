@@ -27,7 +27,7 @@ or to enable all features:
 
 .. code-block:: Bash
 
-    spack install mpifileutils +lustre +experimental
+    spack install mpifileutils +lustre +gpfs +experimental
 
 -------------------------
 Build everything directly
@@ -68,6 +68,9 @@ Then to install the dependencies, run the following commands:
      cd ..
    cd ..
 
+To build on PowerPC, one may need to add :code:`--build=powerpc64le-redhat-linux-gnu`
+to the configure commands.
+
 Assuming the dependencies have been placed in
 an `install` directory as shown above, build mpiFileUtils from a release like v0.9:
 
@@ -96,11 +99,12 @@ or to build the latest mpiFileUtils from the master branch:
      -DCMAKE_INSTALL_PREFIX=../install
    make install
 
-To enable Lustre and experimental tools, add the following flags during CMake:
+To enable Lustre, GPFS, and experimental tools, add the following flags during CMake:
 
 .. code-block:: Bash
 
     -DENABLE_LUSTRE=ON
+    -DENABLE_GPFS=ON
     -DENABLE_EXPERIMENTAL=ON
 
 --------------------------------------------------------------
