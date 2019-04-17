@@ -1,8 +1,8 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DDUP" "1" "Apr 17, 2019" "0.9.1" "mpiFileUtils"
+.TH "DBZ2" "1" "Apr 17, 2019" "0.9.1" "mpiFileUtils"
 .SH NAME
-ddup \- report files with identical content
+dbz2 \- distributed bz2 compression
 .
 .nr rst2man-indent-level 0
 .
@@ -32,44 +32,69 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 ..
 .SH SYNOPSIS
 .sp
-\fBddup [OPTION] PATH\fP
+\fBdbz2 [OPTIONS] [\-z|\-d] FILE\fP
 .SH DESCRIPTION
 .sp
-Parallel MPI application to report files under a directory tree having identical content.
+Parallel MPI application to compress or decompress a file.
 .sp
-ddup reports path names to files having identical content (duplicate files).
-A top\-level directory is specified, and the path name to any file that is a duplicate
-of another anywhere under that same directory tree is reported.
-The path to each file is reported, along with a final hash representing its content.
-Multiple sets of duplicate files can be matched using this final reported hash.
+When compressing, a new file will be created with a .dbz2 extension.
+When decompressing, the .dbz2 extension will be dropped from the file name.
 .SH OPTIONS
 .INDENT 0.0
 .TP
-.B \-d, \-\-debug LEVEL
-Set verbosity level.  LEVEL can be one of: fatal, err, warn, info, dbg.
+.B \-d, \-\-decompress
+Decompress the file
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-z, \-\-compress
+Compress the file
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-k, \-\-keep
+Keep the input file.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-f, \-\-overwrite
+Overwrite the output file, if it exists.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-b, \-\-block SIZE
+Set the compression block size, from 1 to 9.
+Where 1=100kB ... and 9=900kB. Default is 9.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
+Verbose output (optional).
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-h, \-\-help
-Print the command usage, and the list of options available.
+Print usage.
 .UNINDENT
 .SH EXAMPLES
 .INDENT 0.0
 .IP 1. 3
-To report any duplicate files under a directory tree:
+To compress a file:
 .UNINDENT
 .sp
-\fBmpirun \-np 128 ddup /path/to/haystack\fP
+\fBmpirun \-np 128 dbz2 \-\-compress /path/to/file\fP
+.INDENT 0.0
+.IP 2. 3
+To compress a file and overwrite any existing output file:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dbz2 \-\-force \-\-compress /path/to/file\fP
+.INDENT 0.0
+.IP 3. 3
+To decompress a file:
+.UNINDENT
+.sp
+\fBmpirun \-np 128 dbz2 \-\-decompress /path/to/file.dbz2\fP
 .SH SEE ALSO
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
