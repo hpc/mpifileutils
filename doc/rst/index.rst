@@ -43,7 +43,6 @@ Man Pages
    dcmp.1
    dcp.1
    ddup.1
-   dfilemaker.1
    dfind.1
    dreln.1
    drm.1
