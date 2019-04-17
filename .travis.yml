@@ -46,6 +46,7 @@ script:
  - cmake ../
  - make
  - make test
+ - make install
 
 #script: ./autogen.sh && export CC=mpicc && ./configure && make && make test
 #script: ./autogen.sh && ./configure && make && make test
