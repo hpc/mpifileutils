@@ -37,6 +37,7 @@ static void print_usage(void)
     printf("  -v, --verbose          - verbose output\n");
     printf("  -q, --quiet            - quiet output\n");
     printf("  -h, --help             - print usage\n");
+    printf("For more information see https://mpifileutils.readthedocs.io.\n");
     printf("\n");
     fflush(stdout);
     return;

@@ -313,6 +313,7 @@ static void print_usage(void)
     printf("  -h, --help                              - print usage\n");
     printf("\n");
     printf("Fields: name,user,group,uid,gid,atime,mtime,ctime,size\n");
+    printf("For more information see https://mpifileutils.readthedocs.io. \n");
     printf("\n");
     fflush(stdout);
     return;

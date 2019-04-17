@@ -57,6 +57,7 @@ static void print_usage(void)
     printf("  EXIST=COMMON@TYPE=DIFFER\n");
     printf("  EXIST=COMMON@CONTENT=COMMON\n");
     printf("  EXIST=COMMON@CONTENT=DIFFER\n");
+    printf("For more information see https://mpifileutils.readthedocs.io.\n");
     printf("\n");
     fflush(stdout);
 }

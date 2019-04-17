@@ -468,6 +468,7 @@ static void print_usage(void)
     printf("Options:\n");
     printf("  -s, --size <SIZE>  - block size to divide files (default 1MB)\n");
     printf("  -h, --help         - print usage\n");
+    printf("For more information see https://mpifileutils.readthedocs.io.");
     printf("\n");
     fflush(stdout);
     return;

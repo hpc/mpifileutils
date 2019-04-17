@@ -55,6 +55,7 @@ static void print_usage(void)
     printf("  -q, --quiet           - quiet output\n");
     printf("  -h, --help            - print usage\n");
     printf("\n");
+    printf("For more information see https://mpifileutils.readthedocs.io.\n");
     fflush(stdout);
 }
 
