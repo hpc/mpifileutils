@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DCMP" "1" "Jan 28, 2019" "0.9" "mpiFileUtils"
+.TH "DCMP" "1" "Apr 17, 2019" "0.9.1" "mpiFileUtils"
 .SH NAME
 dcmp \- distributed compare
 .
@@ -67,6 +67,11 @@ Enable base checks and normal stdout results when \-\-output is used.
 Run in verbose mode. Prints a list of statistics/timing data for the
 command. Files walked, started, completed, seconds, files, bytes
 read, byte rate, and file rate.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-q, \-\-quiet
+Run tool silently. No output is printed.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -219,7 +224,7 @@ EXIST=COMMON@TYPE=DIFFER
 .UNINDENT
 .sp
 The AND operator binds with higher precedence than the OR operator.
-For example, the following expression matches on entries which either (exist in both soure and destination and whose types differ) or (only exist in the source):
+For example, the following expression matches on entries which either (exist in both source and destination and whose types differ) or (only exist in the source):
 .INDENT 0.0
 .INDENT 3.5
 .sp

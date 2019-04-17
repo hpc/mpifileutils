@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DWALK" "1" "Jan 28, 2019" "0.9" "mpiFileUtils"
+.TH "DWALK" "1" "Apr 17, 2019" "0.9.1" "mpiFileUtils"
 .SH NAME
 dwalk \- distributed walk and list
 .
@@ -56,7 +56,14 @@ from the mpiFileUtils suite.
 .INDENT 0.0
 .TP
 .B \-o, \-\-output FILE
-Write the processed list to a file.
+Write the processed list to FILE in binary format. Format can be changed
+With \-\-text option.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-t, \-\-text
+Must be used with the \-\-output option. Write processed list of files to
+FILE in ascii text format.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -78,6 +85,19 @@ greater.
 .UNINDENT
 .INDENT 0.0
 .TP
+.B \-f, \-\-file\-histogram
+Creates a file histogram without requiring the user to provide
+the bin sizes. The bins are created dynamically based on the
+max file size. The first bin is always for only zero byte
+files, and the rest go up until the max file size is included
+in the very last bin. It always goes up by orders of magnitude
+in powers of two. So, an example of bin separators would be:
+0, 2^10, 2^20, 2^30. Assuming the max file size was somewhere
+within the 2^20 \- 2^30 range. The histogram also includes both
+files and directories.
+.UNINDENT
+.INDENT 0.0
+.TP
 .B \-p, \-\-print
 Print files to the screen.
 .UNINDENT
@@ -85,6 +105,11 @@ Print files to the screen.
 .TP
 .B \-v, \-\-verbose
 Run in verbose mode.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-q, \-\-quiet
+Run tool silently. No output is printed.
 .UNINDENT
 .INDENT 0.0
 .TP
