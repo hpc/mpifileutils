@@ -13,7 +13,6 @@ invocation of the tool has sufficient time to complete before it is killed.
 - dcmp - Compare files.
 - dcp - Copy files.
 - ddup - Find duplicate files.
-- dfilemaker - Generate random files.
 - dfind - Filter files.
 - dreln - Update symlinks.
 - drm - Remove files.
@@ -33,3 +32,4 @@ who are interested in developing them further or to provide additional examples.
 - dparallel - Perform commands in parallel.
 - dsh - List and remove files with interactive commands.
 - dtar - Create file tape archives.
+- dfilemaker - Generate random files.
