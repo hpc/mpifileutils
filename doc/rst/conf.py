@@ -158,7 +158,6 @@ man_pages = [
     ('dcmp.1', 'dcmp', u'distributed compare',[author], 1),
     ('dcp.1', 'dcp', u'distributed copy',[author], 1),
     ('ddup.1', 'ddup', u'report files with identical content',[author], 1),
-    ('dfilemaker.1', 'dfilemaker', u'distributed random file generation program',[author], 1),
     ('dfind.1', 'dfind', u'distributed file filtering',[author], 1),
     ('dreln.1', 'dreln', u'distributed relink',[author], 1),
     ('drm.1', 'drm', u'distributed remove',[author], 1),
