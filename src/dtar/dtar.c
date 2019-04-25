@@ -95,6 +95,15 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    if (size > 1) {
+        if (rank == 0) {
+            printf(“ERROR: dtar only works with one MPI rank.\n”);
+        }
+        mfu_finalize();
+        MPI_Finalize();
+        return 0;
+    }
+
     /* pointer to mfu_walk_opts */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
