@@ -81,7 +81,7 @@ void* mfu_malloc(size_t size, const char* file, int line)
         void* ptr = malloc(size);
         if (ptr == NULL) {
             /* allocate failed, abort */
-            mfu_abort(file, line, 1, "Failed to allocate %llu bytes",
+            mfu_abort(file, line, 1, "Failed to allocate %llu bytes. Try using more nodes.",
                         (unsigned long long) size
                        );
         }
