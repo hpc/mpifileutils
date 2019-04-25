@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <getopt.h>
 #include <errno.h>
 //#include "handle_args.h"
 #include "mfu.h"
@@ -244,17 +245,37 @@ int getnum(const char* fname)
 }
 
 //-----------------------------------
-// put nwds random ints into buffer
+// put nwds ints into buffer
 //------------------------------------
-void fillbuff(int* ibuff, int nwds)
+void fillbuff(int* ibuff, size_t nwds, int kft)
 {
     int i;
-    for (i = 0; i < nwds; i++) {
-        ibuff[i] = rand();
+    switch (kft)
+    {
+        case 0:
+          for (i = 0; i < nwds; i++) {
+            ibuff[i] = rand();
+          }
+          break;
+        case 1:
+          for (i = 0; i < nwds; i++) {
+            ibuff[i] = 0xFFFFFFFF;
+          }
+          break;
+        case 2:
+          for (i = 0; i < nwds; i++) {
+            ibuff[i] = 0x00000000;
+          }
+          break;
+        case 3:
+          for (i = 0; i < nwds; i++) {
+            ibuff[i] = 0xAAAAAAAA;
+          }
+          break;
     }
 }
 
-size_t bufsize = 1024 * 1024;
+size_t bufsize = 1024 * 1024 * 4;
 char* buf;
 size_t size, isize;
 int nnum;
@@ -262,19 +283,20 @@ int nnum;
 /*----------------------------------------------*/
 /* add content to a node created by create_file */
 /*----------------------------------------------*/
-static int write_file(mfu_flist list, uint64_t idx)
+static int write_file(mfu_flist list, uint64_t idx, int kft)
 {
     int rc = 0;
 
     /* get destination name */
     const char* dest_path = mfu_flist_file_get_name(list, idx);
+
+    /* get destination size */
     uint64_t fsize =  mfu_flist_file_get_size(list, idx);
     size = fsize;
-    isize = (size + 1) / 2;
-    //printf("writing file %s, fsize = %li, size = %li\n",dest_path,fsize,size);
     nnum = getnum(dest_path);
     srand(nnum);
-    fillbuff((int*)buf, isize);
+    isize = bufsize/4;
+    fillbuff((int*)buf, isize, kft);
 
     /* open file */
     int fd = mfu_open(dest_path, O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
@@ -288,9 +310,8 @@ static int write_file(mfu_flist list, uint64_t idx)
             /* determine amount to write */
             size_t left = fsize;
             size_t remaining = size - written;
-            if (remaining < fsize) {
-                left = remaining;
-            }
+            if (remaining < fsize) left = remaining;
+            if (left > isize) left = isize;
 
             /* write data to file */
             ssize_t n = mfu_write(dest_path, fd, ptr, left);
@@ -320,7 +341,7 @@ static int write_file(mfu_flist list, uint64_t idx)
 /*----------------------------------------------*/
 /* add content to nodes created by create_files */
 /*----------------------------------------------*/
-static int write_files(mfu_flist list)
+static int write_files(mfu_flist list, int kft)
 {
     int rc = 0;
 
@@ -343,7 +364,7 @@ static int write_files(mfu_flist list)
         /* process files and links */
         if (type == MFU_TYPE_FILE) {
             /* TODO: skip file if it's not readable */
-            write_file(list, idx);
+            write_file(list, idx, kft);
         }
     }
 
@@ -506,15 +527,44 @@ void lnamunsort(char** buff, char** tarray, int* lind, int nitems)
     }
 }
 
+/*-----------------------*/
+/* Print help message */
+/*-----------------------*/
+static void print_usage(void)
+{
+    printf("\n");
+    printf("Usage: dfilemaker [options] \n");
+    printf("\n");
+    printf("Options:\n");
+    printf("  -i, --seed=*integer*      - seed to use for random number generation\n");
+    printf("  -f, --fill=*filltype*     - filltype = random, true, false, or alternate\n");
+    printf("  -d, --depth=*min*-*max*   - directory depth, integers min and max\n");
+    printf("  -n, --nitems=*min*-*max*  - number of items, integers min and max (subs for -r and -w)\n");
+    printf("  -r, --ratio=*min*-*max*   - ratio of files to directories as a percent (not implemented)\n");
+    printf("  -s, --size=*min*-*max*    - file size, integers min and max followed by MB or GB\n");
+    printf("  -w, --width=*min*-*max*   - directory width, integers min and max (not implemented)\n");
+    printf("  -v, --verbose             - print version number\n");
+    printf("  -h, --help                - print usage\n");
+    printf("\n");
+    printf("For more information see https://mpifileutils.readthedocs.io.\n");
+    printf("\n");
+    fflush(stdout);
+}
+/*-----------------------------------------------------------------*/
+/*   Extract min and max strings from arguments to certain options */
+/*-----------------------------------------------------------------*/
+void mmparse(char* optarg,char** minterm,char** maxterm)
+{
+      char delim[5]="-\n";
+      //printf("optarg = %s\n",optarg);
+      *minterm=strtok(optarg,delim);
+      *maxterm=strtok(0,delim);
+}
 
 /*****************************************************************
  *
  *  Create trees of directories, files, links
- *  Usage: dfilemaker <numitems> <relmaxdepth> <maxflength>
- *         where
- *         numitems    = total number of dirs, files, links
- *         relmaxdepth = maximum directory depth rel to start
- *         maxflength  = maximum length of any regular file
+ *  Usage: dfilemaker [options]
  *
  ****************************************************************/
 int main(int narg, char** arg)
@@ -523,11 +573,11 @@ int main(int narg, char** arg)
     uint64_t i, j, ifst, ilst;
     int namlen;
     long int* ftypes, *flens;
-    long int maxflen = 1024L;
+    long int maxflen = 2000L;
     int ifrac, *nfiles; // nfiles is number of files at levels from 0 top
-    int ntotal;
+    int ntotal=3000;
     int nfsum = 0;
-    int nlevels = 2, nsum, ilev; // number of levels with top (./)
+    int nlevels = 5, nsum, ilev; // number of levels with top (./)
     int outlevels, outmin;
     mfu_flist* outlists;
     char* cp;
@@ -556,7 +606,7 @@ int main(int narg, char** arg)
     char** larray;
     char** tarray;
     char* lnames; // global lists of link names
-    char** tnames; // global lists of items as targets over all levels
+    //char** tnames; // global lists of items as targets over all levels
     int nlink, *linksg;
     int nitem, *itemsg;
     uint64_t* targIDs;  // global indices of things that links point to for a dir level
@@ -565,6 +615,28 @@ int main(int narg, char** arg)
     char* tnamelist; // list of path names of items associated with targIDs
     int* lind; // list of ints in order to resort things
     int initsum, noff;
+
+    int kft=0,ifac=0; // kft is index of filltype
+    double ratio=0.;
+    int longind=0;
+    char *minterm,*maxterm;
+    int depmin=0,depmax=0;
+    int nmin=0,nmax=0;
+    int sizemin=0,sizemax=0;
+    int widmin=0,widmax=0;
+    static char *filltype[]={"random","true","false","alternate"};
+    static struct option long_options[] = {
+       {"seed",     1, 0, 'i'},
+       {"fill",     1, 0, 'f'},
+       {"depth",    1, 0, 'd'},
+       {"nitems",   1, 0, 'n'},
+       {"ratio",    1, 0, 'r'},
+       {"size",     1, 0, 's'},
+       {"width",    1, 0, 'w'},
+       {"version",  0, 0, 'v'},
+       {"help",     0, 0, 'h'},
+       {0, 0, 0, 0}
+    };
 
     /*--------------------------
      * initialize mfu and MPI
@@ -580,25 +652,100 @@ int main(int narg, char** arg)
     MPI_Datatype dirname_type;
     MPI_Datatype tname_type;
 
-    /*----------------------------------------------
-     * get nfiles = number of files to create basic
-     *----------------------------------------------*/
-    if (narg < 4) {
-        if (rank == 0) {
-            printf("Usage: dfilemaker <nitems> <nlevels> <maxflen> [-i seed]\n");
-        }
-        MPI_Finalize();
-        exit(0);
-    }
-    ntotal  = atoi(arg[1]);
-    nlevels = atoi(arg[2]);
-    maxflen = atoi(arg[3]);
-    c=getopt(narg,arg,"i:");
-    if (narg > 1)
+   /*----------------------------------------------
+    * get nfiles = number of files to create basic
+    *----------------------------------------------*/
+
+   /*---------------------
+    *  loop over options  
+    *---------------------*/
+    while (1)
     {
-       if (c=='i') jseed = atoi(optarg);
-       if (jseed) iseed=jseed;
-    }
+       /*---------------------------------------------------------------------
+        *  shortopts below are followed by a colon if they take an argument  
+        *---------------------------------------------------------------------*/        
+        c=getopt_long(narg,arg,"i:f:d:n:r:s:w:vh",long_options,&longind);
+        if (c <= 0) break;
+        minterm=(char*)MFU_MALLOC(10*sizeof(char));
+        maxterm=(char*)MFU_MALLOC(10*sizeof(char));
+        switch (c) {
+           case 'i':
+             jseed = atoi(optarg);
+             if (jseed) iseed=jseed;
+             break;
+           case 'f':
+             for (kft=0;kft<4;kft++) if (strcmp(optarg,filltype[kft])==0) break;
+             if (kft==4 && rank==0)
+             {
+                printf("%s not a fill option\n",optarg);
+                MPI_Finalize();  
+             }
+             break;
+           case 'd': 
+             // range for nlevels
+             mmparse(optarg,&minterm,&maxterm);
+             depmin=atoi(minterm);
+             depmax=atoi(maxterm);
+             break;
+           case 'n':
+              // range for ntotal 
+              mmparse(optarg,&minterm,&maxterm);
+              nmin=atoi(minterm);
+              nmax=atoi(maxterm);
+              break;
+            case 'r':
+              ratio = atof(optarg);
+              printf("ratio = %f\n",ratio);
+              break;
+            case 's': 
+              // range for maxflen
+              mmparse(optarg,&minterm,&maxterm);
+              int lterm=strlen(minterm);
+              if (isdigit(minterm[lterm-1])) sizemin=atoi(minterm);
+              else if (strchr(minterm,'B')||strchr(minterm,'b'))
+              {
+                 minterm[lterm-1]='\0';
+                 if (strchr(minterm,'K')||strchr(minterm,'k')) ifac=1000;
+                 else if (strchr(minterm,'M')||strchr(minterm,'m')) ifac=1000000;
+                 else if (strchr(minterm,'G')||strchr(minterm,'g')) ifac=1000000000;
+                 minterm[lterm-2]='\0';
+                 sizemin=ifac*atoi(minterm);
+              }
+              if (isdigit(maxterm[lterm-1])) sizemax=atoi(maxterm);
+              else if (strchr(maxterm,'B')||strchr(maxterm,'b'))
+              {
+                 maxterm[lterm-1]='\0';
+                 if (strchr(maxterm,'K')||strchr(maxterm,'k')) ifac=1000;
+                 else if (strchr(maxterm,'M')||strchr(maxterm,'m')) ifac=1000000;
+                 else if (strchr(maxterm,'G')||strchr(maxterm,'g')) ifac=1000000000;
+                 maxterm[lterm-2]='\0';
+                 sizemax=ifac*atoi(maxterm);
+              }
+              break;
+            case 'w': 
+              mmparse(optarg,&minterm,&maxterm);
+              widmin=atoi(minterm);
+              widmax=atoi(maxterm);
+              break;
+            case 'v':
+              if (rank == 0) printf("verbose is on\n");
+              break;
+            case 'h':
+              if (rank == 0) print_usage();
+              break;
+            default: 
+              break;
+        }
+     };
+     if (nmax > 0) ntotal=nmin+rand()%(1+nmax-nmin);
+     if (depmax > 0) nlevels=depmin+rand()%(1+depmax-depmin);
+     if (sizemax > 0) maxflen=sizemin+rand()%(1+sizemax-sizemin);
+     if (rank == 0 )
+     {
+         printf("ntotal = %d\n",ntotal);
+         printf("nlevels = %d\n",nlevels);
+         printf("maxflen = %d\n",maxflen); 
+     }
 
     /*-------------------------------------------------------
      * each level has nfiles[0] more than the one above
@@ -881,7 +1028,7 @@ int main(int narg, char** arg)
     //---------------------------------
     mfu_flist_mkdir(mybflist);
     mfu_flist_mknod(mybflist);
-    write_files(mybflist);
+    write_files(mybflist, kft);
 
     //------------------------------------
     //  reset statistics at this point
@@ -902,6 +1049,7 @@ int main(int narg, char** arg)
     //
     //*****************************************************************************
     char* itemnames; // local to proc
+    char** tnames; // global lists of items as targets over all levels
     tnames = (char**) MFU_MALLOC(nlevels * sizeof(char*));
     itemsg = (int*) MFU_MALLOC(nrank * sizeof(int));
     const char* item_name = (char*) MFU_MALLOC(PATH_MAX + 1);
