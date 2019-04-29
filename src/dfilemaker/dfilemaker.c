@@ -617,12 +617,13 @@ int main(int narg, char** arg)
     int initsum, noff;
 
     int kft=0,ifac=0; // kft is index of filltype
+    unsigned long long sizeminl,sizemaxl;  // for mfu_abtoul
+    long int sizemin=0,sizemax=0;
     double ratio=0.;
     int longind=0;
     char *minterm,*maxterm;
     int depmin=0,depmax=0;
     int nmin=0,nmax=0;
-    int sizemin=0,sizemax=0;
     int widmin=0,widmax=0;
     static char *filltype[]={"random","true","false","alternate"};
     static struct option long_options[] = {
@@ -700,27 +701,32 @@ int main(int narg, char** arg)
             case 's': 
               // range for maxflen
               mmparse(optarg,&minterm,&maxterm);
-              int lterm=strlen(minterm);
-              if (isdigit(minterm[lterm-1])) sizemin=atoi(minterm);
-              else if (strchr(minterm,'B')||strchr(minterm,'b'))
+
+              /* read file size */
+              if (mfu_abtoull(minterm, &sizeminl) != MFU_SUCCESS)
               {
-                 minterm[lterm-1]='\0';
-                 if (strchr(minterm,'K')||strchr(minterm,'k')) ifac=1000;
-                 else if (strchr(minterm,'M')||strchr(minterm,'m')) ifac=1000000;
-                 else if (strchr(minterm,'G')||strchr(minterm,'g')) ifac=1000000000;
-                 minterm[lterm-2]='\0';
-                 sizemin=ifac*atoi(minterm);
+                if (rank == 0)
+                {
+                  printf("Could not interpret %s as file size\n", minterm);
+                  fflush(stdout);
+                }
+                mfu_finalize();
+                MPI_Finalize();
+                return 1;
               }
-              if (isdigit(maxterm[lterm-1])) sizemax=atoi(maxterm);
-              else if (strchr(maxterm,'B')||strchr(maxterm,'b'))
+              sizemin=(int)sizeminl;
+              if (mfu_abtoull(maxterm, &sizemaxl) != MFU_SUCCESS)
               {
-                 maxterm[lterm-1]='\0';
-                 if (strchr(maxterm,'K')||strchr(maxterm,'k')) ifac=1000;
-                 else if (strchr(maxterm,'M')||strchr(maxterm,'m')) ifac=1000000;
-                 else if (strchr(maxterm,'G')||strchr(maxterm,'g')) ifac=1000000000;
-                 maxterm[lterm-2]='\0';
-                 sizemax=ifac*atoi(maxterm);
+                if (rank == 0)
+                {
+                  printf("Could not interpret %s as file size\n", maxterm);
+                  fflush(stdout);
+                }
+                mfu_finalize();
+                MPI_Finalize();
+                return 1;
               }
+              sizemax=(int)sizemaxl;
               break;
             case 'w': 
               mmparse(optarg,&minterm,&maxterm);
@@ -737,6 +743,7 @@ int main(int narg, char** arg)
               break;
         }
      };
+     srand(iseed);
      if (nmax > 0) ntotal=nmin+rand()%(1+nmax-nmin);
      if (depmax > 0) nlevels=depmin+rand()%(1+depmax-depmin);
      if (sizemax > 0) maxflen=sizemin+rand()%(1+sizemax-sizemin);
@@ -816,7 +823,6 @@ int main(int narg, char** arg)
     //------------------------------------------------------
     ftypes = (long int*) MFU_MALLOC(nfiles[0] * sizeof(long int));
     flens  = (long int*) MFU_MALLOC(nfiles[0] * sizeof(long int));
-    srand(iseed);
     for (i = 0; i < ifst; i++) {
         rand();
     }
