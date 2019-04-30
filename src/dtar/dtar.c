@@ -97,7 +97,7 @@ int main(int argc, char** argv)
 
     if (size > 1) {
         if (rank == 0) {
-            printf(“ERROR: dtar only works with one MPI rank.\n”);
+            MFU_LOG(MFU_LOG_ERR, "dtar currently only works with one MPI rank.");
         }
         mfu_finalize();
         MPI_Finalize();
@@ -113,7 +113,7 @@ int main(int argc, char** argv)
         {"compress",  0, 0, 'j'},
         {"extract",   0, 0, 'x'},
         {"preserve",  0, 0, 'p'},
-        {"chunksize", 1, 0, 's'},        
+        {"chunksize", 1, 0, 's'},
         {"file",      1, 0, 'f'},
         {"blocksize", 1, 0, 'b'},
         {"memory",    1, 0, 'm'},
@@ -247,14 +247,14 @@ int main(int argc, char** argv)
         int num_src_params = numpaths;
         size_t src_params_bytes = ((size_t) num_src_params) * sizeof(mfu_param_path);
         mfu_param_path* src_params = (mfu_param_path*) MFU_MALLOC(src_params_bytes);
-    
+
         /* process each source path */
         mfu_param_path_set_all(numpaths, pathlist, src_params);
-    
+
         /* standardize destination path */
         mfu_param_path dest_param;
         mfu_param_path_set(opts_tarfile, &dest_param);
-    
+
         /* check that source and destination are okay */
         int valid;
         mfu_param_path_check_archive(num_src_params, src_params, dest_param, &valid);
