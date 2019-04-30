@@ -105,7 +105,7 @@ void* mfu_memalign(size_t size, size_t alignment, const char* file, int line)
         int rc = posix_memalign(&ptr, alignment, size);
         if (rc != 0) {
             /* allocate failed, abort */
-            mfu_abort(file, line, 1, "Failed to allocate %llu bytes posix_memalign rc=%d",
+            mfu_abort(file, line, 1, "Failed to allocate %llu bytes posix_memalign rc=%d. Try using more nodes.",
                         (unsigned long long) size, rc
                        );
         }
@@ -125,7 +125,7 @@ char* mfu_strdup(const char* str, const char* file, int line)
         char* ptr = strdup(str);
         if (ptr == NULL) {
             /* allocate failed, abort */
-            mfu_abort(file, line, 1, "Failed to allocate string");
+            mfu_abort(file, line, 1, "Failed to allocate string. Try using more nodes.");
         }
 
         return ptr;
