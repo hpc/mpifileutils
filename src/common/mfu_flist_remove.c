@@ -424,7 +424,7 @@ void mfu_progress_update(MPI_Comm dupcomm, int* count, int* timeout,
         if (time_diff < *timeout) {
             return;
         }
-        if (*req1 == MPI_REQUEST_NULL) {
+        if (*req1 == MPI_REQUEST_NULL && *req2 == MPI_REQUEST_NULL) {
             MPI_Ibcast(keep_going, 1, MPI_INT, 0, dupcomm, req1);
             MPI_Ireduce(values, global_vals, 2, MPI_INT, MPI_SUM, 0, dupcomm, req2);
         } else {
