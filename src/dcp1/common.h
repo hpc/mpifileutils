@@ -45,7 +45,14 @@
 #include <utime.h>
 
 #if DCOPY_USE_XATTRS
-#include <attr/xattr.h>
+#include <sys/xattr.h>
+/*
+ * Newer versions of attr deprecated attr/xattr.h which defines ENOATTR as a
+ * ENODATA. Add the definition to keep compatibility.
+ */
+#ifndef ENOATTR
+#define ENOATTR ENODATA
+#endif
 #endif /* DCOPY_USE_XATTRS */
 
 /* default mode to create new files or directories */
