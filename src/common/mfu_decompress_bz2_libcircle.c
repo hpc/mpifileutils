@@ -17,6 +17,7 @@
 #include <utime.h>
 #include <bzlib.h>
 #include <inttypes.h>
+#include <errno.h>
 
 #include "libcircle.h"
 #include "mfu.h"
