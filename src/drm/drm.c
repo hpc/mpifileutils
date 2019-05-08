@@ -37,8 +37,8 @@ static void print_usage(void)
     printf("      --match   <regex>  - apply command only to entries that match the regex\n");
     printf("      --name             - change regex to apply to entry name rather than full pathname\n");
     printf("      --dryrun           - print out list of files that would be deleted\n");
-    printf("  -T, --traceless        - remove child items without changing parent directory mtime\n");
     printf("      --aggressive       - aggressive mode deletes files during the walk. You CANNOT use dryrun with this option. \n");
+    printf("  -T, --traceless        - remove child items without changing parent directory mtime\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -q, --quiet            - quiet output\n");
     printf("  -h, --help             - print usage\n");
@@ -87,9 +87,9 @@ int main(int argc, char** argv)
         {"name",        0, 0, 'n'},
         {"dryrun",      0, 0, 'd'},
         {"aggressive",  0, 0, 'A'},
+        {"traceless",   0, 0, 'T'},
         {"verbose",     0, 0, 'v'},
         {"quiet",       0, 0, 'q'},
-        {"traceless",   0, 0, 'T'},
         {"help",        0, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -97,7 +97,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:lhvqT",
+                    argc, argv, "i:lTvqh",
                     long_options, &option_index
                 );
 
@@ -127,12 +127,6 @@ int main(int argc, char** argv)
             case 'd':
                 dryrun = 1;
                 break;
-            case 'v':
-                mfu_debug_level = MFU_LOG_VERBOSE;
-                break;
-            case 'q':
-                mfu_debug_level = MFU_LOG_NONE;
-                break;
             case 'A':
                 walk_opts->remove = 1;
                 /* Turn on walk stat with aggressive option.
@@ -146,6 +140,12 @@ int main(int argc, char** argv)
                 break;
             case 'T':
                 traceless = 1;
+                break;
+            case 'v':
+                mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'q':
+                mfu_debug_level = MFU_LOG_NONE;
                 break;
             case 'h':
                 usage = 1;
