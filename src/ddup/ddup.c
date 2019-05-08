@@ -24,9 +24,9 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("  -d, --debug <DEBUG>  - set verbosity, one of: fatal,err,warn,info,dbg\n");
-    printf("  -h, --help           - print usage\n");
     printf("  -v, --verbose        - verbose output\n");
     printf("  -q, --quiet          - quiet output\n");
+    printf("  -h, --help           - print usage\n");
     printf("\n");
     printf("For more information see https://mpifileutils.readthedocs.io.\n");
     fflush(stdout);
@@ -177,9 +177,9 @@ int main(int argc, char** argv)
 
     static struct option long_options[] = {
         {"debug",    0, 0, 'd'},
-        {"help",     0, 0, 'h'},
         {"verbose",  0, 0, 'v'},
         {"quiet",    0, 0, 'q'},
+        {"help",     0, 0, 'h'},
         {0, 0, 0, 0}
     };
 
@@ -188,7 +188,7 @@ int main(int argc, char** argv)
     int help  = 0;
     int c;
     int option_index = 0;
-    while ((c = getopt_long(argc, argv, "d:hvq", \
+    while ((c = getopt_long(argc, argv, "d:vqh", \
                             long_options, &option_index)) != -1)
     {
         switch (c) {
@@ -238,6 +238,8 @@ int main(int argc, char** argv)
                               "`info'.", optarg);
             }
         case 'h':
+            usage = 1;
+            help  = 1;
         case 'v':
             mfu_debug_level = MFU_LOG_VERBOSE;
             break;
