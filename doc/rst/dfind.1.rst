@@ -79,6 +79,18 @@ Numeric arguments can be specified as:
 
    File's status was last changed N days ago.
 
+.. option:: --mmin N
+
+   File's data was last modified N minutes ago.
+
+.. option:: --newer FILE
+
+   File was modified more recently than FILE.
+
+.. option:: --mtime N
+
+   File's data was last modified N days ago.
+
 .. option:: --gid N
 
    File's numeric group ID is N.
@@ -87,9 +99,13 @@ Numeric arguments can be specified as:
 
    File belongs to group NAME.
 
-.. option:: --mmin N
+.. option:: --uid N
 
-   File's data was last modified N minutes ago.
+   File's numeric user ID is N.
+
+.. option:: --user NAME
+
+   File is owned by user NAME.
 
 .. option:: --name PATTERN
 
@@ -102,14 +118,6 @@ Numeric arguments can be specified as:
 .. option:: --regex REGEX
 
    Full path to file matches POSIX regular expression REGEX.  Regular expressions processed by :manpage:`regexec(3)`.
-
-.. option:: --newer FILE
-
-   File was modified more recently than FILE.
-
-.. option:: --mtime N
-
-   File's data was last modified N days ago.
 
 .. option:: --size N
 
@@ -126,14 +134,6 @@ Numeric arguments can be specified as:
    +---+---------------+
    | l | symbolic link |
    +---+---------------+
-
-.. option:: --uid N
-
-   File's numeric user ID is N.
-
-.. option:: --user NAME
-
-   File is owned by user NAME.
 
 ACTIONS
 -------
