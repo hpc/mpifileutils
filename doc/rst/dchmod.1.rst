@@ -50,7 +50,7 @@ OPTIONS
    Only modify items whose full path matches REGEX, processed by
    :manpage:`regexec(3)`.
 
-.. option:: --name
+.. option:: -n, --name
 
    Change --exclude and --match to apply to item name rather than its
    full path.

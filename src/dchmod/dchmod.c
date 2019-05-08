@@ -80,16 +80,16 @@ int main(int argc, char** argv)
         {"exclude",  1, 0, 'e'},
         {"match",    1, 0, 'a'},
         {"name",     0, 0, 'n'},
-        {"help",     0, 0, 'h'},
         {"verbose",  0, 0, 'v'},
         {"quiet",    0, 0, 'q'},
+        {"help",     0, 0, 'h'},
         {0, 0, 0, 0}
     };
 
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:g:m:nlhvq",
+                    argc, argv, "i:u:g:m:nvqh",
                     long_options, &option_index
                 );
 
@@ -121,14 +121,14 @@ int main(int argc, char** argv)
             case 'n':
                 name = 1;
                 break;
-            case 'h':
-                usage = 1;
-                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
             case 'q':
                 mfu_debug_level = MFU_LOG_NONE;
+                break;
+            case 'h':
+                usage = 1;
                 break;
             case '?':
                 usage = 1;
@@ -233,10 +233,10 @@ int main(int argc, char** argv)
         /* update our source list to use the filtered list instead of the original */
         srclist = filtered_flist;
     }
-   
+
     /* change group and permissions */
     mfu_flist_chmod(srclist, ownername, groupname, head);
-   
+
     /* free list if it was used */
     if (filtered_flist != MFU_FLIST_NULL){
         /* free the filtered flist (if any) */
