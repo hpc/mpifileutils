@@ -11,7 +11,7 @@
 #include <inttypes.h>
 #define _XOPEN_SOURCE 600
 #include <fcntl.h>
-#include <string.h> 
+#include <string.h>
 /* for bool type, true/false macros */
 #include <stdbool.h>
 #include <assert.h>
@@ -697,7 +697,7 @@ static uint64_t get_total_bytes_read(mfu_flist src_compare_list) {
 
     /* get total number of bytes across all processes */
     MPI_Allreduce(&byte_count, &total_bytes_read, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    
+
     /* return the toal number of bytes */
     return total_bytes_read;
 }
@@ -741,7 +741,7 @@ static int dcmp_strmap_compare_data(
 
         /* get length of section that we should compare (bytes) */
         off_t length = (off_t)src_p->length;
-        
+
         /* compare the contents of the files */
         int overwrite = 0;
         int compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length,
@@ -789,7 +789,7 @@ static int dcmp_strmap_compare_data(
             /* update to say contents of the files were found to be different */
             dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
-            
+
         } else {
             /* update to say contents of the files were found to be the same */
             dcmp_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
@@ -812,10 +812,10 @@ static int dcmp_strmap_compare_data(
     return rc;
 }
 
-static void time_strmap_compare(mfu_flist src_list, double start_compare, 
+static void time_strmap_compare(mfu_flist src_list, double start_compare,
                                 double end_compare, time_t *time_started,
                                 time_t *time_ended, uint64_t total_bytes_read) {
-    
+
     /* if the verbose option is set print the timing data
         report compare count, time, and rate */
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
@@ -860,11 +860,11 @@ static void time_strmap_compare(mfu_flist src_list, double start_compare,
        MFU_LOG(MFU_LOG_INFO, "Seconds   : %.3lf", time_diff);
        MFU_LOG(MFU_LOG_INFO, "Items     : %" PRId64, all_count);
        MFU_LOG(MFU_LOG_INFO, "Item Rate : %lu items in %f seconds (%f items/sec)",
-            all_count, time_diff, file_rate);     
+            all_count, time_diff, file_rate);
        MFU_LOG(MFU_LOG_INFO, "Bytes read: %.3lf %s (%" PRId64 " bytes)",
             size_tmp, size_units, total_bytes_read);
        MFU_LOG(MFU_LOG_INFO, "Byte Rate : %.3lf %s (%.3" PRId64 " bytes in %.3lf seconds)",
-            total_bytes_tmp, rate_units, total_bytes_read, time_diff); 
+            total_bytes_tmp, rate_units, total_bytes_read, time_diff);
     }
 }
 
@@ -873,7 +873,7 @@ static int dcmp_strmap_compare(mfu_flist src_list,
                                 strmap* src_map,
                                 mfu_flist dst_list,
                                 strmap* dst_map,
-                                size_t strlen_prefix, 
+                                size_t strlen_prefix,
                                 const mfu_param_path* src_path,
                                 const mfu_param_path* dest_path)
 {
@@ -893,7 +893,7 @@ static int dcmp_strmap_compare(mfu_flist src_list,
     /* create compare_lists */
     mfu_flist src_compare_list = mfu_flist_subset(src_list);
     mfu_flist dst_compare_list = mfu_flist_subset(dst_list);
-  
+
     /* get mtime seconds and nsecs to check modification times of src & dst */
     uint64_t src_mtime;
     uint64_t src_mtime_nsec;
@@ -924,11 +924,11 @@ static int dcmp_strmap_compare(mfu_flist src_list,
 
         if (tmp_rc) {
             dcmp_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_ONLY_SRC);
-            
+
             /* skip uncommon files, all other states are DCMPS_INIT */
             continue;
         }
-        
+
         dcmp_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_COMMON);
         dcmp_strmap_item_update(dst_map, key, DCMPF_EXIST, DCMPS_COMMON);
 
@@ -1017,17 +1017,17 @@ static int dcmp_strmap_compare(mfu_flist src_list,
         mfu_flist_file_copy(src_list, src_index, src_compare_list);
         mfu_flist_file_copy(dst_list, dst_index, dst_compare_list);
     }
-    
+
     /* summarize lists of files for which we need to compare data contents */
     mfu_flist_summarize(src_compare_list);
     mfu_flist_summarize(dst_compare_list);
-   
+
     uint64_t cmp_global_size = 0;
     if (!options.lite) {
         /* compare the contents of the files if we have anything in the compare list */
         cmp_global_size = mfu_flist_global_size(src_compare_list);
         if (cmp_global_size > 0) {
-            tmp_rc = dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list, 
+            tmp_rc = dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list,
                     dst_map, strlen_prefix);
             if (tmp_rc < 0) {
                 /* got a read error, signal that back to caller */
@@ -1040,7 +1040,7 @@ static int dcmp_strmap_compare(mfu_flist src_list,
     MPI_Barrier(MPI_COMM_WORLD);
     double end_compare = MPI_Wtime();
     time(&time_ended);
-   
+
     /* initalize total_bytes_read to zero */
     uint64_t total_bytes_read = 0;
 
@@ -1051,7 +1051,7 @@ static int dcmp_strmap_compare(mfu_flist src_list,
 
     time_strmap_compare(src_list, start_compare, end_compare, &time_started,
                         &time_ended, total_bytes_read);
-    
+
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
     mfu_flist_free(&src_compare_list);
@@ -1321,7 +1321,7 @@ static void dcmp_expression_print(
             case DCMPS_DIFFER:
                 printf("exist only in one directory");
                 break;
-            /* To avoid compiler warnings be exhaustive 
+            /* To avoid compiler warnings be exhaustive
              * and include all possible expression states */
             case DCMPS_INIT: //fall through
             case  DCMPS_MAX: //fall through
@@ -1972,7 +1972,7 @@ int main(int argc, char **argv)
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-    
+
     /* pointer to mfu_walk_opts */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
@@ -1983,9 +1983,9 @@ int main(int argc, char **argv)
      *   2) stat info + items in #1
      *   3) file contents + items in #2 */
 
-    /* walk by default because there is no input file option */ 
+    /* walk by default because there is no input file option */
     int walk = 1;
-   
+
     /* By default, show info log messages. */
     /* we back off a level on CIRCLE verbosity since its INFO is verbose */
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
@@ -2011,7 +2011,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "bo:tvqldh",
+            argc, argv, "o:tbvqldh",
             long_options, &option_index
         );
 
@@ -2072,17 +2072,17 @@ int main(int argc, char **argv)
             assert(ret == 0);
         }
     }
-    
+
     /* we should have two arguments left, source and dest paths */
     int numargs = argc - optind;
-        
+
     /* if help flag was thrown, don't bother checking usage */
     if (numargs != 2 && !help) {
         MFU_LOG(MFU_LOG_ERR,
             "You must specify a source and destination path.");
         usage = 1;
     }
-    
+
     /* print usage and exit if necessary */
     if (usage) {
         if (rank == 0) {
@@ -2096,7 +2096,7 @@ int main(int argc, char **argv)
 
     /* allocate space for each path */
     mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
-            
+
     /* process each path */
     const char** argpaths = (const char**)(&argv[optind]);
     mfu_param_path_set_all(numargs, argpaths, paths);
@@ -2111,7 +2111,7 @@ int main(int argc, char **argv)
     /* create an empty file list */
     mfu_flist flist1 = mfu_flist_new();
     mfu_flist flist2 = mfu_flist_new();
-           
+
 
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking source path");
@@ -2126,7 +2126,7 @@ int main(int argc, char **argv)
     /* store src and dest path strings */
     const char* path1 = srcpath->path;
     const char* path2 = destpath->path;
-    
+
     /* map files to ranks based on portion following prefix directory */
     mfu_flist flist3 = mfu_flist_remap(flist1, (mfu_flist_map_fn)dcmp_map_fn, (const void*)path1);
     mfu_flist flist4 = mfu_flist_remap(flist2, (mfu_flist_map_fn)dcmp_map_fn, (const void*)path2);
@@ -2134,14 +2134,14 @@ int main(int argc, char **argv)
     /* map each file name to its index and its comparison state */
     strmap* map1 = dcmp_strmap_creat(flist3, path1);
     strmap* map2 = dcmp_strmap_creat(flist4, path2);
-    
+
     /* compare files in map1 with those in map2 */
     int tmp_rc = dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1), srcpath, destpath);
     if (tmp_rc < 0) {
         /* hit a read error on at least one file */
         rc = 1;
     }
-    
+
     /* check the results are valid */
     if (options.debug) {
         dcmp_strmap_check(map1, map2);
@@ -2159,7 +2159,7 @@ int main(int argc, char **argv)
     mfu_flist_free(&flist2);
     mfu_flist_free(&flist3);
     mfu_flist_free(&flist4);
-    
+
     /* free all param paths */
     mfu_param_path_free_all(numargs, paths);
 
