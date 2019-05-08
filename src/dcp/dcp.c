@@ -10,7 +10,7 @@
 
 #include "mpi.h"
 #include "libcircle.h"
-#include "mfu.h" 
+#include "mfu.h"
 
 static int input_flist_skip(const char* name, void *args)
 {
@@ -124,7 +124,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while(1) {
         int c = getopt_long(
-                    argc, argv, "d:g:hi:pusSvq",
+                    argc, argv, "d:g:i:psSvqh",
                     long_options, &option_index
                 );
 
@@ -272,7 +272,7 @@ int main(int argc, char** argv)
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
     mfu_param_path_check_copy(numpaths_src, paths, destpath, &valid, &copy_into_dir);
-    mfu_copy_opts->copy_into_dir = copy_into_dir; 
+    mfu_copy_opts->copy_into_dir = copy_into_dir;
     /* exit job if we found a problem */
     if (!valid) {
         if(rank == 0) {
@@ -303,7 +303,7 @@ int main(int argc, char** argv)
         mfu_flist_free(&input_flist);
     }
 
-    /* copy flist into destination */ 
+    /* copy flist into destination */
     int tmp_rc = mfu_flist_copy(flist, numpaths_src, paths, destpath, mfu_copy_opts);
     if (tmp_rc < 0) {
         /* hit some sort of error during copy */
