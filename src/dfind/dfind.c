@@ -24,7 +24,7 @@ int MFU_PRED_EXEC (mfu_flist flist, uint64_t idx, void* arg)
     char* command = MFU_STRDUP((char*) arg);
     char* cmdline = (char*) MFU_MALLOC(argmax);
     char* subst = strstr(command, "{}");
-    
+
     if (subst) {
         subst[0] = '\0';
         subst += 2; /* Point to the first char after '{}' */
@@ -39,7 +39,7 @@ int MFU_PRED_EXEC (mfu_flist flist, uint64_t idx, void* arg)
         mfu_free(&command);
         return -1;
     }
-    
+
     ret = system(cmdline);
 
     mfu_free(&cmdline);
@@ -152,7 +152,7 @@ static int add_type(mfu_pred* p, char t)
     case 's':
         *type = S_IFSOCK;
         break;
-    
+
     default:
         /* unsupported type character */
         mfu_free(&type);
@@ -177,7 +177,7 @@ static void pred_commit (mfu_pred* p)
         }
         cur = cur->next;
     }
-    
+
     if (need_print) {
 //        mfu_pred_add(p, MFU_PRED_PRINT, NULL);
     }
@@ -218,29 +218,25 @@ int main (int argc, char** argv)
 
         { "maxdepth", required_argument, NULL, 'd' },
 
+        { "amin",     required_argument, NULL, 'a' },
+        { "anewer",   required_argument, NULL, 'B' },
+        { "atime",    required_argument, NULL, 'A' },
+        { "cmin",     required_argument, NULL, 'c' },
+        { "cnewer",   required_argument, NULL, 'D' },
+        { "ctime",    required_argument, NULL, 'C' },
+        { "mmin",     required_argument, NULL, 'm' },
+        { "newer",    required_argument, NULL, 'N' },
+        { "mtime",    required_argument, NULL, 'M' },
+
         { "gid",      required_argument, NULL, 'g' },
         { "group",    required_argument, NULL, 'G' },
         { "uid",      required_argument, NULL, 'u' },
         { "user",     required_argument, NULL, 'U' },
 
-        { "size",     required_argument, NULL, 's' },
-
         { "name",     required_argument, NULL, 'n' },
         { "path",     required_argument, NULL, 'P' },
         { "regex",    required_argument, NULL, 'r' },
-
-        { "amin",     required_argument, NULL, 'a' },
-        { "mmin",     required_argument, NULL, 'm' },
-        { "cmin",     required_argument, NULL, 'c' },
-
-        { "atime",    required_argument, NULL, 'A' },
-        { "mtime",    required_argument, NULL, 'M' },
-        { "ctime",    required_argument, NULL, 'C' },
-
-        { "anewer",   required_argument, NULL, 'B' },
-        { "newer",    required_argument, NULL, 'N' },
-        { "cnewer",   required_argument, NULL, 'D' },
-
+        { "size",     required_argument, NULL, 's' },
         { "type",     required_argument, NULL, 't' },
 
         { "print",    no_argument,       NULL, 'p' },
@@ -249,11 +245,11 @@ int main (int argc, char** argv)
     };
 
     options.maxdepth = INT_MAX;
-    
+
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:t:vqh",
+                    argc, argv, "i:o:vqh",
                     long_options, NULL
                 );
 
@@ -298,7 +294,7 @@ int main (int argc, char** argv)
     	    buf[strlen(buf)] = '\0'; /* clobbers trailing space */
     	    mfu_pred_add(pred_head, MFU_PRED_EXEC, buf);
     	    break;
-    
+
     	case 'd':
     	    options.maxdepth = atoi(optarg);
     	    break;
@@ -344,7 +340,7 @@ int main (int argc, char** argv)
             }
     	    mfu_pred_add(pred_head, MFU_PRED_REGEX, (void*)r);
     	    break;
-    
+
     	case 'a':
             tr = mfu_pred_relative(optarg, now_t);
     	    mfu_pred_add(pred_head, MFU_PRED_AMIN, (void *)tr);
@@ -401,11 +397,11 @@ int main (int argc, char** argv)
     	    }
     	    mfu_pred_add(pred_head, MFU_PRED_CNEWER, (void *)t);
     	    break;
-    
+
     	case 'p':
     	    mfu_pred_add(pred_head, MFU_PRED_PRINT, NULL);
     	    break;
-    
+
     	case 't':
             ret = add_type(pred_head, *optarg);
             if (ret != 1) {
@@ -415,7 +411,7 @@ int main (int argc, char** argv)
     	        exit(1);
             }
     	    break;
-    
+
         case 'i':
             inputname = MFU_STRDUP(optarg);
             break;
@@ -440,7 +436,7 @@ int main (int argc, char** argv)
             }
     	}
     }
-    
+
     pred_commit(pred_head);
 
     /* paths to walk come after the options */
@@ -473,7 +469,7 @@ int main (int argc, char** argv)
             usage = 1;
         }
     }
-    
+
     if (usage) {
         if (rank == 0) {
             print_usage();
