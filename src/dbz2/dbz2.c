@@ -37,10 +37,8 @@ static void print_usage(void)
     printf("  -k, --keep             - keep existing input file\n");
     printf("  -f, --force            - overwrite output file\n");
     printf("  -b, --blocksize <num>  - block size (1-9)\n");
-    //printf("  -m, --memory <size>    - memory limit in bytes\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -q, --quiet            - quiet output\n");
-    //printf("      --debug            - debug output\n");
     printf("  -h, --help             - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -60,15 +58,13 @@ int main(int argc, char** argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"compress",   0, 0, 'c'},
+        {"compress",   0, 0, 'z'},
         {"decompress", 0, 0, 'd'},
         {"keep",       0, 0, 'k'},
         {"force",      0, 0, 'f'},
-        {"blocksize",  1, 0, 'b'},        
-        {"memory",     1, 0, 'm'},
+        {"blocksize",  1, 0, 'b'},
         {"verbose",    0, 0, 'v'},
         {"quiet",      0, 0, 'q'},
-        {"debug",      0, 0, 'y'},
         {"help",       0, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -79,7 +75,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "cdkfb:m:vqyh",
+                    argc, argv, "zdkfb:vqh",
                     long_options, &option_index
                 );
 
@@ -89,7 +85,7 @@ int main(int argc, char** argv)
 
         unsigned long long bytes;
         switch (c) {
-            case 'c':
+            case 'z':
                 opts_compress = 1;
                 break;
             case 'd':
@@ -107,7 +103,7 @@ int main(int argc, char** argv)
             case 'm':
                 mfu_abtoull(optarg, &bytes);
                 opts_memory = (ssize_t) bytes;
-                break;            
+                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;

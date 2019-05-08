@@ -17,23 +17,23 @@ When decompressing, the .dbz2 extension will be dropped from the file name.
 OPTIONS
 -------
 
-.. option:: -d, --decompress
-
-   Decompress the file
-
 .. option:: -z, --compress
 
    Compress the file
+
+.. option:: -d, --decompress
+
+   Decompress the file
 
 .. option:: -k, --keep
 
    Keep the input file.
 
-.. option:: -f, --overwrite
+.. option:: -f, --force
 
    Overwrite the output file, if it exists.
 
-.. option:: -b, --block SIZE
+.. option:: -b, --blocksize SIZE
 
    Set the compression block size, from 1 to 9.
    Where 1=100kB ... and 9=900kB. Default is 9.
@@ -41,6 +41,10 @@ OPTIONS
 .. option:: -v, --verbose
 
    Verbose output (optional).
+
+.. option:: -q, --quiet
+
+   Quiet output
 
 .. option:: -h, --help
 
