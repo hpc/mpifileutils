@@ -334,15 +334,15 @@ int main(int argc, char* argv[])
         {"count",    1, 0, 'c'},
         {"size",     1, 0, 's'},
         {"minsize",  1, 0, 'm'},
-        {"help",     0, 0, 'h'},
+        {"report",   0, 0, 'r'},
         {"verbose",  0, 0, 'v'},
         {"quiet",    0, 0, 'q'},
-        {"report",   0, 0, 'r'},
+        {"help",     0, 0, 'h'},
         {0, 0, 0, 0}
     };
 
     while (1) {
-        int c = getopt_long(argc, argv, "c:s:m:rhvq",
+        int c = getopt_long(argc, argv, "c:s:m:rvqh",
                     long_options, &option_index);
 
         if (c == -1) {
