@@ -496,6 +496,17 @@ mfu_progress_msgs_t* mfu_progress_msgs_new(void);
 /* free memory associaged with progress message struct */
 void mfu_progress_msgs_delete(mfu_progress_msgs_t** pmsgs);
 
+/* start progress timer */
+void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm);
+
+/* update progress across all processes in work loop */
+void mfu_progress_update(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
+                         int file_count);
+
+/* continue broadcasting progress until all processes have completed */
+void mfu_progress_complete(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
+                           int file_count);
+
 /* given a file list and a chunk size, split files at chunk boundaries and evenly
  * spread chunks to processes, returns a linked list of file sections each process
  * is responsbile for */
