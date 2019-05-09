@@ -373,7 +373,7 @@ int main(int argc, char** argv)
         {"file_histogram", 0, 0, 'f'},
         {"print",          0, 0, 'p'},
         {"verbose",        0, 0, 'v'},
-        {"quiet",          0, 0, 'q'}
+        {"quiet",          0, 0, 'q'},
         {"help",           0, 0, 'h'},
         {0, 0, 0, 0}
     };
