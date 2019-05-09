@@ -108,8 +108,8 @@ int main(int argc, char** argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"debug"                , required_argument, 0, 'd'},
-        {"grouplock"            , required_argument, 0, 'g'},
+        {"debug"                , required_argument, 0, 'd'}, // undocumented
+        {"grouplock"            , required_argument, 0, 'g'}, // untested
         {"input"                , required_argument, 0, 'i'},
         {"preserve"             , no_argument      , 0, 'p'},
         {"synchronous"          , no_argument      , 0, 's'},
