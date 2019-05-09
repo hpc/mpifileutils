@@ -87,7 +87,7 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
     mfu_progress_msgs_t* msgs = mfu_progress_msgs_new();
 
     /* start timer and broadcast for progress messages */
-    mfu_progress_start(msgs, dupcomm, comm_rank);
+    mfu_progress_start(msgs, dupcomm);
 
     /* keep track of files deleted so far */
     int file_count = 0;
@@ -107,10 +107,10 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
             remove_type('u', name);
         }
         ++file_count;
-        mfu_progress_update(msgs, dupcomm, comm_rank, comm_size, (int)idx);
+        mfu_progress_update(msgs, dupcomm, file_count);
     }
 
-    mfu_progress_complete(msgs, dupcomm, comm_rank, comm_size);
+    mfu_progress_complete(msgs, dupcomm, file_count);
 
     MPI_Comm_free(&dupcomm);
     mfu_progress_msgs_delete(&msgs);
@@ -390,10 +390,11 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
  ****************************/
 
 /* start progress timer */
-void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
-                        int comm_rank)
+void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm)
 {
-    printf("in progress start\n");
+    int comm_rank;
+    MPI_Comm_rank(dupcomm, &comm_rank);
+
     msgs->keep_going = 1;
     if (comm_rank == 0) {
         /* set current time & timeout on rank 0 */
@@ -405,12 +406,18 @@ void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
     }
 }
 
-/* update global progress across processes */
-void mfu_progress_update(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
-                         int comm_rank, int comm_size, int rmcount) {
-    printf("in progress update\n");
-    int bcast_done, reduce_done = 0;
-    msgs->values[0] = rmcount;
+/* update progress across all processes in work loop */
+void mfu_progress_update(mfu_progress_msgs_t* msgs,
+                         MPI_Comm dupcomm, int file_count)
+{
+    int comm_size;
+    int comm_rank;
+    MPI_Comm_rank(dupcomm, &comm_rank);
+    MPI_Comm_size(dupcomm, &comm_size);
+
+    int bcast_done  = 0;
+    int reduce_done = 0;
+    msgs->values[0] = file_count;
     msgs->values[1] = 0;
     if (comm_rank == 0) {
         time_t now;
@@ -423,7 +430,6 @@ void mfu_progress_update(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
             return;
         }
 
-        printf("time expired in update\n");
         /* if there are no bcast or reduce requests outstanding send a
          * bcast/reduce pair */
         if (msgs->bcast_req == MPI_REQUEST_NULL && msgs->reduce_req == MPI_REQUEST_NULL) {
@@ -432,15 +438,9 @@ void mfu_progress_update(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
                         MPI_INT, MPI_SUM, 0, dupcomm, &(msgs->reduce_req));
         } else {
             /* check if bcast and/or reduce is done */
-            printf("testing for done broadcast/reduce in update\n");
             MPI_Test(&(msgs->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
             MPI_Test(&(msgs->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
             if (reduce_done) {
-                printf("items removed: %d\n", msgs->global_vals[0]);
-                printf("global_vals[0]: %d\n", msgs->global_vals[0]);
-                printf("global_vals[1]: %d\n", msgs->global_vals[1]);
-                fflush(stdout);
-                fflush(stdout);
                 /* update/reset the timer after reporting progress */
                 msgs->current = time(NULL);
             }
@@ -462,10 +462,15 @@ void mfu_progress_update(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
 }
 
 /* continue broadcasting progress until all processes have completed */
-void mfu_progress_complete(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
-                           int comm_rank, int comm_size)
+void mfu_progress_complete(mfu_progress_msgs_t* msgs,
+                           MPI_Comm dupcomm, int file_count)
 {
-    printf("in progress complete\n");
+    int comm_size;
+    int comm_rank;
+    MPI_Comm_rank(dupcomm, &comm_rank);
+    MPI_Comm_size(dupcomm, &comm_size);
+
+    msgs->values[0] = file_count;
     msgs->values[1] = 1;
     if (comm_rank == 0) {
         while (1) {
@@ -486,9 +491,6 @@ void mfu_progress_complete(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
                  * and/or reduce to finish */
                 MPI_Wait(&(msgs->bcast_req), MPI_STATUS_IGNORE);
                 MPI_Wait(&(msgs->reduce_req), MPI_STATUS_IGNORE);
-                printf("global_vals[0]: %d\n", msgs->global_vals[0]);
-                printf("global_vals[1]: %d\n", msgs->global_vals[1]);
-                fflush(stdout);
                 if (msgs->keep_going == 0) {
                     break;
                 }
