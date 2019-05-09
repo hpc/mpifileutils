@@ -656,7 +656,7 @@ static int dsync_strmap_compare_data(
 
         /* get length of section that we should compare (bytes) */
         off_t length = (off_t)src_p->length;
-        
+
         /* compare the contents of the files */
         int compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length,
                 1048576, overwrite, count_bytes_read, count_bytes_written);
@@ -703,8 +703,8 @@ static int dsync_strmap_compare_data(
             /* update to say contents of the files were found to be different */
             dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
             dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
-            
-           /* Note: File does not need to be truncated for syncing because the size 
+
+           /* Note: File does not need to be truncated for syncing because the size
             * of the dst and src will be the same. It is one of the checks in
             * dsync_strmap_compare */
 
@@ -792,7 +792,7 @@ static int dsync_strmap_compare_lite(
 
 static void print_comparison_stats(
     mfu_flist src_list,
-    double start_compare, 
+    double start_compare,
     double end_compare,
     time_t *time_started,
     time_t *time_ended,
@@ -858,21 +858,21 @@ static void print_comparison_stats(
        MFU_LOG(MFU_LOG_INFO, "Seconds   : %.3lf", time_diff);
        MFU_LOG(MFU_LOG_INFO, "Items     : %" PRId64, num_files);
        MFU_LOG(MFU_LOG_INFO, "Item Rate : %lu items in %f seconds (%f items/sec)",
-            num_files, time_diff, file_rate);     
+            num_files, time_diff, file_rate);
        if (options.contents) {
            MFU_LOG(MFU_LOG_INFO, "Bytes read   : %.3lf %s (%" PRId64 " bytes)",
                 read_size_tmp, read_size_units, total_bytes_read);
            MFU_LOG(MFU_LOG_INFO, "Bytes written: %.3lf %s (%" PRId64 " bytes)",
                 write_size_tmp, write_size_units, total_bytes_written);
            MFU_LOG(MFU_LOG_INFO, "Read Rate    : %.3lf %s (%" PRId64 " bytes in %.3lf seconds)",
-                read_rate_tmp, read_rate_units, total_bytes_read, time_diff); 
+                read_rate_tmp, read_rate_units, total_bytes_read, time_diff);
            MFU_LOG(MFU_LOG_INFO, "Write Rate   : %.3lf %s (%" PRId64 " bytes in %.3lf seconds)",
-            write_rate_tmp, write_rate_units, total_bytes_written, time_diff); 
+            write_rate_tmp, write_rate_units, total_bytes_written, time_diff);
        }
     }
 }
 
-/* loop on the dest map to check for files only in the dst list 
+/* loop on the dest map to check for files only in the dst list
  * and copy to a remove_list for the --sync option */
 static void dsync_only_dst(strmap* src_map,
     strmap* dst_map, mfu_flist dst_list, mfu_flist dst_remove_list)
@@ -899,7 +899,7 @@ static void dsync_only_dst(strmap* src_map,
 }
 
 static int dsync_sync_files(strmap* src_map, strmap* dst_map,
-        mfu_param_path* src_path, mfu_param_path* dest_path, 
+        mfu_param_path* src_path, mfu_param_path* dest_path,
         mfu_flist dst_list, mfu_flist dst_remove_list,
         mfu_flist src_cp_list, mfu_copy_opts_t* mfu_copy_opts)
 {
@@ -910,15 +910,15 @@ static int dsync_sync_files(strmap* src_map, strmap* dst_map,
     /* get our rank and number of ranks */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    
+
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
     mfu_param_path_check_copy(1, src_path, dest_path, &valid, &copy_into_dir);
-    
-    /* record copy_into_dir flag result from check_copy into 
-     * mfu copy options structure */ 
-    mfu_copy_opts->copy_into_dir = copy_into_dir; 
-            
+
+    /* record copy_into_dir flag result from check_copy into
+     * mfu copy options structure */
+    mfu_copy_opts->copy_into_dir = copy_into_dir;
+
     /* exit job if we found a problem */
     if(!valid) {
         if(rank == 0) {
@@ -930,7 +930,7 @@ static int dsync_sync_files(strmap* src_map, strmap* dst_map,
     }
 
     /* get files that are only in the destination directory */
-    if (options.delete) { 
+    if (options.delete) {
         dsync_only_dst(src_map, dst_map, dst_list, dst_remove_list);
     }
 
@@ -946,11 +946,11 @@ static int dsync_sync_files(strmap* src_map, strmap* dst_map,
         mfu_flist_unlink(dst_remove_list, 0);
     }
 
-    /* summarize the src copy list for files 
-     * that need to be copied into dest directory */ 
-    mfu_flist_summarize(src_cp_list); 
-       
-    /* copy files from source to destination if needed */ 
+    /* summarize the src copy list for files
+     * that need to be copied into dest directory */
+    mfu_flist_summarize(src_cp_list);
+
+    /* copy files from source to destination if needed */
     uint64_t copy_size = mfu_flist_global_size(src_cp_list);
     if (copy_size > 0) {
         if (rank == 0) {
@@ -970,7 +970,7 @@ static int dsync_strmap_compare(mfu_flist src_list,
                                 strmap* src_map,
                                 mfu_flist dst_list,
                                 strmap* dst_map,
-                                size_t strlen_prefix, 
+                                size_t strlen_prefix,
                                 mfu_copy_opts_t* mfu_copy_opts,
                                 const mfu_param_path* src_path,
                                 const mfu_param_path* dest_path)
@@ -1024,7 +1024,7 @@ static int dsync_strmap_compare(mfu_flist src_list,
             dsync_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_ONLY_SRC);
 
             /* add items only in src directory into src copy list,
-             * will be later copied into dst dir */ 
+             * will be later copied into dst dir */
             if (!options.dry_run) {
                  mfu_flist_file_copy(src_list, src_index, src_cp_list);
             }
@@ -1068,7 +1068,7 @@ static int dsync_strmap_compare(mfu_flist src_list,
             dsync_strmap_item_update(dst_map, key, DCMPF_TYPE, DCMPS_DIFFER);
 
             /* if the types are different we need to make sure we delete the
-             * file of the same name in the dst dir, and copy the type in 
+             * file of the same name in the dst dir, and copy the type in
              * the src dir to the dst directory */
             if (!options.dry_run) {
                 mfu_flist_file_copy(src_list, src_index, src_cp_list);
@@ -1505,7 +1505,7 @@ static void dsync_expression_print(
             case DCMPS_DIFFER:
                 printf("exist only in one directory");
                 break;
-            /* To avoid compiler warnings be exhaustive 
+            /* To avoid compiler warnings be exhaustive
              * and include all possible expression states */
             case DCMPS_INIT: //fall through
             case  DCMPS_MAX: //fall through
@@ -2170,12 +2170,12 @@ int main(int argc, char **argv)
 
     int option_index = 0;
     static struct option long_options[] = {
+        {"dryrun",        0, 0, 'n'},
         {"batch-files",   1, 0, 'b'},
         {"contents",      0, 0, 'c'},
-        {"dryrun",        0, 0, 'n'},
         {"delete",        0, 0, 'D'},
-        {"output",        1, 0, 'o'},
-        {"debug",         0, 0, 'd'},
+        {"output",        1, 0, 'o'}, // undocumented
+        {"debug",         0, 0, 'd'}, // undocumented
         {"verbose",       0, 0, 'v'},
         {"quiet",         0, 0, 'q'},
         {"help",          0, 0, 'h'},
@@ -2193,7 +2193,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDo:dvqh",
+            argc, argv, "b:cDo:vqh",
             long_options, &option_index
         );
 
@@ -2257,17 +2257,17 @@ int main(int argc, char **argv)
             assert(ret == 0);
         }
     }
-    
+
     /* we should have two arguments left, source and dest paths */
     int numargs = argc - optind;
-        
+
     /* if help flag was thrown, don't bother checking usage */
     if (numargs != 2 && !help) {
         MFU_LOG(MFU_LOG_ERR,
             "You must specify a source and destination path.");
         usage = 1;
     }
-    
+
     /* print usage and exit if necessary */
     if (usage) {
         if (rank == 0) {
@@ -2281,7 +2281,7 @@ int main(int argc, char **argv)
 
     /* allocate space for each path */
     mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
-            
+
     /* process each path */
     const char** argpaths = (const char**)(&argv[optind]);
     mfu_param_path_set_all(numargs, argpaths, paths);
@@ -2296,7 +2296,7 @@ int main(int argc, char **argv)
     /* create an empty file list */
     mfu_flist flist1 = mfu_flist_new();
     mfu_flist flist2 = mfu_flist_new();
-           
+
     /* walk source path */
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking source path");
@@ -2326,7 +2326,7 @@ int main(int argc, char **argv)
     /* store src and dest path strings */
     const char* path1 = srcpath->path;
     const char* path2 = destpath->path;
-    
+
     /* map files to ranks based on portion following prefix directory */
     mfu_flist flist3 = mfu_flist_remap(flist1, (mfu_flist_map_fn)dsync_map_fn, (const void*)path1);
     mfu_flist flist4 = mfu_flist_remap(flist2, (mfu_flist_map_fn)dsync_map_fn, (const void*)path2);
@@ -2338,14 +2338,14 @@ int main(int argc, char **argv)
     /* map each file name to its index and its comparison state */
     strmap* map1 = dsync_strmap_creat(flist3, path1);
     strmap* map2 = dsync_strmap_creat(flist4, path2);
-    
+
     /* compare files in map1 with those in map2 */
-    int tmp_rc = dsync_strmap_compare(flist3, map1, flist4, map2, strlen(path1), 
+    int tmp_rc = dsync_strmap_compare(flist3, map1, flist4, map2, strlen(path1),
             mfu_copy_opts, srcpath, destpath);
     if (tmp_rc < 0) {
         rc = 1;
     }
-    
+
     /* free maps of file names to comparison state info */
     strmap_delete(&map1);
     strmap_delete(&map2);
@@ -2353,7 +2353,7 @@ int main(int argc, char **argv)
     /* free file lists */
     mfu_flist_free(&flist3);
     mfu_flist_free(&flist4);
-    
+
     /* free all param paths */
     mfu_param_path_free_all(numargs, paths);
 
