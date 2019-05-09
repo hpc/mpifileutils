@@ -478,6 +478,24 @@ typedef struct mfu_file_chunk_struct {
   struct mfu_file_chunk_struct* next; /* pointer to next chunk element */
 } mfu_file_chunk;
 
+/* struct that holds global variables for progress message reporting */
+typedef struct {
+    MPI_Request bcast_req;
+    MPI_Request reduce_req;
+    time_t current;
+    int timeout;
+    int keep_going;
+    int values[2];      /* local array */
+    int global_vals[2]; /* global array across all ranks */
+    int count;
+} mfu_progress_msgs_t;
+
+/* allocate memory for progress message struct */
+mfu_progress_msgs_t* mfu_progress_msgs_new(void);
+
+/* free memory associaged with progress message struct */
+void mfu_progress_msgs_delete(mfu_progress_msgs_t** pmsgs);
+
 /* given a file list and a chunk size, split files at chunk boundaries and evenly
  * spread chunks to processes, returns a linked list of file sections each process
  * is responsbile for */

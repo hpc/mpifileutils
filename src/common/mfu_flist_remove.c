@@ -75,23 +75,22 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
     /* each process directly removes its elements */
     uint64_t idx;
     uint64_t size = mfu_flist_size(list);
+
+    /* duplicate communicator for progress message functions */
     MPI_Comm dupcomm;
     MPI_Comm_dup(MPI_COMM_WORLD, &dupcomm);
-    MPI_Request req1 = MPI_REQUEST_NULL;
-    MPI_Request req2 = MPI_REQUEST_NULL;
-    time_t current = 0;
-    int timeout = 1;
-    int keep_going;
-    int values[2];
-    int global_vals[2];
     int comm_size;
     int comm_rank;
     MPI_Comm_rank(dupcomm, &comm_rank);
     MPI_Comm_size(dupcomm, &comm_size);
-    values[0] = 0;
-    values[1] = 0;
-    mfu_progress_start(dupcomm, &timeout, &req1, &current, &keep_going, comm_rank);
-    int count = 0;
+
+    mfu_progress_msgs_t* msgs = mfu_progress_msgs_new();
+
+    /* start timer and broadcast for progress messages */
+    mfu_progress_start(msgs, dupcomm, comm_rank);
+
+    /* keep track of files deleted so far */
+    int file_count = 0;
     for (idx = 0; idx < size; idx++) {
         /* get name and type of item */
         const char* name = mfu_flist_file_get_name(list, idx);
@@ -107,17 +106,14 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
         else {
             remove_type('u', name);
         }
-        count++;
-        mfu_progress_update(dupcomm, &count, &timeout, &req1, &req2, &current,
-                          &keep_going, values, global_vals, comm_size, comm_rank);
-
+        ++file_count;
+        mfu_progress_update(msgs, dupcomm, comm_rank, comm_size, (int)idx);
     }
 
-    values[0] = size;
-    mfu_progress_complete(dupcomm, rmcount, &timeout, &req1, &req2, &current,
-                          &keep_going, values, global_vals, comm_size, comm_rank);
+    mfu_progress_complete(msgs, dupcomm, comm_rank, comm_size);
 
-    //MPI_Comm_free(&dupcomm);
+    MPI_Comm_free(&dupcomm);
+    mfu_progress_msgs_delete(&msgs);
 
     /* report the number of items we deleted */
     *rmcount = size;
@@ -394,108 +390,131 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
  ****************************/
 
 /* start progress timer */
-void mfu_progress_start(MPI_Comm dupcomm, time_t* timeout, MPI_Request* req1,
-                        time_t* current, int* keep_going, int comm_rank)
+void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
+                        int comm_rank)
 {
     printf("in progress start\n");
-    *keep_going = 1;
-    /* set current time & timeout on rank 0 */
+    msgs->keep_going = 1;
     if (comm_rank == 0) {
-        *current = time(NULL);
-        *req1 = MPI_REQUEST_NULL;
+        /* set current time & timeout on rank 0 */
+        msgs->current   = time(NULL);
+        msgs->bcast_req = MPI_REQUEST_NULL;
     } else {
-        MPI_Ibcast(keep_going, 1, MPI_INT, 0, dupcomm, req1);
+        /* if rank != 0 recv bcast */
+        MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, dupcomm, &(msgs->bcast_req));
     }
 }
 
-void mfu_progress_update(MPI_Comm dupcomm, int* count, int* timeout,
-                         MPI_Request* req1, MPI_Request* req2, time_t* current,
-                         int* keep_going, int* values, int* global_vals,
-                         int comm_size, int comm_rank) {
+/* update global progress across processes */
+void mfu_progress_update(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
+                         int comm_rank, int comm_size, int rmcount) {
     printf("in progress update\n");
-    int done1, done2 = 0;
-    values[0] = *count;
-    values[1] = 0;
+    int bcast_done, reduce_done = 0;
+    msgs->values[0] = rmcount;
+    msgs->values[1] = 0;
     if (comm_rank == 0) {
         time_t now;
         now = time(NULL);
         double time_diff = 0;
-        time_diff = difftime(now, *current);
-        if (time_diff < *timeout) {
+        time_diff = difftime(now, msgs->current);
+
+        /* if timeout hasn't expired return from function */
+        if (time_diff < msgs->timeout) {
             return;
         }
-        if (*req1 == MPI_REQUEST_NULL && *req2 == MPI_REQUEST_NULL) {
-            MPI_Ibcast(keep_going, 1, MPI_INT, 0, dupcomm, req1);
-            MPI_Ireduce(values, global_vals, 2, MPI_INT, MPI_SUM, 0, dupcomm, req2);
+
+        printf("time expired in update\n");
+        /* if there are no bcast or reduce requests outstanding send a
+         * bcast/reduce pair */
+        if (msgs->bcast_req == MPI_REQUEST_NULL && msgs->reduce_req == MPI_REQUEST_NULL) {
+            MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, dupcomm, &(msgs->bcast_req));
+            MPI_Ireduce(msgs->values, msgs->global_vals, 2,
+                        MPI_INT, MPI_SUM, 0, dupcomm, &(msgs->reduce_req));
         } else {
-            MPI_Test(req1, &done1, MPI_STATUS_IGNORE);
-            MPI_Test(req2, &done2, MPI_STATUS_IGNORE);
-            if (done2) {
-                printf("items removed: %d\n", global_vals[0]);
+            /* check if bcast and/or reduce is done */
+            printf("testing for done broadcast/reduce in update\n");
+            MPI_Test(&(msgs->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
+            MPI_Test(&(msgs->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
+            if (reduce_done) {
+                printf("items removed: %d\n", msgs->global_vals[0]);
+                printf("global_vals[0]: %d\n", msgs->global_vals[0]);
+                printf("global_vals[1]: %d\n", msgs->global_vals[1]);
                 fflush(stdout);
-                *current = time(NULL);
+                fflush(stdout);
+                /* update/reset the timer after reporting progress */
+                msgs->current = time(NULL);
             }
         }
     } else {
-        if (req2 != MPI_REQUEST_NULL) {
-            MPI_Test(req2, &done2, MPI_STATUS_IGNORE);
-            if (!done2) {
-                return;
-            }
-        }
-        MPI_Test(req1, &done1, MPI_STATUS_IGNORE);
-        if (!done1) {
+        /* check if bcast and/or reduce is done, if they aren't return */
+        MPI_Test(&(msgs->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
+        if (!reduce_done) {
             return;
         }
-        MPI_Ireduce(values, global_vals, 2, MPI_INT, MPI_SUM, 0, dupcomm, req2);
-        MPI_Ibcast(keep_going, 1, MPI_INT, 0, dupcomm, req1);
+        MPI_Test(&(msgs->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
+        if (!bcast_done) {
+            return;
+        }
+        MPI_Ireduce(msgs->values, msgs->global_vals, 2,
+                    MPI_INT, MPI_SUM, 0, dupcomm, &(msgs->reduce_req));
+        MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, dupcomm, &(msgs->bcast_req));
     }
 }
 
-void mfu_progress_complete(MPI_Comm dupcomm, int* count, int* timeout,
-                           MPI_Request* req1, MPI_Request* req2, time_t* current,
-                           int* keep_going, int* values, int* global_vals,
-                           int comm_size, int comm_rank)
+/* continue broadcasting progress until all processes have completed */
+void mfu_progress_complete(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
+                           int comm_rank, int comm_size)
 {
     printf("in progress complete\n");
-    values[1] = 1;
+    msgs->values[1] = 1;
     if (comm_rank == 0) {
         while (1) {
-            if (*req1 == MPI_REQUEST_NULL && *req2 == MPI_REQUEST_NULL) {
+            /* if timeout is up then send a bcast/request pair */
+            if (msgs->bcast_req == MPI_REQUEST_NULL && msgs->reduce_req == MPI_REQUEST_NULL) {
                 time_t now;
                 now = time(NULL);
                 double time_diff = 0;
-                time_diff = difftime(now, *current);
-                if (time_diff < *timeout) {
+                time_diff = difftime(now, msgs->current);
+                if (time_diff < msgs->timeout) {
                     continue;
                 }
-                MPI_Ibcast(keep_going, 1, MPI_INT, 0, dupcomm, req1);
-                MPI_Ireduce(values, global_vals, 2, MPI_INT, MPI_SUM, 0, dupcomm, req2);
+                MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, dupcomm, &(msgs->bcast_req));
+                MPI_Ireduce(msgs->values, msgs->global_vals, 2,
+                            MPI_INT, MPI_SUM, 0, dupcomm, &(msgs->reduce_req));
             } else {
-                MPI_Wait(req1, MPI_STATUS_IGNORE);
-                MPI_Wait(req2, MPI_STATUS_IGNORE);
-                printf("global_vals[0]: %d\n", global_vals[0]);
-                printf("global_vals[1]: %d\n", global_vals[1]);
+                /* if there are outstanding reqs then wait for bcast
+                 * and/or reduce to finish */
+                MPI_Wait(&(msgs->bcast_req), MPI_STATUS_IGNORE);
+                MPI_Wait(&(msgs->reduce_req), MPI_STATUS_IGNORE);
+                printf("global_vals[0]: %d\n", msgs->global_vals[0]);
+                printf("global_vals[1]: %d\n", msgs->global_vals[1]);
                 fflush(stdout);
-                if (*keep_going == 0) {
+                if (msgs->keep_going == 0) {
                     break;
                 }
-                *current = time(NULL);
-                if (global_vals[1] == comm_size) {
-                    *keep_going = 0;
+
+                /* update curren't time */
+                msgs->current = time(NULL);
+
+                /* when number of set process flags equals the comm_size we
+                 * are done doing work */
+                if (msgs->global_vals[1] == comm_size) {
+                    msgs->keep_going = 0;
                 }
             }
         }
     } else {
+        /* when rank != 0 */
         while (1) {
-            if (req2 != MPI_REQUEST_NULL) {
-                MPI_Wait(req2, MPI_STATUS_IGNORE);
-            }
-            MPI_Wait(req1, MPI_STATUS_IGNORE);
-            MPI_Ireduce(values, global_vals, 2, MPI_INT, MPI_SUM, 0, dupcomm, req2);
-            MPI_Wait(req2, MPI_STATUS_IGNORE);
-            if (*keep_going) {
-                MPI_Ibcast(keep_going, 1, MPI_INT, 0, dupcomm, req1);
+            /* wait for bcast and/or reduce to finish */
+            MPI_Wait(&(msgs->bcast_req), MPI_STATUS_IGNORE);
+            MPI_Wait(&(msgs->reduce_req), MPI_STATUS_IGNORE);
+            MPI_Ireduce(msgs->values, msgs->global_vals, 2,
+                        MPI_INT, MPI_SUM, 0, dupcomm, &(msgs->reduce_req));
+
+            /* if keep_going flat is set then send out another bcast */
+            if (msgs->keep_going) {
+                MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, dupcomm, &(msgs->bcast_req));
             } else {
                 break;
             }
