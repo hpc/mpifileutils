@@ -306,8 +306,8 @@ static void print_usage(void)
     printf("  -t, --text              - use with -o; write processed list to file in ascii format\n");
     printf("  -l, --lite              - walk file system without stat\n");
     printf("  -s, --sort <fields>     - sort output by comma-delimited fields\n");
-    printf("  -f, --file_histogram    - print default size distribution of items\n");
     printf("  -d, --distribution <field>:<separators> \n                          - print distribution by field\n");
+    printf("  -f, --file_histogram    - print default size distribution of items\n");
     printf("  -p, --print             - print files to screen\n");
     printf("  -v, --verbose           - verbose output\n");
     printf("  -q, --quiet             - quiet output\n");
@@ -366,21 +366,22 @@ int main(int argc, char** argv)
     static struct option long_options[] = {
         {"input",          1, 0, 'i'},
         {"output",         1, 0, 'o'},
+        {"text",           0, 0, 't'},
         {"lite",           0, 0, 'l'},
         {"sort",           1, 0, 's'},
         {"distribution",   1, 0, 'd'},
         {"file_histogram", 0, 0, 'f'},
         {"print",          0, 0, 'p'},
         {"verbose",        0, 0, 'v'},
+        {"quiet",          0, 0, 'q'}
         {"help",           0, 0, 'h'},
-        {"text",           0, 0, 't'},
         {0, 0, 0, 0}
     };
 
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:ls:d:pvhtf",
+                    argc, argv, "i:o:tls:d:fpvqh",
                     long_options, &option_index
                 );
 
