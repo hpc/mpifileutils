@@ -35,6 +35,16 @@ OPTIONS
 
    Delete extraneous files from destination.
 
+.. option:: -l, --link-dest=LINK_DIR
+
+   Create hardlink to files in LINK_DIR when unchanged, rather than
+   creating file and copying data. Means, users can use this option
+   to achieve the goal of an incremental backup, and save storage space.
+   For example:
+   dsync /src/ /init_backup/
+   dsync -l /init_backup/ /src/ /incremental_backup_19_4_20/
+   dsync -l /init_backup/ /src/ /incremental_backup_19_4_29/
+
 .. option:: --progress N
 
    Print progress message to stdout approximately every N seconds.

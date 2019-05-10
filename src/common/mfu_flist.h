@@ -448,6 +448,16 @@ int mfu_flist_copy(
     mfu_copy_opts_t* mfu_copy_opts  /* IN - options to be used during copy */
 );
 
+/* link items in list from source paths to destination,
+ * each item in source list must come from the
+ * source path, returns 0 on success -1 on error */
+int mfu_flist_hardlink(
+    mfu_flist src_link_list,         /* IN - flist providing source items */
+    const mfu_param_path* srcpath,   /* IN - the source patht */
+    const mfu_param_path* destpath,  /* IN - destination path */
+    mfu_copy_opts_t* mfu_copy_opts   /* IN - options to be used during copy */
+);
+
 /* allocate a new mfu_walk_opts structure,
  * and set its fields with default values */
 mfu_walk_opts_t* mfu_walk_opts_new(void);

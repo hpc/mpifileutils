@@ -1129,6 +1129,44 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
     return rc;
 }
 
+/* creates hardlink in destpath for specified file, identifies source path
+ * returns 0 on success and -1 on error */
+static int mfu_create_hardlink(mfu_flist list, uint64_t idx,
+        const mfu_param_path* srcpath,
+        const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
+{
+    /* assume we'll succeed */
+    int rc = 0;
+
+    /* get source name */
+    const char* src_path = mfu_flist_file_get_name(list, idx);
+
+    /* get destination name */
+    const char* dest_path = mfu_param_path_copy_dest(src_path, 1,
+            srcpath, destpath, mfu_copy_opts);
+
+    /* No need to copy it */
+    if (dest_path == NULL) {
+        return 0;
+    }
+
+    rc = mfu_hardlink(src_path, dest_path);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to create hardlink %s --> %s",
+                dest_path, src_path);
+        mfu_free(&dest_path);
+        return rc;
+    }
+
+    /* free destination path */
+    mfu_free(&dest_path);
+
+    /* increment our file count by one */
+    mfu_copy_stats.total_files++;
+
+    return rc;
+}
+
 /* progress message to print while creating files */
 static void create_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
 {
@@ -1276,6 +1314,113 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
         }
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Created %lu items in %f seconds (%f items/sec)",
+              (unsigned long)sum, secs, rate
+            );
+        }
+    }
+
+    return rc;
+}
+
+/* creates hardlinks,
+ * returns 0 on success and -1 on error */
+static int mfu_create_hardlinks(int levels, int minlevel, mfu_flist* lists,
+        const mfu_param_path* srcpath,
+        const mfu_param_path* destpath, mfu_copy_opts_t* mfu_copy_opts)
+{
+    int rc = 0;
+
+    /* determine whether we should print status messages */
+    int verbose = (mfu_debug_level >= MFU_LOG_VERBOSE);
+
+    /* get current rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* indicate to user what phase we're in */
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Linking files.");
+    }
+
+    /* start timer for entie operation */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_start = MPI_Wtime();
+    uint64_t total_count = 0;
+
+    int level;
+    for (level = 0; level < levels; level++) {
+        /* time how long this takes */
+        double start = MPI_Wtime();
+
+        /* get list of items for this level */
+        mfu_flist list = lists[level];
+
+        /* iterate over items and create hardlink for each */
+        uint64_t idx;
+        uint64_t size = mfu_flist_size(list);
+        uint64_t count = 0;
+        for (idx = 0; idx < size; idx++) {
+            /* get type of item */
+            mfu_filetype type = mfu_flist_file_get_type(list, idx);
+            if (type != MFU_TYPE_FILE) {
+                MFU_LOG(MFU_LOG_ERR, "Can't create link for unregular files.");
+                rc = -1;
+                count++;
+                continue;
+            }
+
+            int tmp_rc = mfu_create_hardlink(list, idx, srcpath, destpath,
+                                             mfu_copy_opts);
+            if (tmp_rc != 0) {
+                rc = -1;
+            }
+            count++;
+        }
+
+        /* add items to our running total */
+        total_count += count;
+
+        /* wait for all procs to finish before we start
+         * with files at next level */
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        /* stop our timer */
+        double end = MPI_Wtime();
+
+        /* print timing statistics */
+        if (verbose) {
+            uint64_t min, max, sum;
+            MPI_Allreduce(&count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
+            MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+            MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+            double rate = 0.0;
+            double secs = end - start;
+            if (secs > 0.0) {
+              rate = (double)sum / secs;
+            }
+            if (rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "  level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f",
+                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
+                );
+            }
+        }
+    }
+
+    /* stop timer and report total count */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_end = MPI_Wtime();
+
+    /* print timing statistics */
+    if (verbose) {
+        uint64_t sum;
+        MPI_Allreduce(&total_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+        double rate = 0.0;
+        double secs = total_end - total_start;
+        if (secs > 0.0) {
+          rate = (double)sum / secs;
+        }
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Linked %lu items in %f seconds (%f items/sec)",
               (unsigned long)sum, secs, rate
             );
         }
@@ -2406,6 +2551,137 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     return rc;
 }
 
+int mfu_flist_hardlink(mfu_flist src_link_list,
+        const mfu_param_path* srcpath, const mfu_param_path* destpath,
+        mfu_copy_opts_t* mfu_copy_opts)
+{
+    /* assume we'll succeed */
+    int rc = 0;
+
+    /* get our rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* set mfu_copy options in mfu_copy_opts_t struct */
+
+    /* copy the destination path to user opts structure */
+    mfu_copy_opts->dest_path = MFU_STRDUP((*destpath).path);
+
+    /* print note about what we're doing and the amount of files/data to be moved */
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Linking to %s", mfu_copy_opts->dest_path);
+    }
+    mfu_flist_print_summary(src_link_list);
+
+    /* Grab a relative and actual start time for the epilogue. */
+    time(&(mfu_copy_stats.time_started));
+    mfu_copy_stats.wtime_started = MPI_Wtime();
+
+    /* Initialize statistics */
+    mfu_copy_stats.total_dirs  = 0;
+    mfu_copy_stats.total_files = 0;
+    mfu_copy_stats.total_links = 0;
+    mfu_copy_stats.total_size  = 0;
+    mfu_copy_stats.total_bytes_copied = 0;
+
+    /* Initialize file cache */
+    mfu_copy_src_cache.name = NULL;
+    mfu_copy_dst_cache.name = NULL;
+
+    /* split items in file list into sublists depending on their
+     * directory depth */
+    int levels, minlevel;
+    mfu_flist* lists;
+    mfu_flist_array_by_depth(src_link_list, &levels, &minlevel, &lists);
+
+    /* TODO: filter out files that are bigger than 0 bytes if we can't read them */
+
+    /* create directories, from top down */
+    int tmp_rc = mfu_create_directories(levels, minlevel, lists, 1,
+            srcpath, destpath, mfu_copy_opts);
+    if (tmp_rc < 0) {
+        rc = -1;
+    }
+
+    /* FIXME: To be consistent with a normal copy, let's go ahead and try
+     * to create hardlinks even if we failed to create directories. This is
+     * so that we may have partial success (we will still create hard links
+     * under any directories that were created). We can imrove this if someone
+     * has better idea for it. */
+    /* create hard links */
+    tmp_rc = mfu_create_hardlinks(levels, minlevel, lists,
+            srcpath, destpath, mfu_copy_opts);
+    if (tmp_rc < 0) {
+        rc = -1;
+    }
+
+    /* set permissions, ownership, and timestamps if needed */
+    mfu_copy_set_metadata(levels, minlevel, lists, 1,
+            srcpath, destpath, mfu_copy_opts);
+
+    /* force updates to disk */
+    mfu_sync_all("Syncing directory updates to disk.");
+
+    /* free our lists of levels */
+    mfu_flist_array_free(levels, &lists);
+
+    /* Determine the actual and relative end time for the epilogue. */
+    mfu_copy_stats.wtime_ended = MPI_Wtime();
+    time(&(mfu_copy_stats.time_ended));
+
+    /* compute time */
+    double rel_time = mfu_copy_stats.wtime_ended - \
+                      mfu_copy_stats.wtime_started;
+
+    /* prep our values into buffer */
+    int64_t values[5];
+    values[0] = mfu_copy_stats.total_dirs;
+    values[1] = mfu_copy_stats.total_files;
+    values[2] = mfu_copy_stats.total_links;
+    values[3] = mfu_copy_stats.total_size;
+    values[4] = mfu_copy_stats.total_bytes_copied;
+
+    /* sum values across processes */
+    int64_t sums[5];
+    MPI_Allreduce(values, sums, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* extract results from allreduce */
+    int64_t agg_dirs   = sums[0];
+    int64_t agg_files  = sums[1];
+    int64_t agg_links  = sums[2];
+    int64_t agg_size   = sums[3];
+    int64_t agg_copied = sums[4];
+
+    if(rank == 0) {
+        /* format start time */
+        char starttime_str[256];
+        struct tm* localstart = localtime(&(mfu_copy_stats.time_started));
+        strftime(starttime_str, 256, "%b-%d-%Y,%H:%M:%S", localstart);
+
+        /* format end time */
+        char endtime_str[256];
+        struct tm* localend = localtime(&(mfu_copy_stats.time_ended));
+        strftime(endtime_str, 256, "%b-%d-%Y,%H:%M:%S", localend);
+
+        /* total number of items */
+        int64_t agg_items = agg_dirs + agg_files + agg_links;
+
+        MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
+        MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
+        MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
+        MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
+        MFU_LOG(MFU_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
+        MFU_LOG(MFU_LOG_INFO, "  Files(hardlinks): %" PRId64, agg_files);
+    }
+
+    /* determine whether any process reported an error,
+     * inputs should are either 0 or -1, so min will be -1 on any -1 */
+    int all_rc;
+    MPI_Allreduce(&rc, &all_rc, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+    rc = all_rc;
+
+    return rc;
+}
 int mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist dst_list, uint64_t dst_index)
 {
     /* assume we'll succeed */
