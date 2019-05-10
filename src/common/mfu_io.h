@@ -80,6 +80,9 @@ ssize_t mfu_readlink(const char* path, char* buf, size_t bufsize);
 /* call symlink, retry a few times on EINTR or EIO */
 int mfu_symlink(const char* oldpath, const char* newpath);
 
+/* call hardlink, retry a few times on EINTR or EIO */
+int mfu_hardlink(const char* oldpath, const char* newpath);
+
 /*****************************
  * Files
  ****************************/
