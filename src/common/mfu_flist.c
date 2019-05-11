@@ -50,54 +50,6 @@
 #include <sys/ioctl.h>
 #endif
 
-/* return a newly allocated progress_msgs structure, set default values on its fields */
-mfu_progress_msgs_t* mfu_progress_msgs_new(void)
-{
-    mfu_progress_msgs_t* msgs = (mfu_progress_msgs_t*) MFU_MALLOC(sizeof(mfu_progress_msgs_t));
-
-    /* we'll dup input communicator on start to conduct bcast/reduce calls
-     * we'll free it after complete */
-    msgs->comm = MPI_COMM_NULL;
-
-    /* initialize broadcast request to NULL */
-    msgs->bcast_req = MPI_REQUEST_NULL;
-
-    /* initialize reduce request to NULL */
-    msgs->reduce_req = MPI_REQUEST_NULL;
-
-    /* to record most timestamp of printing most recent message */
-    msgs->current = 0;
-
-    /* set default timeout to one nanosecond */
-    msgs->timeout = 1;
-
-    /* initialize keep_going flag to 0 */
-    msgs->keep_going = false;
-
-    /* initialize local and global arrays to 0,
-     * first index is status flag and the second index
-     * in the arrays is for the number of items
-     * removed */
-    msgs->values[0] = 0;
-    msgs->values[1] = 0;
-    msgs->global_vals[0] = 0;
-    msgs->global_vals[1] = 0;
-
-    /* initialize count to 0 */
-    msgs->count = 0;
-
-    return msgs;
-}
-
-/* cleanup memory allocated by mfu_progress struct */
-void mfu_progress_msgs_delete(mfu_progress_msgs_t** pmsgs)
-{
-  if (pmsgs != NULL) {
-    mfu_progress_msgs_t* msgs = *pmsgs;
-    mfu_free(pmsgs);
-  }
-}
-
 /* return a newly allocated walk_opts structure, set default values on its fields */
 mfu_walk_opts_t* mfu_walk_opts_new(void)
 {
