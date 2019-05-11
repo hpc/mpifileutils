@@ -493,7 +493,7 @@ typedef struct {
 
 /* start progress timer and return newly allocated structure
  * to track its state */
-mfu_progress_msgs_t* mfu_progress_start(MPI_Comm dupcomm);
+mfu_progress_msgs_t* mfu_progress_start(int secs, MPI_Comm dupcomm);
 
 /* update progress across all processes in work loop */
 void mfu_progress_update(mfu_progress_msgs_t* msgs,

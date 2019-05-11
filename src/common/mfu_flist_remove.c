@@ -77,7 +77,7 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
     uint64_t size = mfu_flist_size(list);
 
     /* start timer and broadcast for progress messages */
-    mfu_progress_msgs_t* msgs = mfu_progress_start(MPI_COMM_WORLD);
+    mfu_progress_msgs_t* msgs = mfu_progress_start(10, MPI_COMM_WORLD);
 
     /* keep track of files deleted so far */
     int file_count = 0;
@@ -396,9 +396,6 @@ static mfu_progress_msgs_t* mfu_progress_msgs_new(void)
     /* to record most timestamp of printing most recent message */
     msgs->current = 0;
 
-    /* set default timeout to 10 seconds */
-    msgs->timeout = 10;
-
     /* initialize keep_going flag to 0 */
     msgs->keep_going = false;
 
@@ -427,7 +424,7 @@ static void mfu_progress_msgs_delete(mfu_progress_msgs_t** pmsgs)
 }
 
 /* start progress timer */
-mfu_progress_msgs_t* mfu_progress_start(MPI_Comm comm)
+mfu_progress_msgs_t* mfu_progress_start(int secs, MPI_Comm comm)
 {
     /* allocate and initialize a new structure */
     mfu_progress_msgs_t* msgs = mfu_progress_msgs_new();
@@ -446,6 +443,7 @@ mfu_progress_msgs_t* mfu_progress_start(MPI_Comm comm)
     if (comm_rank == 0) {
         /* set current time & timeout on rank 0 */
         msgs->current   = time(NULL);
+        msgs->timeout   = secs;
         msgs->bcast_req = MPI_REQUEST_NULL;
     } else {
         /* if rank != 0 recv bcast */
