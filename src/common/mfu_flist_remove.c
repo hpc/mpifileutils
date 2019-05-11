@@ -79,10 +79,6 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
     /* duplicate communicator for progress message functions */
     MPI_Comm dupcomm;
     MPI_Comm_dup(MPI_COMM_WORLD, &dupcomm);
-    int comm_size;
-    int comm_rank;
-    MPI_Comm_rank(dupcomm, &comm_rank);
-    MPI_Comm_size(dupcomm, &comm_size);
 
     mfu_progress_msgs_t* msgs = mfu_progress_msgs_new();
 
