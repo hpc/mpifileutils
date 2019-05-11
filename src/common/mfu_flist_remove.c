@@ -77,7 +77,7 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
     uint64_t size = mfu_flist_size(list);
 
     /* start timer and broadcast for progress messages */
-    mfu_progress* msgs = mfu_progress_start(10, 1, MPI_COMM_WORLD);
+    mfu_progress* prog = mfu_progress_start(10, 1, MPI_COMM_WORLD);
 
     /* keep track of files deleted so far */
     uint64_t file_count = 0;
@@ -100,10 +100,10 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
         /* increment number of items we have deleted
          * and check on progress message */
         file_count++;
-        mfu_progress_update(&file_count, msgs);
+        mfu_progress_update(&file_count, prog);
     }
 
-    mfu_progress_complete(&file_count, &msgs);
+    mfu_progress_complete(&file_count, &prog);
 
     /* report the number of items we deleted */
     *rmcount = size;
@@ -379,56 +379,19 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
  * Driver functions
  ****************************/
 
-/* return a newly allocated progress_msgs structure, set default values on its fields */
-static mfu_progress* mfu_progress_msgs_new(void)
+/* start progress timer */
+mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm)
 {
     /* allocate a new structure */
     mfu_progress* msgs = (mfu_progress*) MFU_MALLOC(sizeof(mfu_progress));
 
-    /* we'll dup input communicator on start to conduct bcast/reduce calls
-     * we'll free it after complete */
-    msgs->comm = MPI_COMM_NULL;
-
-    /* initialize broadcast request to NULL */
-    msgs->bcast_req = MPI_REQUEST_NULL;
-
-    /* initialize reduce request to NULL */
-    msgs->reduce_req = MPI_REQUEST_NULL;
-
-    /* initialize keep_going flag to 0 */
-    msgs->keep_going = false;
-
-    /* initialize count to 0 */
-    msgs->count = 0;
-
-    /* initialize local and global arrays to 0,
-     * first index is status flag and the second index
-     * in the arrays is for the number of items
-     * removed */
-    msgs->values = NULL;
-    msgs->global_vals = NULL;
-
-    return msgs;
-}
-
-/* cleanup memory allocated by mfu_progress struct */
-static void mfu_progress_msgs_delete(mfu_progress** pmsgs)
-{
-  if (pmsgs != NULL) {
-    mfu_progress* msgs = *pmsgs;
-    mfu_free(pmsgs);
-  }
-}
-
-/* start progress timer */
-mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm)
-{
-    /* allocate and initialize a new structure */
-    mfu_progress* msgs = mfu_progress_msgs_new();
-
     /* dup input communicator so our non-blocking collectives
      * don't interfere with caller's MPI communication */
     MPI_Comm_dup(comm, &msgs->comm);
+
+    /* initialize broadcast and reduce requests to NULL */
+    msgs->bcast_req  = MPI_REQUEST_NULL;
+    msgs->reduce_req = MPI_REQUEST_NULL;
 
     /* we'll keep executing bcast/reduce iterations until
      * all processes call complete */
@@ -437,7 +400,8 @@ mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm)
     /* record number of items to sum in progress updates */
     msgs->count = count;
 
-    /* allocate space to hold local and global values in reduction */
+    /* allocate space to hold local and global values in reduction,
+     * grab one extra space to hold completion status flags across procs */
     size_t bytes = (count + 1) * sizeof(uint64_t);
     msgs->values      = (uint64_t*) MFU_MALLOC(bytes);
     msgs->global_vals = (uint64_t*) MFU_MALLOC(bytes);
@@ -646,7 +610,7 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pmsgs)
     mfu_free(&msgs->global_vals);
 
     /* free our structure */
-    mfu_progress_msgs_delete(pmsgs);
+    mfu_free(pmsgs);
 }
 
 /* removes list of items, sets write bits on directories from
