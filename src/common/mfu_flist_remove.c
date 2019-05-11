@@ -396,8 +396,8 @@ static mfu_progress_msgs_t* mfu_progress_msgs_new(void)
     /* to record most timestamp of printing most recent message */
     msgs->current = 0;
 
-    /* set default timeout to one nanosecond */
-    msgs->timeout = 1;
+    /* set default timeout to 10 seconds */
+    msgs->timeout = 10;
 
     /* initialize keep_going flag to 0 */
     msgs->keep_going = false;
@@ -436,12 +436,12 @@ mfu_progress_msgs_t* mfu_progress_start(MPI_Comm comm)
      * don't interfere with caller's MPI communication */
     MPI_Comm_dup(comm, &msgs->comm);
 
-    int comm_rank;
-    MPI_Comm_rank(msgs->comm, &comm_rank);
-
     /* we'll keep executing bcast/reduce iterations until
      * all processes call complete */
     msgs->keep_going = 1;
+
+    int comm_rank;
+    MPI_Comm_rank(msgs->comm, &comm_rank);
 
     if (comm_rank == 0) {
         /* set current time & timeout on rank 0 */
@@ -466,15 +466,20 @@ void mfu_progress_update(mfu_progress_msgs_t* msgs,
 
     int bcast_done  = 0;
     int reduce_done = 0;
-    msgs->values[0] = file_count;
-    msgs->values[1] = 0;
-    if (comm_rank == 0) {
-        time_t now;
-        now = time(NULL);
-        double time_diff = 0;
-        time_diff = difftime(now, msgs->current);
 
-        /* if timeout hasn't expired return from function */
+    /* update our local count value to contribute in reduction */
+    msgs->values[0] = file_count;
+
+    /* set our complete flag to 0 to indicate that we have not finished */
+    msgs->values[1] = 0;
+
+    if (comm_rank == 0) {
+        /* get current time and compute number of seconds since
+         * we last printed a message */
+        time_t now = time(NULL);
+        double time_diff = difftime(now, msgs->current);
+
+        /* if timeout hasn't expired do nothing, return from function */
         if (time_diff < msgs->timeout) {
             return;
         }
@@ -489,7 +494,11 @@ void mfu_progress_update(mfu_progress_msgs_t* msgs,
             /* check if bcast and/or reduce is done */
             MPI_Test(&(msgs->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
             MPI_Test(&(msgs->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
-            if (reduce_done) {
+
+            /* print new progress message when bcast and reduce have completed */
+            if (bcast_done && reduce_done) {
+                /* TODO: print progress message */
+
                 /* update/reset the timer after reporting progress */
                 msgs->current = time(NULL);
             }
@@ -504,8 +513,15 @@ void mfu_progress_update(mfu_progress_msgs_t* msgs,
         if (!bcast_done) {
             return;
         }
+
+        /* to get here, the bcast must have completed,
+         * so call reduce to contribute our current values */
         MPI_Ireduce(msgs->values, msgs->global_vals, 2,
                     MPI_INT, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
+
+        /* since we are not in complete ourselves,
+         * we can infer that keep_going == 1,
+         * so initiate new bcast for another bcast/reduce iteration */
         MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
     }
 }
@@ -521,30 +537,43 @@ void mfu_progress_complete(mfu_progress_msgs_t** pmsgs,
     MPI_Comm_rank(msgs->comm, &comm_rank);
     MPI_Comm_size(msgs->comm, &comm_size);
 
+    /* update our local count value to contribute in reduction */
     msgs->values[0] = file_count;
+
+    /* we have reached complete, so set our complete flag to 1 */
     msgs->values[1] = 1;
+
     if (comm_rank == 0) {
         while (1) {
             /* if timeout is up then send a bcast/request pair */
             if (msgs->bcast_req == MPI_REQUEST_NULL && msgs->reduce_req == MPI_REQUEST_NULL) {
-                time_t now;
-                now = time(NULL);
-                double time_diff = 0;
-                time_diff = difftime(now, msgs->current);
+                /* get current time and compute number of seconds since
+                 * we last printed a message */
+                time_t now = time(NULL);
+                double time_diff = difftime(now, msgs->current);
+
+                /* if timeout hasn't expired do nothing, return from function */
                 if (time_diff < msgs->timeout) {
                     continue;
                 }
+
+                /* timeout has expired, initiate a new bcast/reduce iteration */
                 MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
                 MPI_Ireduce(msgs->values, msgs->global_vals, 2,
                             MPI_INT, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
             } else {
                 /* if there are outstanding reqs then wait for bcast
-                 * and/or reduce to finish */
+                 * and reduce to finish */
                 MPI_Wait(&(msgs->bcast_req), MPI_STATUS_IGNORE);
                 MPI_Wait(&(msgs->reduce_req), MPI_STATUS_IGNORE);
+
+                /* once outstanding bcast finishes in which we
+                 * set keep_going == 0, we can stop */
                 if (msgs->keep_going == 0) {
                     break;
                 }
+
+                /* TODO: print progress message */
 
                 /* update curren't time */
                 msgs->current = time(NULL);
@@ -562,10 +591,12 @@ void mfu_progress_complete(mfu_progress_msgs_t** pmsgs,
             /* wait for bcast and/or reduce to finish */
             MPI_Wait(&(msgs->bcast_req), MPI_STATUS_IGNORE);
             MPI_Wait(&(msgs->reduce_req), MPI_STATUS_IGNORE);
+
+            /* bcast completed, so contribute our reduction value */
             MPI_Ireduce(msgs->values, msgs->global_vals, 2,
                         MPI_INT, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
 
-            /* if keep_going flat is set then send out another bcast */
+            /* if keep_going flag is set then wait for another bcast */
             if (msgs->keep_going) {
                 MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
             } else {
