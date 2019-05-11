@@ -398,15 +398,15 @@ static mfu_progress* mfu_progress_msgs_new(void)
     /* initialize keep_going flag to 0 */
     msgs->keep_going = false;
 
+    /* initialize count to 0 */
+    msgs->count = 0;
+
     /* initialize local and global arrays to 0,
      * first index is status flag and the second index
      * in the arrays is for the number of items
      * removed */
     msgs->values = NULL;
     msgs->global_vals = NULL;
-
-    /* initialize count to 0 */
-    msgs->count = 0;
 
     return msgs;
 }
@@ -433,6 +433,9 @@ mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm)
     /* we'll keep executing bcast/reduce iterations until
      * all processes call complete */
     msgs->keep_going = 1;
+
+    /* record number of items to sum in progress updates */
+    msgs->count = count;
 
     /* allocate space to hold local and global values in reduction */
     size_t bytes = (count + 1) * sizeof(uint64_t);
