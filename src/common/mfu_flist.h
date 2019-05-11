@@ -483,7 +483,8 @@ typedef struct {
     MPI_Comm comm; /* dup'ed communicator to execute bcast/reduce */
     MPI_Request bcast_req;
     MPI_Request reduce_req;
-    time_t current;
+    time_t time_start;
+    time_t time_last;
     int timeout;
     int keep_going;
     uint64_t values[2];      /* local array */

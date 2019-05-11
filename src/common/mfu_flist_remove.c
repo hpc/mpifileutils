@@ -395,9 +395,6 @@ static mfu_progress* mfu_progress_msgs_new(void)
     /* initialize reduce request to NULL */
     msgs->reduce_req = MPI_REQUEST_NULL;
 
-    /* to record most timestamp of printing most recent message */
-    msgs->current = 0;
-
     /* initialize keep_going flag to 0 */
     msgs->keep_going = false;
 
@@ -444,8 +441,9 @@ mfu_progress* mfu_progress_start(int secs, MPI_Comm comm)
 
     if (rank == 0) {
         /* set current time & timeout on rank 0 */
-        msgs->current   = time(NULL);
-        msgs->timeout   = secs;
+        msgs->time_last  = time(NULL);
+        msgs->time_start = msgs->time_last;
+        msgs->timeout    = secs;
         msgs->bcast_req = MPI_REQUEST_NULL;
     } else {
         /* if rank != 0 recv bcast */
@@ -470,7 +468,7 @@ void mfu_progress_update(mfu_progress* msgs,
         /* get current time and compute number of seconds since
          * we last printed a message */
         time_t now = time(NULL);
-        double time_diff = difftime(now, msgs->current);
+        double time_diff = difftime(now, msgs->time_last);
 
         /* if timeout hasn't expired do nothing, return from function */
         if (time_diff < msgs->timeout) {
@@ -502,7 +500,7 @@ void mfu_progress_update(mfu_progress* msgs,
                 /* TODO: print progress message */
 
                 /* update/reset the timer after reporting progress */
-                msgs->current = time(NULL);
+                msgs->time_last = time(NULL);
             }
         }
     } else {
@@ -559,7 +557,7 @@ void mfu_progress_complete(mfu_progress** pmsgs,
                 /* get current time and compute number of seconds since
                  * we last printed a message */
                 time_t now = time(NULL);
-                double time_diff = difftime(now, msgs->current);
+                double time_diff = difftime(now, msgs->time_last);
 
                 /* if timeout hasn't expired do nothing, return from function */
                 if (time_diff < msgs->timeout) {
@@ -592,7 +590,7 @@ void mfu_progress_complete(mfu_progress** pmsgs,
                 }
 
                 /* update curren't time */
-                msgs->current = time(NULL);
+                msgs->time_last = time(NULL);
 
                 /* when all processes are complete, this will sum
                  * to the number of ranks */
