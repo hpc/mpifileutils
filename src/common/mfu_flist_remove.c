@@ -76,10 +76,8 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
     uint64_t idx;
     uint64_t size = mfu_flist_size(list);
 
-    mfu_progress_msgs_t* msgs = mfu_progress_msgs_new();
-
     /* start timer and broadcast for progress messages */
-    mfu_progress_start(msgs, MPI_COMM_WORLD);
+    mfu_progress_msgs_t* msgs = mfu_progress_start(MPI_COMM_WORLD);
 
     /* keep track of files deleted so far */
     int file_count = 0;
@@ -99,12 +97,11 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
             remove_type('u', name);
         }
         ++file_count;
+
         mfu_progress_update(msgs, file_count);
     }
 
-    mfu_progress_complete(msgs, file_count);
-
-    mfu_progress_msgs_delete(&msgs);
+    mfu_progress_complete(&msgs, file_count);
 
     /* report the number of items we deleted */
     *rmcount = size;
@@ -380,9 +377,61 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
  * Driver functions
  ****************************/
 
-/* start progress timer */
-void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm comm)
+/* return a newly allocated progress_msgs structure, set default values on its fields */
+static mfu_progress_msgs_t* mfu_progress_msgs_new(void)
 {
+    /* allocate a new structure */
+    mfu_progress_msgs_t* msgs = (mfu_progress_msgs_t*) MFU_MALLOC(sizeof(mfu_progress_msgs_t));
+
+    /* we'll dup input communicator on start to conduct bcast/reduce calls
+     * we'll free it after complete */
+    msgs->comm = MPI_COMM_NULL;
+
+    /* initialize broadcast request to NULL */
+    msgs->bcast_req = MPI_REQUEST_NULL;
+
+    /* initialize reduce request to NULL */
+    msgs->reduce_req = MPI_REQUEST_NULL;
+
+    /* to record most timestamp of printing most recent message */
+    msgs->current = 0;
+
+    /* set default timeout to one nanosecond */
+    msgs->timeout = 1;
+
+    /* initialize keep_going flag to 0 */
+    msgs->keep_going = false;
+
+    /* initialize local and global arrays to 0,
+     * first index is status flag and the second index
+     * in the arrays is for the number of items
+     * removed */
+    msgs->values[0] = 0;
+    msgs->values[1] = 0;
+    msgs->global_vals[0] = 0;
+    msgs->global_vals[1] = 0;
+
+    /* initialize count to 0 */
+    msgs->count = 0;
+
+    return msgs;
+}
+
+/* cleanup memory allocated by mfu_progress struct */
+static void mfu_progress_msgs_delete(mfu_progress_msgs_t** pmsgs)
+{
+  if (pmsgs != NULL) {
+    mfu_progress_msgs_t* msgs = *pmsgs;
+    mfu_free(pmsgs);
+  }
+}
+
+/* start progress timer */
+mfu_progress_msgs_t* mfu_progress_start(MPI_Comm comm)
+{
+    /* allocate and initialize a new structure */
+    mfu_progress_msgs_t* msgs = mfu_progress_msgs_new();
+
     /* dup input communicator so our non-blocking collectives
      * don't interfere with caller's MPI communication */
     MPI_Comm_dup(comm, &msgs->comm);
@@ -390,7 +439,10 @@ void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm comm)
     int comm_rank;
     MPI_Comm_rank(msgs->comm, &comm_rank);
 
+    /* we'll keep executing bcast/reduce iterations until
+     * all processes call complete */
     msgs->keep_going = 1;
+
     if (comm_rank == 0) {
         /* set current time & timeout on rank 0 */
         msgs->current   = time(NULL);
@@ -399,6 +451,8 @@ void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm comm)
         /* if rank != 0 recv bcast */
         MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
     }
+
+    return msgs;
 }
 
 /* update progress across all processes in work loop */
@@ -457,9 +511,11 @@ void mfu_progress_update(mfu_progress_msgs_t* msgs,
 }
 
 /* continue broadcasting progress until all processes have completed */
-void mfu_progress_complete(mfu_progress_msgs_t* msgs,
+void mfu_progress_complete(mfu_progress_msgs_t** pmsgs,
                            int file_count)
 {
+    mfu_progress_msgs_t* msgs = *pmsgs;
+
     int comm_size;
     int comm_rank;
     MPI_Comm_rank(msgs->comm, &comm_rank);
@@ -520,6 +576,9 @@ void mfu_progress_complete(mfu_progress_msgs_t* msgs,
 
     /* release communicator we dup'ed during start */
     MPI_Comm_free(&msgs->comm);
+
+    /* free our structure */
+    mfu_progress_msgs_delete(pmsgs);
 }
 
 /* removes list of items, sets write bits on directories from

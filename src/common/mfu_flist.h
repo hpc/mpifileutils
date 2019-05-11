@@ -498,21 +498,17 @@ typedef struct {
     int count;
 } mfu_progress_msgs_t;
 
-/* allocate memory for progress message struct */
-mfu_progress_msgs_t* mfu_progress_msgs_new(void);
-
-/* free memory associaged with progress message struct */
-void mfu_progress_msgs_delete(mfu_progress_msgs_t** pmsgs);
-
-/* start progress timer */
-void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm);
+/* start progress timer and return newly allocated structure
+ * to track its state */
+mfu_progress_msgs_t* mfu_progress_start(MPI_Comm dupcomm);
 
 /* update progress across all processes in work loop */
 void mfu_progress_update(mfu_progress_msgs_t* msgs,
                          int file_count);
 
-/* continue broadcasting progress until all processes have completed */
-void mfu_progress_complete(mfu_progress_msgs_t* msgs,
+/* continue broadcasting progress until all processes have completed,
+ * and free structure allocated in start */
+void mfu_progress_complete(mfu_progress_msgs_t** pmsgs,
                            int file_count);
 
 /* given a file list and a chunk size, split files at chunk boundaries and evenly
