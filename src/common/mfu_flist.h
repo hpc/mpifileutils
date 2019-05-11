@@ -489,19 +489,19 @@ typedef struct {
     uint64_t values[2];      /* local array */
     uint64_t global_vals[2]; /* global array across all ranks */
     int count;
-} mfu_progress_msgs_t;
+} mfu_progress;
 
 /* start progress timer and return newly allocated structure
  * to track its state */
-mfu_progress_msgs_t* mfu_progress_start(int secs, MPI_Comm dupcomm);
+mfu_progress* mfu_progress_start(int secs, MPI_Comm dupcomm);
 
 /* update progress across all processes in work loop */
-void mfu_progress_update(mfu_progress_msgs_t* msgs,
+void mfu_progress_update(mfu_progress* msgs,
                          uint64_t file_count);
 
 /* continue broadcasting progress until all processes have completed,
  * and free structure allocated in start */
-void mfu_progress_complete(mfu_progress_msgs_t** pmsgs,
+void mfu_progress_complete(mfu_progress** pmsgs,
                            uint64_t file_count);
 
 /* given a file list and a chunk size, split files at chunk boundaries and evenly

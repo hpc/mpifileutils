@@ -77,7 +77,7 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
     uint64_t size = mfu_flist_size(list);
 
     /* start timer and broadcast for progress messages */
-    mfu_progress_msgs_t* msgs = mfu_progress_start(10, MPI_COMM_WORLD);
+    mfu_progress* msgs = mfu_progress_start(10, MPI_COMM_WORLD);
 
     /* keep track of files deleted so far */
     uint64_t file_count = 0;
@@ -380,10 +380,10 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
  ****************************/
 
 /* return a newly allocated progress_msgs structure, set default values on its fields */
-static mfu_progress_msgs_t* mfu_progress_msgs_new(void)
+static mfu_progress* mfu_progress_msgs_new(void)
 {
     /* allocate a new structure */
-    mfu_progress_msgs_t* msgs = (mfu_progress_msgs_t*) MFU_MALLOC(sizeof(mfu_progress_msgs_t));
+    mfu_progress* msgs = (mfu_progress*) MFU_MALLOC(sizeof(mfu_progress));
 
     /* we'll dup input communicator on start to conduct bcast/reduce calls
      * we'll free it after complete */
@@ -417,19 +417,19 @@ static mfu_progress_msgs_t* mfu_progress_msgs_new(void)
 }
 
 /* cleanup memory allocated by mfu_progress struct */
-static void mfu_progress_msgs_delete(mfu_progress_msgs_t** pmsgs)
+static void mfu_progress_msgs_delete(mfu_progress** pmsgs)
 {
   if (pmsgs != NULL) {
-    mfu_progress_msgs_t* msgs = *pmsgs;
+    mfu_progress* msgs = *pmsgs;
     mfu_free(pmsgs);
   }
 }
 
 /* start progress timer */
-mfu_progress_msgs_t* mfu_progress_start(int secs, MPI_Comm comm)
+mfu_progress* mfu_progress_start(int secs, MPI_Comm comm)
 {
     /* allocate and initialize a new structure */
-    mfu_progress_msgs_t* msgs = mfu_progress_msgs_new();
+    mfu_progress* msgs = mfu_progress_msgs_new();
 
     /* dup input communicator so our non-blocking collectives
      * don't interfere with caller's MPI communication */
@@ -439,10 +439,10 @@ mfu_progress_msgs_t* mfu_progress_start(int secs, MPI_Comm comm)
      * all processes call complete */
     msgs->keep_going = 1;
 
-    int comm_rank;
-    MPI_Comm_rank(msgs->comm, &comm_rank);
+    int rank;
+    MPI_Comm_rank(msgs->comm, &rank);
 
-    if (comm_rank == 0) {
+    if (rank == 0) {
         /* set current time & timeout on rank 0 */
         msgs->current   = time(NULL);
         msgs->timeout   = secs;
@@ -456,17 +456,17 @@ mfu_progress_msgs_t* mfu_progress_start(int secs, MPI_Comm comm)
 }
 
 /* update progress across all processes in work loop */
-void mfu_progress_update(mfu_progress_msgs_t* msgs,
+void mfu_progress_update(mfu_progress* msgs,
                          uint64_t file_count)
 {
-    int comm_rank, comm_size;
-    MPI_Comm_rank(msgs->comm, &comm_rank);
-    MPI_Comm_size(msgs->comm, &comm_size);
+    int rank, ranks;
+    MPI_Comm_rank(msgs->comm, &rank);
+    MPI_Comm_size(msgs->comm, &ranks);
 
     int bcast_done  = 0;
     int reduce_done = 0;
 
-    if (comm_rank == 0) {
+    if (rank == 0) {
         /* get current time and compute number of seconds since
          * we last printed a message */
         time_t now = time(NULL);
@@ -543,16 +543,16 @@ void mfu_progress_update(mfu_progress_msgs_t* msgs,
 }
 
 /* continue broadcasting progress until all processes have completed */
-void mfu_progress_complete(mfu_progress_msgs_t** pmsgs,
+void mfu_progress_complete(mfu_progress** pmsgs,
                            uint64_t file_count)
 {
-    mfu_progress_msgs_t* msgs = *pmsgs;
+    mfu_progress* msgs = *pmsgs;
 
-    int comm_rank, comm_size;
-    MPI_Comm_rank(msgs->comm, &comm_rank);
-    MPI_Comm_size(msgs->comm, &comm_size);
+    int rank, ranks;
+    MPI_Comm_rank(msgs->comm, &rank);
+    MPI_Comm_size(msgs->comm, &ranks);
 
-    if (comm_rank == 0) {
+    if (rank == 0) {
         while (1) {
             /* if timeout is up then send a bcast/request pair */
             if (msgs->bcast_req == MPI_REQUEST_NULL && msgs->reduce_req == MPI_REQUEST_NULL) {
@@ -595,8 +595,8 @@ void mfu_progress_complete(mfu_progress_msgs_t** pmsgs,
                 msgs->current = time(NULL);
 
                 /* when all processes are complete, this will sum
-                 * to comm_size */
-                if (msgs->global_vals[1] == comm_size) {
+                 * to the number of ranks */
+                if (msgs->global_vals[1] == ranks) {
                     /* all procs are done, tell them we can
                      * stop with next bcast/reduce iteration */
                     msgs->keep_going = 0;
