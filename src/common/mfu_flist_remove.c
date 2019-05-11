@@ -77,7 +77,7 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
     uint64_t size = mfu_flist_size(list);
 
     /* start timer and broadcast for progress messages */
-    mfu_progress* msgs = mfu_progress_start(10, MPI_COMM_WORLD);
+    mfu_progress* msgs = mfu_progress_start(10, 1, MPI_COMM_WORLD);
 
     /* keep track of files deleted so far */
     uint64_t file_count = 0;
@@ -100,10 +100,10 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
         /* increment number of items we have deleted
          * and check on progress message */
         file_count++;
-        mfu_progress_update(msgs, file_count);
+        mfu_progress_update(&file_count, msgs);
     }
 
-    mfu_progress_complete(&msgs, file_count);
+    mfu_progress_complete(&file_count, &msgs);
 
     /* report the number of items we deleted */
     *rmcount = size;
@@ -402,10 +402,8 @@ static mfu_progress* mfu_progress_msgs_new(void)
      * first index is status flag and the second index
      * in the arrays is for the number of items
      * removed */
-    msgs->values[0] = 0;
-    msgs->values[1] = 0;
-    msgs->global_vals[0] = 0;
-    msgs->global_vals[1] = 0;
+    msgs->values = NULL;
+    msgs->global_vals = NULL;
 
     /* initialize count to 0 */
     msgs->count = 0;
@@ -423,7 +421,7 @@ static void mfu_progress_msgs_delete(mfu_progress** pmsgs)
 }
 
 /* start progress timer */
-mfu_progress* mfu_progress_start(int secs, MPI_Comm comm)
+mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm)
 {
     /* allocate and initialize a new structure */
     mfu_progress* msgs = mfu_progress_msgs_new();
@@ -435,6 +433,11 @@ mfu_progress* mfu_progress_start(int secs, MPI_Comm comm)
     /* we'll keep executing bcast/reduce iterations until
      * all processes call complete */
     msgs->keep_going = 1;
+
+    /* allocate space to hold local and global values in reduction */
+    size_t bytes = (count + 1) * sizeof(uint64_t);
+    msgs->values      = (uint64_t*) MFU_MALLOC(bytes);
+    msgs->global_vals = (uint64_t*) MFU_MALLOC(bytes);
 
     int rank;
     MPI_Comm_rank(msgs->comm, &rank);
@@ -454,8 +457,7 @@ mfu_progress* mfu_progress_start(int secs, MPI_Comm comm)
 }
 
 /* update progress across all processes in work loop */
-void mfu_progress_update(mfu_progress* msgs,
-                         uint64_t file_count)
+void mfu_progress_update(uint64_t* vals, mfu_progress* msgs)
 {
     int rank, ranks;
     MPI_Comm_rank(msgs->comm, &rank);
@@ -481,14 +483,14 @@ void mfu_progress_update(mfu_progress* msgs,
             /* signal other procs that it's time for a reduction */
             MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
 
-            /* update our local count value to contribute in reduction */
-            msgs->values[0] = file_count;
-
             /* set our complete flag to 0 to indicate that we have not finished */
-            msgs->values[1] = 0;
+            msgs->values[0] = 0;
+
+            /* update our local count value to contribute in reduction */
+            memcpy(&msgs->values[1], vals, msgs->count * sizeof(uint64_t));
 
             /* initiate the reduction */
-            MPI_Ireduce(msgs->values, msgs->global_vals, 2,
+            MPI_Ireduce(msgs->values, msgs->global_vals, msgs->count + 1,
                         MPI_UINT64_T, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
         } else {
             /* check if bcast and/or reduce is done */
@@ -523,14 +525,14 @@ void mfu_progress_update(mfu_progress* msgs,
         /* to get here, the bcast must have completed,
          * so call reduce to contribute our current values */
 
-        /* update our local count value to contribute in reduction */
-        msgs->values[0] = file_count;
-
         /* set our complete flag to 0 to indicate that we have not finished */
-        msgs->values[1] = 0;
+        msgs->values[0] = 0;
+
+        /* update our local count value to contribute in reduction */
+        memcpy(&msgs->values[1], vals, msgs->count * sizeof(uint64_t));
 
         /* contribute our current values */
-        MPI_Ireduce(msgs->values, msgs->global_vals, 2,
+        MPI_Ireduce(msgs->values, msgs->global_vals, msgs->count + 1,
                     MPI_UINT64_T, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
 
         /* since we are not in complete,
@@ -541,8 +543,7 @@ void mfu_progress_update(mfu_progress* msgs,
 }
 
 /* continue broadcasting progress until all processes have completed */
-void mfu_progress_complete(mfu_progress** pmsgs,
-                           uint64_t file_count)
+void mfu_progress_complete(uint64_t* vals, mfu_progress** pmsgs)
 {
     mfu_progress* msgs = *pmsgs;
 
@@ -567,13 +568,13 @@ void mfu_progress_complete(mfu_progress** pmsgs,
                 /* timeout has expired, initiate a new bcast/reduce iteration */
                 MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
 
-                /* update our local count value to contribute in reduction */
-                msgs->values[0] = file_count;
-
                 /* we have reached complete, so set our complete flag to 1 */
-                msgs->values[1] = 1;
+                msgs->values[0] = 1;
 
-                MPI_Ireduce(msgs->values, msgs->global_vals, 2,
+                /* update our local count value to contribute in reduction */
+                memcpy(&msgs->values[1], vals, msgs->count * sizeof(uint64_t));
+
+                MPI_Ireduce(msgs->values, msgs->global_vals, msgs->count + 1,
                             MPI_UINT64_T, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
             } else {
                 /* if there are outstanding reqs then wait for bcast
@@ -594,7 +595,7 @@ void mfu_progress_complete(mfu_progress** pmsgs,
 
                 /* when all processes are complete, this will sum
                  * to the number of ranks */
-                if (msgs->global_vals[1] == ranks) {
+                if (msgs->global_vals[0] == ranks) {
                     /* all procs are done, tell them we can
                      * stop with next bcast/reduce iteration */
                     msgs->keep_going = 0;
@@ -613,14 +614,14 @@ void mfu_progress_complete(mfu_progress** pmsgs,
             /* wait for bcast to finish */
             MPI_Wait(&(msgs->bcast_req), MPI_STATUS_IGNORE);
 
-            /* update our local count value to contribute in reduction */
-            msgs->values[0] = file_count;
-
             /* we have reached complete, so set our complete flag to 1 */
-            msgs->values[1] = 1;
+            msgs->values[0] = 1;
+
+            /* update our local count value to contribute in reduction */
+            memcpy(&msgs->values[1], vals, msgs->count * sizeof(uint64_t));
 
             /* bcast completed, so contribute our reduction value */
-            MPI_Ireduce(msgs->values, msgs->global_vals, 2,
+            MPI_Ireduce(msgs->values, msgs->global_vals, msgs->count + 1,
                         MPI_UINT64_T, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
 
             /* if keep_going flag is set then wait for another bcast */
@@ -636,6 +637,10 @@ void mfu_progress_complete(mfu_progress** pmsgs,
 
     /* release communicator we dup'ed during start */
     MPI_Comm_free(&msgs->comm);
+
+    /* free memory allocated to hold reduction data */
+    mfu_free(&msgs->values);
+    mfu_free(&msgs->global_vals);
 
     /* free our structure */
     mfu_progress_msgs_delete(pmsgs);
