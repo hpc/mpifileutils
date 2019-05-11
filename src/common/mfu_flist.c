@@ -55,13 +55,17 @@ mfu_progress_msgs_t* mfu_progress_msgs_new(void)
 {
     mfu_progress_msgs_t* msgs = (mfu_progress_msgs_t*) MFU_MALLOC(sizeof(mfu_progress_msgs_t));
 
+    /* we'll dup input communicator on start to conduct bcast/reduce calls
+     * we'll free it after complete */
+    msgs->comm = MPI_COMM_NULL;
+
     /* initialize broadcast request to NULL */
     msgs->bcast_req = MPI_REQUEST_NULL;
 
     /* initialize reduce request to NULL */
     msgs->reduce_req = MPI_REQUEST_NULL;
 
-    /* to record destination path that we'll be copying to */
+    /* to record most timestamp of printing most recent message */
     msgs->current = 0;
 
     /* set default timeout to one nanosecond */

@@ -487,6 +487,7 @@ typedef struct mfu_file_chunk_struct {
 
 /* struct that holds global variables for progress message reporting */
 typedef struct {
+    MPI_Comm comm; /* dup'ed communicator to execute bcast/reduce */
     MPI_Request bcast_req;
     MPI_Request reduce_req;
     time_t current;
@@ -507,11 +508,11 @@ void mfu_progress_msgs_delete(mfu_progress_msgs_t** pmsgs);
 void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm);
 
 /* update progress across all processes in work loop */
-void mfu_progress_update(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
+void mfu_progress_update(mfu_progress_msgs_t* msgs,
                          int file_count);
 
 /* continue broadcasting progress until all processes have completed */
-void mfu_progress_complete(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm,
+void mfu_progress_complete(mfu_progress_msgs_t* msgs,
                            int file_count);
 
 /* given a file list and a chunk size, split files at chunk boundaries and evenly

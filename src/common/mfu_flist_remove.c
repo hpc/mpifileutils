@@ -76,14 +76,10 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
     uint64_t idx;
     uint64_t size = mfu_flist_size(list);
 
-    /* duplicate communicator for progress message functions */
-    MPI_Comm dupcomm;
-    MPI_Comm_dup(MPI_COMM_WORLD, &dupcomm);
-
     mfu_progress_msgs_t* msgs = mfu_progress_msgs_new();
 
     /* start timer and broadcast for progress messages */
-    mfu_progress_start(msgs, dupcomm);
+    mfu_progress_start(msgs, MPI_COMM_WORLD);
 
     /* keep track of files deleted so far */
     int file_count = 0;
@@ -103,12 +99,11 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
             remove_type('u', name);
         }
         ++file_count;
-        mfu_progress_update(msgs, dupcomm, file_count);
+        mfu_progress_update(msgs, file_count);
     }
 
-    mfu_progress_complete(msgs, dupcomm, file_count);
+    mfu_progress_complete(msgs, file_count);
 
-    MPI_Comm_free(&dupcomm);
     mfu_progress_msgs_delete(&msgs);
 
     /* report the number of items we deleted */
@@ -386,10 +381,14 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
  ****************************/
 
 /* start progress timer */
-void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm)
+void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm comm)
 {
+    /* dup input communicator so our non-blocking collectives
+     * don't interfere with caller's MPI communication */
+    MPI_Comm_dup(comm, &msgs->comm);
+
     int comm_rank;
-    MPI_Comm_rank(dupcomm, &comm_rank);
+    MPI_Comm_rank(msgs->comm, &comm_rank);
 
     msgs->keep_going = 1;
     if (comm_rank == 0) {
@@ -398,18 +397,18 @@ void mfu_progress_start(mfu_progress_msgs_t* msgs, MPI_Comm dupcomm)
         msgs->bcast_req = MPI_REQUEST_NULL;
     } else {
         /* if rank != 0 recv bcast */
-        MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, dupcomm, &(msgs->bcast_req));
+        MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
     }
 }
 
 /* update progress across all processes in work loop */
 void mfu_progress_update(mfu_progress_msgs_t* msgs,
-                         MPI_Comm dupcomm, int file_count)
+                         int file_count)
 {
     int comm_size;
     int comm_rank;
-    MPI_Comm_rank(dupcomm, &comm_rank);
-    MPI_Comm_size(dupcomm, &comm_size);
+    MPI_Comm_rank(msgs->comm, &comm_rank);
+    MPI_Comm_size(msgs->comm, &comm_size);
 
     int bcast_done  = 0;
     int reduce_done = 0;
@@ -429,9 +428,9 @@ void mfu_progress_update(mfu_progress_msgs_t* msgs,
         /* if there are no bcast or reduce requests outstanding send a
          * bcast/reduce pair */
         if (msgs->bcast_req == MPI_REQUEST_NULL && msgs->reduce_req == MPI_REQUEST_NULL) {
-            MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, dupcomm, &(msgs->bcast_req));
+            MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
             MPI_Ireduce(msgs->values, msgs->global_vals, 2,
-                        MPI_INT, MPI_SUM, 0, dupcomm, &(msgs->reduce_req));
+                        MPI_INT, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
         } else {
             /* check if bcast and/or reduce is done */
             MPI_Test(&(msgs->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
@@ -452,19 +451,19 @@ void mfu_progress_update(mfu_progress_msgs_t* msgs,
             return;
         }
         MPI_Ireduce(msgs->values, msgs->global_vals, 2,
-                    MPI_INT, MPI_SUM, 0, dupcomm, &(msgs->reduce_req));
-        MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, dupcomm, &(msgs->bcast_req));
+                    MPI_INT, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
+        MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
     }
 }
 
 /* continue broadcasting progress until all processes have completed */
 void mfu_progress_complete(mfu_progress_msgs_t* msgs,
-                           MPI_Comm dupcomm, int file_count)
+                           int file_count)
 {
     int comm_size;
     int comm_rank;
-    MPI_Comm_rank(dupcomm, &comm_rank);
-    MPI_Comm_size(dupcomm, &comm_size);
+    MPI_Comm_rank(msgs->comm, &comm_rank);
+    MPI_Comm_size(msgs->comm, &comm_size);
 
     msgs->values[0] = file_count;
     msgs->values[1] = 1;
@@ -479,9 +478,9 @@ void mfu_progress_complete(mfu_progress_msgs_t* msgs,
                 if (time_diff < msgs->timeout) {
                     continue;
                 }
-                MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, dupcomm, &(msgs->bcast_req));
+                MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
                 MPI_Ireduce(msgs->values, msgs->global_vals, 2,
-                            MPI_INT, MPI_SUM, 0, dupcomm, &(msgs->reduce_req));
+                            MPI_INT, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
             } else {
                 /* if there are outstanding reqs then wait for bcast
                  * and/or reduce to finish */
@@ -508,16 +507,19 @@ void mfu_progress_complete(mfu_progress_msgs_t* msgs,
             MPI_Wait(&(msgs->bcast_req), MPI_STATUS_IGNORE);
             MPI_Wait(&(msgs->reduce_req), MPI_STATUS_IGNORE);
             MPI_Ireduce(msgs->values, msgs->global_vals, 2,
-                        MPI_INT, MPI_SUM, 0, dupcomm, &(msgs->reduce_req));
+                        MPI_INT, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
 
             /* if keep_going flat is set then send out another bcast */
             if (msgs->keep_going) {
-                MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, dupcomm, &(msgs->bcast_req));
+                MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
             } else {
                 break;
             }
         }
     }
+
+    /* release communicator we dup'ed during start */
+    MPI_Comm_free(&msgs->comm);
 }
 
 /* removes list of items, sets write bits on directories from
