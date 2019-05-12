@@ -451,6 +451,19 @@ mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm, mfu_progres
     return msgs;
 }
 
+static void mfu_progress_reduce(uint64_t complete, uint64_t* vals, mfu_progress* msgs)
+{
+    /* set our complete flag to indicate whether we have finished */
+    msgs->values[0] = complete;
+
+    /* update our local count value to contribute in reduction */
+    memcpy(&msgs->values[1], vals, msgs->count * sizeof(uint64_t));
+
+    /* initiate the reduction */
+    MPI_Ireduce(msgs->values, msgs->global_vals, msgs->count + 1,
+                MPI_UINT64_T, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
+}
+
 /* update progress across all processes in work loop */
 void mfu_progress_update(uint64_t* vals, mfu_progress* msgs)
 {
@@ -462,33 +475,27 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* msgs)
     int reduce_done = 0;
 
     if (rank == 0) {
-        /* get current time and compute number of seconds since
-         * we last printed a message */
-        time_t now = time(NULL);
-        double time_diff = difftime(now, msgs->time_last);
-
-        /* if timeout hasn't expired do nothing, return from function */
-        if (time_diff < msgs->timeout) {
-            return;
-        }
-
-        /* if there are no bcast or reduce requests outstanding send a
-         * bcast/reduce pair */
+        /* if there are no bcast or reduce requests outstanding,
+         * check whether it is time to send one */
         if (msgs->bcast_req == MPI_REQUEST_NULL && msgs->reduce_req == MPI_REQUEST_NULL) {
+            /* get current time and compute number of seconds since
+             * we last printed a message */
+            time_t now = time(NULL);
+            double time_diff = difftime(now, msgs->time_last);
+
+            /* if timeout hasn't expired do nothing, return from function */
+            if (time_diff < msgs->timeout) {
+                return;
+            }
+
             /* signal other procs that it's time for a reduction */
             MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
 
-            /* set our complete flag to 0 to indicate that we have not finished */
-            msgs->values[0] = 0;
-
-            /* update our local count value to contribute in reduction */
-            memcpy(&msgs->values[1], vals, msgs->count * sizeof(uint64_t));
-
-            /* initiate the reduction */
-            MPI_Ireduce(msgs->values, msgs->global_vals, msgs->count + 1,
-                        MPI_UINT64_T, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
+            /* set our complete flag to 0 to indicate that we have not finished,
+             * and contribute our current values */
+            mfu_progress_reduce(0, vals, msgs);
         } else {
-            /* check if bcast and/or reduce is done */
+            /* got an outstanding bcast or reduce, check to see if it's done */
             MPI_Test(&(msgs->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
             MPI_Test(&(msgs->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
 
@@ -525,15 +532,9 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* msgs)
         /* to get here, the bcast must have completed,
          * so call reduce to contribute our current values */
 
-        /* set our complete flag to 0 to indicate that we have not finished */
-        msgs->values[0] = 0;
-
-        /* update our local count value to contribute in reduction */
-        memcpy(&msgs->values[1], vals, msgs->count * sizeof(uint64_t));
-
-        /* contribute our current values */
-        MPI_Ireduce(msgs->values, msgs->global_vals, msgs->count + 1,
-                    MPI_UINT64_T, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
+        /* set our complete flag to 0 to indicate that we have not finished,
+         * and contribute our current values */
+        mfu_progress_reduce(0, vals, msgs);
 
         /* since we are not in complete,
          * we can infer that keep_going must be 1,
@@ -568,14 +569,9 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pmsgs)
                 /* timeout has expired, initiate a new bcast/reduce iteration */
                 MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
 
-                /* we have reached complete, so set our complete flag to 1 */
-                msgs->values[0] = 1;
-
-                /* update our local count value to contribute in reduction */
-                memcpy(&msgs->values[1], vals, msgs->count * sizeof(uint64_t));
-
-                MPI_Ireduce(msgs->values, msgs->global_vals, msgs->count + 1,
-                            MPI_UINT64_T, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
+                /* we have reached complete, so set our complete flag to 1,
+                 * and contribute our current values */
+                mfu_progress_reduce(1, vals, msgs);
             } else {
                 /* if there are outstanding reqs then wait for bcast
                  * and reduce to finish */
@@ -608,14 +604,9 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pmsgs)
                     /* send bcast immediately so we don't need to wait on timeout */
                     MPI_Ibcast(&(msgs->keep_going), 1, MPI_INT, 0, msgs->comm, &(msgs->bcast_req));
 
-                    /* we have reached complete, so set our complete flag to 1 */
-                    msgs->values[0] = 1;
-
-                    /* update our local count value to contribute in reduction */
-                    memcpy(&msgs->values[1], vals, msgs->count * sizeof(uint64_t));
-
-                    MPI_Ireduce(msgs->values, msgs->global_vals, msgs->count + 1,
-                                MPI_UINT64_T, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
+                    /* we have reached complete, so set our complete flag to 1,
+                     * and contribute our current values */
+                    mfu_progress_reduce(1, vals, msgs);
                 }
             }
         }
@@ -629,15 +620,9 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pmsgs)
             /* wait for bcast to finish */
             MPI_Wait(&(msgs->bcast_req), MPI_STATUS_IGNORE);
 
-            /* we have reached complete, so set our complete flag to 1 */
-            msgs->values[0] = 1;
-
-            /* update our local count value to contribute in reduction */
-            memcpy(&msgs->values[1], vals, msgs->count * sizeof(uint64_t));
-
-            /* bcast completed, so contribute our reduction value */
-            MPI_Ireduce(msgs->values, msgs->global_vals, msgs->count + 1,
-                        MPI_UINT64_T, MPI_SUM, 0, msgs->comm, &(msgs->reduce_req));
+            /* we have reached complete, so set our complete flag to 1,
+             * and contribute our current values */
+            mfu_progress_reduce(1, vals, msgs);
 
             /* if keep_going flag is set then wait for another bcast */
             if (msgs->keep_going) {
