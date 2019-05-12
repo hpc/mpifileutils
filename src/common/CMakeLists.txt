@@ -8,6 +8,7 @@ LIST(APPEND libmfu_install_headers
   mfu_param_path.h
   mfu_path.h
   mfu_pred.h
+  mfu_progress.h
   mfu_util.h
   )
 INSTALL(FILES ${libmfu_install_headers} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
@@ -32,6 +33,7 @@ LIST(APPEND libmfu_srcs
   mfu_param_path.c
   mfu_path.c
   mfu_pred.c
+  mfu_progress.c
   mfu_util.c
   strmap.c
   )
