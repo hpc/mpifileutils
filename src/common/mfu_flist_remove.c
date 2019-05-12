@@ -53,7 +53,13 @@ static void remove_progress_fn(const uint64_t* vals, int count, int complete, in
         secs_remaining = (double)(remove_count_total - vals[0]) / rate;
     }
 
-    MFU_LOG(MFU_LOG_INFO, "Removed %llu of %llu items in %f secs (%f items/sec) %.2f%% complete %d secs remaining...", vals[0], remove_count_total, secs, rate, percent, (int)secs_remaining);
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Removed %llu of %llu items in %f secs (%f items/sec) %.2f%% complete %d secs remaining...",
+            vals[0], remove_count_total, secs, rate, percent, (int)secs_remaining);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Removed %llu of %llu items in %f secs (%f items/sec) %.2f%% complete",
+            vals[0], remove_count_total, secs, rate, percent);
+    }
 }
 
 /* removes name by calling rmdir, unlink, or remove depending
