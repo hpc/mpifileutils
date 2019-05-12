@@ -1,25 +1,8 @@
-//#include <dirent.h>
-//#include <limits.h>
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <string.h>
-#include <unistd.h>
-//#include <getopt.h>
 
-//#include <pwd.h> /* for getpwent */
-//#include <grp.h> /* for getgrent */
-//#include <errno.h>
-//#include <string.h>
-
-//#include <libgen.h> /* dirname */
-
-//#include "libcircle.h"
-//#include "dtcmp.h"
 #include "mfu.h"
-//#include "mfu_flist_internal.h"
 
 /* start progress timer */
 mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm, mfu_progress_fn progfn)
@@ -218,13 +201,6 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
                     /* all procs are done, tell them we can
                      * stop with next bcast/reduce iteration */
                     prg->keep_going = 0;
-
-                    /* send bcast immediately so we don't need to wait on timeout */
-                //    MPI_Ibcast(&(prg->keep_going), 1, MPI_INT, 0, prg->comm, &(prg->bcast_req));
-
-                    /* we have reached complete, so set our complete flag to 1,
-                     * and contribute our current values */
-                //    mfu_progress_reduce(1, vals, prg);
                 }
             }
         }
