@@ -26,6 +26,37 @@
  * Global functions used by remove routines
  ****************************/
 
+/* holds total number of items to be deleted */
+uint64_t remove_count;
+uint64_t remove_count_total;
+
+/* remove progress request */
+mfu_progress* rmprog;
+
+/* prints progress messages while deleting items */
+static void remove_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (remove_count_total > 0) {
+        percent = 100.0 * (double)vals[0] / (double)remove_count_total;
+    }
+
+    /* compute average delete rate */
+    double rate = 0.0;
+    if (secs > 0) {
+        rate = (double)vals[0] / secs;
+    }
+
+    /* compute estimated time remaining */
+    double secs_remaining = -1.0;
+    if (rate > 0.0) {
+        secs_remaining = (double)(remove_count_total - vals[0]) / rate;
+    }
+
+    MFU_LOG(MFU_LOG_INFO, "Removed %llu of %llu items in %f secs (%f items/sec) %.2f%% complete %d secs remaining...", vals[0], remove_count_total, secs, rate, percent, (int)secs_remaining);
+}
+
 /* removes name by calling rmdir, unlink, or remove depending
  * on item type */
 static void remove_type(char type, const char* name)
@@ -76,11 +107,7 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
     uint64_t idx;
     uint64_t size = mfu_flist_size(list);
 
-    /* start timer and broadcast for progress messages */
-    mfu_progress* prog = mfu_progress_start(10, 1, MPI_COMM_WORLD);
-
     /* keep track of files deleted so far */
-    uint64_t file_count = 0;
     for (idx = 0; idx < size; idx++) {
         /* get name and type of item */
         const char* name = mfu_flist_file_get_name(list, idx);
@@ -99,11 +126,9 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
 
         /* increment number of items we have deleted
          * and check on progress message */
-        file_count++;
-        mfu_progress_update(&file_count, prog);
+        remove_count++;
+        mfu_progress_update(&remove_count, rmprog);
     }
-
-    mfu_progress_complete(&file_count, &prog);
 
     /* report the number of items we deleted */
     *rmcount = size;
@@ -380,7 +405,7 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
  ****************************/
 
 /* start progress timer */
-mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm)
+mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm, mfu_progress_fn progfn)
 {
     /* allocate a new structure */
     mfu_progress* msgs = (mfu_progress*) MFU_MALLOC(sizeof(mfu_progress));
@@ -405,6 +430,9 @@ mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm)
     size_t bytes = (count + 1) * sizeof(uint64_t);
     msgs->values      = (uint64_t*) MFU_MALLOC(bytes);
     msgs->global_vals = (uint64_t*) MFU_MALLOC(bytes);
+
+    /* record function to call to print progress */
+    msgs->progfn = progfn;
 
     int rank;
     MPI_Comm_rank(msgs->comm, &rank);
@@ -466,7 +494,12 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* msgs)
 
             /* print new progress message when bcast and reduce have completed */
             if (bcast_done && reduce_done) {
-                /* TODO: print progress message */
+                /* print progress message */
+                if (msgs->progfn) {
+                    time_t now = time(NULL);
+                    double secs = difftime(now, msgs->time_start);
+                    (*msgs->progfn)(&msgs->global_vals[1], msgs->count, (int)msgs->global_vals[0], ranks, secs);
+                }
 
                 /* update/reset the timer after reporting progress */
                 msgs->time_last = time(NULL);
@@ -549,7 +582,12 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pmsgs)
                 MPI_Wait(&(msgs->bcast_req), MPI_STATUS_IGNORE);
                 MPI_Wait(&(msgs->reduce_req), MPI_STATUS_IGNORE);
 
-                /* TODO: print progress message */
+                /* print progress message */
+                if (msgs->progfn) {
+                    time_t now = time(NULL);
+                    double secs = difftime(now, msgs->time_start);
+                    (*msgs->progfn)(&msgs->global_vals[1], msgs->count, (int)msgs->global_vals[0], ranks, secs);
+                }
 
                 /* once outstanding bcast finishes in which we
                  * set keep_going == 0, we can stop */
@@ -628,6 +666,9 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
         uint64_t all_count = mfu_flist_global_size(flist);
         MFU_LOG(MFU_LOG_INFO, "Removing %lu items", all_count);
+
+        /* store number of items in global for progress function */
+        remove_count_total = all_count;
     }
 
     /* split files into separate lists by directory depth */
@@ -754,6 +795,11 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
         MPI_Barrier(MPI_COMM_WORLD);
     }
 #endif
+
+    /* start timer and broadcast for progress messages */
+    remove_count = 0;
+    rmprog = mfu_progress_start(10, 1, MPI_COMM_WORLD, remove_progress_fn);
+
     /* now remove files starting from deepest level */
     for (level = levels - 1; level >= 0; level--) {
         double start = MPI_Wtime();
@@ -792,6 +838,8 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
             }
         }
     }
+
+    mfu_progress_complete(&remove_count, &rmprog);
 
     /* if traceless, restore the stat of each item's pdir */
     if (traceless) {
