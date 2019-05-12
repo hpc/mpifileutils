@@ -8,7 +8,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <getopt.h>
-#include <time.h> /* asctime / localtime */
 
 #include <pwd.h> /* for getpwent */
 #include <grp.h> /* for getgrent */
@@ -435,9 +434,9 @@ mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm, mfu_progres
     prg->progfn = progfn;
 
     /* set start time, initialize last time we reported, and timeout */
-    prg->time_start = time(NULL);
+    prg->time_start = MPI_Wtime();
     prg->time_last  = prg->time_start;
-    prg->timeout    = secs;
+    prg->timeout    = (double) secs;
 
     /* post buffer for incoming bcast */
     int rank;
@@ -478,8 +477,8 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
         if (prg->bcast_req == MPI_REQUEST_NULL && prg->reduce_req == MPI_REQUEST_NULL) {
             /* get current time and compute number of seconds since
              * we last printed a message */
-            time_t now = time(NULL);
-            double time_diff = difftime(now, prg->time_last);
+            double now = MPI_Wtime();
+            double time_diff = now - prg->time_last;
 
             /* if timeout hasn't expired do nothing, return from function */
             if (time_diff < prg->timeout) {
@@ -501,20 +500,20 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
             if (bcast_done && reduce_done) {
                 /* print progress message */
                 if (prg->progfn) {
-                    time_t now = time(NULL);
-                    double secs = difftime(now, prg->time_start);
+                    double now = MPI_Wtime();
+                    double secs = now - prg->time_start;
                     (*prg->progfn)(&prg->global_vals[1], prg->count, (int)prg->global_vals[0], ranks, secs);
                 }
 
                 /* update/reset the timer after reporting progress */
-                prg->time_last = time(NULL);
+                prg->time_last = MPI_Wtime();
             }
         }
     } else {
          /* get current time and compute number of seconds since
           * we last reported a message */
-         time_t now = time(NULL);
-         double time_diff = difftime(now, prg->time_last);
+         double now = MPI_Wtime();
+         double time_diff = now - prg->time_last;
 
          /* if timeout hasn't expired do nothing, return from function */
          if (time_diff < prg->timeout) {
@@ -545,7 +544,7 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
         mfu_progress_reduce(0, vals, prg);
 
         /* update/reset the timer after reporting progress */
-        prg->time_last = time(NULL);
+        prg->time_last = MPI_Wtime();
 
         /* since we are not in complete,
          * we can infer that keep_going must be 1,
@@ -581,8 +580,8 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
 
                 /* print progress message */
                 if (prg->progfn) {
-                    time_t now = time(NULL);
-                    double secs = difftime(now, prg->time_start);
+                    double now = MPI_Wtime();
+                    double secs = now - prg->time_start;
                     (*prg->progfn)(&prg->global_vals[1], prg->count, (int)prg->global_vals[0], ranks, secs);
                 }
 
@@ -593,7 +592,7 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
                 }
 
                 /* update curren't time */
-                prg->time_last = time(NULL);
+                prg->time_last = MPI_Wtime();
 
                 /* when all processes are complete, this will sum
                  * to the number of ranks */
