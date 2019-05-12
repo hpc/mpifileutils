@@ -434,17 +434,15 @@ mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm, mfu_progres
     /* record function to call to print progress */
     prg->progfn = progfn;
 
+    /* set start time, initialize last time we reported, and timeout */
+    prg->time_start = time(NULL);
+    prg->time_last  = prg->time_start;
+    prg->timeout    = secs;
+
+    /* post buffer for incoming bcast */
     int rank;
     MPI_Comm_rank(prg->comm, &rank);
-
-    if (rank == 0) {
-        /* set current time & timeout on rank 0 */
-        prg->time_last  = time(NULL);
-        prg->time_start = prg->time_last;
-        prg->timeout    = secs;
-        prg->bcast_req = MPI_REQUEST_NULL;
-    } else {
-        /* if rank != 0 recv bcast */
+    if (rank != 0) {
         MPI_Ibcast(&(prg->keep_going), 1, MPI_INT, 0, prg->comm, &(prg->bcast_req));
     }
 
@@ -513,6 +511,16 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
             }
         }
     } else {
+         /* get current time and compute number of seconds since
+          * we last reported a message */
+         time_t now = time(NULL);
+         double time_diff = difftime(now, prg->time_last);
+
+         /* if timeout hasn't expired do nothing, return from function */
+         if (time_diff < prg->timeout) {
+             return;
+         }
+
         /* we may have a reduce already outstanding,
          * wait for it to complete before we start a new one,
          * if there is no outstanding reduce, this sets the flag to 1 */
@@ -536,6 +544,9 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
          * and contribute our current values */
         mfu_progress_reduce(0, vals, prg);
 
+        /* update/reset the timer after reporting progress */
+        prg->time_last = time(NULL);
+
         /* since we are not in complete,
          * we can infer that keep_going must be 1,
          * so initiate new bcast for another bcast/reduce iteration */
@@ -554,19 +565,9 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
 
     if (rank == 0) {
         while (1) {
-            /* if timeout is up then send a bcast/request pair */
+            /* send a bcast/request pair */
             if (prg->bcast_req == MPI_REQUEST_NULL && prg->reduce_req == MPI_REQUEST_NULL) {
-                /* get current time and compute number of seconds since
-                 * we last printed a message */
-                time_t now = time(NULL);
-                double time_diff = difftime(now, prg->time_last);
-
-                /* if timeout hasn't expired do nothing, return from function */
-                if (time_diff < prg->timeout) {
-                    continue;
-                }
-
-                /* timeout has expired, initiate a new bcast/reduce iteration */
+                /* initiate a new bcast/reduce iteration */
                 MPI_Ibcast(&(prg->keep_going), 1, MPI_INT, 0, prg->comm, &(prg->bcast_req));
 
                 /* we have reached complete, so set our complete flag to 1,
@@ -602,11 +603,11 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
                     prg->keep_going = 0;
 
                     /* send bcast immediately so we don't need to wait on timeout */
-                    MPI_Ibcast(&(prg->keep_going), 1, MPI_INT, 0, prg->comm, &(prg->bcast_req));
+                //    MPI_Ibcast(&(prg->keep_going), 1, MPI_INT, 0, prg->comm, &(prg->bcast_req));
 
                     /* we have reached complete, so set our complete flag to 1,
                      * and contribute our current values */
-                    mfu_progress_reduce(1, vals, prg);
+                //    mfu_progress_reduce(1, vals, prg);
                 }
             }
         }
