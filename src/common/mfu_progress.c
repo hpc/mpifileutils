@@ -7,6 +7,11 @@
 /* start progress timer */
 mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm, mfu_progress_fn progfn)
 {
+    /* we disable progress messages if given a timeout of 0 secs */
+    if (secs == 0) {
+        return NULL;
+    }
+
     /* allocate a new structure */
     mfu_progress* prg = (mfu_progress*) MFU_MALLOC(sizeof(mfu_progress));
 
@@ -65,6 +70,11 @@ static void mfu_progress_reduce(uint64_t complete, uint64_t* vals, mfu_progress*
 /* update progress across all processes in work loop */
 void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
 {
+    /* return immediately if progress messages are disabled */
+    if (prg == NULL) {
+        return;
+    }
+
     int rank, ranks;
     MPI_Comm_rank(prg->comm, &rank);
     MPI_Comm_size(prg->comm, &ranks);
@@ -169,6 +179,11 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
 void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
 {
     mfu_progress* prg = *pprg;
+
+    /* return immediately if progress messages are disabled */
+    if (prg == NULL) {
+        return;
+    }
 
     int rank, ranks;
     MPI_Comm_rank(prg->comm, &rank);
