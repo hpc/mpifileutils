@@ -54,11 +54,11 @@ static void remove_progress_fn(const uint64_t* vals, int count, int complete, in
     }
 
     if (complete < ranks) {
-        MFU_LOG(MFU_LOG_INFO, "Removed %llu of %llu items in %f secs (%f items/sec) %.2f%% complete %d secs remaining...",
-            vals[0], remove_count_total, secs, rate, percent, (int)secs_remaining);
+        MFU_LOG(MFU_LOG_INFO, "Removed %llu items (%.2f%%) in %f secs (%f items/sec) %d secs remaining ...",
+            vals[0], percent, secs, rate, (int)secs_remaining);
     } else {
-        MFU_LOG(MFU_LOG_INFO, "Removed %llu of %llu items in %f secs (%f items/sec) %.2f%% complete",
-            vals[0], remove_count_total, secs, rate, percent);
+        MFU_LOG(MFU_LOG_INFO, "Removed %llu items (%.2f%%) in %f secs (%f items/sec)",
+            vals[0], percent, secs, rate);
     }
 }
 
