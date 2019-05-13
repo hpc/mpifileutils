@@ -701,6 +701,49 @@ static uint64_t get_total_bytes_read(mfu_flist src_compare_list) {
     return total_bytes_read;
 }
 
+static void compare_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+#if 0
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (remove_count_total > 0) {
+        percent = 100.0 * (double)vals[0] / (double)remove_count_total;
+    }
+#endif
+
+    /* compute average delete rate */
+    double rate  = 0.0;
+    if (secs > 0) {
+        rate  = (double)vals[0] / secs;
+    }
+
+#if 0
+    /* compute estimated time remaining */
+    double secs_remaining = -1.0;
+    if (rate > 0.0) {
+        secs_remaining = (double)(remove_count_total - vals[0]) / rate;
+    }
+#endif
+
+    /* convert bytes to units */
+    double agg_size_tmp;
+    const char* agg_size_units;
+    mfu_format_bytes(vals[0], &agg_size_tmp, &agg_size_units);
+
+    /* convert bandwidth to units */
+    double agg_rate_tmp;
+    const char* agg_rate_units;
+    mfu_format_bw(rate, &agg_rate_tmp, &agg_rate_units);
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Compared %.3lf %s in %.3lf secs (%.3lf %s) ...",
+            agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Compared %.3lf %s in %.3lf secs (%.3lf %s) done",
+            agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
+    }
+}
+
 /* given a list of source/destination files to compare, spread file
  * sections to processes to compare in parallel, fill
  * in comparison results in source and dest string maps */
@@ -713,6 +756,11 @@ static int dcmp_strmap_compare_data(
 {
     /* assume we'll succeed */
     int rc = 0;
+
+    /* let user know what we're doing */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+         MFU_LOG(MFU_LOG_INFO, "Comparing file contents");
+    }
 
     /* get chunk size for copying files (just hard-coded for now) */
     uint64_t chunk_size = 1024 * 1024;
@@ -729,11 +777,15 @@ static int dcmp_strmap_compare_data(
      * to be used as input to logical OR to determine state of entire file */
     int* vals = (int*) MFU_MALLOC(list_count * sizeof(int));
 
+    /* start progress messages when comparing data */
+    mfu_progress* prg = mfu_progress_start(10, 2, MPI_COMM_WORLD, compare_progress_fn);
+
     /* compare bytes for each file section and set flag based on what we find */
     uint64_t i = 0;
     const mfu_file_chunk* src_p = src_head;
     const mfu_file_chunk* dst_p = dst_head;
-    uint64_t bytes_read, bytes_written;
+    uint64_t bytes_read    = 0;
+    uint64_t bytes_written = 0;
     for (i = 0; i < list_count; i++) {
         /* get offset into file that we should compare (bytes) */
         off_t offset = (off_t)src_p->offset;
@@ -744,7 +796,7 @@ static int dcmp_strmap_compare_data(
         /* compare the contents of the files */
         int overwrite = 0;
         int compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length,
-                1048576, overwrite, &bytes_read, &bytes_written);
+                1048576, overwrite, &bytes_read, &bytes_written, prg);
         if (compare_rc == -1) {
             /* we hit an error while reading */
             rc = -1;
@@ -764,6 +816,12 @@ static int dcmp_strmap_compare_data(
         src_p = src_p->next;
         dst_p = dst_p->next;
     }
+
+    /* finalize progress messages */
+    uint64_t count_bytes[2];
+    count_bytes[0] = bytes_read;
+    count_bytes[1] = bytes_written;
+    mfu_progress_complete(count_bytes, &prg);
 
     /* allocate a flag for each item in our file list */
     uint64_t size = mfu_flist_size(src_compare_list);
@@ -882,6 +940,11 @@ static int dcmp_strmap_compare(mfu_flist src_list,
 
     /* wait for all tasks and start timer */
     MPI_Barrier(MPI_COMM_WORLD);
+
+    /* let user know what we're doing */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+         MFU_LOG(MFU_LOG_INFO, "Comparing items");
+    }
 
     time_t   time_started;
     time_t   time_ended;

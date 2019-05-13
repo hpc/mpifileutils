@@ -6,7 +6,7 @@ extern "C" {
 #ifndef MFU_PROGRESS_H
 #define MFU_PROGRESS_H
 
-#include "mfu.h"
+#include "mpi.h"
 
 /* function prototype for progress callback */
 typedef void (*mfu_progress_fn)(const uint64_t* vals, int count, int complete, int ranks, double secs);

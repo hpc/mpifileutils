@@ -682,7 +682,8 @@ int mfu_compare_contents(
     size_t bufsize,                /* IN  - size of I/O buffer to be used during compare */
     int overwrite,                 /* IN  - whether to replace dest with source contents (1) or not (0) */
     uint64_t* count_bytes_read,    /* OUT - number of bytes read (src + dest) */
-    uint64_t* count_bytes_written) /* OUT - number of bytes written to dest */
+    uint64_t* count_bytes_written, /* OUT - number of bytes written to dest */
+    mfu_progress* prg)             /* IN  - progress message structure */
 {
     /* open source file */
     int src_fd = mfu_open(src_name, O_RDONLY);
@@ -844,6 +845,12 @@ int mfu_compare_contents(
 
         /* add bytes to our total */
         total_bytes += (long unsigned int)src_read;
+
+        /* update number of bytes read and written for progress messages */
+        uint64_t count_bytes[2];
+        count_bytes[0] = *count_bytes_read;
+        count_bytes[1] = *count_bytes_written;
+        mfu_progress_update(count_bytes, prg);
     }
 
     /* free buffers */

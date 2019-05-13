@@ -609,6 +609,65 @@ static int dsync_compare_metadata(
     return diff;
 }
 
+static void compare_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+#if 0
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (remove_count_total > 0) {
+        percent = 100.0 * (double)vals[0] / (double)remove_count_total;
+    }
+#endif
+
+    /* compute average delete rate */
+    double read_rate  = 0.0;
+    double write_rate = 0.0;
+    if (secs > 0) {
+        read_rate  = (double)vals[0] / secs;
+        write_rate = (double)vals[1] / secs;
+    }
+
+#if 0
+    /* compute estimated time remaining */
+    double secs_remaining = -1.0;
+    if (rate > 0.0) {
+        secs_remaining = (double)(remove_count_total - vals[0]) / rate;
+    }
+#endif
+
+    /* convert bytes to units */
+    double agg_read_size_tmp;
+    const char* agg_read_size_units;
+    mfu_format_bytes(vals[0], &agg_read_size_tmp, &agg_read_size_units);
+
+    /* convert bandwidth to units */
+    double agg_read_rate_tmp;
+    const char* agg_read_rate_units;
+    mfu_format_bw(read_rate, &agg_read_rate_tmp, &agg_read_rate_units);
+
+    /* convert bytes to units */
+    double agg_write_size_tmp;
+    const char* agg_write_size_units;
+    mfu_format_bytes(vals[1], &agg_write_size_tmp, &agg_write_size_units);
+
+    /* convert bandwidth to units */
+    double agg_write_rate_tmp;
+    const char* agg_write_rate_units;
+    mfu_format_bw(write_rate, &agg_write_rate_tmp, &agg_write_rate_units);
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Read %.3lf %s in %.3lf secs (%.3lf %s) ...",
+            agg_read_size_tmp, agg_read_size_units, secs, agg_read_rate_tmp, agg_read_rate_units);
+        MFU_LOG(MFU_LOG_INFO, "Wrote %.3lf %s in %.3lf secs (%.3lf %s) ...",
+            agg_write_size_tmp, agg_write_size_units, secs, agg_write_rate_tmp, agg_write_rate_units);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Read %.3lf %s in %.3lf secs (%.3lf %s) done",
+            agg_read_size_tmp, agg_read_size_units, secs, agg_read_rate_tmp, agg_read_rate_units);
+        MFU_LOG(MFU_LOG_INFO, "Wrote %.3lf %s in %.3lf secs (%.3lf %s) done",
+            agg_write_size_tmp, agg_write_size_units, secs, agg_write_rate_tmp, agg_write_rate_units);
+    }
+}
+
 /* given a list of source/destination files to compare, spread file
  * sections to processes to compare in parallel, fill
  * in comparison results in source and dest string maps */
@@ -645,6 +704,12 @@ static int dsync_strmap_compare_data(
         overwrite = 0;
     }
 
+    /* start progress messages when comparing data */
+    uint64_t count_bytes[2];
+    count_bytes[0] = *count_bytes_read;
+    count_bytes[1] = *count_bytes_written;
+    mfu_progress* compare_prog = mfu_progress_start(10, 2, MPI_COMM_WORLD, compare_progress_fn);
+
     /* compare bytes for each file section and set flag based on what we find */
     uint64_t i = 0;
     const mfu_file_chunk* src_p = src_head;
@@ -658,7 +723,7 @@ static int dsync_strmap_compare_data(
         
         /* compare the contents of the files */
         int compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length,
-                1048576, overwrite, count_bytes_read, count_bytes_written);
+                1048576, overwrite, count_bytes_read, count_bytes_written, compare_prog);
         if (compare_rc == -1) {
             /* we hit an error while reading */
             rc = -1;
@@ -678,6 +743,11 @@ static int dsync_strmap_compare_data(
         src_p = src_p->next;
         dst_p = dst_p->next;
     }
+
+    /* finalize progress messages */
+    count_bytes[0] = *count_bytes_read;
+    count_bytes[1] = *count_bytes_written;
+    mfu_progress_complete(count_bytes, &compare_prog);
 
     /* allocate a flag for each item in our file list */
     uint64_t size = mfu_flist_size(src_compare_list);
