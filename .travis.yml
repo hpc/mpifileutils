@@ -8,10 +8,14 @@ before_install:
  - test -n $CC  && unset CC
  - test -n $CXX && unset CXX
  - sudo apt-get update -qq
- - sudo apt-cache search openmpi
  - sudo apt-cache search mpich
- - sudo apt-get install -qq check libopenmpi-dev openmpi-bin check bc libattr1-dev python-pip
+ - sudo apt-get install -qq check bc libattr1-dev python-pip
  - sudo pip install nose
+ - wget https://www.mpich.org/static/downloads/3.3/mpich-3.3.tar.gz
+ - tar -zxf mpich-3.3.tar.gz
+ - pushd mpich-3.3
+ - ./configure --enable-fortran=no && make -j4 && sudo make install
+ - popd
  - libcircle=libcircle-0.2.1-rc.1
  - wget https://github.com/adammoody/libcircle/releases/download/v0.2.1-rc.1/${libcircle}.tar.gz
  - tar -zxf ${libcircle}.tar.gz
