@@ -1326,10 +1326,10 @@ static void copy_progress_fn(const uint64_t* vals, int count, int complete, int 
     mfu_format_bw(rate, &agg_rate_tmp, &agg_rate_units);
 
     if (complete < ranks) {
-        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s in %f secs (%.3lf %s) ...",
+        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s in %.3lf secs (%.3lf %s) ...",
             agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
     } else {
-        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s in %f secs (%.3lf %s) done",
+        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s in %.3lf secs (%.3lf %s) done",
             agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
     }
 }
