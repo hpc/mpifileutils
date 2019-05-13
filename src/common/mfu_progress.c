@@ -92,9 +92,16 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
             /* set our complete flag to 0 to indicate that we have not finished,
              * and contribute our current values */
             mfu_progress_reduce(0, vals, prg);
+
+            /* update/reset the timer after reporting progress */
+            prg->time_last = MPI_Wtime();
         } else {
             /* got an outstanding bcast or reduce, check to see if it's done */
             MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
+            MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
+            MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
+            MPI_Test(&(prg->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
+            MPI_Test(&(prg->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
             MPI_Test(&(prg->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
 
             /* print new progress message when bcast and reduce have completed */
@@ -107,7 +114,7 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
                 }
 
                 /* update/reset the timer after reporting progress */
-                prg->time_last = MPI_Wtime();
+//                prg->time_last = MPI_Wtime();
             }
         }
     } else {
@@ -125,14 +132,18 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
          * wait for it to complete before we start a new one,
          * if there is no outstanding reduce, this sets the flag to 1 */
         MPI_Test(&(prg->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
+        MPI_Test(&(prg->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
+        MPI_Test(&(prg->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
         if (!reduce_done) {
             /* not done, keep waiting */
-            return;
+            //return;
         }
 
         /* wait for rank 0 to signal us with a bcast */
         MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
-        if (!bcast_done) {
+        MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
+        MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
+        if (!reduce_done || !bcast_done) {
             /* not done, keep waiting */
             return;
         }
@@ -173,6 +184,9 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
                 /* we have reached complete, so set our complete flag to 1,
                  * and contribute our current values */
                 mfu_progress_reduce(1, vals, prg);
+
+                /* update curren't time */
+                prg->time_last = MPI_Wtime();
             } else {
                 /* if there are outstanding reqs then wait for bcast
                  * and reduce to finish */
@@ -181,9 +195,13 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
 
                 /* print progress message */
                 if (prg->progfn) {
+                    /* skip printing anything if we finish before the
+                     * first timeout would expire */
                     double now = MPI_Wtime();
                     double secs = now - prg->time_start;
-                    (*prg->progfn)(&prg->global_vals[1], prg->count, (int)prg->global_vals[0], ranks, secs);
+                    if (secs >= prg->timeout) {
+                        (*prg->progfn)(&prg->global_vals[1], prg->count, (int)prg->global_vals[0], ranks, secs);
+                    }
                 }
 
                 /* once outstanding bcast finishes in which we
@@ -193,7 +211,7 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
                 }
 
                 /* update curren't time */
-                prg->time_last = MPI_Wtime();
+//                prg->time_last = MPI_Wtime();
 
                 /* when all processes are complete, this will sum
                  * to the number of ranks */

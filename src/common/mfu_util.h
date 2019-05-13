@@ -29,11 +29,7 @@ extern "C" {
 #include "endian.h"
 #endif
 
-#ifdef HAVE_BYTESWAP_H
 #include "byteswap.h"
-#else
-#error Failed to find required byteswap
-#endif
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 #ifdef HAVE_BYTESWAP_H
