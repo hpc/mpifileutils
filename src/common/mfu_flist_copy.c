@@ -493,6 +493,40 @@ static int mfu_copy_close_file(mfu_copy_file_cache_t* cache)
     return rc;
 }
 
+/* progress message to print while setting file metadata */
+static void meta_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+#if 0
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (remove_count_total > 0) {
+        percent = 100.0 * (double)vals[0] / (double)remove_count_total;
+    }
+#endif
+
+    /* compute average delete rate */
+    double rate = 0.0;
+    if (secs > 0) {
+        rate = (double)vals[0] / secs;
+    }
+
+#if 0
+    /* compute estimated time remaining */
+    double secs_remaining = -1.0;
+    if (rate > 0.0) {
+        secs_remaining = (double)(remove_count_total - vals[0]) / rate;
+    }
+#endif
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %f secs (%f items/sec) ...",
+            vals[0], secs, rate);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %f secs (%f items/sec) done",
+            vals[0], secs, rate);
+    }
+}
+
 /* iterate through list of files and set ownership, timestamps,
  * and permissions starting from deepest level and working upwards,
  * we go in this direction in case updating a file updates its
@@ -524,6 +558,9 @@ static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
     MPI_Barrier(MPI_COMM_WORLD);
     double total_start = MPI_Wtime();
     uint64_t total_count = 0;
+
+    /* start progress messages while setting metadata */
+    mfu_progress* meta_prog = mfu_progress_start(10, 1, MPI_COMM_WORLD, meta_progress_fn);
 
     /* now set timestamps on files starting from deepest level */
     int tmp_rc;
@@ -579,12 +616,18 @@ static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
 
             /* free destination item */
             mfu_free(&dest);
+
+            /* update number of items we have completed for progress messages */
+            mfu_progress_update(&total_count, meta_prog);
         }
 
         /* wait for all procs to finish before we start
          * with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
     }
+
+    /* finalize progress messages */
+    mfu_progress_complete(&total_count, &meta_prog);
 
     /* stop timer and report total count */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -1086,6 +1129,40 @@ static int mfu_create_file(mfu_flist list, uint64_t idx,
     return rc;
 }
 
+/* progress message to print while creating files */
+static void create_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+#if 0
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (remove_count_total > 0) {
+        percent = 100.0 * (double)vals[0] / (double)remove_count_total;
+    }
+#endif
+
+    /* compute average delete rate */
+    double rate = 0.0;
+    if (secs > 0) {
+        rate = (double)vals[0] / secs;
+    }
+
+#if 0
+    /* compute estimated time remaining */
+    double secs_remaining = -1.0;
+    if (rate > 0.0) {
+        secs_remaining = (double)(remove_count_total - vals[0]) / rate;
+    }
+#endif
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Created %llu items in %f secs (%f items/sec) ...",
+            vals[0], secs, rate);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Created %llu items in %f secs (%f items/sec) done",
+            vals[0], secs, rate);
+    }
+}
+
 /* creates file inodes and symlinks,
  * returns 0 on success and -1 on error */
 static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
@@ -1110,6 +1187,9 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
     MPI_Barrier(MPI_COMM_WORLD);
     double total_start = MPI_Wtime();
     uint64_t total_count = 0;
+
+    /* start progress messages for creating files */
+    mfu_progress* create_prog = mfu_progress_start(10, 1, MPI_COMM_WORLD, create_progress_fn);
 
     int level;
     for (level = 0; level < levels; level++) {
@@ -1136,6 +1216,7 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
                     rc = -1;
                 }
                 count++;
+                total_count++;
             } else if (type == MFU_TYPE_LINK) {
                 /* create symlink */
                 int tmp_rc = mfu_create_link(list, idx, numpaths,
@@ -1144,11 +1225,12 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
                     rc = -1;
                 }
                 count++;
+                total_count++;
             }
-        }
 
-        /* add items to our running total */
-        total_count += count;
+            /* update number of files we have created for progress messages */
+            mfu_progress_update(&total_count, create_prog);
+        }
 
         /* wait for all procs to finish before we start
          * with files at next level */
@@ -1176,6 +1258,9 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
         }
     }
 
+    /* finalize progress messages */
+    mfu_progress_complete(&total_count, &create_prog); 
+
     /* stop timer and report total count */
     MPI_Barrier(MPI_COMM_WORLD);
     double total_end = MPI_Wtime();
@@ -1197,6 +1282,56 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
     }
 
     return rc;
+}
+
+/* hold state for copy progress messages */
+static mfu_progress* copy_prog;
+
+/* tracks number of bytes copied by this process */
+static uint64_t copy_count;
+
+/* progress message to print while copying data */
+static void copy_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+#if 0
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (remove_count_total > 0) {
+        percent = 100.0 * (double)vals[0] / (double)remove_count_total;
+    }
+#endif
+
+    /* compute average delete rate */
+    double rate = 0.0;
+    if (secs > 0) {
+        rate = (double)vals[0] / secs;
+    }
+
+#if 0
+    /* compute estimated time remaining */
+    double secs_remaining = -1.0;
+    if (rate > 0.0) {
+        secs_remaining = (double)(remove_count_total - vals[0]) / rate;
+    }
+#endif
+
+    /* convert bytes to units */
+    double agg_size_tmp;
+    const char* agg_size_units;
+    mfu_format_bytes(vals[0], &agg_size_tmp, &agg_size_units);
+
+    /* convert bandwidth to units */
+    double agg_rate_tmp;
+    const char* agg_rate_units;
+    mfu_format_bw(rate, &agg_rate_tmp, &agg_rate_units);
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s in %f secs (%.3lf %s) ...",
+            agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s in %f secs (%.3lf %s) done",
+            agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
+    }
 }
 
 /* return 1 if entire buffer is 0, return 0 if any byte is not 0,
@@ -1364,6 +1499,10 @@ static int mfu_copy_file_normal(
         /* add bytes to our total (use bytes read,
          * which may be less than number written) */
         total_bytes += (size_t) num_of_bytes_read;
+
+        /* update number of bytes we have copied for progress messages */
+        copy_count += (uint64_t) num_of_bytes_read;
+        mfu_progress_update(&copy_count, copy_prog);
     }
 
     /* Increment the global counter. */
@@ -1650,6 +1789,10 @@ static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
     double total_start = MPI_Wtime();
     uint64_t total_count = 0;
 
+    /* start up progress messages for the copy */
+    copy_count = 0;
+    copy_prog = mfu_progress_start(10, 1, MPI_COMM_WORLD, copy_progress_fn);
+
     /* split file list into a linked list of file sections,
      * this evenly spreads the file sections across processes */
     mfu_file_chunk* head = mfu_file_chunk_list_alloc(list, chunk_size);
@@ -1753,6 +1896,9 @@ static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
 
     /* free the list of file chunks */
     mfu_file_chunk_list_free(&head);
+
+    /* finalize progress messages for the copy */
+    mfu_progress_complete(&copy_count, &copy_prog);
 
     /* stop timer and report total count */
     MPI_Barrier(MPI_COMM_WORLD);
