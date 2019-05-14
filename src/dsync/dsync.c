@@ -709,7 +709,7 @@ static int dsync_strmap_compare_data(
     uint64_t count_bytes[2];
     count_bytes[0] = *count_bytes_read;
     count_bytes[1] = *count_bytes_written;
-    mfu_progress* compare_prog = mfu_progress_start(10, 2, MPI_COMM_WORLD, compare_progress_fn);
+    mfu_progress* compare_prog = mfu_progress_start(mfu_progress_timeout, 2, MPI_COMM_WORLD, compare_progress_fn);
 
     /* compare bytes for each file section and set flag based on what we find */
     uint64_t i = 0;
