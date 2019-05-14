@@ -24,6 +24,43 @@
 /* global variable to hold umask value */
 static mode_t old_mask;
 
+/* holds current and total number of items */
+uint64_t chmod_count;
+uint64_t chmod_count_total;
+
+/* progress message state */
+mfu_progress* chmod_prog;
+
+/* prints progress messages while updating items */
+static void chmod_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (chmod_count_total > 0) {
+        percent = 100.0 * (double)vals[0] / (double)chmod_count_total;
+    }
+
+    /* compute average delete rate */
+    double rate = 0.0;
+    if (secs > 0) {
+        rate = (double)vals[0] / secs;
+    }
+
+    /* compute estimated time remaining */
+    double secs_remaining = -1.0;
+    if (rate > 0.0) {
+        secs_remaining = (double)(chmod_count_total - vals[0]) / rate;
+    }
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Processed %llu items (%.2f%%) in %f secs (%f items/sec) %d secs remaining ...",
+            vals[0], percent, secs, rate, (int)secs_remaining);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Processed %llu items (%.2f%%) in %f secs (%f items/sec)",
+            vals[0], percent, secs, rate);
+    }
+}
+
 /* free the linked list, given a pointer to the head */
 void mfu_perms_free(mfu_perms** p_head)
 {
@@ -880,6 +917,10 @@ static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* usr
                 }
             }
         }
+
+        /* update our count for progress messages */
+        chmod_count++;
+        mfu_progress_update(&chmod_count, chmod_prog);
     }
 
     /* report number of permissions changed */
@@ -938,6 +979,11 @@ void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, c
     MPI_Barrier(MPI_COMM_WORLD);
     double start_dchmod = MPI_Wtime();
 
+    /* initialize progress messages */
+    chmod_count = 0;
+    chmod_count_total = all_count;
+    chmod_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, chmod_progress_fn);
+
     /* split files into separate lists by directory depth */
     int levels, minlevel;
     mfu_flist* lists;
@@ -978,6 +1024,8 @@ void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, c
             }
         }
     }
+
+    mfu_progress_complete(&chmod_count, &chmod_prog);
 
     /* free the array of lists */
     mfu_flist_array_free(levels, &lists);
