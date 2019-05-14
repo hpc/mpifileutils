@@ -1274,6 +1274,10 @@ static int dsync_strmap_compare(mfu_flist src_list,
          * the destination and copied fresh from the source a second time,
          * which is not efficient, but should still be correct */
 
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Updating timestamps on newly copied files");
+        }
+
         /* update metadata on files */
         strmap_foreach(metadata_refresh, node) {
             /* extract source and destination indices */
