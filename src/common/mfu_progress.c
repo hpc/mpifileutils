@@ -12,8 +12,12 @@ mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm, mfu_progres
         return NULL;
     }
 
+    mfu_progress* prg = NULL;
+
+/* fallback to a NOP if non-blocking collectives aren't available */
+#if MPI_VERSION >= 3
     /* allocate a new structure */
-    mfu_progress* prg = (mfu_progress*) MFU_MALLOC(sizeof(mfu_progress));
+    prg = (mfu_progress*) MFU_MALLOC(sizeof(mfu_progress));
 
     /* dup input communicator so our non-blocking collectives
      * don't interfere with caller's MPI communication */
@@ -50,10 +54,13 @@ mfu_progress* mfu_progress_start(int secs, int count, MPI_Comm comm, mfu_progres
     if (rank != 0) {
         MPI_Ibcast(&(prg->keep_going), 1, MPI_INT, 0, prg->comm, &(prg->bcast_req));
     }
+#endif
 
     return prg;
 }
 
+/* fallback to a NOP if non-blocking collectives aren't available */
+#if MPI_VERSION >= 3
 static void mfu_progress_reduce(uint64_t complete, uint64_t* vals, mfu_progress* prg)
 {
     /* set our complete flag to indicate whether we have finished */
@@ -66,6 +73,7 @@ static void mfu_progress_reduce(uint64_t complete, uint64_t* vals, mfu_progress*
     MPI_Ireduce(prg->values, prg->global_vals, prg->count + 1,
                 MPI_UINT64_T, MPI_SUM, 0, prg->comm, &(prg->reduce_req));
 }
+#endif
 
 /* update progress across all processes in work loop */
 void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
@@ -75,6 +83,8 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
         return;
     }
 
+/* fallback to a NOP if non-blocking collectives aren't available */
+#if MPI_VERSION >= 3
     int rank, ranks;
     MPI_Comm_rank(prg->comm, &rank);
     MPI_Comm_size(prg->comm, &ranks);
@@ -173,6 +183,7 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
          * so initiate new bcast for another bcast/reduce iteration */
         MPI_Ibcast(&(prg->keep_going), 1, MPI_INT, 0, prg->comm, &(prg->bcast_req));
     }
+#endif
 }
 
 /* continue broadcasting progress until all processes have completed */
@@ -185,6 +196,8 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
         return;
     }
 
+/* fallback to a NOP if non-blocking collectives aren't available */
+#if MPI_VERSION >= 3
     int rank, ranks;
     MPI_Comm_rank(prg->comm, &rank);
     MPI_Comm_size(prg->comm, &ranks);
@@ -271,4 +284,5 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
 
     /* free our structure */
     mfu_free(pprg);
+#endif
 }
