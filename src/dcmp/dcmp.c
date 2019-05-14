@@ -779,7 +779,7 @@ static int dcmp_strmap_compare_data(
     int* vals = (int*) MFU_MALLOC(list_count * sizeof(int));
 
     /* start progress messages when comparing data */
-    mfu_progress* prg = mfu_progress_start(10, 2, MPI_COMM_WORLD, compare_progress_fn);
+    mfu_progress* prg = mfu_progress_start(mfu_progress_timeout, 2, MPI_COMM_WORLD, compare_progress_fn);
 
     /* compare bytes for each file section and set flag based on what we find */
     uint64_t i = 0;

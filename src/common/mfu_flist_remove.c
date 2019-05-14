@@ -556,7 +556,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
 
     /* start timer and broadcast for progress messages */
     remove_count = 0;
-    rmprog = mfu_progress_start(10, 1, MPI_COMM_WORLD, remove_progress_fn);
+    rmprog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, remove_progress_fn);
 
     /* now remove files starting from deepest level */
     for (level = levels - 1; level >= 0; level--) {

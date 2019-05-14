@@ -75,6 +75,9 @@ extern int mfu_rank;
 extern FILE* mfu_debug_stream;
 extern mfu_loglevel mfu_debug_level;
 
+/* defines timeout period between progress messages */
+extern int mfu_progress_timeout;
+
 #define MFU_LOG(level, ...) do {  \
         if (mfu_initialized && level <= mfu_debug_level) { \
             char timestamp[256]; \

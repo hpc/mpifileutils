@@ -560,7 +560,7 @@ static int mfu_copy_set_metadata(int levels, int minlevel, mfu_flist* lists,
     uint64_t total_count = 0;
 
     /* start progress messages while setting metadata */
-    mfu_progress* meta_prog = mfu_progress_start(10, 1, MPI_COMM_WORLD, meta_progress_fn);
+    mfu_progress* meta_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, meta_progress_fn);
 
     /* now set timestamps on files starting from deepest level */
     int tmp_rc;
@@ -1189,7 +1189,7 @@ static int mfu_create_files(int levels, int minlevel, mfu_flist* lists,
     uint64_t total_count = 0;
 
     /* start progress messages for creating files */
-    mfu_progress* create_prog = mfu_progress_start(10, 1, MPI_COMM_WORLD, create_progress_fn);
+    mfu_progress* create_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, create_progress_fn);
 
     int level;
     for (level = 0; level < levels; level++) {
@@ -1791,7 +1791,7 @@ static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
 
     /* start up progress messages for the copy */
     copy_count = 0;
-    copy_prog = mfu_progress_start(10, 1, MPI_COMM_WORLD, copy_progress_fn);
+    copy_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, copy_progress_fn);
 
     /* split file list into a linked list of file sections,
      * this evenly spreads the file sections across processes */

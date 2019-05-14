@@ -33,6 +33,9 @@ int mfu_rank = -1;
 FILE* mfu_debug_stream = NULL;
 mfu_loglevel mfu_debug_level = MFU_LOG_ERR;
 
+/* default progress message timeout in seconds */
+int mfu_progress_timeout = 10;
+
 /* initialize mfu library,
  * reference counting allows for multiple init/finalize pairs */
 int mfu_init()
