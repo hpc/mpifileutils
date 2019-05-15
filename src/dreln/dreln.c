@@ -16,12 +16,46 @@ static void print_usage(void)
     printf("  -i, --input <file> - read list from file\n");
     printf("  -p, --preserve     - preserve link modification timestamps\n");
     printf("  -r, --relative     - change targets from absolute to relative paths\n");
+    printf("      --progress <N> - print progress every N seconds\n");
     printf("  -v, --verbose      - verbose output\n");
     printf("  -q, --quiet        - quiet output\n");
     printf("  -h, --help         - print usage\n");
     printf("\n");
     fflush(stdout);
     return;
+}
+
+static uint64_t reln_count_total;
+static uint64_t reln_count;
+
+/* prints progress messages while updating links */
+static void reln_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (reln_count_total > 0) {
+        percent = 100.0 * (double)vals[0] / (double)reln_count_total;
+    }
+
+    /* compute average delete rate */
+    double rate = 0.0;
+    if (secs > 0) {
+        rate = (double)vals[0] / secs;
+    }
+
+    /* compute estimated time remaining */
+    double secs_remaining = -1.0;
+    if (rate > 0.0) {
+        secs_remaining = (double)(reln_count_total - vals[0]) / rate;
+    }
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Processed %llu items (%.2f%%) in %f secs (%f items/sec) %d secs remaining ...",
+            vals[0], percent, secs, rate, (int)secs_remaining);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Processed %llu items (%.2f%%) in %f secs (%f items/sec)",
+            vals[0], percent, secs, rate);
+    }
 }
 
 int main (int argc, char* argv[])
@@ -55,6 +89,7 @@ int main (int argc, char* argv[])
         {"input",        1, 0, 'i'},
         {"preserve",     0, 0, 'p'},
         {"relative",     0, 0, 'r'},
+        {"progress",     1, 0, 'P'},
         {"verbose",      0, 0, 'v'},
         {"quiet",        0, 0, 'q'},
         {"help",         0, 0, 'h'},
@@ -83,6 +118,9 @@ int main (int argc, char* argv[])
             case 'r':
                 relative_targets = 1;
                 break;
+            case 'P':
+                mfu_progress_timeout = atoi(optarg);
+                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
@@ -100,6 +138,14 @@ int main (int argc, char* argv[])
                     printf("?? getopt returned character code 0%o ??\n", c);
                 }
         }
+    }
+
+    /* check that we got a valid progress value */
+    if (mfu_progress_timeout < 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Seconds in --progress must be non-negative: %d invalid", mfu_progress_timeout);
+        }
+        usage = 1;
     }
 
     /* remaining arguments */
@@ -204,10 +250,18 @@ int main (int argc, char* argv[])
     mfu_flist_stat(linklist_prestat, linklist, NULL, NULL);
     mfu_flist_free(&linklist_prestat);
 
+    /* initiate progress messages */
+    reln_count_total = mfu_flist_global_size(linklist);
+    reln_count = 0;
+    mfu_progress* prg = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, reln_progress_fn);
+
     /* iterate over links, readlink, check against old prefix */
     uint64_t count_changed = 0;
     size = mfu_flist_size(linklist);
     for (idx = 0; idx < size; idx++) {
+        /* increment our count of processed links for progress messages */
+        reln_count++;
+
         /* get path to link */
         const char* name = mfu_flist_file_get_name(linklist, idx);
 
@@ -340,7 +394,13 @@ int main (int argc, char* argv[])
         }
 
         mfu_path_delete(&path_target);
+
+        /* update our status for progress messages */
+        mfu_progress_update(&reln_count, prg);
     }
+
+    /* finalize progress messages */
+    mfu_progress_complete(&reln_count, &prg);
 
     /* TODO: print number of changed links */
 
