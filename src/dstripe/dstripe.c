@@ -263,25 +263,18 @@ static void write_file_chunk(mfu_file_chunk* p, const char* out_path)
 
     /* allocate buffer */
     void* buf = MFU_MALLOC(chunk_size);
-    if (buf == NULL) {
-        printf("Failed to allocate buffer\n");
-        fflush(stdout);
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
 
     /* open input file for reading */
     int in_fd = mfu_open(in_path, O_RDONLY);
     if (in_fd < 0) {
-        printf("Failed to open input file %s (%s)\n", in_path, strerror(errno));
-        fflush(stdout);
+        MFU_LOG(MFU_LOG_ERR, "Failed to open input file %s (%s)", in_path, strerror(errno));
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
     /* open output file for writing */
     int out_fd = mfu_open(out_path, O_WRONLY);
     if (out_fd < 0) {
-        printf("Failed to open output file %s (%s)\n", out_path, strerror(errno));
-        fflush(stdout);
+        MFU_LOG(MFU_LOG_ERR, "Failed to open output file %s (%s)", out_path, strerror(errno));
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
@@ -325,8 +318,7 @@ static void write_file_chunk(mfu_file_chunk* p, const char* out_path)
         off_t pos = (off_t) offset;
         off_t seek_rc = mfu_lseek(in_path, in_fd, pos, SEEK_SET);
         if (seek_rc == (off_t)-1) {
-            printf("Failed to seek in input file %s (%s)\n", in_path, strerror(errno));
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Failed to seek in input file %s (%s)", in_path, strerror(errno));
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
@@ -335,23 +327,20 @@ static void write_file_chunk(mfu_file_chunk* p, const char* out_path)
 
         /* check for errors */
         if (nread < 0) {
-            printf("Failed to read data from input file %s (%s)\n", in_path, strerror(errno));
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Failed to read data from input file %s (%s)", in_path, strerror(errno));
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
         /* check for short reads */
         if (nread != read_size) {
-            printf("Got a short read from input file %s\n", in_path);
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Got a short read from input file %s", in_path);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
         /* seek to correct spot in output file */
         seek_rc = mfu_lseek(out_path, out_fd, pos, SEEK_SET);
         if (seek_rc == (off_t)-1) {
-            printf("Failed to seek in output file %s (%s)\n", out_path, strerror(errno));
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Failed to seek in output file %s (%s)", out_path, strerror(errno));
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
@@ -360,15 +349,13 @@ static void write_file_chunk(mfu_file_chunk* p, const char* out_path)
 
         /* check for errors */
         if (nwrite < 0) {
-            printf("Failed to write data to output file %s (%s)\n", out_path, strerror(errno));
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Failed to write data to output file %s (%s)", out_path, strerror(errno));
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
         /* check for short reads */
         if (nwrite != read_size) {
-            printf("Got a short write to output file %s\n", out_path);
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Got a short write to output file %s", out_path);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
@@ -452,8 +439,7 @@ int main(int argc, char* argv[])
                 /* stripe size in bytes */
                 if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS) {
                     if (rank == 0) {
-                        printf("Failed to parse stripe size: %s\n", optarg);
-                        fflush(stdout);
+                        MFU_LOG(MFU_LOG_ERR, "Failed to parse stripe size: %s", optarg);
                     }
                     MPI_Abort(MPI_COMM_WORLD, 1);
                 }
@@ -463,8 +449,7 @@ int main(int argc, char* argv[])
                 /* min file size in bytes */
                 if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS) {
                     if (rank == 0) {
-                        printf("Failed to parse minimum file size: %s\n", optarg);
-                        fflush(stdout);
+                        MFU_LOG(MFU_LOG_ERR, "Failed to parse minimum file size: %s", optarg);
                     }
                     MPI_Abort(MPI_COMM_WORLD, 1);
                 }
@@ -536,30 +521,24 @@ int main(int argc, char* argv[])
     /* nothing to do if lustre support is disabled */
 #ifndef LUSTRE_SUPPORT
     if (rank == 0) {
-        printf("Lustre support is disabled.\n");
-        fflush(stdout);
+        MFU_LOG(MFU_LOG_ERR, "Lustre support is disabled.");
     }
-
     MPI_Abort(MPI_COMM_WORLD, 1);
 #endif
 
     /* stripe count must be -1 for all available or greater than 0 */
     if (stripes < -1) {
         if (rank == 0) {
-            printf("Stripe count must be -1 for all servers, 0 for lustre file system default, or a positive value\n");
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Stripe count must be -1 for all servers, 0 for lustre file system default, or a positive value");
         }
-
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
     /* lustre requires stripe sizes to be aligned */
     if (stripe_size > 0 && stripe_size % 65536 != 0) {
         if (rank == 0) {
-            printf("Stripe size must be a multiple of 65536\n");
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Stripe size must be a multiple of 65536");
         }
-
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
@@ -688,15 +667,13 @@ int main(int argc, char* argv[])
         /* change the mode of the newly restriped file to be the same as the old one */
         mode_t mode = (mode_t) mfu_flist_file_get_mode(filtered, idx);
         if (mfu_chmod(out_path, mode) != 0) {
-            printf("Failed to chmod file %s (%s)", out_path, strerror(errno));
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Failed to chmod file %s (%s)", out_path, strerror(errno));
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
         /* rename the new, restriped file to the old name */
         if (rename(out_path, in_path) != 0) {
-            printf("Failed to rename file %s to %s\n", out_path, in_path);
-            fflush(stdout);
+            MFU_LOG(MFU_LOG_ERR, "Failed to rename file %s to %s", out_path, in_path);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
