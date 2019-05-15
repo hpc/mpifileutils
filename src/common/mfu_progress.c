@@ -113,7 +113,7 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
              * and contribute our current values */
             mfu_progress_reduce(0, vals, prg);
 
-            /* update/reset the timer after reporting progress */
+            /* reset the timer after requesting progress */
             prg->time_last = MPI_Wtime();
         } else {
             /* got an outstanding bcast or reduce, check to see if it's done */
@@ -132,9 +132,6 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
                     double secs = now - prg->time_start;
                     (*prg->progfn)(&prg->global_vals[1], prg->count, (int)prg->global_vals[0], ranks, secs);
                 }
-
-                /* update/reset the timer after reporting progress */
-//                prg->time_last = MPI_Wtime();
             }
         }
     } else {
@@ -175,7 +172,7 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
          * and contribute our current values */
         mfu_progress_reduce(0, vals, prg);
 
-        /* update/reset the timer after reporting progress */
+        /* reset the timer after reporting progress */
         prg->time_last = MPI_Wtime();
 
         /* since we are not in complete,
@@ -212,14 +209,17 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
                 /* we have reached complete, so set our complete flag to 1,
                  * and contribute our current values */
                 mfu_progress_reduce(1, vals, prg);
-
-                /* update curren't time */
-                prg->time_last = MPI_Wtime();
             } else {
                 /* if there are outstanding reqs then wait for bcast
                  * and reduce to finish */
                 MPI_Wait(&(prg->bcast_req), MPI_STATUS_IGNORE);
                 MPI_Wait(&(prg->reduce_req), MPI_STATUS_IGNORE);
+
+                /* once outstanding bcast finishes in which we
+                 * set keep_going == 0, we can stop */
+                if (prg->keep_going == 0) {
+                    break;
+                }
 
                 /* print progress message */
                 if (prg->progfn) {
@@ -231,15 +231,6 @@ void mfu_progress_complete(uint64_t* vals, mfu_progress** pprg)
                         (*prg->progfn)(&prg->global_vals[1], prg->count, (int)prg->global_vals[0], ranks, secs);
                     }
                 }
-
-                /* once outstanding bcast finishes in which we
-                 * set keep_going == 0, we can stop */
-                if (prg->keep_going == 0) {
-                    break;
-                }
-
-                /* update curren't time */
-//                prg->time_last = MPI_Wtime();
 
                 /* when all processes are complete, this will sum
                  * to the number of ranks */
