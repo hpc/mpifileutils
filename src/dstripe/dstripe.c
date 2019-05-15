@@ -15,6 +15,82 @@
 
 #include "mfu.h"
 
+uint64_t create_prog_count;
+uint64_t create_prog_count_total;
+mfu_progress* create_prog;
+
+uint64_t stripe_prog_bytes;
+uint64_t stripe_prog_bytes_total;
+mfu_progress* stripe_prog;
+
+static void create_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (create_prog_count_total > 0) {
+        percent = 100.0 * (double)vals[0] / (double)create_prog_count_total;
+    }
+
+    /* compute average delete rate */
+    double rate  = 0.0;
+    if (secs > 0) {
+        rate  = (double)vals[0] / secs;
+    }
+
+    /* compute estimated time remaining */
+    double secs_remaining = -1.0;
+    if (rate > 0.0) {
+        secs_remaining = (double)(create_prog_count_total - vals[0]) / rate;
+    }
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Created %llu files (%.2f%%) in %.3lf secs (%.3lf files/sec) %d secs remaining ...",
+            vals[0], percent, secs, rate, (int)secs_remaining);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Created %llu files (%.2f%%) in %.3lf secs (%.3lf) done",
+            vals[0], percent, secs, rate);
+    }
+}
+
+static void stripe_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (stripe_prog_bytes_total > 0) {
+        percent = 100.0 * (double)vals[0] / (double)stripe_prog_bytes_total;
+    }
+
+    /* compute average delete rate */
+    double rate  = 0.0;
+    if (secs > 0) {
+        rate  = (double)vals[0] / secs;
+    }
+
+    /* compute estimated time remaining */
+    double secs_remaining = -1.0;
+    if (rate > 0.0) {
+        secs_remaining = (double)(stripe_prog_bytes_total - vals[0]) / rate;
+    }
+
+    /* convert bytes to units */
+    double agg_size_tmp;
+    const char* agg_size_units;
+    mfu_format_bytes(vals[0], &agg_size_tmp, &agg_size_units);
+
+    /* convert bandwidth to units */
+    double agg_rate_tmp;
+    const char* agg_rate_units;
+    mfu_format_bw(rate, &agg_rate_tmp, &agg_rate_units);
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Wrote %.3lf %s (%.2f%%) in %.3lf secs (%.3lf %s) %d secs remaining ...",
+            agg_size_tmp, agg_size_units, percent, secs, agg_rate_tmp, agg_rate_units, (int)secs_remaining);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Wrote %.3lf %s (%.2f%%) in %.3lf secs (%.3lf %s) done",
+            agg_size_tmp, agg_size_units, percent, secs, agg_rate_tmp, agg_rate_units);
+    }
+}
+
 static void print_usage(void)
 {
     printf("\n");
@@ -114,21 +190,24 @@ static void stripe_info_report(mfu_flist list)
 }
 
 /* filter the list of files down based on the current stripe size and stripe count */
-static mfu_flist filter_list(mfu_flist list, int stripe_count, uint64_t stripe_size, uint64_t min_size)
+static mfu_flist filter_list(mfu_flist list, int stripe_count, uint64_t stripe_size, uint64_t min_size, uint64_t* total_count, uint64_t* total_size)
 {
+    /* initialize counters for file and byte count */
+    uint64_t my_count = 0;
+    uint64_t my_size  = 0;
+
     /* this is going to be a subset of the full file list */
     mfu_flist filtered = mfu_flist_subset(list);
 
     uint64_t idx;
     uint64_t size = mfu_flist_size(list);
-
     for (idx = 0; idx < size; idx++) {
-        mfu_filetype type = mfu_flist_file_get_type(list, idx);
-
         /* we only care about regular files */
+        mfu_filetype type = mfu_flist_file_get_type(list, idx);
         if (type == MFU_TYPE_FILE) {
             /* if our file is below the minimum file size, skip it */
-            if (mfu_flist_file_get_size(list, idx) < min_size) {
+            uint64_t filesize = mfu_flist_file_get_size(list, idx);
+            if (filesize < min_size) {
                 continue;
             }
 
@@ -148,12 +227,21 @@ static mfu_flist filter_list(mfu_flist list, int stripe_count, uint64_t stripe_s
             /* if the current stripe size or stripe count doesn't match, then a restripe the file */
             if (curr_stripe_count != stripe_count || curr_stripe_size != stripe_size) {
                 mfu_flist_file_copy(list, idx, filtered);
+
+                /* increment file count and add file size to our running total */
+                my_count += 1;
+                my_size  += filesize;
             }
         }
     }
 
     /* summarize and return the new list */
     mfu_flist_summarize(filtered);
+
+    /* get sum of count and size */
+    MPI_Allreduce(&my_count, total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&my_size,  total_size,  1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
     return filtered;
 }
 
@@ -282,6 +370,10 @@ static void write_file_chunk(mfu_file_chunk* p, const char* out_path)
             fflush(stdout);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
+
+        /* update our byte count for progress messages */
+        stripe_prog_bytes += read_size;
+        mfu_progress_update(&stripe_prog_bytes, stripe_prog);
 
         /* go on to the next chunk in this stripe, we assume we
          * read the whole chunk size, if we didn't it's because
@@ -465,7 +557,7 @@ int main(int argc, char* argv[])
     mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
 
     /* filter down our list to files which don't meet our striping requirements */
-    mfu_flist filtered = filter_list(flist, stripes, stripe_size, min_size);
+    mfu_flist filtered = filter_list(flist, stripes, stripe_size, min_size, &create_prog_count_total, &stripe_prog_bytes_total);
     mfu_flist_free(&flist);
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -522,8 +614,12 @@ int main(int argc, char* argv[])
         MPI_Allreduce(&attempt, &retry, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
     } while(retry != 0);
 
-    uint64_t size = mfu_flist_size(filtered);
+    /* initialize progress messages while creating files */
+    create_prog_count = 0;
+    create_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, create_progress_fn);
+
     /* create new files so we can restripe */
+    uint64_t size = mfu_flist_size(filtered);
     for (idx = 0; idx < size; idx++) {
         char temp_path[PATH_MAX];
         strcpy(temp_path, mfu_flist_file_get_name(filtered, idx));
@@ -531,9 +627,20 @@ int main(int argc, char* argv[])
 
         /* create a striped file at the temp file path */
         mfu_stripe_set(temp_path, stripe_size, stripes);
+
+        /* update our status for file create progress */
+        create_prog_count++;
+        mfu_progress_update(&create_prog_count, create_prog);
     }
 
+    /* finalize file create progress messages */
+    mfu_progress_complete(&create_prog_count, &create_prog);
+
     MPI_Barrier(MPI_COMM_WORLD);
+
+    /* initialize progress messages while copying data */
+    stripe_prog_bytes = 0;
+    stripe_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, stripe_progress_fn);
 
     /* found a suffix, now we need to break our files into chunks based on stripe size */
     mfu_file_chunk* file_chunks = mfu_file_chunk_list_alloc(filtered, stripe_size);
@@ -551,6 +658,9 @@ int main(int argc, char* argv[])
         p = p->next;
     }
     mfu_file_chunk_list_free(&file_chunks);
+
+    /* finalize progress messages */
+    mfu_progress_complete(&stripe_prog_bytes, &stripe_prog);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
