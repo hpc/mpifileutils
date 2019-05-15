@@ -68,6 +68,12 @@ OPTIONS
 
    Delete child items without updating the mtime on their parent directory.
 
+.. option:: --progress N
+
+   Print progress message to stdout approximately every N seconds.
+   The number of seconds must be a non-negative integer.
+   A value of 0 disables progress messages.
+
 .. option:: -v, --verbose
 
    Run in verbose mode.

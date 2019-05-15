@@ -34,6 +34,7 @@ static void print_usage(void)
     printf("      --exclude <regex>  - exclude a list of files from command\n");
     printf("      --match   <regex>  - match a list of files from command\n");
     printf("  -n, --name             - exclude a list of files from command\n");
+    printf("      --progress <N>     - print progress every N seconds\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -q, --quiet            - quiet output\n");
     printf("  -h, --help             - print usage\n");
@@ -80,6 +81,7 @@ int main(int argc, char** argv)
         {"exclude",  1, 0, 'e'},
         {"match",    1, 0, 'a'},
         {"name",     0, 0, 'n'},
+        {"progress", 1, 0, 'P'},
         {"verbose",  0, 0, 'v'},
         {"quiet",    0, 0, 'q'},
         {"help",     0, 0, 'h'},
@@ -121,6 +123,9 @@ int main(int argc, char** argv)
             case 'n':
                 name = 1;
                 break;
+            case 'P':
+                mfu_progress_timeout = atoi(optarg);
+                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
@@ -138,6 +143,14 @@ int main(int argc, char** argv)
                     printf("?? getopt returned character code 0%o ??\n", c);
                 }
         }
+    }
+
+    /* check that we got a valid progress value */
+    if (mfu_progress_timeout < 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Seconds in --progress must be non-negative: %d invalid", mfu_progress_timeout);
+        }
+        usage = 1;
     }
 
     /* paths to walk come after the options */

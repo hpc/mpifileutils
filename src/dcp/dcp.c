@@ -69,6 +69,7 @@ void print_usage(void)
     printf("  -p, --preserve      - preserve permissions, ownership, timestamps, extended attributes\n");
     printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
     printf("  -S, --sparse        - create sparse files when possible\n");
+    printf("      --progress <N>  - print progress every N seconds\n");
     printf("  -v, --verbose       - verbose output\n");
     printf("  -q, --quiet         - quiet output\n");
     printf("  -h, --help          - print usage\n");
@@ -114,6 +115,7 @@ int main(int argc, char** argv)
         {"preserve"             , no_argument      , 0, 'p'},
         {"synchronous"          , no_argument      , 0, 's'},
         {"sparse"               , no_argument      , 0, 'S'},
+        {"progress"             , required_argument, 0, 'P'},
         {"verbose"              , no_argument      , 0, 'v'},
         {"quiet"                , no_argument      , 0, 'q'},
         {"help"                 , no_argument      , 0, 'h'},
@@ -209,6 +211,9 @@ int main(int argc, char** argv)
                     MFU_LOG(MFU_LOG_INFO, "Using sparse file");
                 }
                 break;
+            case 'P':
+                mfu_progress_timeout = atoi(optarg);
+                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
@@ -226,6 +231,14 @@ int main(int argc, char** argv)
                     printf("?? getopt returned character code 0%o ??\n", c);
                 }
         }
+    }
+
+    /* check that we got a valid progress value */
+    if (mfu_progress_timeout < 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Seconds in --progress must be non-negative: %d invalid", mfu_progress_timeout);
+        }
+        usage = 1;
     }
 
     /* paths to walk come after the options */

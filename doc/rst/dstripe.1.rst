@@ -46,6 +46,12 @@ OPTIONS
    Display the file size, stripe count, and stripe size of all files
    found in PATH. No restriping is performed when using this option.
 
+.. option:: --progress N
+
+   Print progress message to stdout approximately every N seconds.
+   The number of seconds must be a non-negative integer.
+   A value of 0 disables progress messages.
+
 .. option:: -v, --verbose
 
    Run in verbose mode.

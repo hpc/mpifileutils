@@ -101,6 +101,7 @@ static void print_usage(void)
     printf("  -s, --size <SIZE>      - stripe size in bytes (default 1MB)\n");
     printf("  -m, --minsize <SIZE>   - minimum file size (default 0MB)\n");
     printf("  -r, --report           - display file size and stripe info\n");
+    printf("      --progress <N>     - print progress every N seconds\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -q, --quiet            - quiet output\n");
     printf("  -h, --help             - print usage\n");
@@ -427,6 +428,7 @@ int main(int argc, char* argv[])
         {"size",     1, 0, 's'},
         {"minsize",  1, 0, 'm'},
         {"report",   0, 0, 'r'},
+        {"progress", 1, 0, 'P'},
         {"verbose",  0, 0, 'v'},
         {"quiet",    0, 0, 'q'},
         {"help",     0, 0, 'h'},
@@ -472,6 +474,9 @@ int main(int argc, char* argv[])
                 /* report striping info */
 		report = 1;
                 break;
+            case 'P':
+                mfu_progress_timeout = atoi(optarg);
+                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
@@ -491,6 +496,14 @@ int main(int argc, char* argv[])
                     printf("?? getopt returned character code 0%o ??\n", c);
                 }
         }
+    }
+
+    /* check that we got a valid progress value */
+    if (mfu_progress_timeout < 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Seconds in --progress must be non-negative: %d invalid", mfu_progress_timeout);
+        }
+        usage = 1;
     }
 
     /* paths to walk come after the options */

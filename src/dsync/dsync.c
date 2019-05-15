@@ -51,6 +51,7 @@ static void print_usage(void)
     printf("  -b  --batch-files <N> - batch files into groups of N during copy\n");
     printf("  -c, --contents        - read and compare file contents rather than compare size and mtime\n");
     printf("  -D, --delete          - delete extraneous files from target\n");
+    printf("      --progress <N>     - print progress every N seconds\n");
     printf("  -v, --verbose         - verbose output\n");
     printf("  -q, --quiet           - quiet output\n");
     printf("  -h, --help            - print usage\n");
@@ -2250,6 +2251,7 @@ int main(int argc, char **argv)
         {"delete",        0, 0, 'D'},
         {"output",        1, 0, 'o'}, // undocumented
         {"debug",         0, 0, 'd'}, // undocumented
+        {"progress",      1, 0, 'P'},
         {"verbose",       0, 0, 'v'},
         {"quiet",         0, 0, 'q'},
         {"help",          0, 0, 'h'},
@@ -2297,6 +2299,9 @@ int main(int argc, char **argv)
         case 'd':
             options.debug++;
             break;
+        case 'P':
+            mfu_progress_timeout = atoi(optarg);
+            break;
         case 'v':
             options.verbose++;
             mfu_debug_level = MFU_LOG_VERBOSE;
@@ -2314,6 +2319,14 @@ int main(int argc, char **argv)
             usage = 1;
             break;
         }
+    }
+
+    /* check that we got a valid progress value */
+    if (mfu_progress_timeout < 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Seconds in --progress must be non-negative: %d invalid", mfu_progress_timeout);
+        }
+        usage = 1;
     }
 
     /* Generate default output */

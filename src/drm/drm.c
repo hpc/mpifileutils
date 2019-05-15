@@ -39,6 +39,7 @@ static void print_usage(void)
     printf("      --dryrun           - print out list of files that would be deleted\n");
     printf("      --aggressive       - aggressive mode deletes files during the walk. You CANNOT use dryrun with this option. \n");
     printf("  -T, --traceless        - remove child items without changing parent directory mtime\n");
+    printf("      --progress <N>     - print progress every N seconds\n");
     printf("  -v, --verbose          - verbose output\n");
     printf("  -q, --quiet            - quiet output\n");
     printf("  -h, --help             - print usage\n");
@@ -88,6 +89,7 @@ int main(int argc, char** argv)
         {"dryrun",      0, 0, 'd'},
         {"aggressive",  0, 0, 'A'},
         {"traceless",   0, 0, 'T'},
+        {"progress",    1, 0, 'P'},
         {"verbose",     0, 0, 'v'},
         {"quiet",       0, 0, 'q'},
         {"help",        0, 0, 'h'},
@@ -141,6 +143,9 @@ int main(int argc, char** argv)
             case 'T':
                 traceless = 1;
                 break;
+            case 'P':
+                mfu_progress_timeout = atoi(optarg);
+                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
@@ -165,6 +170,14 @@ int main(int argc, char** argv)
         mfu_finalize();
         MPI_Finalize();
         return 1;
+    }
+
+    /* check that we got a valid progress value */
+    if (mfu_progress_timeout < 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Seconds in --progress must be non-negative: %d invalid", mfu_progress_timeout);
+        }
+        usage = 1;
     }
 
     /* paths to walk come after the options */

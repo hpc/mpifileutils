@@ -30,6 +30,7 @@ static void print_usage(void)
     printf("  -o, --output <EXPR:FILE>  - write list of entries matching EXPR to FILE\n");
     printf("  -t, --text                - change output option to write in text format\n");
     printf("  -b, --base                - enable base checks and normal output with --output\n");
+    printf("      --progress <N>        - print progress every N seconds\n");
     printf("  -v, --verbose             - verbose output\n");
     printf("  -q, --quiet               - quiet output\n");
     printf("  -l, --lite                - only compares file modification time and size\n");
@@ -2059,6 +2060,7 @@ int main(int argc, char **argv)
         {"output",   1, 0, 'o'},
         {"text",     0, 0, 't'},
         {"base",     0, 0, 'b'},
+        {"progress", 1, 0, 'P'},
         {"verbose",  0, 0, 'v'},
         {"quiet",    0, 0, 'q'},
         {"lite",     0, 0, 'l'},
@@ -2095,6 +2097,9 @@ int main(int argc, char **argv)
         case 'b':
             options.base++;
             break;
+        case 'P':
+            mfu_progress_timeout = atoi(optarg);
+            break;
         case 'v':
             options.verbose++;
             mfu_debug_level = MFU_LOG_VERBOSE;
@@ -2118,6 +2123,14 @@ int main(int argc, char **argv)
             usage = 1;
             break;
         }
+    }
+
+    /* check that we got a valid progress value */
+    if (mfu_progress_timeout < 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Seconds in --progress must be non-negative: %d invalid", mfu_progress_timeout);
+        }
+        usage = 1;
     }
 
     /* Generate default output */

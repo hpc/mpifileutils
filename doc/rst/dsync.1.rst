@@ -35,6 +35,12 @@ OPTIONS
 
    Delete extraneous files from destination.
 
+.. option:: --progress N
+
+   Print progress message to stdout approximately every N seconds.
+   The number of seconds must be a non-negative integer.
+   A value of 0 disables progress messages.
+
 .. option:: -v, --verbose
 
    Run in verbose mode. Prints a list of statistics/timing data for the
