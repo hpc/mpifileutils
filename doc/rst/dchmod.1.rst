@@ -27,11 +27,11 @@ OPTIONS
 
 .. option:: -u, --owner USER
 
-   Change owner to specified USER name.
+   Change owner to specified USER name or numeric user id.
 
 .. option:: -g, --group GROUP
 
-   Change group to specified GROUP name.
+   Change group to specified GROUP name or numeric group id.
 
 .. option:: -m, --mode MODE
 

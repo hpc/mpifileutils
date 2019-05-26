@@ -82,6 +82,24 @@ void mfu_perms_free(mfu_perms** p_head)
  * the return code is 1 if uid is valid (user name was found), 0 otherwise */
 static int lookup_uid(const char* name, uid_t* uid)
 {
+    /* first check whether we have a numeric uid */
+    int all_digits = 1;
+    const char* ptr;
+    for (ptr = name; *ptr != '\0'; ptr++) {
+        if (! isdigit(*ptr)) {
+            /* found a character that is not a digit,
+             * so don't treat this as a uid */
+            all_digits = 0;
+            break;
+        }
+    }
+
+    /* got a string of digits, consider it a valid uid */
+    if (all_digits) {
+        *uid = (uid_t) atoi(name);
+        return 1;
+    }
+
     /* the first entry will be a flag indicating whether the lookup
      * succeeded (1) or not (0), if successful, the uid will be
      * stored in the second entry */
@@ -130,6 +148,24 @@ static int lookup_uid(const char* name, uid_t* uid)
  * the return code is 1 if gid is valid (group was found), 0 otherwise */
 static int lookup_gid(const char* name, gid_t* gid)
 {
+    /* first check whether we have a numeric gid */
+    int all_digits = 1;
+    const char* ptr;
+    for (ptr = name; *ptr != '\0'; ptr++) {
+        if (! isdigit(*ptr)) {
+            /* found a character that is not a digit,
+             * so don't treat this as a gid */
+            all_digits = 0;
+            break;
+        }
+    }
+
+    /* got a string of digits, consider it a valid gid */
+    if (all_digits) {
+        *gid = (gid_t) atoi(name);
+        return 1;
+    }
+
     /* the first entry will be a flag indicating whether the lookup
      * succeeded (1) or not (0), if successful, the gid will be
      * stored in the second entry */
@@ -840,7 +876,7 @@ static void set_modebits(const mfu_perms* head, mfu_filetype type, mode_t old_mo
     }
 }
 
-static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* usrname, const char* grname, const mfu_perms* head, uid_t uid, gid_t gid)
+static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const mfu_perms* head, const char* usrname, const char* grname, uid_t uid, gid_t gid)
 {
     /* each process directly changes permissions on its elements for each level */
     uint64_t idx;
@@ -858,14 +894,14 @@ static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const char* usr
             /* compute new user id, assume it doesn't change */
             uid_t newuid = olduid;
             if (usrname != NULL) {
-                /* user gave us a username, so the uid may have changed */
+                /* user gave us a uid value, so the uid may have changed */
                 newuid = uid;
             }
 
             /* compute new group id, assume it doesn't change */
             gid_t newgid = oldgid;
             if (grname != NULL) {
-                /* user gave us a group name, so the gid may have changed */
+                /* user gave us a gid value, so the gid may have changed */
                 newgid = gid;
             }
 
@@ -1000,7 +1036,7 @@ void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, c
 
         /* do a dchmod on each element in the list for this level & pass it the size */
         uint64_t size = 0;
-        dchmod_level(list, &size, usrname, grname, head, uid, gid);
+        dchmod_level(list, &size, head, usrname, grname, uid, gid);
 
         /* wait for all processes to finish before we start with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
