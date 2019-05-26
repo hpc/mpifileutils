@@ -28,8 +28,8 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("  -i, --input   <file>   - read list from file\n");
-    printf("  -u, --owner   <name>   - change owner to specified user name\n");
-    printf("  -g, --group   <name>   - change group to specified group name\n");
+    printf("  -u, --owner   <user>   - change owner to specified user name or uid\n");
+    printf("  -g, --group   <group>  - change group to specified group name or gid\n");
     printf("  -m, --mode    <string> - change mode\n");
     printf("      --exclude <regex>  - exclude a list of files from command\n");
     printf("      --match   <regex>  - match a list of files from command\n");
@@ -226,6 +226,7 @@ int main(int argc, char** argv)
         if (head != NULL && head->octal && ownername == NULL && groupname == NULL) {
             walk_opts->use_stat = 0;
         }
+
         /* walk list of input paths */
         mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
     }
