@@ -268,11 +268,11 @@ void DCOPY_print_usage(void)
     printf("  -d, --debug <level> - specify debug verbosity level (default info)\n");
     printf("  -f, --force         - delete destination file if error on open\n");
     printf("  -p, --preserve      - preserve permissions, ownership, timestamps, extended attributes\n");
-    printf("  -p, --verbose       - verbose output\n");
-    printf("  -p, --quiet         - quiet output\n");
+    printf("  -v, --verbose       - verbose output\n");
+    printf("  -q, --quiet         - quiet output\n");
     printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
-    printf("  -k, --chunksize     - specify chunksize in MB unit (default 1MB)\n");
-    printf("  -b, --blocksize     - specify blocksize in MB unit (default 1MB)\n");
+    printf("  -k, --chunksize     - work size per task in bytes (default 1MB)\n");
+    printf("  -b, --blocksize     - IO buffer size in bytes (default 1MB)\n");
     printf("  -h, --help          - print usage\n");
     printf("\n");
     printf("Level: dbg,info,warn,err,fatal\n");
@@ -338,12 +338,12 @@ int main(int argc, \
     DCOPY_user_opts.synchronous = false;
 
     static struct option long_options[] = {
-        {"compare"              , no_argument      , 0, 'c'},
         {"blocksize"            , required_argument, 0, 'b'},
+        {"chunksize"            , required_argument, 0, 'k'},
+        {"compare"              , no_argument      , 0, 'c'},
         {"debug"                , required_argument, 0, 'd'},
         {"force"                , no_argument      , 0, 'f'},
         {"help"                 , no_argument      , 0, 'h'},
-        {"chunksize"            , required_argument, 0, 'k'},
         {"preserve"             , no_argument      , 0, 'p'},
         {"verbose"              , no_argument      , 0, 'v'},
         {"quiet"                , no_argument      , 0, 'q'},

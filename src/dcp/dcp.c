@@ -65,7 +65,9 @@ void print_usage(void)
 #ifdef LUSTRE_SUPPORT
     /* printf("  -g, --grouplock <id> - use Lustre grouplock when reading/writing file\n"); */
 #endif
+    printf("  -b, --blocksize     - IO buffer size in bytes (default 1MB)\n");
     printf("  -i, --input <file>  - read source list from file\n");
+    printf("  -k, --chunksize     - work size per task in bytes (default 1MB)\n");
     printf("  -p, --preserve      - preserve permissions, ownership, timestamps, extended attributes\n");
     printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
     printf("  -S, --sparse        - create sparse files when possible\n");
@@ -109,6 +111,8 @@ int main(int argc, char** argv)
 
     int option_index = 0;
     static struct option long_options[] = {
+        {"blocksize"            , required_argument, 0, 'b'},
+        {"chunksize"            , required_argument, 0, 'k'},
         {"debug"                , required_argument, 0, 'd'}, // undocumented
         {"grouplock"            , required_argument, 0, 'g'}, // untested
         {"input"                , required_argument, 0, 'i'},
@@ -123,10 +127,11 @@ int main(int argc, char** argv)
     };
 
     /* Parse options */
+    unsigned long long bytes = 0;
     int usage = 0;
     while(1) {
         int c = getopt_long(
-                    argc, argv, "d:g:i:psSvqh",
+                    argc, argv, "b:d:g:i:k:psSvqh",
                     long_options, &option_index
                 );
 
@@ -135,6 +140,16 @@ int main(int argc, char** argv)
         }
 
         switch(c) {
+            case 'b':
+                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
+                    if (rank == 0)
+                        MFU_LOG(MFU_LOG_ERR,
+                                "Failed to parse block size: '%s'\n", optarg);
+                    usage = 1;
+                } else {
+                    mfu_copy_opts->block_size = (size_t)bytes;
+                }
+                break;
             case 'd':
                 if(strncmp(optarg, "fatal", 5) == 0) {
                     CIRCLE_debug = CIRCLE_LOG_FATAL;
@@ -182,7 +197,7 @@ int main(int argc, char** argv)
             case 'g':
                 mfu_copy_opts->grouplock_id = atoi(optarg);
                 if(rank == 0) {
-                    MFU_LOG(MFU_LOG_INFO, "groulock ID: %d.",
+                    MFU_LOG(MFU_LOG_INFO, "grouplock ID: %d.",
                         mfu_copy_opts->grouplock_id);
                 }
                 break;
@@ -191,6 +206,16 @@ int main(int argc, char** argv)
                 inputname = MFU_STRDUP(optarg);
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Using input list.");
+                }
+                break;
+            case 'k':
+                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
+                    if (rank == 0)
+                        MFU_LOG(MFU_LOG_ERR,
+                                "Failed to parse chunk size: '%s'\n", optarg);
+                    usage = 1;
+                } else {
+                    mfu_copy_opts->chunk_size = bytes;
                 }
                 break;
             case 'p':
