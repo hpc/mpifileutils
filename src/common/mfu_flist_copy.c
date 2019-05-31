@@ -2768,7 +2768,7 @@ mfu_copy_opts_t* mfu_copy_opts_new(void)
     opts->sparse        = false;
 
     /* Set default chunk size */
-    opts->chunk_size    = 1*1024*1024;
+    opts->chunk_size    = FD_CHUNK_SIZE;
 
     /* temporaries used during the copy operation for buffers to read/write data */
     opts->block_size    = FD_BLOCK_SIZE;
