@@ -59,7 +59,10 @@ extern "C" {
 #define DCOPY_DEF_PERMS_FILE (S_IRUSR | S_IWUSR)
 #define DCOPY_DEF_PERMS_DIR  (S_IRWXU)
 
-/* buffer size to read/write data to file system */
+/* default chunk size to split files into work units */
+#define FD_CHUNK_SIZE (1*1024*1024)
+
+/* default buffer size to read/write data to file system */
 #define FD_BLOCK_SIZE (1*1024*1024)
 
 /*
