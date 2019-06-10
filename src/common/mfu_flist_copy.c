@@ -359,73 +359,81 @@ static int mfu_copy_permissions(
 
 #ifdef GPFS_SUPPORT
     /* if we have GPFS support enabled, then we'll use the GPFS API to read
-       the ACL from the src_path and write to the dest_path.
-       We use the opaque method as we are not trying to alter the ACL contents.
-       Note that if the source is not a GPFS file-system, then the call will
-       fail with EINVAL and so we never try to apply this to the dest_path    */
+     * the ACL from the src_path and write to the dest_path.
+     * We use the opaque method as we are not trying to alter the ACL contents.
+     * Note that if the source is not a GPFS file-system, then the call will
+     * fail with EINVAL and so we never try to apply this to the dest_path */
 
     /* need the file path to read the existing ACL */
     const char* src_path = mfu_flist_file_get_name(flist, idx);
 
-    int aclflags = 0; /* acl param mapped with gpfs_opaque_acl_t structure */
+    /* acl param mapped with gpfs_opaque_acl_t structure */
+    int aclflags = 0;
     unsigned char acltype = GPFS_ACL_TYPE_ACCESS;
+
     /* initial size of the struct for gpfs_opaque_acl, 512 bytes should
      * be large enough for a fairly large ACL anyway */
     size_t bufsize = 512;
-    unsigned int *len; // pointer to length of struct
+
     /* gpfs_getacl needs a *void for where it will place the data, so we need
      * to allocate some memory and then place a gpfs_opaque_acl into the
      * memory as aclflags is set to 0 to indicate gpfs_opaque_acl_t */
-    void *aclbufmem = MFU_MALLOC(bufsize); // allocate some memory for the buffer
+    void* aclbufmem = MFU_MALLOC(bufsize);
     memset(aclbufmem, 0, bufsize);
 
-    /* initialise emptry struct into the memory */
-    struct gpfs_opaque_acl *aclbuffer = (struct gpfs_opaque_acl *) aclbufmem;
-    /* we need a pointer to the length for later use */
-    len = (unsigned int *) &(aclbuffer->acl_buffer_len);
+    /* set fields in structure to define acl query */
+    struct gpfs_opaque_acl* aclbuffer = (struct gpfs_opaque_acl*) aclbufmem;
     aclbuffer->acl_buffer_len = (int) (bufsize - sizeof(struct gpfs_opaque_acl));
     aclbuffer->acl_type = acltype;
 
     /* try and get the ACL */
-    MFU_LOG(MFU_LOG_INFO, "Getting GPFS ACL on %s for %s", src_path, dest_path);
+    errno = 0;
     int r = gpfs_getacl(src_path, aclflags, aclbufmem);
 
     /* the buffer may not be big enough, if not, we'll get EONSPC and
      * the first 4 bytes (acl_buffer_len) will tell us how much space we need */
     if ((r != 0) && (errno == ENOSPC)) {
       /* make a buffer which is exactly the right size */
-      bufsize = *len + sizeof(struct gpfs_opaque_acl);
-      MFU_LOG(MFU_LOG_INFO, "GPFS Buffer too small, needs to be %i",
+      unsigned int len = *(unsigned int*) &(aclbuffer->acl_buffer_len);
+      bufsize = len + sizeof(struct gpfs_opaque_acl);
+      MFU_LOG(MFU_LOG_DBG, "GPFS ACL buffer too small, needs to be %d",
               (int) bufsize);
+
       /* free the old buffer, then malloc the new size */
-      free(aclbufmem);
+      mfu_free(&aclbufmem);
       aclbufmem = MFU_MALLOC(bufsize);
       memset(aclbufmem, 0, bufsize);
-      /* initialise emptry struct into the memory */
-      aclbuffer = (struct gpfs_opaque_acl *) aclbufmem;
-      aclbuffer->acl_buffer_len = (int) bufsize;
+
+      /* set fields in structure to define acl query */
+      aclbuffer = (struct gpfs_opaque_acl*) aclbufmem;
+      aclbuffer->acl_buffer_len = (int) (bufsize - sizeof(struct gpfs_opaque_acl));
       aclbuffer->acl_type = acltype;
 
       /* once again try and get the ACL */
       r = gpfs_getacl(src_path, aclflags, aclbufmem);
     }
 
-    /* Assuming we now have a valid call to an ACL,
-     * try to place it on dest_path */
+    /* check whether we read the ACL successfully */
     if (r == 0) {
-      MFU_LOG(MFU_LOG_INFO, "Sucessfully got ACL from %s", src_path);
+      /* Assuming we now have a valid call to an ACL,
+       * try to place it on dest_path */
+      errno = 0;
       r = gpfs_putacl(dest_path, aclflags, aclbufmem);
-      if (r != 0) {
-        MFU_LOG(MFU_LOG_WARN, "Failed to copy ACL from %s to %s with %i",
-                src_path, dest_path, r);
+      if (r != 0 && errno != EINVAL) {
+        /* failed to put GPFS ACL, print message unless target is not a GPFS file system */
+        MFU_LOG(MFU_LOG_WARN, "Failed to copy GPFS ACL from %s to %s errno=%d (%s)",
+                src_path, dest_path, errno, strerror(errno));
       }
     } else {
-      MFU_LOG(MFU_LOG_INFO, "Failed to get GPFS ACL on %s with %i ",
-              src_path, r);
+      /* failed to get GPFS ACL, print message unless source is not a GPFS file system */
+      if (errno != EINVAL) {
+        MFU_LOG(MFU_LOG_INFO, "Failed to get GPFS ACL on %s errno=%d (%s)",
+                src_path, errno, strerror(errno));
+      }
     }
 
     /* free the memory from the buffer */
-    free(aclbufmem);
+    mfu_free(&aclbufmem);
 #endif /* GPFS_SUPPORT */
 
     }
