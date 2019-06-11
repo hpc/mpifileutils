@@ -15,7 +15,7 @@ dcp is a file copy tool in the spirit of :manpage:`cp(1)` that evenly
 distributes the work of scanning the directory tree, and copying file
 data across a large cluster without any centralized state.  It is
 designed for copying files that are located on a distributed parallel
-file system, and will split large file copies across multiple processes.
+file system, and it splits large file copies across multiple processes.
 
 OPTIONS
 -------
