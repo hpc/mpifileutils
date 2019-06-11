@@ -264,15 +264,15 @@ void DCOPY_print_usage(void)
     printf("       dcp [options] source ... target_dir\n");
     printf("\n");
     printf("Options:\n");
+    printf("  -b, --blocksize     - IO buffer size in bytes (default 1MB)\n");
     /* printf("  -c, --compare       - read data back after writing to compare\n"); */
     printf("  -d, --debug <level> - specify debug verbosity level (default info)\n");
     printf("  -f, --force         - delete destination file if error on open\n");
+    printf("  -k, --chunksize     - work size per task in bytes (default 1MB)\n");
     printf("  -p, --preserve      - preserve permissions, ownership, timestamps, extended attributes\n");
+    printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
     printf("  -v, --verbose       - verbose output\n");
     printf("  -q, --quiet         - quiet output\n");
-    printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
-    printf("  -k, --chunksize     - work size per task in bytes (default 1MB)\n");
-    printf("  -b, --blocksize     - IO buffer size in bytes (default 1MB)\n");
     printf("  -h, --help          - print usage\n");
     printf("\n");
     printf("Level: dbg,info,warn,err,fatal\n");
@@ -339,24 +339,35 @@ int main(int argc, \
 
     static struct option long_options[] = {
         {"blocksize"            , required_argument, 0, 'b'},
-        {"chunksize"            , required_argument, 0, 'k'},
         {"compare"              , no_argument      , 0, 'c'},
         {"debug"                , required_argument, 0, 'd'},
         {"force"                , no_argument      , 0, 'f'},
-        {"help"                 , no_argument      , 0, 'h'},
+        {"chunksize"            , required_argument, 0, 'k'},
         {"preserve"             , no_argument      , 0, 'p'},
-        {"verbose"              , no_argument      , 0, 'v'},
-        {"quiet"                , no_argument      , 0, 'q'},
         {"unreliable-filesystem", no_argument      , 0, 'u'},
         {"synchronous"          , no_argument      , 0, 's'},
+        {"verbose"              , no_argument      , 0, 'v'},
+        {"quiet"                , no_argument      , 0, 'q'},
+        {"help"                 , no_argument      , 0, 'h'},
         {0                      , 0                , 0, 0  }
     };
 
     /* Parse options */
     unsigned long long bytes;
-    while((c = getopt_long(argc, argv, "cb:d:fhpusvqk:", \
+    while((c = getopt_long(argc, argv, "b:cd:fk:pusvqh", \
                            long_options, &option_index)) != -1) {
         switch(c) {
+
+            case 'b':
+                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS) {
+                    if (DCOPY_global_rank == 0) {
+                        fprintf(stderr, "Failed to convert -b: %s\n", optarg);
+                    }
+                    DCOPY_exit(EXIT_FAILURE);
+                }
+                DCOPY_blocksize = (size_t)bytes;
+
+                break;
 
             case 'c':
                 DCOPY_user_opts.compare = true;
@@ -433,13 +444,15 @@ int main(int argc, \
 
                 break;
 
-            case 'h':
-
-                if(DCOPY_global_rank == 0) {
-                    DCOPY_print_usage();
+            case 'k':
+                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS) {
+                    if (DCOPY_global_rank == 0) {
+                        fprintf(stderr, "Failed to convert -k: %s\n", optarg);
+                    }
+                    DCOPY_exit(EXIT_FAILURE);
                 }
+                DCOPY_chunksize = (size_t)bytes;
 
-                DCOPY_exit(EXIT_SUCCESS);
                 break;
 
             case 'p':
@@ -449,14 +462,6 @@ int main(int argc, \
                     MFU_LOG(MFU_LOG_INFO, "Preserving file attributes.");
                 }
 
-                break;
-
-            case 'v':
-                mfu_debug_level = MFU_LOG_VERBOSE;
-                break;
-
-            case 'q':
-                mfu_debug_level = MFU_LOG_NONE;
                 break;
 
             case 'u':
@@ -478,24 +483,23 @@ int main(int argc, \
 
                 break;
 
-            case 'k':
-                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS) {
-                    if (DCOPY_global_rank == 0) {
-                        fprintf(stderr, "Failed to convert -k: %s\n", optarg);
-                        DCOPY_exit(EXIT_FAILURE);
-                    }
-                }
-                DCOPY_chunksize = (size_t)bytes;
+            case 'v':
+                mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
-            case 'b':
-                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS) {
-                    if (DCOPY_global_rank == 0) {
-                        fprintf(stderr, "Failed to convert -b: %s\n", optarg);
-                        DCOPY_exit(EXIT_FAILURE);
-                    }
-                }
-                DCOPY_blocksize = (size_t)bytes;
+
+            case 'q':
+                mfu_debug_level = MFU_LOG_NONE;
                 break;
+
+            case 'h':
+
+                if(DCOPY_global_rank == 0) {
+                    DCOPY_print_usage();
+                }
+
+                DCOPY_exit(EXIT_SUCCESS);
+                break;
+
             case '?':
             default:
 

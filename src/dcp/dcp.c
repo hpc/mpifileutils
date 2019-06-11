@@ -112,10 +112,10 @@ int main(int argc, char** argv)
     int option_index = 0;
     static struct option long_options[] = {
         {"blocksize"            , required_argument, 0, 'b'},
-        {"chunksize"            , required_argument, 0, 'k'},
         {"debug"                , required_argument, 0, 'd'}, // undocumented
         {"grouplock"            , required_argument, 0, 'g'}, // untested
         {"input"                , required_argument, 0, 'i'},
+        {"chunksize"            , required_argument, 0, 'k'},
         {"preserve"             , no_argument      , 0, 'p'},
         {"synchronous"          , no_argument      , 0, 's'},
         {"sparse"               , no_argument      , 0, 'S'},
@@ -142,9 +142,10 @@ int main(int argc, char** argv)
         switch(c) {
             case 'b':
                 if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
-                    if (rank == 0)
+                    if (rank == 0) {
                         MFU_LOG(MFU_LOG_ERR,
-                                "Failed to parse block size: '%s'\n", optarg);
+                                "Failed to parse block size: '%s'", optarg);
+                    }
                     usage = 1;
                 } else {
                     mfu_copy_opts->block_size = (size_t)bytes;
@@ -210,9 +211,10 @@ int main(int argc, char** argv)
                 break;
             case 'k':
                 if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
-                    if (rank == 0)
+                    if (rank == 0) {
                         MFU_LOG(MFU_LOG_ERR,
-                                "Failed to parse chunk size: '%s'\n", optarg);
+                                "Failed to parse chunk size: '%s'", optarg);
+                    }
                     usage = 1;
                 } else {
                     mfu_copy_opts->chunk_size = bytes;
