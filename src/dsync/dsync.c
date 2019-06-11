@@ -51,8 +51,8 @@ static void print_usage(void)
     printf("  -b  --batch-files <N> - batch files into groups of N during copy\n");
     printf("  -c, --contents        - read and compare file contents rather than compare size and mtime\n");
     printf("  -D, --delete          - delete extraneous files from target\n");
-    printf("  -l, --link-dest=DIR   - hardlink to files in DIR when unchanged\n");
-    printf("      --progress <N>     - print progress every N seconds\n");
+    printf("      --link-dest <DIR> - hardlink to files in DIR when unchanged\n");
+    printf("      --progress <N>    - print progress every N seconds\n");
     printf("  -v, --verbose         - verbose output\n");
     printf("  -q, --quiet           - quiet output\n");
     printf("  -h, --help            - print usage\n");
@@ -2783,7 +2783,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDl:o:vqh",
+            argc, argv, "b:cDo:vqh",
             long_options, &option_index
         );
 
@@ -2958,7 +2958,11 @@ int main(int argc, char **argv)
     }
     mfu_flist_walk_param_paths(1, destpath, walk_opts, flist2);
 
+    /* walk link-dest path */
     if (options.link_dest != NULL) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Walking link-dest path");
+        }
         mfu_flist_walk_param_paths(1, link_dest_path, walk_opts, flist_link_dest);
     }
 
