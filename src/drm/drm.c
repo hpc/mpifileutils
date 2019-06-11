@@ -32,6 +32,8 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("  -i, --input   <file>   - read list from file\n");
+    printf("  -o, --output <file>    - write list to file in binary format\n");
+    printf("  -t, --text             - use with -o; write processed list to file in ascii format\n");
     printf("  -l, --lite             - walk file system without stat\n");
     printf("      --exclude <regex>  - exclude from command entries that match the regex\n");
     printf("      --match   <regex>  - apply command only to entries that match the regex\n");
@@ -66,13 +68,15 @@ int main(int argc, char** argv)
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
     /* parse command line options */
-    char* inputname = NULL;
-    char* regex_exp = NULL;
-    int walk        = 0;
-    int exclude     = 0;
-    int name        = 0;
-    int dryrun      = 0;
-    int traceless   = 0;
+    char* inputname  = NULL;
+    char* outputname = NULL;
+    char* regex_exp  = NULL;
+    int walk         = 0;
+    int exclude      = 0;
+    int name         = 0;
+    int dryrun       = 0;
+    int traceless    = 0;
+    int text         = 0;
     /* Don't stat on walk by default */
     walk_opts->use_stat = 0;
 
@@ -82,6 +86,8 @@ int main(int argc, char** argv)
     int option_index = 0;
     static struct option long_options[] = {
         {"input",       1, 0, 'i'},
+        {"output",      1, 0, 'o'},
+        {"text",        0, 0, 't'},
         {"lite",        0, 0, 'l'},
         {"exclude",     1, 0, 'e'},
         {"match",       1, 0, 'a'},
@@ -99,7 +105,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:lTvqh",
+                    argc, argv, "i:o:tlTvqh",
                     long_options, &option_index
                 );
 
@@ -110,6 +116,12 @@ int main(int argc, char** argv)
         switch (c) {
             case 'i':
                 inputname = MFU_STRDUP(optarg);
+                break;
+            case 'o':
+                outputname = MFU_STRDUP(optarg);
+                break;
+            case 't':
+                text = 1;
                 break;
             case 'l':
                 /* don't stat each file during the walk */
@@ -165,13 +177,6 @@ int main(int argc, char** argv)
         }
     }
 
-    if (dryrun && walk_opts->remove) {
-        printf("Cannot perform dryrun with aggressive delete option. Program is safely exiting.  Please do a dryrun then run an aggressive delete separately. These two options cannot both be specified for the same program run \n");
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
-
     /* check that we got a valid progress value */
     if (mfu_progress_timeout < 0) {
         if (rank == 0) {
@@ -211,6 +216,20 @@ int main(int argc, char** argv)
         if (inputname == NULL) {
             usage = 1;
         }
+    }
+
+    /* check that user didn't ask for a dryrun, but then specify
+     * an aggressive delete while walking */
+    if (dryrun && walk && walk_opts->remove) {
+        MFU_LOG(MFU_LOG_ERR, "Cannot perform dryrun with aggressive delete option.  Program is safely exiting.  Please do a dryrun then run an aggressive delete separately.  These two options cannot both be specified for the same program run.");
+        usage = 1;
+    }
+
+    /* since we don't get a full list back from the walk when using
+     * --agressive, we can't write a good output file */
+    if (outputname != NULL && walk && walk_opts->remove) {
+        MFU_LOG(MFU_LOG_ERR, "Cannot write output file with aggressive delete option.  Program is safely exiting.  These two options cannot both be specified for the same program run.");
+        usage = 1;
     }
 
     /* print usage if we need to */
@@ -260,8 +279,17 @@ int main(int argc, char** argv)
         mfu_flist_unlink(srclist, traceless);
     }
 
+    /* write data to cache file */
+    if (outputname != NULL) {
+        if (!text) {
+            mfu_flist_write_cache(outputname, srclist);
+        } else {
+            mfu_flist_write_text(outputname, srclist);
+        }
+    }
+
     /* free list if it was used */
-    if (filtered_flist != MFU_FLIST_NULL){
+    if (filtered_flist != MFU_FLIST_NULL) {
         /* free the filtered flist (if any) */
         mfu_flist_free(&filtered_flist);
     }
@@ -277,6 +305,9 @@ int main(int argc, char** argv)
 
     /* free the regex string if we have one */
     mfu_free(&regex_exp);
+
+    /* free the output file name */
+    mfu_free(&outputname);
 
     /* free the input file name */
     mfu_free(&inputname);
