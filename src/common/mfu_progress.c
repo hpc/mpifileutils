@@ -135,31 +135,29 @@ void mfu_progress_update(uint64_t* vals, mfu_progress* prg)
             }
         }
     } else {
-         /* get current time and compute number of seconds since
-          * we last reported a message */
-         double now = MPI_Wtime();
-         double time_diff = now - prg->time_last;
-
-         /* if timeout hasn't expired do nothing, return from function */
-         if (time_diff < prg->timeout) {
-             return;
-         }
-
         /* we may have a reduce already outstanding,
          * wait for it to complete before we start a new one,
          * if there is no outstanding reduce, this sets the flag to 1 */
         MPI_Test(&(prg->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
         MPI_Test(&(prg->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
         MPI_Test(&(prg->reduce_req), &reduce_done, MPI_STATUS_IGNORE);
-        if (!reduce_done) {
-            /* not done, keep waiting */
-            //return;
+
+        /* make progress on any outstanding bcast */
+        MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
+        MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
+        MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
+
+        /* get current time and compute number of seconds since
+         * we last reported a message */
+        double now = MPI_Wtime();
+        double time_diff = now - prg->time_last;
+
+        /* if timeout hasn't expired do nothing, return from function */
+        if (time_diff < prg->timeout) {
+            return;
         }
 
         /* wait for rank 0 to signal us with a bcast */
-        MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
-        MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
-        MPI_Test(&(prg->bcast_req), &bcast_done, MPI_STATUS_IGNORE);
         if (!reduce_done || !bcast_done) {
             /* not done, keep waiting */
             return;
