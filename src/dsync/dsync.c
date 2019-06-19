@@ -32,6 +32,7 @@
 #define _XOPEN_SOURCE 600
 #include <fcntl.h>
 #include <string.h>
+
 /* for bool type, true/false macros */
 #include <stdbool.h>
 #include <assert.h>
