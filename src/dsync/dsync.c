@@ -1033,9 +1033,9 @@ static void dsync_generate_real_lists(
     }
 
     /* finalize the lists we just added items to */
-    mfu_flist_summarize(&src_real_cp_list);
-    mfu_flist_summarize(&link_dst_list);
-    mfu_flist_summarize(&dst_remove_list);
+    mfu_flist_summarize(src_real_cp_list);
+    mfu_flist_summarize(link_dst_list);
+    mfu_flist_summarize(dst_remove_list);
 
     /* free the map */
     strmap_delete(&link_same_map);
