@@ -172,6 +172,9 @@ int main(int argc, char** argv)
                 break;
             case 'q':
                 mfu_debug_level = MFU_LOG_NONE;
+                /* since process won't be printed in quiet anyway,
+                 * disable the algorithm to save some overhead */
+                mfu_progress_timeout = 0;
                 break;
             case 'h':
                 usage = 1;
