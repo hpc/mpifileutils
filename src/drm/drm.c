@@ -35,6 +35,7 @@ static void print_usage(void)
     printf("  -o, --output <file>    - write list to file in binary format\n");
     printf("  -t, --text             - use with -o; write processed list to file in ascii format\n");
     printf("  -l, --lite             - walk file system without stat\n");
+    printf("      --stat             - walk file system with stat\n");
     printf("      --exclude <regex>  - exclude from command entries that match the regex\n");
     printf("      --match   <regex>  - apply command only to entries that match the regex\n");
     printf("      --name             - change regex to apply to entry name rather than full pathname\n");
@@ -77,7 +78,10 @@ int main(int argc, char** argv)
     int dryrun       = 0;
     int traceless    = 0;
     int text         = 0;
-    /* Don't stat on walk by default */
+
+    /* with drm, we don't stat files on walk by default,
+     * since that info is not needed to remove items and
+     * avoiding the stat can significantly speed up the walk */
     walk_opts->use_stat = 0;
 
     /* verbose by default */
@@ -89,6 +93,7 @@ int main(int argc, char** argv)
         {"output",      1, 0, 'o'},
         {"text",        0, 0, 't'},
         {"lite",        0, 0, 'l'},
+        {"stat",        0, 0, 's'},
         {"exclude",     1, 0, 'e'},
         {"match",       1, 0, 'a'},
         {"name",        0, 0, 'n'},
@@ -126,6 +131,10 @@ int main(int argc, char** argv)
             case 'l':
                 /* don't stat each file during the walk */
                 walk_opts->use_stat = 0;
+                break;
+            case 's':
+                /* stat each file during the walk */
+                walk_opts->use_stat = 1;
                 break;
             case 'e':
                 regex_exp = MFU_STRDUP(optarg);

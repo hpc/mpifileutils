@@ -48,6 +48,10 @@ OPTIONS
 
    Walk file system without stat.
 
+.. option:: --stat
+
+   Walk file system with stat.
+
 .. option:: --exclude REGEX
 
    Do not remove items whose full path matches REGEX, processed by :manpage:`regexec(3)`.
