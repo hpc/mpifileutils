@@ -32,6 +32,7 @@
 #define _XOPEN_SOURCE 600
 #include <fcntl.h>
 #include <string.h>
+
 /* for bool type, true/false macros */
 #include <stdbool.h>
 #include <assert.h>
@@ -51,8 +52,8 @@ static void print_usage(void)
     printf("  -b  --batch-files <N> - batch files into groups of N during copy\n");
     printf("  -c, --contents        - read and compare file contents rather than compare size and mtime\n");
     printf("  -D, --delete          - delete extraneous files from target\n");
-    printf("  -l, --link-dest=DIR   - hardlink to files in DIR when unchanged\n");
-    printf("      --progress <N>     - print progress every N seconds\n");
+    printf("      --link-dest <DIR> - hardlink to files in DIR when unchanged\n");
+    printf("      --progress <N>    - print progress every N seconds\n");
     printf("  -v, --verbose         - verbose output\n");
     printf("  -q, --quiet           - quiet output\n");
     printf("  -h, --help            - print usage\n");
@@ -678,9 +679,8 @@ static void compare_progress_fn(const uint64_t* vals, int count, int complete, i
  * in comparison results in source and dest string maps */
 static void dsync_strmap_compare_data_link_dest(
     mfu_flist src_compare_list,
-    mfu_flist link_dst_compare_list,
-    mfu_flist src_same_list,
-    mfu_flist link_dst_same_list,
+    mfu_flist link_compare_list,
+    mfu_flist link_same_list,
     uint64_t* count_bytes_read,
     uint64_t* count_bytes_written)
 {
@@ -692,7 +692,7 @@ static void dsync_strmap_compare_data_link_dest(
 
     /* get the linked list of file chunks for the src and dest */
     mfu_file_chunk* src_head = mfu_file_chunk_list_alloc(src_compare_list, chunk_size);
-    mfu_file_chunk* dst_head = mfu_file_chunk_list_alloc(link_dst_compare_list, chunk_size);
+    mfu_file_chunk* dst_head = mfu_file_chunk_list_alloc(link_compare_list, chunk_size);
 
     /* get a count of how many items are the chunk list */
     uint64_t list_count = mfu_file_chunk_list_size(src_head);
@@ -765,8 +765,7 @@ static void dsync_strmap_compare_data_link_dest(
         /* set flag in strmap to record status of file */
         if (flag == 0) {
             /* if same, add to same list */
-            mfu_flist_file_copy(src_compare_list, i, src_same_list);
-	    mfu_flist_file_copy(link_dst_compare_list, i, link_dst_same_list);
+	    mfu_flist_file_copy(link_compare_list, i, link_same_list);
         }
     }
 
@@ -790,12 +789,12 @@ static int dsync_strmap_compare_data(
     strmap* dst_map,
     mfu_flist src_list,
     mfu_flist src_cp_list,
-    mfu_flist src_ignore_list,
+    mfu_flist dst_same_list,
     mfu_flist dst_remove_list,
     size_t strlen_prefix,
     uint64_t* count_bytes_read,
     uint64_t* count_bytes_written,
-    bool cmp_only)
+    bool use_hardlinks)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -817,7 +816,7 @@ static int dsync_strmap_compare_data(
 
     /* whether we should overwrite bytes in destination file during compare */
     int overwrite = 1;
-    if (options.dry_run || cmp_only) {
+    if (options.dry_run || use_hardlinks) {
         overwrite = 0;
     }
 
@@ -890,23 +889,23 @@ static int dsync_strmap_compare_data(
             dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
             dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
 
-            if (cmp_only) {
-                /* if different, add to copy list */
-                mfu_flist_file_copy(src_compare_list, i, src_cp_list);
+            /* mark file to be deleted from destination, copied from source */
+            if (use_hardlinks) {
                 mfu_flist_file_copy(dst_compare_list, i, dst_remove_list);
+                mfu_flist_file_copy(src_compare_list, i, src_cp_list);
             }
-           /* Note: File does not need to be truncated for syncing because the size
-            * of the dst and src will be the same. It is one of the checks in
-            * dsync_strmap_compare */
 
+            /* Note: File does not need to be truncated for syncing because the size
+             * of the dst and src will be the same. It is one of the checks in
+             * dsync_strmap_compare */
         } else {
             /* update to say contents of the files were found to be the same */
             dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
             dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_COMMON);
 
-            if (cmp_only) {
-                /* if still same here, add to ignore list */
-                mfu_flist_file_copy(src_compare_list, i, src_ignore_list);
+            /* record that detination file matches source */
+            if (use_hardlinks) {
+                mfu_flist_file_copy(dst_compare_list, i, dst_same_list);
             }
         }
     }
@@ -926,91 +925,121 @@ static int dsync_strmap_compare_data(
     return rc;
 }
 
+/* given the list of files in the destination, the original list of files
+ * to be copied to the destination, the list of files in the destination
+ * that are the same as the source, and the list of files in link-dest
+ * that are the same as the source, generate a list of files that will
+ * actually be copied, a list of files that will be hardlinked, and append
+ * to the list of files in the destination that will be deleted */
 static void dsync_generate_real_lists(
-    size_t src_strlen_prefix,
-    strmap *dst_map,
-    const mfu_param_path *src_path,
-    const mfu_param_path *dst_path,
-    const mfu_param_path *link_dest_path,
-    mfu_flist dst_list,
-    mfu_flist src_ignore_list,
-    mfu_flist src_cp_list,
-    mfu_flist src_real_cp_list,
-    mfu_flist dst_remove_list,
-    mfu_flist src_same_list,
-    mfu_flist link_dst_same_list,
-    mfu_flist link_dst_link_list)
+    size_t src_strlen_prefix,   /* length of prefix string to source directory */
+    const mfu_param_path *link_path, /* param path for link-dest directory */
+    mfu_flist dst_list,         /* list of files in destination */
+    strmap *dst_map,            /* map each file in destination to its index in dst_list */
+    mfu_flist src_cp_list,      /* list of files to be copied to destination */
+    mfu_flist dst_same_list,    /* list of files in destination that are same as in source */
+    mfu_flist link_same_list,   /* list of files in link-dest that are same as in source */
+    mfu_flist src_real_cp_list, /* OUT - list of files to actually be copied */
+    mfu_flist link_dst_list,    /* OUT - list of files to be hardlinked from destination */
+    mfu_flist dst_remove_list)  /* OUT - add to list of files to be deleted (replaced) from destination */
 {
-    /* get size of source and destination compare lists */
-    uint64_t cp_size = mfu_flist_size(src_cp_list);
-    uint64_t ignore_size = mfu_flist_size(src_ignore_list);
-
-    strmap* link_dst_same_map = dsync_strmap_creat(link_dst_same_list, link_dest_path->path);
-    strmap* src_same_map = dsync_strmap_creat(src_same_list, src_path->path);
-
-    /* walk cp list */
     uint64_t idx;
+
+    /* create map of item name to index in its respective list */
+    strmap* link_same_map = dsync_strmap_creat(link_same_list, link_path->path);
+
+    /* walk list of files we need to copy from source to destination,
+     * and split into set that must actually be copied and set that
+     * will be hardlinked instead */
+    uint64_t cp_size = mfu_flist_size(src_cp_list);
     for (idx = 0; idx < cp_size; idx++) {
+        /* get file name of this item */
         const char* name = mfu_flist_file_get_name(src_cp_list, idx);
 
         /* ignore prefix portion of path to use as key */
         name += src_strlen_prefix;
     
+        /* can't hardlink to directories or symlinks, we must actually copy them */
         mfu_filetype type = mfu_flist_file_get_type(src_cp_list, idx);
         if (type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
             mfu_flist_file_copy(src_cp_list, idx, src_real_cp_list);
             continue;
         }
 
+        /* if item is in copy list, check whether the version in link-dest
+         * is the same, if so, we'll create a hardlink,
+         * otherwise we need to make a fresh copy */
         uint64_t index;
-        int rc = dsync_strmap_item_index(src_same_map, name, &index);
-        /* if in cp&same list, add into link_dst_link list, else add into real src_cp list */
+        int rc = dsync_strmap_item_index(link_same_map, name, &index);
         if (rc >= 0) {
-            mfu_flist_file_copy(link_dst_same_list, index, link_dst_link_list);
+            /* file in link-dest is same as source,
+             * create a hardlink in destination */
+            mfu_flist_file_copy(link_same_list, index, link_dst_list);
         } else {
+            /* we'll actually copy this file */
             mfu_flist_file_copy(src_cp_list, idx, src_real_cp_list);
         }
     }
 
-    /* walk ignore list */
+    /* walk list of items in destination that are the same as the source,
+     * if they are files and they are also the same as the corresponding item
+     * in link-dest, remove them from destination and replace them with hardlinks */
+    uint64_t ignore_size = mfu_flist_size(dst_same_list);
     for (idx = 0; idx < ignore_size; idx++) {
-        const char* name = mfu_flist_file_get_name(src_ignore_list, idx);
+        /* get file name of this item */
+        const char* name = mfu_flist_file_get_name(dst_same_list, idx);
 
+        /* ignore prefix portion of path to use as key */
         name += src_strlen_prefix;
-        uint64_t index;
-        int rc = dsync_strmap_item_index(src_same_map, name, &index);
-        /* if in ignore&same list, add into link_dst_link list and remove dest first, else ignore */
-        if (rc >= 0) {
-            mfu_filetype type = mfu_flist_file_get_type(src_ignore_list, idx);
-            if (type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
-                continue;
-            }
 
+        /* can't hardlink to directories or symlinks, we must actually copy them */
+        mfu_filetype type = mfu_flist_file_get_type(dst_same_list, idx);
+        if (type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
+            continue;
+        }
+
+        /* if item in destination is the same as the source file
+         * and if item in link-dest is also the same as the source file,
+         * remove existing item at destination and replace with hardlink,
+         * otherwise, do nothing */
+        uint64_t index;
+        int rc = dsync_strmap_item_index(link_same_map, name, &index);
+        if (rc >= 0) {
+            /* get index of item in destination list */
             uint64_t dst_index;
-            struct stat dst_st, link_dst_st;
             rc = dsync_strmap_item_index(dst_map, name, &dst_index);
             assert(rc >= 0);
 
+            /* get full path to destination and link-dest */
             const char* dst_name = mfu_flist_file_get_name(dst_list, dst_index);
-            const char* link_dst_name = mfu_flist_file_get_name(link_dst_same_list, index);
+            const char* link_dst_name = mfu_flist_file_get_name(link_same_list, index);
 
-            /* skip if the target is already a link to link_dest. */
+            /* skip if the target is already a link to link_dest */
+            struct stat dst_st, link_dst_st;
             rc = mfu_lstat(dst_name, &dst_st);
             if (!rc) {
                 rc = mfu_lstat(link_dst_name, &link_dst_st);
-                if (!rc && dst_st.st_ino == link_dst_st.st_ino &&
-                    dst_st.st_dev == link_dst_st.st_dev) {
+                if (!rc &&
+                    dst_st.st_ino == link_dst_st.st_ino &&
+                    dst_st.st_dev == link_dst_st.st_dev)
+                {
                     continue;
                 }
             }
 
-            mfu_flist_file_copy(link_dst_same_list, index, link_dst_link_list);
+            /* remove item from destination, and replace with a hardlink */
+            mfu_flist_file_copy(link_same_list, index, link_dst_list);
             mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
         }
     }
 
-    strmap_delete(&link_dst_same_map);
-    strmap_delete(&src_same_map);
+    /* finalize the lists we just added items to */
+    mfu_flist_summarize(src_real_cp_list);
+    mfu_flist_summarize(link_dst_list);
+    mfu_flist_summarize(dst_remove_list);
+
+    /* free the map */
+    strmap_delete(&link_same_map);
 }
 
 /* given a list of source/destination files to compare, spread file
@@ -1018,9 +1047,8 @@ static void dsync_generate_real_lists(
  * in comparison results in source and dest string maps */
 static void dsync_strmap_compare_lite_link_dest(
     mfu_flist src_compare_list,
-    mfu_flist link_dst_compare_list,
-    mfu_flist src_same_list,
-    mfu_flist link_dst_same_list)
+    mfu_flist link_compare_list,
+    mfu_flist link_same_list)
 {
     /* get size of source and destination compare lists */
     uint64_t size = mfu_flist_size(src_compare_list);
@@ -1030,20 +1058,19 @@ static void dsync_strmap_compare_lite_link_dest(
     for (idx = 0; idx < size; idx++) {
         /* get file sizes */
         uint64_t src_size = mfu_flist_file_get_size(src_compare_list, idx);
-        uint64_t dst_size = mfu_flist_file_get_size(link_dst_compare_list, idx);
+        uint64_t dst_size = mfu_flist_file_get_size(link_compare_list, idx);
 
         /* get mtime seconds and nsecs */
         uint64_t src_mtime      = mfu_flist_file_get_mtime(src_compare_list, idx);
         uint64_t src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_compare_list, idx);
-        uint64_t dst_mtime      = mfu_flist_file_get_mtime(link_dst_compare_list, idx);
-        uint64_t dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(link_dst_compare_list, idx);
+        uint64_t dst_mtime      = mfu_flist_file_get_mtime(link_compare_list, idx);
+        uint64_t dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(link_compare_list, idx);
 
         /* if size and mtime are the, we assume the file contents are same */
         if ((src_size == dst_size) &&
             (src_mtime == dst_mtime) && (src_mtime_nsec == dst_mtime_nsec))
         {
-            mfu_flist_file_copy(src_compare_list, idx, src_same_list);
-            mfu_flist_file_copy(link_dst_compare_list, idx, link_dst_same_list);
+            mfu_flist_file_copy(link_compare_list, idx, link_same_list);
         }
     }
 }
@@ -1054,13 +1081,13 @@ static void dsync_strmap_compare_lite_link_dest(
 static int dsync_strmap_compare_lite(
     mfu_flist src_compare_list,
     mfu_flist src_cp_list,
-    mfu_flist src_ignore_list,
+    mfu_flist dst_same_list,
     strmap* src_map,
     mfu_flist dst_compare_list,
     mfu_flist dst_remove_list,
     strmap* dst_map,
     size_t strlen_prefix,
-    bool cmp_only)
+    bool use_hardlinks)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -1096,18 +1123,19 @@ static int dsync_strmap_compare_lite(
             dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
 
             /* mark file to be deleted from destination, copied from source */
-            if (!options.dry_run || cmp_only) {
+            if (!options.dry_run || use_hardlinks) {
                 mfu_flist_file_copy(dst_compare_list, idx, dst_remove_list);
                 mfu_flist_file_copy(src_compare_list, idx, src_cp_list);
             }
         } else {
-            if (cmp_only) {
-                mfu_flist_file_copy(src_compare_list, idx, src_ignore_list);
-            }
-
             /* update to say contents of the files were found to be the same */
             dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
             dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_COMMON);
+
+            /* record that detination file matches source */
+            if (use_hardlinks) {
+                mfu_flist_file_copy(dst_compare_list, idx, dst_same_list);
+            }
         }
     }
 
@@ -1227,10 +1255,10 @@ static int dsync_sync_files(
         strmap* dst_map,
         const mfu_param_path* src_path,
         const mfu_param_path* dest_path,
-        const mfu_param_path* link_dest_path,
+        const mfu_param_path* link_path,
         mfu_flist dst_list,
         mfu_flist dst_remove_list,
-        mfu_flist link_dst_link_list,
+        mfu_flist link_dst_list,
         mfu_flist src_cp_list,
         mfu_copy_opts_t* mfu_copy_opts)
 {
@@ -1293,18 +1321,18 @@ static int dsync_sync_files(
         }
     }
 
-    if (link_dest_path) {
+    if (link_path) {
         /* summarize the link dst list for files 
          * that need to be copied into dest directory */ 
-        mfu_flist_summarize(link_dst_link_list); 
+        mfu_flist_summarize(link_dst_list); 
 
         /* link files from link dest to destination if needed */ 
-        uint64_t link_size = mfu_flist_global_size(link_dst_link_list);
+        uint64_t link_size = mfu_flist_global_size(link_dst_list);
         if (link_size > 0) {
             if (rank == 0) {
-                MFU_LOG(MFU_LOG_INFO, "Linking items to destination");
+                MFU_LOG(MFU_LOG_INFO, "Linking items in destination");
             }
-            tmp_rc = mfu_flist_hardlink(link_dst_link_list, link_dest_path, dest_path, mfu_copy_opts);
+            tmp_rc = mfu_flist_hardlink(link_dst_list, link_path, dest_path, mfu_copy_opts);
             if (tmp_rc < 0) {
                 rc = -1;
             }
@@ -1314,17 +1342,13 @@ static int dsync_sync_files(
     return rc;
 }
 
-/* compare entries from src into link dst */
-static int dsync_strmap_compare_link_dest(mfu_flist src_list,
-                                mfu_flist src_same_list,
-                                strmap* src_map,
-                                mfu_flist link_dst_list,
-                                mfu_flist link_dst_same_list,
-                                strmap* link_dst_map,
-                                size_t strlen_prefix,
-                                mfu_copy_opts_t* mfu_copy_opts,
-                                const mfu_param_path* src_path,
-                                const mfu_param_path* dest_path)
+/* compare entries from src to items in link-dest */
+static int dsync_strmap_compare_link_dest(
+    mfu_flist src_list,
+    strmap* src_map,
+    mfu_flist link_list,
+    strmap* link_map,
+    mfu_flist link_same_list)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -1339,7 +1363,7 @@ static int dsync_strmap_compare_link_dest(mfu_flist src_list,
 
     /* create lists to track files whose content must be checked */
     mfu_flist src_compare_list = mfu_flist_subset(src_list);
-    mfu_flist link_dst_compare_list = mfu_flist_subset(link_dst_list);
+    mfu_flist link_compare_list = mfu_flist_subset(link_list);
 
     /* iterate over each item in source map */
     const strmap_node* node;
@@ -1354,38 +1378,36 @@ static int dsync_strmap_compare_link_dest(mfu_flist src_list,
 
         /* get index of destination file */
         uint64_t dst_index;
-        tmp_rc = dsync_strmap_item_index(link_dst_map, key, &dst_index);
+        tmp_rc = dsync_strmap_item_index(link_map, key, &dst_index);
         if (tmp_rc) {
             /* skip uncommon files, all other states are DCMPS_INIT */
+            continue;
+        }
+
+        tmp_rc = dsync_compare_metadata(src_list, src_map, src_index,
+             link_list, link_map, dst_index,
+             key);
+        assert(tmp_rc >= 0);
+
+        /* Skip if no need to compare type.
+         * All the following comparison depends on type. */
+        if (!dsync_option_need_compare(DCMPF_TYPE)) {
             continue;
         }
 
         /* get modes of files */
         mode_t src_mode = (mode_t) mfu_flist_file_get_mode(src_list,
             src_index);
-        mode_t dst_mode = (mode_t) mfu_flist_file_get_mode(link_dst_list,
+        mode_t dst_mode = (mode_t) mfu_flist_file_get_mode(link_list,
             dst_index);
-
-        tmp_rc = dsync_compare_metadata(src_list, src_map, src_index,
-             link_dst_list, link_dst_map, dst_index,
-             key);
-        assert(tmp_rc >= 0);
-
-        if (!dsync_option_need_compare(DCMPF_TYPE)) {
-            /*
-             * Skip if no need to compare type.
-             * All the following comparison depends on type.
-             */
-            continue;
-        }
 
         /* check whether files are of the same type */
         if ((src_mode & S_IFMT) != (dst_mode & S_IFMT)) {
             continue;
         }
 
+        /* Skip if no need to compare content. */
         if (!dsync_option_need_compare(DCMPF_CONTENT)) {
-            /* Skip if no need to compare content. */
             continue;
         }
 
@@ -1395,6 +1417,7 @@ static int dsync_strmap_compare_link_dest(mfu_flist src_list,
             continue;
         }
 
+        /* check whether the file sizes are the same */
         dsync_state state;
         tmp_rc = dsync_strmap_item_state(src_map, key, DCMPF_SIZE, &state);
         assert(tmp_rc == 0);
@@ -1410,12 +1433,12 @@ static int dsync_strmap_compare_link_dest(mfu_flist src_list,
         /* make a copy of the src and dest files where the data needs
          * to be compared and store in src & dest compare lists */
         mfu_flist_file_copy(src_list, src_index, src_compare_list);
-        mfu_flist_file_copy(link_dst_list, dst_index, link_dst_compare_list);
+        mfu_flist_file_copy(link_list, dst_index, link_compare_list);
     }
 
     /* summarize lists of files for which we need to compare data contents */
     mfu_flist_summarize(src_compare_list);
-    mfu_flist_summarize(link_dst_compare_list);
+    mfu_flist_summarize(link_compare_list);
 
     /* initalize total_bytes_read to zero */
     uint64_t total_files         = 0;
@@ -1425,7 +1448,7 @@ static int dsync_strmap_compare_link_dest(mfu_flist src_list,
     /* compare the contents of the files if we have anything in the compare list */
     uint64_t cmp_global_size = mfu_flist_global_size(src_compare_list);
     if (cmp_global_size > 0) {
-        total_files = mfu_flist_global_size(src_compare_list);
+        total_files = cmp_global_size;
         if (options.contents) {
             /* comparing contents could take a while */
             if (rank == 0) {
@@ -1435,7 +1458,7 @@ static int dsync_strmap_compare_link_dest(mfu_flist src_list,
             /* compare file contents byte-by-byte, overwrites destination
              * file in place if found to be different during comparison */
             dsync_strmap_compare_data_link_dest(src_compare_list,
-                link_dst_compare_list, src_same_list, link_dst_same_list,
+                link_compare_list, link_same_list,
                 &total_bytes_read, &total_bytes_written
             );
         } else {
@@ -1447,10 +1470,13 @@ static int dsync_strmap_compare_link_dest(mfu_flist src_list,
             /* assume contents are different if size or mtime are different,
              * adds files to remove and copy lists if different */
             dsync_strmap_compare_lite_link_dest(src_compare_list,
-                link_dst_compare_list, src_same_list, link_dst_same_list
+                link_compare_list, link_same_list
             );
         }
     }
+
+    /* complete the list of same items */
+    mfu_flist_summarize(link_same_list);
 
     /* wait for all procs to finish before stopping timer */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -1465,17 +1491,18 @@ static int dsync_strmap_compare_link_dest(mfu_flist src_list,
 }
 
 /* compare entries from src into dst */
-static int dsync_strmap_compare(mfu_flist src_list,
-                                strmap* src_map,
-                                mfu_flist dst_list,
-                                strmap* dst_map,
-                                mfu_flist link_dst_list,
-                                strmap* link_dst_map,
-                                size_t strlen_prefix,
-                                mfu_copy_opts_t* mfu_copy_opts,
-                                const mfu_param_path* src_path,
-                                const mfu_param_path* dest_path,
-                                const mfu_param_path* link_dest_path)
+static int dsync_strmap_compare(
+    mfu_flist src_list,
+    strmap* src_map,
+    mfu_flist dst_list,
+    strmap* dst_map,
+    mfu_flist link_list,
+    strmap* link_map,
+    size_t strlen_prefix,
+    mfu_copy_opts_t* mfu_copy_opts,
+    const mfu_param_path* src_path,
+    const mfu_param_path* dest_path,
+    const mfu_param_path* link_path)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -1500,26 +1527,28 @@ static int dsync_strmap_compare(mfu_flist src_list,
 
     /* list to track files to be copied from source */
     mfu_flist src_cp_list     = mfu_flist_subset(src_list);
+
     /* list to track files to be deleted from destination */
     mfu_flist dst_remove_list = mfu_flist_subset(dst_list);
 
-    /* used for link-dest option */
-    /* list to track files that can be ignore (don't copy) */
-    mfu_flist src_ignore_list = NULL;
-    /* list to track files from source are the same with targets */
-    mfu_flist src_same_list = NULL;
-    /* list to track files are really necessary to be copied */
-    mfu_flist src_real_cp_list = NULL;
-    /* list to track files from  are the same with ones from link-dest dir */
-    mfu_flist link_dst_same_list = NULL;
-    /* list to track files to be linked (hard-link) rather than copied */
-    mfu_flist link_dst_link_list = NULL;
-    if (link_dest_path != NULL) {
-        src_ignore_list = mfu_flist_subset(src_list);
-        src_same_list = mfu_flist_subset(src_list);
+    /* list to track files that are the same in destination and source directories */
+    mfu_flist dst_same_list = MFU_FLIST_NULL;
+
+    /* list to track files tha are the same in link-dest and source directories */
+    mfu_flist link_same_list = MFU_FLIST_NULL;
+
+    /* list to track files to be linked (hard-link) rather than copied to destination */
+    mfu_flist link_dst_list = MFU_FLIST_NULL;
+
+    /* list to track files that must be copied to destination, after accounting for hardlinks */
+    mfu_flist src_real_cp_list = MFU_FLIST_NULL;
+
+    /* allocate lists to manage links */
+    if (link_path != NULL) {
+        dst_same_list    = mfu_flist_subset(src_list);
+        link_same_list   = mfu_flist_subset(link_list);
+        link_dst_list    = mfu_flist_subset(link_list);
         src_real_cp_list = mfu_flist_subset(src_list);
-        link_dst_same_list = mfu_flist_subset(link_dst_list);
-        link_dst_link_list = mfu_flist_subset(link_dst_list);
     }
 
     /* use a map as a list to record source and destination indices
@@ -1563,24 +1592,22 @@ static int dsync_strmap_compare(mfu_flist src_list,
         dsync_strmap_item_update(src_map, key, DCMPF_EXIST, DCMPS_COMMON);
         dsync_strmap_item_update(dst_map, key, DCMPF_EXIST, DCMPS_COMMON);
 
-        /* get modes of files */
-        mode_t src_mode = (mode_t) mfu_flist_file_get_mode(src_list,
-            src_index);
-        mode_t dst_mode = (mode_t) mfu_flist_file_get_mode(dst_list,
-            dst_index);
-
         tmp_rc = dsync_compare_metadata(src_list, src_map, src_index,
              dst_list, dst_map, dst_index,
              key);
         assert(tmp_rc >= 0);
 
+        /* Skip if no need to compare type.
+         * All the following comparison depends on type. */
         if (!dsync_option_need_compare(DCMPF_TYPE)) {
-            /*
-             * Skip if no need to compare type.
-             * All the following comparison depends on type.
-             */
             continue;
         }
+
+        /* get modes of files */
+        mode_t src_mode = (mode_t) mfu_flist_file_get_mode(src_list,
+            src_index);
+        mode_t dst_mode = (mode_t) mfu_flist_file_get_mode(dst_list,
+            dst_index);
 
         /* check whether files are of the same type */
         if ((src_mode & S_IFMT) != (dst_mode & S_IFMT)) {
@@ -1610,8 +1637,8 @@ static int dsync_strmap_compare(mfu_flist src_list,
         dsync_strmap_item_update(src_map, key, DCMPF_TYPE, DCMPS_COMMON);
         dsync_strmap_item_update(dst_map, key, DCMPF_TYPE, DCMPS_COMMON);
 
+        /* Skip if no need to compare content. */
         if (!dsync_option_need_compare(DCMPF_CONTENT)) {
-            /* Skip if no need to compare content. */
             continue;
         }
 
@@ -1624,6 +1651,7 @@ static int dsync_strmap_compare(mfu_flist src_list,
             continue;
         }
 
+        /* first check whether file sizes match */
         dsync_state state;
         tmp_rc = dsync_strmap_item_state(src_map, key, DCMPF_SIZE, &state);
         assert(tmp_rc == 0);
@@ -1665,20 +1693,24 @@ static int dsync_strmap_compare(mfu_flist src_list,
     /* compare the contents of the files if we have anything in the compare list */
     uint64_t cmp_global_size = mfu_flist_global_size(src_compare_list);
     if (cmp_global_size > 0) {
-        total_files = mfu_flist_global_size(src_compare_list);
+        total_files = cmp_global_size;
+
+        /* do not overwrite files, just compare if hardlinks enabled */
+        bool use_hardlinks = (link_path != NULL);
+
         if (options.contents) {
             /* comparing contents could take a while */
             if (rank == 0) {
                 MFU_LOG(MFU_LOG_INFO, "Comparing file contents of %llu items", total_files);
             }
 
-            bool cmp_only = (link_dest_path != NULL);
             /* compare file contents byte-by-byte, overwrites destination
-             * file in place if found to be different during comparison */
+             * file in place if found to be different during comparison
+             * and hardlinks are not enabled */
             tmp_rc = dsync_strmap_compare_data(src_compare_list, src_map,
-                dst_compare_list, dst_map, src_list, src_cp_list, src_ignore_list,
+                dst_compare_list, dst_map, src_list, src_cp_list, dst_same_list,
                 dst_remove_list, strlen_prefix,
-                &total_bytes_read, &total_bytes_written, cmp_only
+                &total_bytes_read, &total_bytes_written, use_hardlinks
             );
             if (tmp_rc < 0) {
                 rc = -1;
@@ -1688,12 +1720,12 @@ static int dsync_strmap_compare(mfu_flist src_list,
             if (rank == 0) {
                 MFU_LOG(MFU_LOG_INFO, "Comparing file sizes and modification times of %llu items", total_files);
             }
-            bool cmp_only = (link_dest_path != NULL);
+
             /* assume contents are different if size or mtime are different,
              * adds files to remove and copy lists if different */
-            tmp_rc = dsync_strmap_compare_lite(src_compare_list, src_cp_list, src_ignore_list,
+            tmp_rc = dsync_strmap_compare_lite(src_compare_list, src_cp_list, dst_same_list,
                 src_map, dst_compare_list, dst_remove_list, dst_map,
-                strlen_prefix, cmp_only
+                strlen_prefix, use_hardlinks
             );
             if (tmp_rc < 0) {
                 rc = -1;
@@ -1703,14 +1735,28 @@ static int dsync_strmap_compare(mfu_flist src_list,
 
     /* wait for all procs to finish before stopping timer */
     MPI_Barrier(MPI_COMM_WORLD);
-    if (link_dest_path != NULL) {
-        rc = dsync_strmap_compare_link_dest(src_list, src_same_list, src_map, link_dst_list,
-             link_dst_same_list, link_dst_map, strlen_prefix, mfu_copy_opts, src_path, dest_path);
 
-        dsync_generate_real_lists(strlen_prefix, dst_map, src_path, dest_path, link_dest_path,
-             dst_list, src_ignore_list, src_cp_list, src_real_cp_list, dst_remove_list,
-             src_same_list, link_dst_same_list, link_dst_link_list);
+    if (link_path != NULL) {
+        /* compare files in source and link-dest and create list of items
+         * that are the same */
+        rc = dsync_strmap_compare_link_dest(src_list, src_map,
+            link_list, link_map, link_same_list);
+
+        /* of the items to be copied, some may be actual copies,
+         * and some may be hardlinks, we'll break the copy list
+         * into a real_cp list and a link_dst list so finalize it */
+        mfu_flist_summarize(src_cp_list);
+
+        /* identify set of items that must really be copied and those
+         * which can be hardlinked, including existing files in destination
+         * that can be removed and hardlinked */
+        dsync_generate_real_lists(strlen_prefix, link_path, dst_list, dst_map,
+            src_cp_list, dst_same_list, link_same_list,
+            src_real_cp_list, link_dst_list, dst_remove_list);
     }
+
+    /* wait for all procs to finish before stopping timer */
+    MPI_Barrier(MPI_COMM_WORLD);
 
     double end_compare = MPI_Wtime();
     time(&time_ended);
@@ -1727,16 +1773,17 @@ static int dsync_strmap_compare(mfu_flist src_list,
      * in the src list into the destination list. */
 
     if (!options.dry_run) {
-        /* sync the files that are in the source and destination directories */
-        if (link_dest_path != NULL) {
-            tmp_rc = dsync_sync_files(src_map, dst_map,
-                   src_path, dest_path, link_dest_path, dst_list, dst_remove_list,
-                   link_dst_link_list, src_real_cp_list, mfu_copy_opts);
-        } else {
-            tmp_rc = dsync_sync_files(src_map, dst_map,
-                   src_path, dest_path, link_dest_path, dst_list, dst_remove_list,
-                   link_dst_link_list, src_cp_list, mfu_copy_opts);
+        /* pick the original copy list or the filtered one depending on
+         * whether files are to be hardlinked in destination */
+        mfu_flist cp_list = src_cp_list;
+        if (link_path != NULL) {
+            cp_list = src_real_cp_list;
         }
+
+        /* sync the files that are in the source and destination directories */
+        tmp_rc = dsync_sync_files(src_map, dst_map,
+            src_path, dest_path, link_path, dst_list, dst_remove_list,
+            link_dst_list, cp_list, mfu_copy_opts);
         if (tmp_rc < 0) {
             rc = -1;
         }
@@ -1778,11 +1825,13 @@ static int dsync_strmap_compare(mfu_flist src_list,
     /* free the compare flists */
     mfu_flist_free(&dst_compare_list);
     mfu_flist_free(&src_compare_list);
-    if (link_dest_path) {
-        mfu_flist_free(&src_ignore_list);
-        mfu_flist_free(&src_same_list);
-        mfu_flist_free(&link_dst_same_list);
-        mfu_flist_free(&link_dst_link_list);
+
+    /* free lists used for hardlinks */
+    if (link_path) {
+        mfu_flist_free(&dst_same_list);
+        mfu_flist_free(&link_same_list);
+        mfu_flist_free(&link_dst_list);
+        mfu_flist_free(&src_real_cp_list);
     }
 
     /* determine whether any process hit an error,
@@ -2783,7 +2832,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDl:o:vqh",
+            argc, argv, "b:cDo:vqh",
             long_options, &option_index
         );
 
@@ -2898,31 +2947,33 @@ int main(int argc, char **argv)
     const mfu_param_path* destpath = &paths[1];
 
     /* create an empty file list */
-    mfu_flist flist1 = mfu_flist_new();
-    mfu_flist flist2 = mfu_flist_new();
+    mfu_flist flist_tmp_src = mfu_flist_new();
+    mfu_flist flist_tmp_dst = mfu_flist_new();
 
-    mfu_param_path* link_dest_path = NULL;
-    mfu_flist flist_link_dest = NULL;     
-
+    mfu_param_path* linkpath = NULL;
+    mfu_flist flist_tmp_link = MFU_FLIST_NULL;     
     if (options.link_dest != NULL) {
+        /* user wants to use hardlinks,
+         * check whether we can given destination and link-dest dirs */
         int validate_rc;
-
         if (rank == 0) {
             validate_rc = dsync_validate_link_dest(options.link_dest, destpath->path);
         }
         MPI_Bcast(&validate_rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
         if (validate_rc < 0) {
-             /* disable link_dest if not avliable */
+            /* can't use hardlinks from dest to link-dest,
+             * so disable link_dest and fallback to full copies */
             if (rank == 0) {
                 MFU_LOG(MFU_LOG_ERR, "Invalid link_dest: [%s], ret:%d. Disabled link_dest",
                         options.link_dest, rc);
             }
             mfu_free(&options.link_dest);
         } else {
-            link_dest_path = (mfu_param_path*) MFU_MALLOC(sizeof(mfu_param_path));
-            mfu_param_path_set(options.link_dest, link_dest_path);
-            flist_link_dest = mfu_flist_new();
+            /* we can use hardlinks, so set up variables for it */
+            linkpath = (mfu_param_path*) MFU_MALLOC(sizeof(mfu_param_path));
+            mfu_param_path_set(options.link_dest, linkpath);
+            flist_tmp_link = mfu_flist_new();
         }
     }
 
@@ -2930,21 +2981,22 @@ int main(int argc, char **argv)
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking source path");
     }
-    mfu_flist_walk_param_paths(1, srcpath, walk_opts, flist1);
+    mfu_flist_walk_param_paths(1, srcpath, walk_opts, flist_tmp_src);
 
     /* check that we actually got something so that we don't delete
      * an entire target directory because of a typo on the source dir */
-    if (mfu_flist_global_size(flist1) == 0) {
+    if (mfu_flist_global_size(flist_tmp_src) == 0) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "ERROR: No items found at source: `%s'", srcpath->orig);
         }
-        mfu_param_path_free_all(numargs, paths);
-        mfu_flist_free(&flist1);
-        mfu_flist_free(&flist2);
+        mfu_flist_free(&flist_tmp_src);
+        mfu_flist_free(&flist_tmp_dst);
         if (options.link_dest != NULL) {
-            mfu_flist_free(&flist_link_dest);
-            mfu_free(&link_dest_path);
+            mfu_flist_free(&flist_tmp_link);
+            mfu_param_path_free(linkpath);
+            mfu_free(&linkpath);
         }
+        mfu_param_path_free_all(numargs, paths);
         mfu_free(&paths);
         dsync_option_fini();
         mfu_finalize();
@@ -2956,65 +3008,68 @@ int main(int argc, char **argv)
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking destination path");
     }
-    mfu_flist_walk_param_paths(1, destpath, walk_opts, flist2);
+    mfu_flist_walk_param_paths(1, destpath, walk_opts, flist_tmp_dst);
 
+    /* walk link-dest path if we have one */
     if (options.link_dest != NULL) {
-        mfu_flist_walk_param_paths(1, link_dest_path, walk_opts, flist_link_dest);
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Walking link-dest path");
+        }
+        mfu_flist_walk_param_paths(1, linkpath, walk_opts, flist_tmp_link);
     }
 
     /* store src and dest path strings */
-    const char* path1 = srcpath->path;
-    const char* path2 = destpath->path;
+    const char* path_src = srcpath->path;
+    const char* path_dst = destpath->path;
 
-    char* path3 = NULL;
+    char* path_link = NULL;
     if (options.link_dest != NULL) {
-        path3 = link_dest_path->path;
+        path_link = linkpath->path;
     }
 
     /* map files to ranks based on portion following prefix directory */
-    mfu_flist flist3 = mfu_flist_remap(flist1, (mfu_flist_map_fn)dsync_map_fn, (const void*)path1);
-    mfu_flist flist4 = mfu_flist_remap(flist2, (mfu_flist_map_fn)dsync_map_fn, (const void*)path2);
+    mfu_flist flist_src = mfu_flist_remap(flist_tmp_src, (mfu_flist_map_fn)dsync_map_fn, (const void*)path_src);
+    mfu_flist flist_dst = mfu_flist_remap(flist_tmp_dst, (mfu_flist_map_fn)dsync_map_fn, (const void*)path_dst);
 
-    mfu_flist flist5 = NULL;
-
+    mfu_flist flist_link = MFU_FLIST_NULL;
     if (options.link_dest != NULL) {
-        flist5 = mfu_flist_remap(flist_link_dest, (mfu_flist_map_fn)dsync_map_fn, (const void*)path3);
+        flist_link = mfu_flist_remap(flist_tmp_link, (mfu_flist_map_fn)dsync_map_fn, (const void*)path_link);
     }
 
     /* free original file lists */
-    mfu_flist_free(&flist1);
-    mfu_flist_free(&flist2);
+    mfu_flist_free(&flist_tmp_src);
+    mfu_flist_free(&flist_tmp_dst);
     if (options.link_dest != NULL) {
-        mfu_flist_free(&flist_link_dest);
+        mfu_flist_free(&flist_tmp_link);
     }
 
     /* map each file name to its index and its comparison state */
-    strmap* map1 = dsync_strmap_creat(flist3, path1);
-    strmap* map2 = dsync_strmap_creat(flist4, path2);
-    strmap* map3 = NULL;
+    strmap* map_src = dsync_strmap_creat(flist_src, path_src);
+    strmap* map_dst = dsync_strmap_creat(flist_dst, path_dst);
+    strmap* map_link = NULL;
     if (options.link_dest != NULL) {
-        map3 = dsync_strmap_creat(flist5, path3);
+        map_link = dsync_strmap_creat(flist_link, path_link);
     }
 
-    /* compare files in map1 with those in map2 */
-    int tmp_rc = dsync_strmap_compare(flist3, map1, flist4, map2, flist5, map3, strlen(path1), 
-            mfu_copy_opts, srcpath, destpath, link_dest_path);
+    /* compare files in map_src with those in map_dst */
+    int tmp_rc = dsync_strmap_compare(flist_src, map_src, flist_dst, map_dst, flist_link, map_link,
+        strlen(path_src), mfu_copy_opts, srcpath, destpath, linkpath);
     if (tmp_rc < 0) {
         rc = 1;
     }
 
     /* free maps of file names to comparison state info */
-    strmap_delete(&map1);
-    strmap_delete(&map2);
+    strmap_delete(&map_src);
+    strmap_delete(&map_dst);
     if (options.link_dest != NULL) {
-        strmap_delete(&map3);
+        strmap_delete(&map_link);
     }
 
     /* free file lists */
-    mfu_flist_free(&flist3);
-    mfu_flist_free(&flist4);
+    mfu_flist_free(&flist_src);
+    mfu_flist_free(&flist_dst);
     if (options.link_dest != NULL) {
-        mfu_flist_free(&flist5);
+        mfu_flist_free(&flist_link);
     }
 
     /* free all param paths */
@@ -3022,9 +3077,11 @@ int main(int argc, char **argv)
 
     /* free memory allocated to hold params */
     mfu_free(&paths);
+
+    /* free param path for link-dest if we have one */
     if (options.link_dest != NULL) {
-        mfu_param_path_free(link_dest_path);
-        mfu_free(&link_dest_path);
+        mfu_param_path_free(linkpath);
+        mfu_free(&linkpath);
     }
 
     /* free the copy options structure */
