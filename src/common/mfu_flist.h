@@ -461,6 +461,13 @@ int mfu_flist_hardlink(
     mfu_copy_opts_t* mfu_copy_opts   /* IN - options to be used during copy */
 );
 
+/* fill files in list with data
+ * returns 0 on success -1 on error */
+int mfu_flist_fill(
+    mfu_flist list,                 /* IN - flist providing items */
+    mfu_copy_opts_t* mfu_copy_opts  /* IN - options to be used during fill */
+);
+
 /* allocate a new mfu_walk_opts structure,
  * and set its fields with default values */
 mfu_walk_opts_t* mfu_walk_opts_new(void);

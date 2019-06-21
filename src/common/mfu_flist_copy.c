@@ -2586,6 +2586,324 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     return rc;
 }
 
+/* hold state for progress messages */
+static mfu_progress* fill_prog;
+
+/* tracks number of bytes written by this process */
+static uint64_t fill_count;
+
+/* progress message to print while writing data */
+static void fill_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+#if 0
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (remove_count_total > 0) {
+        percent = 100.0 * (double)vals[0] / (double)remove_count_total;
+    }
+#endif
+
+    /* compute average delete rate */
+    double rate = 0.0;
+    if (secs > 0) {
+        rate = (double)vals[0] / secs;
+    }
+
+#if 0
+    /* compute estimated time remaining */
+    double secs_remaining = -1.0;
+    if (rate > 0.0) {
+        secs_remaining = (double)(remove_count_total - vals[0]) / rate;
+    }
+#endif
+
+    /* convert bytes to units */
+    double agg_size_tmp;
+    const char* agg_size_units;
+    mfu_format_bytes(vals[0], &agg_size_tmp, &agg_size_units);
+
+    /* convert bandwidth to units */
+    double agg_rate_tmp;
+    const char* agg_rate_units;
+    mfu_format_bw(rate, &agg_rate_tmp, &agg_rate_units);
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s in %.3lf secs (%.3lf %s) ...",
+            agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s in %.3lf secs (%.3lf %s) done",
+            agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
+    }
+}
+
+static int mfu_fill_file(
+    const char* dest,
+    uint64_t offset,
+    uint64_t length,
+    uint64_t file_size,
+    mfu_copy_opts_t* mfu_copy_opts)
+{
+    int ret;
+
+    /* open the file */
+    int out_fd = mfu_copy_open_file(dest, 0, &mfu_copy_dst_cache, mfu_copy_opts);
+    if (out_fd < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to open output file `%s' (errno=%d %s)",
+            dest, errno, strerror(errno));
+        return -1;
+    }
+
+    /* seek to offset in file */
+    if (mfu_lseek(dest, out_fd, offset, SEEK_SET) == (off_t)-1) {
+        MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' (errno=%d %s)",
+            dest, errno, strerror(errno));
+        return -1;
+    }
+
+    /* get buffer */
+    size_t buf_size = mfu_copy_opts->block_size;
+    void* buf = mfu_copy_opts->block_buf1;
+
+    /* fill buffer with data */
+
+    /* write data */
+    size_t total_bytes = 0;
+    while (total_bytes < (size_t)length) {
+        /* determine number of bytes that we
+         * can read = max(buf size, remaining chunk) */
+        size_t bytes_to_write = (size_t)length - total_bytes;
+        if (bytes_to_write > buf_size) {
+            bytes_to_write = buf_size;
+        }
+
+        /* compute number of bytes to write */
+        if (mfu_copy_opts->synchronous) {
+            /* O_DIRECT requires particular write sizes,
+             * ok to write beyond end of file so long as
+             * we truncate in cleanup step */
+            /* assumes buf_size is magic size for O_DIRECT */
+            bytes_to_write = buf_size;
+        }
+
+        /* write bytes to destination file */
+        ssize_t num_of_bytes_written = mfu_write(dest, out_fd, buf, bytes_to_write);
+
+        /* check for an error */
+        if (num_of_bytes_written < 0) {
+            MFU_LOG(MFU_LOG_ERR, "Write error when writing to `%s' (errno=%d %s)",
+                dest, errno, strerror(errno));
+            return -1;
+        }
+
+        /* check that we wrote the same number of bytes that we read */
+        if ((size_t)num_of_bytes_written != bytes_to_write) {
+            MFU_LOG(MFU_LOG_ERR, "Write error when writing to `%s'",
+                dest);
+            return -1;
+        }
+
+        /* add bytes to our total (use bytes read,
+         * which may be less than number written) */
+        total_bytes += (size_t) num_of_bytes_written;
+
+        /* update number of bytes we have written for progress messages */
+        fill_count += (uint64_t) num_of_bytes_written;
+        mfu_progress_update(&fill_count, fill_prog);
+    }
+
+    /* Increment the global counter. */
+    //mfu_copy_stats.total_size += (int64_t) total_bytes;
+    //mfu_copy_stats.total_bytes_copied += (int64_t) total_bytes;
+
+#if 0
+    /* force data to file system */
+    if(total_bytes > 0) {
+        mfu_fsync(dest, out_fd);
+    }
+#endif
+
+    /* if we wrote the last chunk, truncate the file */
+    off_t last_written = offset + length;
+    off_t file_size_offt = (off_t) file_size;
+    if (last_written >= file_size_offt || file_size == 0) {
+        /* Use ftruncate() here rather than truncate(), because grouplock
+         * of Lustre would cause block to truncate() since the fd is different
+         * from the out_fd. */
+        if (mfu_ftruncate(out_fd, file_size_offt) < 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
+                dest, errno, strerror(errno));
+            return -1;
+       }
+    }
+
+    /* we don't bother closing the file because our cache does it for us */
+
+    return ret;
+}
+
+int mfu_flist_fill(mfu_flist list, mfu_copy_opts_t* mfu_copy_opts)
+{
+    int rc = MFU_SUCCESS;
+
+    /* allocate buffer to write files, aligned on 1MB boundaraies */
+    size_t alignment = 1024*1024;
+    mfu_copy_opts->block_buf1 = (char*) MFU_MEMALIGN(mfu_copy_opts->block_size, alignment);
+
+    /* fill buffer with data */
+    //memset(mfu_copy_opts->block_buf1, 0, mfu_copy_opts->block_size);
+    size_t idx;
+    for (idx = 0; idx < mfu_copy_opts->block_size; idx++) {
+        mfu_copy_opts->block_buf1[idx] = (char) rand();
+    }
+
+    /* determine whether we should print status messages */
+    int verbose = (mfu_debug_level >= MFU_LOG_VERBOSE);
+
+    /* get current rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* barrier to ensure all procs are ready to start copy */
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    /* indicate which phase we're in to user */
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Writing file data.");
+    }
+    mfu_flist_print_summary(list);
+
+    /* start timer for entie operation */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_start = MPI_Wtime();
+    uint64_t total_count = 0;
+
+    /* start up progress messages for the copy */
+    fill_count = 0;
+    fill_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, fill_progress_fn);
+
+    /* split file list into a linked list of file sections,
+     * this evenly spreads the file sections across processes */
+    mfu_file_chunk* head = mfu_file_chunk_list_alloc(list, mfu_copy_opts->chunk_size);
+
+    /* get a count of how many items are the chunk list */
+    uint64_t list_count = mfu_file_chunk_list_size(head);
+
+    /* allocate a flag for each element in chunk list,
+     * will store 0 to mean copy of this chunk succeeded and 1 otherwise
+     * to be used as input to logical OR to determine state of entire file */
+    int* vals = (int*) MFU_MALLOC(list_count * sizeof(int));
+
+    /* loop over and copy data for each file section we're responsible for */
+    uint64_t i;
+    const mfu_file_chunk* p = head;
+    for (i = 0; i < list_count; i++) {
+        /* assume we'll succeed in copying this chunk */
+        vals[i] = 0;
+
+        /* add bytes to our running total */
+        total_count += (uint64_t)p->length;
+
+        /* copy portion of file corresponding to this chunk,
+         * and record whether copy operation succeeded */
+        int copy_rc = mfu_fill_file(p->name, (uint64_t)p->offset,
+                (uint64_t)p->length, (uint64_t)p->file_size, mfu_copy_opts);
+        if (copy_rc < 0) {
+            /* error copying file */
+            vals[i] = 1;
+        }
+
+        /* update pointer to next element */
+        p = p->next;
+    }
+
+    /* close files */
+    mfu_copy_close_file(&mfu_copy_dst_cache);
+
+    /* barrier to ensure all files are closed,
+     * may try to unlink bad destination files below */
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    /* allocate a flag for each item in our file list */
+    uint64_t size = mfu_flist_size(list);
+    int* results = (int*) MFU_MALLOC(size * sizeof(int));
+
+    /* intialize values, since not every item is represented
+     * in chunk list */
+    for (i = 0; i < size; i++) {
+        results[i] = 0;
+    }
+
+    /* determnie which files were copied correctly */
+    mfu_file_chunk_list_lor(list, head, vals, results);
+
+    /* delete any destination file that failed to copy */
+    for (i = 0; i < size; i++) {
+        if (results[i] != 0) {
+            /* found a file that had an error during copy,
+             * compute destination name and delete it */
+            const char* name = mfu_flist_file_get_name(list, i);
+            MFU_LOG(MFU_LOG_ERR, "Failed to write `%s'", name);
+            rc = -1;
+        }
+    }
+
+    /* free copy flags */
+    mfu_free(&results);
+
+    /* free the list of file chunks */
+    mfu_file_chunk_list_free(&head);
+
+    /* finalize progress messages for the copy */
+    mfu_progress_complete(&fill_count, &fill_prog);
+
+    /* stop timer and report total count */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_end = MPI_Wtime();
+
+    /* print timing statistics */
+    if (verbose) {
+        uint64_t sum;
+        MPI_Allreduce(&total_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+        double rate = 0.0;
+        double secs = total_end - total_start;
+        if (secs > 0.0) {
+          rate = (double)sum / secs;
+        }
+
+        /* convert bytes to units */
+        double agg_size_tmp;
+        const char* agg_size_units;
+        mfu_format_bytes(sum, &agg_size_tmp, &agg_size_units);
+
+        /* convert bandwidth to units */
+        double agg_rate_tmp;
+        const char* agg_rate_units;
+        mfu_format_bw(rate, &agg_rate_tmp, &agg_rate_units);
+
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Write data: %.3lf %s (%lu bytes)",
+              agg_size_tmp, agg_size_units, sum
+            );
+            MFU_LOG(MFU_LOG_INFO, "Write rate: %.3lf %s (%lu bytes in %f seconds)",
+              agg_rate_tmp, agg_rate_units, sum, secs
+            );
+        }
+    }
+
+    /* force data to backend to avoid the following metadata
+      * setting mismatch, which may happen on lustre */
+     mfu_sync_all("Syncing data to disk.");
+
+    /* determine whether any process reported an error,
+     * inputs should are either 0 or -1, so min will be -1 on any -1 */
+    int all_rc;
+    MPI_Allreduce(&rc, &all_rc, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+    rc = all_rc;
+
+    return rc;
+}
+
 int mfu_flist_hardlink(mfu_flist src_link_list,
         const mfu_param_path* srcpath, const mfu_param_path* destpath,
         mfu_copy_opts_t* mfu_copy_opts)
@@ -2717,6 +3035,7 @@ int mfu_flist_hardlink(mfu_flist src_link_list,
 
     return rc;
 }
+
 int mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist dst_list, uint64_t dst_index)
 {
     /* assume we'll succeed */
