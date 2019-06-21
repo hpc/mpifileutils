@@ -2264,9 +2264,6 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     /* TODO: consider file system striping params here */
     /* hard code some configurables for now */
 
-    /* Set default block size */
-    mfu_copy_opts->block_size = FD_BLOCK_SIZE;
-
     /* allocate buffer to read/write files, aligned on 1MB boundaraies */
     size_t alignment = 1024*1024;
     mfu_copy_opts->block_buf1 = (char*) MFU_MEMALIGN(mfu_copy_opts->block_size, alignment);
