@@ -31,6 +31,9 @@ int main(int argc, char* argv[])
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+  /* verbose by default */
+  mfu_debug_level = MFU_LOG_VERBOSE;
+
   /* process command line arguments */
   int usage = 0;
 
@@ -95,9 +98,10 @@ int main(int argc, char* argv[])
     }
   }
 
-  /* allocate a buffer */
-  size_t bufsize = 1024*1024;
-  void* buf = MFU_MALLOC(bufsize);
+  mfu_flist flist = mfu_flist_new();
+  mfu_flist_set_detail(flist, 1);
+
+  int files_per_dir = 100;
 
   /* loop over each file we need to create */
   int i;
@@ -105,51 +109,50 @@ int main(int argc, char* argv[])
     /* get index within file set */
     int idx = offset + i;
 
-    /* fill buffer with some data (unique to each file) */
-    memset(buf, idx+1, bufsize);
+#if 0
+    int diridx = idx / files_per_dir;
+
+    /* define directory name */
+    char dirname[256];
+    sprintf(dirname, "dir_%d", diridx);
+
+    if (idx % files_per_dir == 0) {
+        uint64_t fidx = mfu_flist_file_create(flist);
+        mfu_flist_file_set_name(flist, fidx, dirname);
+        mfu_flist_file_set_type(flist, fidx, MFU_TYPE_DIR);
+        mfu_flist_file_set_mode(flist, fidx, DCOPY_DEF_PERMS_DIR | S_IFDIR);
+    }
 
     /* create a file name */
     char file[256];
+    sprintf(file, "%s/file_%d.dat", dirname, idx);
+#else
+    /* create a file name */
+    char file[256];
     sprintf(file, "file_%d.dat", idx);
+#endif
 
-    /* create the file and open it for writing */
-    int fd = mfu_open(file, O_CREAT | O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
-    if (fd != -1) {
-      /* we opened the file, now start writing */
-      size_t written = 0;
-      char* ptr = (char*) buf;
-      while (written < (size_t) size) {
-          /* determine amount to write */
-          size_t left = bufsize;
-          size_t remaining = size - written;
-          if (remaining < bufsize) {
-            left = remaining;
-          }
-
-          /* write data to file */
-          ssize_t n = mfu_write(file, fd, ptr, left);
-          if (n == -1) {
-            printf("Failed to write to file: rank=%d file=%s errno=%d (%s)\n", rank, file, errno, strerror(errno));
-            rc = 1;
-            break;
-          }
-
-          /* update amount written */
-          written += (size_t) n;
-      }
-
-      /* sync output to disk and close the file */
-      mfu_fsync(file, fd);
-      mfu_close(file, fd);
-    } else {
-      /* failed to open the file */
-      printf("Failed to open file: rank=%d file=%s errno=%d (%s)\n", rank, file, errno, strerror(errno));
-      rc = 1;
-    }
+    uint64_t fidx = mfu_flist_file_create(flist);
+    mfu_flist_file_set_name(flist, fidx, file);
+    mfu_flist_file_set_type(flist, fidx, MFU_TYPE_FILE);
+    mfu_flist_file_set_size(flist, fidx, size);
+    mfu_flist_file_set_mode(flist, fidx, DCOPY_DEF_PERMS_FILE | S_IFREG);
   }
 
-  /* free the buffer */
-  mfu_free(&buf);
+  mfu_flist_summarize(flist);
+
+  /* pointer to mfu_copy opts */
+  mfu_copy_opts_t* mfu_copy_opts = mfu_copy_opts_new();
+
+  mfu_flist_mkdir(flist);
+  mfu_flist_mknod(flist);
+  mfu_flist_fill(flist, mfu_copy_opts);
+  //mfu_flist_setmeta()
+
+  mfu_flist_free(&flist);
+
+  /* free the copy options */
+  mfu_copy_opts_delete(&mfu_copy_opts);
 
   /* shut down */
   mfu_finalize();
