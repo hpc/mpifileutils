@@ -51,6 +51,10 @@ OPTIONS
    # incremental backup of /src
    dsync --link-dest /src.bak /src /src.bak.inc
 
+.. option:: -S, --sparse
+
+   Create sparse files when possible.
+
 .. option:: --progress N
 
    Print progress message to stdout approximately every N seconds.

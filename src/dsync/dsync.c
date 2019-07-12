@@ -53,6 +53,7 @@ static void print_usage(void)
     printf("  -c, --contents        - read and compare file contents rather than compare size and mtime\n");
     printf("  -D, --delete          - delete extraneous files from target\n");
     printf("      --link-dest <DIR> - hardlink to files in DIR when unchanged\n");
+    printf("  -S, --sparse          - create sparse files when possible\n");
     printf("      --progress <N>    - print progress every N seconds\n");
     printf("  -v, --verbose         - verbose output\n");
     printf("  -q, --quiet           - quiet output\n");
@@ -2814,6 +2815,7 @@ int main(int argc, char **argv)
         {"output",        1, 0, 'o'}, // undocumented
         {"debug",         0, 0, 'd'}, // undocumented
         {"link-dest",     1, 0, 'l'},
+        {"sparse",        0, 0, 'S'},
         {"progress",      1, 0, 'P'},
         {"verbose",       0, 0, 'v'},
         {"quiet",         0, 0, 'q'},
@@ -2832,7 +2834,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDo:vqh",
+            argc, argv, "b:cDo:Svqh",
             long_options, &option_index
         );
 
@@ -2864,6 +2866,9 @@ int main(int argc, char **argv)
             break;
         case 'd':
             options.debug++;
+            break;
+        case 'S':
+            mfu_copy_opts->sparse = 1;
             break;
         case 'P':
             mfu_progress_timeout = atoi(optarg);

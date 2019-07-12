@@ -49,7 +49,7 @@ OPTIONS
 
 .. option:: -S, --sparse
 
-   Create sparse files when possible (non-functioning).
+   Create sparse files when possible.
 
 .. option:: --progress N
 
