@@ -220,12 +220,12 @@ static void walk_lustrestat_process_dir(const char* dir, CIRCLE_handle* handle)
                         /* error */
                     }
 
-                    /* increment our item count */
-                    reduce_items++;
-
                     /* recurse into directories */
                     if (have_mode && S_ISDIR(mode)) {
                         handle->enqueue(newpath);
+                    } else {
+                        /* increment our item count */
+                        reduce_items++;
                     }
                 }
                 else {
@@ -279,6 +279,7 @@ static void walk_lustrestat_process(CIRCLE_handle* handle)
     char path[CIRCLE_MAX_STRING_LEN];
     handle->dequeue(path);
     walk_lustrestat_process_dir(path, handle);
+    reduce_items++;
     return;
 }
 
@@ -376,12 +377,12 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
                     /* insert a record for this item into our list */
                     mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, NULL);
 
-                    /* increment our item count */
-                    reduce_items++;
-
                     /* recurse on directory if we have one */
                     if (d_type == DT_DIR) {
                         handle->enqueue(newpath);
+                    } else {
+                        /* increment our item count */
+                        reduce_items++;
                     }
                 }
                 else {
@@ -436,6 +437,7 @@ static void walk_getdents_process(CIRCLE_handle* handle)
     char path[CIRCLE_MAX_STRING_LEN];
     handle->dequeue(path);
     walk_getdents_process_dir(path, handle);
+    reduce_items++;
     return;
 }
 
@@ -527,12 +529,12 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
                         }
                     }
 
-                    /* increment our item count */
-                    reduce_items++;
-
                     /* recurse into directories */
                     if (have_mode && S_ISDIR(mode)) {
                         handle->enqueue(newpath);
+                    } else {
+                        /* increment our item count */
+                        reduce_items++;
                     }
 #endif
                 }
@@ -587,6 +589,7 @@ static void walk_readdir_process(CIRCLE_handle* handle)
     char path[CIRCLE_MAX_STRING_LEN];
     handle->dequeue(path);
     walk_readdir_process_dir(path, handle);
+    reduce_items++;
     return;
 }
 
@@ -691,6 +694,7 @@ static void walk_stat_process(CIRCLE_handle* handle)
                 mfu_chmod(path, st.st_mode);
             }
         }
+
         /* TODO: check that we can recurse into directory */
         walk_stat_process_dir(path, handle);
     }
