@@ -316,24 +316,24 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
     struct block_info** this_wave_blocks = (struct block_info**)MFU_MALLOC(sizeof(struct block_info*)*wave_blocks);
 
     MPI_Datatype metatype, oldtypes[3];
-    MPI_Aint offsets[3], extent;
+    MPI_Aint offsets[3], extent, lb;
     int blockcounts[3];
 
     offsets[0]     = 0;
     oldtypes[0]    = MPI_UNSIGNED;
     blockcounts[0] = 1;
-    MPI_Type_extent(MPI_UNSIGNED, &extent);
+    MPI_Type_get_extent(MPI_UNSIGNED, &lb, &extent);
 
     offsets[1]     = extent;
     oldtypes[1]    = MPI_INT;
     blockcounts[1] = 1;
-    MPI_Type_extent(MPI_INT, &extent);
+    MPI_Type_get_extent(MPI_INT, &lb, &extent);
 
     offsets[2]     = extent + offsets[1];
     oldtypes[2]    = MPI_INT64_T;
     blockcounts[2] = 2;
 
-    MPI_Type_struct(3, blockcounts, offsets, oldtypes, &metatype);
+    MPI_Type_create_struct(3, blockcounts, offsets, oldtypes, &metatype);
     MPI_Type_commit(&metatype);
 
     struct block_info rbuf[wave_blocks];
