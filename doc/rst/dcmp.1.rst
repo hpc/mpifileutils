@@ -100,17 +100,17 @@ Valid fields are listed below, along with the property of the entry that is chec
 
 Valid conditions for the EXIST field are:
 
-+----------------+------------------------------------------------------------+
-| Condition      | Meaning                                                    |
-+================+============================================================+
-| EXIST=SRC_ONLY | entry exists only in source path                           |
-+----------------+------------------------------------------------------------+
-| EXIST=DST_ONLY | entry exists only in destination path                      |
-+----------------+------------------------------------------------------------+
-| EXIST=DIFFER   | entry exists in either source or destination, but not both |
-+----------------+------------------------------------------------------------+
-| EXIST=COMMON   | entry exists in both source and destination                |
-+----------------+------------------------------------------------------------+
++-----------------+------------------------------------------------------------+
+| Condition       | Meaning                                                    |
++=================+============================================================+
+| EXIST=ONLY_SRC  | entry exists only in source path                           |
++-----------------+------------------------------------------------------------+
+| EXIST=ONLY_DEST | entry exists only in destination path                      |
++-----------------+------------------------------------------------------------+
+| EXIST=DIFFER    | entry exists in either source or destination, but not both |
++-----------------+------------------------------------------------------------+
+| EXIST=COMMON    | entry exists in both source and destination                |
++-----------------+------------------------------------------------------------+
 
 All other fields may only specify the DIFFER and COMMON states.
 
@@ -122,7 +122,7 @@ For example, the following expression reports entries that exist in both source 
 The AND operator binds with higher precedence than the OR operator.
 For example, the following expression matches on entries which either (exist in both source and destination and whose types differ) or (only exist in the source)::
 
-    EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY
+    EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC
 
 Some conditions imply others.
 For example, for CONTENT to be considered the same,
@@ -163,11 +163,11 @@ EXAMPLES
 
 3. Write list of entries to outfile1 that are only in src1 or whose names exist in both src1 and src2 but whose types differ:
 
-``mpirun -np 128 dcmp -o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 /src1 /src2``
+``mpirun -np 128 dcmp -o EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC:outfile1 /src1 /src2``
 
 4. Same as above but also write list of entries to outfile2 that exist in either src1 or src2 but not both:
 
-``mpirun -np 128 dcmp -o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 -o EXIST=DIFFER:outfile2 /src1 /src2``
+``mpirun -np 128 dcmp -o EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC:outfile1 -o EXIST=DIFFER:outfile2 /src1 /src2``
 
 SEE ALSO
 --------
