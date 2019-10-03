@@ -42,7 +42,7 @@ static void print_usage(void)
     printf("\n");
     printf("Fields: EXIST,TYPE,SIZE,UID,GID,ATIME,MTIME,CTIME,PERM,ACL,CONTENT\n");
     printf("States: DIFFER,COMMON\n");
-    printf("Additional States for EXIST: SRC_ONLY,DEST_ONLY\n");
+    printf("Additional States for EXIST: ONLY_SRC,ONLY_DEST\n");
     printf("\n");
     printf("Example expressions:\n");
     printf("- Entry exists in both source and target and type differs between the two\n");
