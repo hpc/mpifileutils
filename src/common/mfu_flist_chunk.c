@@ -457,6 +457,15 @@ void mfu_file_chunk_list_lor(mfu_flist list, const mfu_file_chunk* head, const i
     /* ltr pointer for the output of the left-to-right-segmented scan */
     int* ltr = (int*) MFU_MALLOC(list_count * sizeof(int));
 
+    /* copy file names into comparison buffer for segmented scan */
+    uint64_t i;
+    const mfu_file_chunk* p = head;
+    for (i = 0; i < list_count; i++) {
+        char* name = keys + max_name * i;
+        strncpy(name, p->name, max_name);
+        p = p->next;
+    }
+
     /* create type and comparison operation for file names for the segmented scan */
     MPI_Datatype keytype = MPI_DATATYPE_NULL;
     DTCMP_Op keyop = DTCMP_OP_NULL;
@@ -498,8 +507,7 @@ void mfu_file_chunk_list_lor(mfu_flist list, const mfu_file_chunk* head, const i
      * going through all files, we then have a count of the number of files we 
      * will report for each rank */
     int disp = 0;
-    uint64_t i;
-    const mfu_file_chunk* p = head;
+    p = head;
     for (i = 0; i < list_count; i++) {
         /* if we have the last byte of the file, we need to send scan result to owner */
         if (p->offset + p->length >= p->file_size) {
