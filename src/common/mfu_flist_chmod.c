@@ -24,7 +24,7 @@
 /* global variable to hold umask value */
 static mode_t old_mask;
 
-/* holds current and total number of items */
+/* holds current and total number of items for progress messages */
 uint64_t chmod_count;
 uint64_t chmod_count_total;
 
@@ -34,15 +34,15 @@ mfu_progress* chmod_prog;
 /* prints progress messages while updating items */
 static void chmod_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
 {
-    /* compute percentage of items removed */
+    /* compute percentage of items */
     double percent = 0.0;
     if (chmod_count_total > 0) {
         percent = 100.0 * (double)vals[0] / (double)chmod_count_total;
     }
 
-    /* compute average delete rate */
+    /* compute average rate */
     double rate = 0.0;
-    if (secs > 0) {
+    if (secs > 0.0) {
         rate = (double)vals[0] / secs;
     }
 
@@ -52,6 +52,7 @@ static void chmod_progress_fn(const uint64_t* vals, int count, int complete, int
         secs_remaining = (double)(chmod_count_total - vals[0]) / rate;
     }
 
+    /* print progress message */
     if (complete < ranks) {
         MFU_LOG(MFU_LOG_INFO, "Processed %llu items (%.2f%%) in %f secs (%f items/sec) %d secs remaining ...",
             vals[0], percent, secs, rate, (int)secs_remaining);
@@ -68,9 +69,14 @@ void mfu_perms_free(mfu_perms** p_head)
         /* free the memory for the linked list of structs */
         mfu_perms* current = *p_head;
         while (current != NULL) {
-            mfu_perms* tmp = current;
+            /* record poiner to next element in list */
+            mfu_perms* tmp = current->next;
+ 
+            /* free current element */
             mfu_free(&current);
-            current = tmp->next;
+
+            /* update to next element in list */
+            current = tmp;
         }
 
         /* set the head pointer to NULL to indicate list has been freed */
@@ -100,7 +106,8 @@ static int lookup_uid(const char* name, uid_t* uid)
         return 1;
     }
 
-    /* the first entry will be a flag indicating whether the lookup
+    /* have rank 0 lookup uid for username, bcast result to others,
+     * the first entry will be a flag indicating whether the lookup
      * succeeded (1) or not (0), if successful, the uid will be
      * stored in the second entry */
     uint64_t values[2];
@@ -126,8 +133,7 @@ static int lookup_uid(const char* name, uid_t* uid)
             /* print error message if we can */
             if (errno != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to find entry for name `%s' (errno=%d %s)",
-                          name, errno, strerror(errno)
-                         );
+                          name, errno, strerror(errno));
             }
         }
     }
@@ -192,8 +198,7 @@ static int lookup_gid(const char* name, gid_t* gid)
             /* print error message if we can */
             if (errno != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to find entry for group `%s' (errno=%d %s)",
-                          name, errno, strerror(errno)
-                         );
+                          name, errno, strerror(errno));
             }
         }
     }
@@ -211,7 +216,8 @@ static int lookup_gid(const char* name, gid_t* gid)
 }
 
 /* in an expression like g=u, g is the target, and u is the source,
- * parse out and record the source in our perms struct */
+ * parse out and record the source in our perms struct,
+ * return 1 if we parse string successfully, 0 otherwise */
 static int parse_source(const char* str, mfu_perms* p)
 {
     /* assume the parse will succeed */
@@ -247,7 +253,8 @@ static int parse_source(const char* str, mfu_perms* p)
     return rc;
 }
 
-/* for a string like u+rwX, parse and record the rwX portion */
+/* for a string like u+rwX, parse and record the rwX portion,
+ * return 1 if we parse string successfully, 0 otherwise */
 static int parse_rwx(const char* str, mfu_perms* p)
 {
     /* assume the parse will succeed */
@@ -291,7 +298,7 @@ static int parse_rwx(const char* str, mfu_perms* p)
 }
 
 /* for a string like g-w, parse the +/-/= character and record
- * what we found */
+ * operator, return 1 if we parse string successfully, 0 otherwise */
 static int parse_plusminus(const char* str, mfu_perms* p)
 {
     /* assume the parse will succeed */
@@ -329,14 +336,16 @@ static int parse_plusminus(const char* str, mfu_perms* p)
     return rc;
 }
 
-/* parse target of user, group, or other */
+/* parse target of user, group, other, all, or implicit all,
+ * return 1 if we parse string successfully, 0 otherwise */
 static int parse_ugoa(const char* str, mfu_perms* p)
 {
     /* assume the parse will succeed */
     int rc = 1;
 
-    /* if no letter is given then assume "all" 
-     * is being set (e.g +rw would be a+rw) */
+    /* if no letter is given then mode update applies to all,
+     * this syntax also considers the user's umask
+     * so we need to track that no letter was provided */
     p->assume_all = 1;
 
     /* intialize our fields */
@@ -373,7 +382,7 @@ static int parse_ugoa(const char* str, mfu_perms* p)
     } while  (1);
 
     /* if assume_all is set then no character
-     * was given use p->all */
+     * was given so apply settings to all */
     if (p->assume_all) {
         p->all = 1;
     }
@@ -389,79 +398,93 @@ static int parse_ugoa(const char* str, mfu_perms* p)
  * struct pointers */
 int mfu_perms_parse(const char* modestr, mfu_perms** p_head)
 {
-    int rc = 0;
+    /* initialize output parameter */
+    *p_head = NULL;
+
+    /* parse the mode string if we got one */
     if (modestr != NULL) {
-        rc = 1;
+        return 0;
+    }
 
-        /* check whether we're in octal mode */
-        int octal = 0;
-        if (strlen(modestr) <= 4) {
-            /* got 4 or fewer characters, assume we're in octal mode for now */
-            octal = 1;
+    /* assume we'll succeed in parsing */
+    int rc = 1;
 
-            /* make sure we only have digits and is in the range 0-7 */
-            for (int i = 0; i <= strlen(modestr) - 1; i++) {
-                if (modestr[i] < '0' || modestr[i] > '7') {
-                    /* found a character out of octal range, can't be in octal */
-                    octal = 0;
-                    break;
-                }
+    /* check whether we're in octal mode */
+    int octal = 0;
+    if (strlen(modestr) <= 4) {
+        /* got 4 or fewer characters, assume we're in octal mode for now */
+        octal = 1;
+
+        /* make sure we only have digits and is in the range 0-7 */
+        for (int i = 0; i <= strlen(modestr) - 1; i++) {
+            if (modestr[i] < '0' || modestr[i] > '7') {
+                /* found a character out of octal range, can't be in octal */
+                octal = 0;
+                break;
+            }
+        }
+    }
+
+    /* parse the modestring and create our list of permissions structures */
+    if (octal) {
+        /* we're in octal mode, allocate a new node for our list */
+        mfu_perms* p = MFU_MALLOC(sizeof(mfu_perms));
+        p->next = NULL;
+
+        /* initialize node as octal and
+         * convert octal string to a mode value */
+        p->octal      = 1;
+        p->mode_octal = strtol(modestr, NULL, 8);
+
+        /* return list to caller */
+        *p_head = p;
+    }
+    else {
+        /* if we're not in octal mode, assume we are in symbolic mode,
+         * we'll build a linked list for each entry in a comma-delimited
+         * list like u+rX,g+r */
+
+        /* define struct to keep track of end of list */
+        mfu_perms* tail = NULL;
+
+        /* make a copy of the input string since strtok will clobber it */
+        char* tmpstr = MFU_STRDUP(modestr);
+
+        /* create a linked list of structs that gets broken up based on the comma syntax
+         * i.e. u+r,g+x */
+        for (char* token = strtok(tmpstr, ",");
+             token != NULL;
+             token = strtok(NULL, ","))
+        {
+            /* allocate memory for a new struct and set the next pointer to null also
+             * turn octal mode off */
+            mfu_perms* p = malloc(sizeof(mfu_perms));
+            p->next  = NULL;
+            p->octal = 0;
+
+            /* set item as head of list if this is the first item */
+            if (*p_head == NULL) {
+                *p_head = p;
+            }
+
+            /* attach item to end of list */
+            if (tail != NULL) {
+                tail->next = p;
+            }
+            tail = p;
+
+            /* parse this token of the input string */
+            rc = parse_ugoa(token, p);
+
+            /* if there was an error parsing the string then free the memory of the list */
+            if (rc != 1) {
+                mfu_perms_free(p_head);
+                break;
             }
         }
 
-        /* parse the modestring and create our list of permissions structures */
-        if (octal) {
-            /* in octal mode, just create one node in our list */
-            rc = 1;
-            mfu_perms* p = MFU_MALLOC(sizeof(mfu_perms));
-            p->next = NULL;
-            p->octal = 1;
-            p->mode_octal = strtol(modestr, NULL, 8);
-            *p_head = p;
-
-        }
-        else {
-            /* if it is not in octal mode assume we are in symbolic mode */
-            mfu_perms* tail = NULL;
-
-            /* make a copy of the input string since strtok will clobber it */
-            char* tmpstr = MFU_STRDUP(modestr);
-
-            /* create a linked list of structs that gets broken up based on the comma syntax
-             * i.e. u+r,g+x */
-            for (char* token = strtok(tmpstr, ","); token != NULL; token = strtok(NULL, ",")) {
-                /* allocate memory for a new struct and set the next pointer to null also
-                 * turn octal mode off */
-                mfu_perms* p = malloc(sizeof(mfu_perms));
-                p->next = NULL;
-                p->octal = 0;
-
-                /* start parsing this 'token' of the input string */
-                rc = parse_ugoa(token, p);
-
-                /* if the tail is not null then point the tail at the latest struct/token */
-                if (tail != NULL) {
-                    tail->next = p;
-                }
-
-                /* if head is not pointing at anything then this token is the head of the list */
-                if (*p_head == NULL) {
-                    *p_head = p;
-                }
-
-                /* have the tail point at the current/last struct */
-                tail = p;
-
-                /* if there was an error parsing the string then free the memory of the list */
-                if (rc != 1) {
-                    mfu_perms_free(p_head);
-                    break;
-                }
-            }
-
-            /* free the duplicated string */
-            mfu_free(&tmpstr);
-        }
+        /* free the duplicated string */
+        mfu_free(&tmpstr);
     }
 
     return rc;
@@ -483,8 +506,9 @@ void mfu_perms_need_dir_rx(const mfu_perms* head, mfu_walk_opts_t* walk_opts)
     int usr_x = 0;
 
     if (head->octal) {
-        /* in octal mode, se we can check bits directly,
-         * use a mask to check if the usr_read and usr_execute bits are being turned on */
+        /* in octal mode, se we can check bits directly with a mask,
+         * check if usr read and execute bits are being turned on,
+         * r-x------ */
         long usr_r_mask = 1 << 8;
         long usr_x_mask = 1 << 6;
         if (usr_r_mask & head->mode_octal) {
@@ -503,6 +527,7 @@ void mfu_perms_need_dir_rx(const mfu_perms* head, mfu_walk_opts_t* walk_opts)
              * it will still give the correct result */
             if (p->usr || p->all) {
                 if (p->plus) {
+                    /* plus, turning bits on */
                     if (p->read) {
                         /* got something like u+r or a+r, turn read on */
                         usr_r = 1;
@@ -512,6 +537,7 @@ void mfu_perms_need_dir_rx(const mfu_perms* head, mfu_walk_opts_t* walk_opts)
                         usr_x = 1;
                     }
                 } else {
+                    /* minus, turning bits off */
                     if  (p->read) {
                         /* got something like u-r or a-r, turn read off */
                         usr_r = 0;
@@ -540,11 +566,12 @@ void mfu_perms_need_dir_rx(const mfu_perms* head, mfu_walk_opts_t* walk_opts)
 static void read_source_bits(const mfu_perms* p, mode_t mode, int* read, int* write, int* execute)
 {
     /* assume all bits on the source are off */
-    *read = 0;
-    *write = 0;
+    *read    = 0;
+    *write   = 0;
     *execute = 0;
 
-    /* based on the source (u, g, or a) then check which bits were on for each one (r, w, or x) */
+    /* based on the source (u, g, or a) then check which bits
+     * are on for each one (r, w, or x) */
 
     /* got something like g=u, so user is the source */
     if (p->source == 'u') {
@@ -674,6 +701,7 @@ static void set_symbolic_bits(const mfu_perms* p, mfu_filetype type, mode_t* mod
     /* this will handle things like u+r */
     if (p->usr || p->all) {
         if (p->plus) {
+            /* plus, turn bits on */
             if (p->read) {
                 *mode |= S_IRUSR;
             }
@@ -693,6 +721,7 @@ static void set_symbolic_bits(const mfu_perms* p, mfu_filetype type, mode_t* mod
             }
         }
         else {
+            /* minus, turn bits off */
             if (p->read) {
                 *mode &= ~S_IRUSR;
             }
@@ -714,17 +743,18 @@ static void set_symbolic_bits(const mfu_perms* p, mfu_filetype type, mode_t* mod
     }
 
     /* all & group check the capital_execute flag, so if there is a
-    * capital X in the input string i.e g+X then if the usr execute
-    * bit is set the group execute bit will be set to on. If the usr
-    * execute bit is not on, then it will be left alone. If the usr
-    * says something like ug+X then the usr bit in the input string
-    * will be ignored unless it is a directory. In the case of something
-    * like g-X, then it will ALWAYS turn off the group or all execute bit.
-    * This is slightly different behavior then the +X, but it is intentional
-    * and how chmod also works. */
+     * capital X in the input string i.e g+X then if the usr execute
+     * bit is set the group execute bit will be set to on. If the usr
+     * execute bit is not on, then it will be left alone. If the usr
+     * says something like ug+X then the usr bit in the input string
+     * will be ignored unless it is a directory. In the case of something
+     * like g-X, then it will ALWAYS turn off the group or all execute bit.
+     * This is slightly different behavior then the +X, but it is intentional
+     * and how chmod also works. */
 
     if (p->group || p->all) {
         if (p->plus) {
+            /* plus, turn bits on */
             if (p->read) {
                 *mode |= S_IRGRP;
             }
@@ -742,6 +772,7 @@ static void set_symbolic_bits(const mfu_perms* p, mfu_filetype type, mode_t* mod
             }
         }
         else {
+            /* minus, turn bits off */
             if (p->read) {
                 *mode &= ~S_IRGRP;
             }
@@ -760,6 +791,7 @@ static void set_symbolic_bits(const mfu_perms* p, mfu_filetype type, mode_t* mod
 
     if (p->other || p->all) {
         if (p->plus) {
+            /* plus, turn bits on */
             if (p->read) {
                 *mode |= S_IROTH;
             }
@@ -777,6 +809,7 @@ static void set_symbolic_bits(const mfu_perms* p, mfu_filetype type, mode_t* mod
             }
         }
         else {
+            /* minus, turn bits off */
             if (p->read) {
                 *mode &= ~S_IROTH;
             }
@@ -876,7 +909,14 @@ static void set_modebits(const mfu_perms* head, mfu_filetype type, mode_t old_mo
     }
 }
 
-static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const mfu_perms* head, const char* usrname, const char* grname, uid_t uid, gid_t gid)
+static void dchmod_level(
+    mfu_flist list,
+    uint64_t* dchmod_count,
+    const mfu_perms* head,
+    const char* usrname,
+    const char* grname,
+    uid_t uid,
+    gid_t gid)
 {
     /* each process directly changes permissions on its elements for each level */
     uint64_t idx;
@@ -887,27 +927,62 @@ static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const mfu_perms
 
         /* update owner/group if user gave an owner/group name */
         if (usrname != NULL || grname != NULL) {
-            /* get user id and group id of file */
-            uid_t olduid = (uid_t) mfu_flist_file_get_uid(list, idx);
-            gid_t oldgid = (gid_t) mfu_flist_file_get_gid(list, idx);
+            if (mfu_flist_have_detail(list)) {
+                /* get user id and group id of file */
+                uid_t olduid = (uid_t) mfu_flist_file_get_uid(list, idx);
+                gid_t oldgid = (gid_t) mfu_flist_file_get_gid(list, idx);
 
-            /* compute new user id, assume it doesn't change */
-            uid_t newuid = olduid;
-            if (usrname != NULL) {
-                /* user gave us a uid value, so the uid may have changed */
-                newuid = uid;
-            }
+                /* compute new user id, assume it doesn't change */
+                uid_t newuid = olduid;
+                if (usrname != NULL) {
+                    /* user gave us a uid value, so the uid may have changed */
+                    newuid = uid;
+                }
 
-            /* compute new group id, assume it doesn't change */
-            gid_t newgid = oldgid;
-            if (grname != NULL) {
-                /* user gave us a gid value, so the gid may have changed */
-                newgid = gid;
-            }
+                /* compute new group id, assume it doesn't change */
+                gid_t newgid = oldgid;
+                if (grname != NULL) {
+                    /* user gave us a gid value, so the gid may have changed */
+                    newgid = gid;
+                }
 
-            /* only bother to change owner or group if they are different */
-            if (olduid != newuid || oldgid != newgid) {
-                /* note that we use lchown to change ownership of link itself, it path happens to be a link */
+                /* TODO: only both attempting to change group if user running is
+                 * also owner of item or a force option is on */
+
+                /* only bother to change owner or group if they are different */
+                if (olduid != newuid || oldgid != newgid) {
+                    /* note that we use lchown to change ownership of link itself,
+                     * if path happens to be a link */
+                    if (mfu_lchown(dest_path, newuid, newgid) != 0) {
+                        /* are there other EPERM conditions we do want to report? */
+
+                        /* since the user running dchmod may not be the owner of the
+                         * file, we could hit an EPERM error here, and the file
+                         * will be left with the effective uid and gid of the dchmod
+                         * process, don't bother reporting an error for that case */
+                        if (errno != EPERM || olduid != newuid) {
+                            MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
+                                      dest_path, errno, strerror(errno));
+                        }
+                    }
+                }
+            } else {
+                /* compute new user id, assume it doesn't change */
+                uid_t newuid = -1;
+                if (usrname != NULL) {
+                    /* user gave us a uid value, so the uid may have changed */
+                    newuid = uid;
+                }
+
+                /* compute new group id, assume it doesn't change */
+                gid_t newgid = -1;
+                if (grname != NULL) {
+                    /* user gave us a gid value, so the gid may have changed */
+                    newgid = gid;
+                }
+
+                /* note that we use lchown to change ownership of link itself,
+                 * if path happens to be a link */
                 if (mfu_lchown(dest_path, newuid, newgid) != 0) {
                     /* are there other EPERM conditions we do want to report? */
 
@@ -915,10 +990,9 @@ static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const mfu_perms
                      * file, we could hit an EPERM error here, and the file
                      * will be left with the effective uid and gid of the dchmod
                      * process, don't bother reporting an error for that case */
-                    if (errno != EPERM || olduid != newuid) {
+                    if (errno != EPERM) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
-                                  dest_path, errno, strerror(errno)
-                                 );
+                                  dest_path, errno, strerror(errno));
                     }
                 }
             }
@@ -948,8 +1022,7 @@ static void dchmod_level(mfu_flist list, uint64_t* dchmod_count, const mfu_perms
                 /* set the mode on the file */
                 if (mfu_chmod(dest_path, new_mode) != 0) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on `%s' chmod() (errno=%d %s)",
-                              dest_path, errno, strerror(errno)
-                             );
+                              dest_path, errno, strerror(errno));
                 }
             }
         }
@@ -1055,8 +1128,7 @@ void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, c
             double time_diff = end - start;
             if (mfu_rank == 0) {
                 MFU_LOG(MFU_LOG_INFO, "level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f",
-                       (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
-                      );
+                       (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff);
             }
         }
     }
@@ -1078,8 +1150,7 @@ void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, c
             rate = ((double)all_count) / time_diff;
         }
         MFU_LOG(MFU_LOG_INFO, "Changed %lu items in %f seconds (%f items/sec)",
-               all_count, time_diff, rate
-              );
+               all_count, time_diff, rate);
     }
 
     return;

@@ -64,7 +64,6 @@ int main(int argc, char** argv)
     char* groupname = NULL;
     char* modestr   = NULL;
     char* regex_exp = NULL;
-    mfu_perms* head = NULL;
     int walk        = 0;
     int exclude     = 0;
     int name        = 0;
@@ -190,6 +189,7 @@ int main(int argc, char** argv)
     }
 
     /* check that our mode string parses correctly */
+    mfu_perms* head = NULL;
     if (modestr != NULL) {
         int valid = mfu_perms_parse(modestr, &head);
         if (! valid) {
@@ -227,6 +227,9 @@ int main(int argc, char** argv)
     if (walk) {
         /* if in octal mode set use_stat=0 to stat each file on walk */
         if (head != NULL && head->octal && ownername == NULL && groupname == NULL) {
+            walk_opts->use_stat = 0;
+        }
+        if (head == NULL) {
             walk_opts->use_stat = 0;
         }
 
