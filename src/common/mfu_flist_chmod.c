@@ -401,8 +401,8 @@ int mfu_perms_parse(const char* modestr, mfu_perms** p_head)
     /* initialize output parameter */
     *p_head = NULL;
 
-    /* parse the mode string if we got one */
-    if (modestr != NULL) {
+    /* bail out if we didn't get a mode string to parse */
+    if (modestr == NULL) {
         return 0;
     }
 
