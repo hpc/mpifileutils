@@ -138,15 +138,11 @@ mfu_pred_times_rel* mfu_pred_relative(const char* str, const mfu_pred_times* t)
 
 int MFU_PRED_TYPE (mfu_flist flist, uint64_t idx, void* arg)
 {
-    mode_t m = *((mode_t*)arg);
-    
+    mode_t type = *((mode_t*)arg);
+
     mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
 
-    if ((mode & m) == m) {
-        return 1;
-    } else {
-        return 0;
-    }
+    return (mode & S_IFMT) == type;
 }
 
 int MFU_PRED_NAME (mfu_flist flist, uint64_t idx, void* arg)
