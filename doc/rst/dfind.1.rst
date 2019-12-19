@@ -128,11 +128,19 @@ Numeric arguments can be specified as:
    File is of type C:
 
    +---+---------------+
+   | b | block device  |
+   +---+---------------+
+   | c | char device   |
+   +---+---------------+
    | d | directory     |
    +---+---------------+
    | f | regular file  |
    +---+---------------+
    | l | symbolic link |
+   +---+---------------+
+   | p | pipe          |
+   +---+---------------+
+   | s | socket        |
    +---+---------------+
 
 ACTIONS
