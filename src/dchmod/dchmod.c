@@ -55,8 +55,11 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-    /* pointer to mfu_walk_opts */
+    /* allocate a structure to configure walk operation */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
+    /* allocate a structure to configure chmod/chown operation */
+    mfu_chmod_opts_t* chmod_opts = mfu_chmod_opts_new();
 
     /* parse command line options */
     char* inputname = NULL;
@@ -225,11 +228,9 @@ int main(int argc, char** argv)
     /* get our list of files, either by walking or reading an
      * input file */
     if (walk) {
-        /* if in octal mode set use_stat=0 to stat each file on walk */
-        if (head != NULL && head->octal && ownername == NULL && groupname == NULL) {
-            walk_opts->use_stat = 0;
-        }
-        if (head == NULL) {
+        /* we can avoid stating files if only setting owner/group
+         * or if setting permissions using octal mode */
+        if (head == NULL || head->octal) {
             walk_opts->use_stat = 0;
         }
 
@@ -255,11 +256,10 @@ int main(int argc, char** argv)
     }
 
     /* change group and permissions */
-    mfu_flist_chmod(srclist, ownername, groupname, head);
+    mfu_flist_chmod(srclist, ownername, groupname, head, chmod_opts);
 
-    /* free list if it was used */
+    /* free the filtered flist (if any) */
     if (filtered_flist != MFU_FLIST_NULL){
-        /* free the filtered flist (if any) */
         mfu_flist_free(&filtered_flist);
     }
 
@@ -289,6 +289,9 @@ int main(int argc, char** argv)
 
     /* free the input file name */
     mfu_free(&inputname);
+
+    /* free the chmod options */
+    mfu_chmod_opts_delete(&chmod_opts);
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);

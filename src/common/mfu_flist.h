@@ -485,9 +485,27 @@ void mfu_flist_mknod(mfu_flist flist);
  * if traceless=1, restore timestamps on parent directories after unlinking children */
 void mfu_flist_unlink(mfu_flist flist, bool traceless);
 
-/* given an input flist, set permissions on items according to perms list,
- * optionally, if usrname != NULL, change owner, or if grname != NULL, change group */
-void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, const mfu_perms* head);
+typedef struct {
+    bool force; /* always call chmod/chgrp on every item */
+} mfu_chmod_opts_t;
+
+/* return a newly allocated chmod structure */
+mfu_chmod_opts_t* mfu_chmod_opts_new(void);
+
+/* free chmod options allocated from mfu_chmod_opts_new */
+void mfu_chmod_opts_delete(mfu_chmod_opts_t** popts);
+
+/* given an input flist,
+ * change owner on items if usrname != NULL,
+ * change group on items if grname != NULL
+ * set permissions on items according to perms list if head != NULL */
+void mfu_flist_chmod(
+  mfu_flist flist,
+  const char* usrname,
+  const char* grname,
+  const mfu_perms* head,
+  mfu_chmod_opts_t* opts
+);
 
 /* given a source and destination file, update destination metadata
  * to match source if needed, returns 0 on success -1 on error */
