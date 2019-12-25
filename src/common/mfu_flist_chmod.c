@@ -21,9 +21,6 @@
 #include "libcircle.h"
 #include "mfu.h"
 
-/* global variable to hold umask value */
-static mode_t old_mask;
-
 /* holds current and total number of items for progress messages */
 uint64_t chmod_count;
 uint64_t chmod_count_total;
@@ -692,7 +689,7 @@ static void set_target_bits(const mfu_perms* p, int read, int write, int execute
 
 /* given a pointer to a permissions struct, set mode bits according to symbolic
  * strings like "ug+rX" */
-static void set_symbolic_bits(const mfu_perms* p, mfu_filetype type, mode_t* mode)
+static void set_symbolic_bits(const mfu_perms* p, mfu_filetype type, mode_t mask, mode_t* mode)
 {
     /* save the old mode in case assume_all flag is on */
     mode_t old_mode = *mode;
@@ -831,11 +828,11 @@ static void set_symbolic_bits(const mfu_perms* p, mfu_filetype type, mode_t* mod
     if (p->assume_all) {
         /* get set of bits in current mode that we won't change 
          * because of umask */
-        old_mode &= old_mask;
+        old_mode &= mask;
 
         /* mask out any bits of new mode that we shouldn't change 
          * due to umask */
-        *mode &= ~old_mask;
+        *mode &= ~mask;
 
         /* merge in bits from previous mode that had been masked */
         *mode |= old_mode;
@@ -846,7 +843,7 @@ static void set_symbolic_bits(const mfu_perms* p, mfu_filetype type, mode_t* mod
 
 /* given our list of permission ops, the type, and the current mode,
  * compute what the new mode should be */
-static void set_modebits(const mfu_perms* head, mfu_filetype type, mode_t old_mode, mode_t* mode)
+static void set_modebits(const mfu_perms* head, mfu_filetype type, mode_t old_mode, mode_t mask, mode_t* mode)
 {
     /* if in octal mode then loop through and check which ones are on based on the mask and
      * the current octal mode bits */
@@ -900,7 +897,7 @@ static void set_modebits(const mfu_perms* head, mfu_filetype type, mode_t old_mo
                 /* if the assignment flag is not set then just use
                  * regular symbolic notation to check if usr, group, other, and/or all is being set, then
                  * plus/minus, and change new mode accordingly */
-                set_symbolic_bits(p, type, mode);
+                set_symbolic_bits(p, type, mask, mode);
             }
 
             /* update pointer to next element of linked list */
@@ -915,8 +912,6 @@ static void dchmod_level(
     const mfu_perms* head,
     const char* usrname,
     const char* grname,
-    uid_t uid,
-    gid_t gid,
     mfu_chmod_opts_t* opts)
 {
     /* each process directly changes permissions on its elements for each level */
@@ -937,14 +932,14 @@ static void dchmod_level(
                 uid_t newuid = olduid;
                 if (usrname != NULL) {
                     /* user gave us a uid value, so the uid may have changed */
-                    newuid = uid;
+                    newuid = opts->uid;
                 }
 
                 /* compute new group id, assume it doesn't change */
                 gid_t newgid = oldgid;
                 if (grname != NULL) {
                     /* user gave us a gid value, so the gid may have changed */
-                    newgid = gid;
+                    newgid = opts->gid;
                 }
 
                 /* TODO: only both attempting to change group if user running is
@@ -977,14 +972,14 @@ static void dchmod_level(
                 uid_t newuid = -1;
                 if (usrname != NULL) {
                     /* user gave us a uid value, so the uid may have changed */
-                    newuid = uid;
+                    newuid = opts->uid;
                 }
 
                 /* compute new group id, assume it doesn't change */
                 gid_t newgid = -1;
                 if (grname != NULL) {
                     /* user gave us a gid value, so the gid may have changed */
-                    newgid = gid;
+                    newgid = opts->gid;
                 }
 
                 /* only bother to change owner or group if they might be different,
@@ -1025,7 +1020,7 @@ static void dchmod_level(
                 /* given our list of permission ops, the type, and the current mode,
                  * compute what the new mode should be */
                 mode_t new_mode;
-                set_modebits(head, type, mode, &new_mode);
+                set_modebits(head, type, mode, opts->umask, &new_mode);
 
                 /* as an optimization here, we could avoid setting the mode if the new mode
                  * matches the old mode */
@@ -1069,17 +1064,16 @@ void mfu_flist_chmod(
     /* lookup current umask, we consider umask when not given a
      * leading letter to specify a target as in "+rX" vs "a+rX",
      * in that case bits set in umask are not affected */
-    old_mask = umask(S_IWGRP | S_IWOTH);
-    umask(old_mask);
+    opts->umask = umask(S_IWGRP | S_IWOTH);
+    umask(opts->umask);
 
     /* get our rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     /* lookup user id if given a user name */
-    uid_t uid;
     if (usrname != NULL) {
-        int lookup_rc = lookup_uid(usrname, &uid);
+        int lookup_rc = lookup_uid(usrname, &opts->uid);
         if (lookup_rc == 0) {
             /* failed to get user id, bail out */
             if (rank == 0) {
@@ -1090,9 +1084,8 @@ void mfu_flist_chmod(
     }
 
     /* lookup group id if given a group name */
-    gid_t gid;
     if (grname != NULL) {
-        int lookup_rc = lookup_gid(grname, &gid);
+        int lookup_rc = lookup_gid(grname, &opts->gid);
         if (lookup_rc == 0) {
             /* failed to get group id, bail out */
             if (rank == 0) {
@@ -1127,7 +1120,7 @@ void mfu_flist_chmod(
 
         /* do a dchmod on each element in the list for this level & pass it the size */
         uint64_t size = 0;
-        dchmod_level(list, &size, head, usrname, grname, uid, gid, opts);
+        dchmod_level(list, &size, head, usrname, grname, opts);
 
         /* wait for all processes to finish before we start with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
@@ -1181,6 +1174,18 @@ void mfu_flist_chmod(
 mfu_chmod_opts_t* mfu_chmod_opts_new(void)
 {
     mfu_chmod_opts_t* opts = (mfu_chmod_opts_t*) MFU_MALLOC(sizeof(mfu_chmod_opts_t));
+
+    /* chown with uid==-1 preserves the same owner,
+     * default to keeping the owner the same */ 
+    opts->uid = -1;
+
+    /* chown with gid==-1 preserves the same group,
+     * default to keeping the group the same */ 
+    opts->gid = -1;
+
+    /* umask to apply when setting permissions with
+     * implied all in symbolic mode, like "+rX" */
+    opts->umask = 0;
 
     /* avoid calling chmod/chown on all items,
      * if this is set to true, call on every item */
