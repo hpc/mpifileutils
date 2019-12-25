@@ -486,7 +486,10 @@ void mfu_flist_mknod(mfu_flist flist);
 void mfu_flist_unlink(mfu_flist flist, bool traceless);
 
 typedef struct {
-    bool force; /* always call chmod/chgrp on every item */
+    uid_t uid;    /* user id for item's owner */
+    gid_t gid;    /* group id for item's group */
+    mode_t umask; /* current umask to apply when setting item permissions */
+    bool force;   /* always call chmod/chgrp on every item */
 } mfu_chmod_opts_t;
 
 /* return a newly allocated chmod structure */
