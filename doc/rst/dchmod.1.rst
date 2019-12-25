@@ -40,6 +40,14 @@ OPTIONS
    as are "rwxX". As with chmod, if no leading letter "ugoa" is provided,
    mode bits are combined with umask to determine the actual mode.
 
+.. option:: -f, --force
+
+   Attempt to change every item.  By default, dchmod avoids unncessary
+   chown and chmod calls, for example trying to change the group
+   on an item that already has the correct group, or trying to change
+   the group on an item that is not owned by the user running the tool.
+   With --force, dchmod executes chown/chmod calls on every item.
+
 .. option:: --exclude REGEX
 
    Do not modify items whose full path matches REGEX, processed by

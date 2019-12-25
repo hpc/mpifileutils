@@ -31,6 +31,7 @@ static void print_usage(void)
     printf("  -u, --owner   <user>   - change owner to specified user name or uid\n");
     printf("  -g, --group   <group>  - change group to specified group name or gid\n");
     printf("  -m, --mode    <string> - change mode\n");
+    printf("  -f, --force            - attempt to change every item\n");
     printf("      --exclude <regex>  - exclude a list of files from command\n");
     printf("      --match   <regex>  - match a list of files from command\n");
     printf("  -n, --name             - exclude a list of files from command\n");
@@ -80,6 +81,7 @@ int main(int argc, char** argv)
         {"owner",    1, 0, 'u'},
         {"group",    1, 0, 'g'},
         {"mode",     1, 0, 'm'},
+        {"force",    0, 0, 'f'},
         {"exclude",  1, 0, 'e'},
         {"match",    1, 0, 'a'},
         {"name",     0, 0, 'n'},
@@ -93,7 +95,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:u:g:m:nvqh",
+                    argc, argv, "i:u:g:m:fnvqh",
                     long_options, &option_index
                 );
 
@@ -113,6 +115,9 @@ int main(int argc, char** argv)
                 break;
             case 'm':
                 modestr = MFU_STRDUP(optarg);
+                break;
+            case 'f':
+                chmod_opts->force = true;
                 break;
             case 'e':
                 regex_exp = MFU_STRDUP(optarg);
