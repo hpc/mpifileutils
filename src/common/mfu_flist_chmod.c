@@ -916,7 +916,8 @@ static void dchmod_level(
     const char* usrname,
     const char* grname,
     uid_t uid,
-    gid_t gid)
+    gid_t gid,
+    mfu_chmod_opts_t* opts)
 {
     /* each process directly changes permissions on its elements for each level */
     uint64_t idx;
@@ -949,8 +950,13 @@ static void dchmod_level(
                 /* TODO: only both attempting to change group if user running is
                  * also owner of item or a force option is on */
 
-                /* only bother to change owner or group if they are different */
-                if (olduid != newuid || oldgid != newgid) {
+                /* is user running the tool also the owner? if not, then a normal user cannot change the owner or group, so don't try */
+                /* are the new owner/group different?  if not, don't bother changing */
+                /* is force option on? if so, always try */
+
+                /* only bother to change owner or group if they are different,
+                 * or if force options is enabled */
+                if (olduid != newuid || oldgid != newgid || opts->force) {
                     /* note that we use lchown to change ownership of link itself,
                      * if path happens to be a link */
                     if (mfu_lchown(dest_path, newuid, newgid) != 0) {
@@ -960,7 +966,7 @@ static void dchmod_level(
                          * file, we could hit an EPERM error here, and the file
                          * will be left with the effective uid and gid of the dchmod
                          * process, don't bother reporting an error for that case */
-                        if (errno != EPERM || olduid != newuid) {
+                        if (errno != EPERM) {
                             MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
                                       dest_path, errno, strerror(errno));
                         }
@@ -981,18 +987,22 @@ static void dchmod_level(
                     newgid = gid;
                 }
 
-                /* note that we use lchown to change ownership of link itself,
-                 * if path happens to be a link */
-                if (mfu_lchown(dest_path, newuid, newgid) != 0) {
-                    /* are there other EPERM conditions we do want to report? */
+                /* only bother to change owner or group if they might be different,
+                 * or if force option is enabled */
+                if (newuid != -1 || newgid != -1 || opts->force) {
+                    /* note that we use lchown to change ownership of link itself,
+                     * if path happens to be a link */
+                    if (mfu_lchown(dest_path, newuid, newgid) != 0) {
+                        /* are there other EPERM conditions we do want to report? */
 
-                    /* since the user running dchmod may not be the owner of the
-                     * file, we could hit an EPERM error here, and the file
-                     * will be left with the effective uid and gid of the dchmod
-                     * process, don't bother reporting an error for that case */
-                    if (errno != EPERM) {
-                        MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
-                                  dest_path, errno, strerror(errno));
+                        /* since the user running dchmod may not be the owner of the
+                         * file, we could hit an EPERM error here, and the file
+                         * will be left with the effective uid and gid of the dchmod
+                         * process, don't bother reporting an error for that case */
+                        if (errno != EPERM) {
+                            MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
+                                      dest_path, errno, strerror(errno));
+                        }
                     }
                 }
             }
@@ -1003,7 +1013,8 @@ static void dchmod_level(
             /* get mode and type */
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
 
-            /* if in octal mode skip this call */
+            /* get the current permissions on the item,
+             * if in octal mode, we may not have the mode for each file */
             mode_t mode = 0;
             if (! head->octal) {
                 mode = (mode_t) mfu_flist_file_get_mode(list, idx);
@@ -1040,7 +1051,12 @@ static void dchmod_level(
 
 /* given an input flist, set permissions on items according to perms list,
  * optionally, if usrname != NULL, change owner, or if grname != NULL, change group */
-void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, const mfu_perms* head)
+void mfu_flist_chmod(
+    mfu_flist flist,
+    const char* usrname,
+    const char* grname,
+    const mfu_perms* head,
+    mfu_chmod_opts_t* opts)
 {
     /* get global size of list */
     uint64_t all_count = mfu_flist_global_size(flist);
@@ -1050,7 +1066,9 @@ void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, c
         MFU_LOG(MFU_LOG_INFO, "Changing %lu items", all_count);
     }
 
-    /* lookup current mask and set it back before chmod call */
+    /* lookup current umask, we consider umask when not given a
+     * leading letter to specify a target as in "+rX" vs "a+rX",
+     * in that case bits set in umask are not affected */
     old_mask = umask(S_IWGRP | S_IWOTH);
     umask(old_mask);
 
@@ -1104,15 +1122,18 @@ void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, c
         /* start timer for this level */
         double start = MPI_Wtime();
 
-        /* get list of items for this level */
-        mfu_flist list = lists[level];
+        /* spread items for this level evenly over all procs */
+        mfu_flist list = mfu_flist_spread(lists[level]);
 
         /* do a dchmod on each element in the list for this level & pass it the size */
         uint64_t size = 0;
-        dchmod_level(list, &size, head, usrname, grname, uid, gid);
+        dchmod_level(list, &size, head, usrname, grname, uid, gid, opts);
 
         /* wait for all processes to finish before we start with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
+
+        /* free list of spread items */
+        mfu_flist_free(&list);
 
         /* stop timer and print stats */
         double end = MPI_Wtime();
@@ -1154,4 +1175,26 @@ void mfu_flist_chmod(mfu_flist flist, const char* usrname, const char* grname, c
     }
 
     return;
+}
+
+/* return a newly allocated chmod structure, set default values on its fields */
+mfu_chmod_opts_t* mfu_chmod_opts_new(void)
+{
+    mfu_chmod_opts_t* opts = (mfu_chmod_opts_t*) MFU_MALLOC(sizeof(mfu_chmod_opts_t));
+
+    /* avoid calling chmod/chown on all items,
+     * if this is set to true, call on every item */
+    opts->force = false;
+
+    return opts;
+}
+
+/* free chmod options allocated from mfu_chmod_opts_new */
+void mfu_chmod_opts_delete(mfu_chmod_opts_t** popts)
+{
+  if (popts != NULL) {
+    mfu_chmod_opts_t* opts = *popts;
+
+    mfu_free(popts);
+  }
 }
