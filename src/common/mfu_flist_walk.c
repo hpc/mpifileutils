@@ -55,6 +55,7 @@ static int REMOVE_FILES;
  * Global counter and callbacks for LIBCIRCLE reductions
  ***************************************/
 
+static double   reduce_start;
 static uint64_t reduce_items;
 
 static void reduce_init(void)
@@ -76,8 +77,18 @@ static void reduce_fini(const void* buf, size_t size)
     const uint64_t* a = (const uint64_t*) buf;
     unsigned long long val = (unsigned long long) a[0];
 
+    /* get current time */
+    double now = MPI_Wtime();
+
+    /* compute walk rate */
+    double rate = 0.0;
+    double secs = now - reduce_start;
+    if (secs > 0.0) {
+        rate = (double)val / secs;
+    }
+
     /* print status to stdout */
-    MFU_LOG(MFU_LOG_INFO, "Items walked %llu", val);
+    MFU_LOG(MFU_LOG_INFO, "Walked %llu items in %f secs (%f items/sec) ...", val, secs, rate);
 }
 
 #ifdef LUSTRE_SUPPORT
@@ -790,6 +801,7 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
     }
 
     /* prepare callbacks and initialize variables for reductions */
+    reduce_start = start_walk;
     reduce_items = 0;
     CIRCLE_cb_reduce_init(&reduce_init);
     CIRCLE_cb_reduce_op(&reduce_exec);
@@ -812,7 +824,7 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        MFU_LOG(MFU_LOG_INFO, "Walked %lu items in %f seconds (%f files/sec)",
+        MFU_LOG(MFU_LOG_INFO, "Walked %lu items in %f seconds (%f items/sec)",
                all_count, time_diff, rate
               );
     }
