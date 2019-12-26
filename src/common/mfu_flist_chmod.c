@@ -923,81 +923,72 @@ static void dchmod_level(
 
         /* update owner/group if user gave an owner/group name */
         if (usrname != NULL || grname != NULL) {
+            /* compute new user id, assume it doesn't change,
+             * calling chown with uid/gid = -1 will not change */
+            uid_t newuid = -1;
+            if (usrname != NULL) {
+                /* user gave us a uid value, so the uid may have changed */
+                newuid = opts->uid;
+            }
+
+            /* compute new group id, assume it doesn't change */
+            gid_t newgid = -1;
+            if (grname != NULL) {
+                /* user gave us a gid value, so the gid may have changed */
+                newgid = opts->gid;
+            }
+
+            /* assume we'll attempt to change owner/group */
+            int change = 1;
+
+            /* if we have current owner/group of items, we can skip calling
+             * chown on items that already have the new owner/group and items
+             * where the user doesn't have permission to change them */
             if (mfu_flist_have_detail(list)) {
                 /* get user id and group id of file */
                 uid_t olduid = (uid_t) mfu_flist_file_get_uid(list, idx);
                 gid_t oldgid = (gid_t) mfu_flist_file_get_gid(list, idx);
 
-                /* compute new user id, assume it doesn't change */
-                uid_t newuid = olduid;
-                if (usrname != NULL) {
-                    /* user gave us a uid value, so the uid may have changed */
-                    newuid = opts->uid;
+                /* only need to change if new owner/group are
+                 * different from current owner/group */
+                if ((usrname == NULL || olduid == newuid) &&
+                    (grname  == NULL || oldgid == newgid))
+                {
+                    /* new owner/group are same as current owner/group,
+                     * so no need to change it */
+                    change = 0;
                 }
 
-                /* compute new group id, assume it doesn't change */
-                gid_t newgid = oldgid;
-                if (grname != NULL) {
-                    /* user gave us a gid value, so the gid may have changed */
-                    newgid = opts->gid;
+                /* only attempt to change group if effective user id of
+                 * the process is the owner of the item */
+                if (grname != NULL && opts->geteuid != olduid) {
+                    /* want to change group, but effective uid is not the
+                     * owner, linux prevents normal users from doing this */
+                    change = 0;
                 }
+            }
 
-                /* TODO: only both attempting to change group if user running is
-                 * also owner of item or a force option is on */
+            /* if user threw force option, always try to change */
+            if (opts->force) {
+                change = 1;
+            }
 
-                /* is user running the tool also the owner? if not, then a normal user cannot change the owner or group, so don't try */
-                /* are the new owner/group different?  if not, don't bother changing */
-                /* is force option on? if so, always try */
+            /* only bother to change owner or group if they are different,
+             * or if force options is enabled */
+            if (change) {
+                /* note that we use lchown to change ownership of link itself,
+                 * if path happens to be a link */
+                if (mfu_lchown(dest_path, newuid, newgid) != 0) {
+                    /* are there other EPERM conditions we do want to report? */
 
-                /* only bother to change owner or group if they are different,
-                 * or if force options is enabled */
-                if (olduid != newuid || oldgid != newgid || opts->force) {
-                    /* note that we use lchown to change ownership of link itself,
-                     * if path happens to be a link */
-                    if (mfu_lchown(dest_path, newuid, newgid) != 0) {
-                        /* are there other EPERM conditions we do want to report? */
-
-                        /* since the user running dchmod may not be the owner of the
-                         * file, we could hit an EPERM error here, and the file
-                         * will be left with the effective uid and gid of the dchmod
-                         * process, don't bother reporting an error for that case */
-                        if (errno != EPERM) {
-                            MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
-                                      dest_path, errno, strerror(errno));
-                        }
-                    }
-                }
-            } else {
-                /* compute new user id, assume it doesn't change */
-                uid_t newuid = -1;
-                if (usrname != NULL) {
-                    /* user gave us a uid value, so the uid may have changed */
-                    newuid = opts->uid;
-                }
-
-                /* compute new group id, assume it doesn't change */
-                gid_t newgid = -1;
-                if (grname != NULL) {
-                    /* user gave us a gid value, so the gid may have changed */
-                    newgid = opts->gid;
-                }
-
-                /* only bother to change owner or group if they might be different,
-                 * or if force option is enabled */
-                if (newuid != -1 || newgid != -1 || opts->force) {
-                    /* note that we use lchown to change ownership of link itself,
-                     * if path happens to be a link */
-                    if (mfu_lchown(dest_path, newuid, newgid) != 0) {
-                        /* are there other EPERM conditions we do want to report? */
-
-                        /* since the user running dchmod may not be the owner of the
-                         * file, we could hit an EPERM error here, and the file
-                         * will be left with the effective uid and gid of the dchmod
-                         * process, don't bother reporting an error for that case */
-                        if (errno != EPERM) {
-                            MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
-                                      dest_path, errno, strerror(errno));
-                        }
+                    /* since the user running dchmod may not be the owner of the
+                     * file, we could hit an EPERM error here, and the file
+                     * will be left with the effective uid and gid of the dchmod
+                     * process, don't bother reporting an error for that case */
+                    if (errno != EPERM) {
+                        /* TODO: don't print EPERM errors if silence thrown */
+                        MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
+                                  dest_path, errno, strerror(errno));
                     }
                 }
             }
@@ -1005,28 +996,62 @@ static void dchmod_level(
 
         /* update permissions if we have a list of structs */
         if (head != NULL) {
-            /* get mode and type */
+            /* get type of item */
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
 
             /* get the current permissions on the item,
              * if in octal mode, we may not have the mode for each file */
             mode_t mode = 0;
-            if (! head->octal) {
+            if (mfu_flist_have_detail(list)) {
                 mode = (mode_t) mfu_flist_file_get_mode(list, idx);
             }
 
-            /* change mode, unless item is a link */
-            if (type != MFU_TYPE_LINK) {
-                /* given our list of permission ops, the type, and the current mode,
-                 * compute what the new mode should be */
-                mode_t new_mode;
-                set_modebits(head, type, mode, opts->umask, &new_mode);
+            /* given our list of permission ops, the type, the current mode,
+             * and the umask, compute what the new mode should be */
+            mode_t new_mode;
+            set_modebits(head, type, mode, opts->umask, &new_mode);
 
-                /* as an optimization here, we could avoid setting the mode if the new mode
-                 * matches the old mode */
+            /* assume we'll attempt to change permissions */
+            int change = 1;
 
+            /* can check existing permissions and whether user has
+             * access to change permissions if we have existing bits
+             * and file owner information */
+            if (mfu_flist_have_detail(list)) {
+                /* don't bother changing permissions if they already match,
+                 * since mode from stat also contains file type bits,
+                 * we mask those off before comparing */
+                mode_t bitmask = S_ISUID | S_ISGID | S_ISVTX | S_IRWXU | S_IRWXG | S_IRWXO;
+                mode_t newbits = (new_mode & bitmask);
+                mode_t oldbits = (mode     & bitmask);
+                if (newbits == oldbits) {
+                    /* new bits match old bits, no need to do anything */
+                    change = 0;
+                }
+
+                /* don't bother changing permissions on files we don't own */
+                uid_t owner = (uid_t) mfu_flist_file_get_uid(list, idx);
+                if (opts->geteuid != owner) {
+                    /* don't attempt to change files we don't own */
+                    change = 0;
+                }
+            }
+
+            /* always try to change permissions if force option is set */
+            if (opts->force) {
+                change = 1;
+            }
+
+            /* we never attempt to change permissions on symlinks, even with force */
+            if (type == MFU_TYPE_LINK) {
+                change = 0;
+            }
+
+            /* finally attempt to change permissions if needed */
+            if (change) {
                 /* set the mode on the file */
                 if (mfu_chmod(dest_path, new_mode) != 0) {
+                    /* TODO: don't print EPERM errors if silence thrown */
                     MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on `%s' chmod() (errno=%d %s)",
                               dest_path, errno, strerror(errno));
                 }
@@ -1174,6 +1199,13 @@ void mfu_flist_chmod(
 mfu_chmod_opts_t* mfu_chmod_opts_new(void)
 {
     mfu_chmod_opts_t* opts = (mfu_chmod_opts_t*) MFU_MALLOC(sizeof(mfu_chmod_opts_t));
+
+    /* cache current real user id */
+    opts->getuid = getuid();
+
+    /* cache current effective user id,
+     * determines uid when considering owner ID of files */
+    opts->geteuid = geteuid();
 
     /* chown with uid==-1 preserves the same owner,
      * default to keeping the owner the same */ 
