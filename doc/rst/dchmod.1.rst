@@ -48,6 +48,11 @@ OPTIONS
    the group on an item that is not owned by the user running the tool.
    With --force, dchmod executes chown/chmod calls on every item.
 
+.. option:: -s, --silent
+
+   Suppress EPERM error messages, which is useful when running dchmod
+   on large directories with files owned by other users.
+
 .. option:: --exclude REGEX
 
    Do not modify items whose full path matches REGEX, processed by
