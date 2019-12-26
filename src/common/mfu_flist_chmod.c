@@ -906,14 +906,36 @@ static void set_modebits(const mfu_perms* head, mfu_filetype type, mode_t old_mo
     }
 }
 
-static void dchmod_level(
+static enum {
+  ITEM_COUNT = 0,
+  CHMOD_SUCCESS,
+  CHMOD_FAILURE,
+  CHMOD_SKIPPED,
+  CHOWN_SUCCESS,
+  CHOWN_FAILURE,
+  CHOWN_SKIPPED
+} chmod_stat;
+
+static int chmod_list(
     mfu_flist list,
-    uint64_t* dchmod_count,
+    uint64_t* stats,
     const mfu_perms* head,
     const char* usrname,
     const char* grname,
     mfu_chmod_opts_t* opts)
 {
+    /* assume we'll succeed, set this to FAILURE on any error */
+    int rc = MFU_SUCCESS;
+
+    /* initialize stats to report back what was changed */
+    stats[ITEM_COUNT] = 0;
+    stats[CHMOD_SUCCESS] = 0;
+    stats[CHMOD_FAILURE] = 0;
+    stats[CHMOD_SKIPPED] = 0;
+    stats[CHOWN_SUCCESS] = 0;
+    stats[CHOWN_FAILURE] = 0;
+    stats[CHOWN_SKIPPED] = 0;
+
     /* each process directly changes permissions on its elements for each level */
     uint64_t idx;
     uint64_t size = mfu_flist_size(list);
@@ -978,7 +1000,13 @@ static void dchmod_level(
             if (change) {
                 /* note that we use lchown to change ownership of link itself,
                  * if path happens to be a link */
-                if (mfu_lchown(dest_path, newuid, newgid) != 0) {
+                if (mfu_lchown(dest_path, newuid, newgid) == 0) {
+                    /* succeeded in changing the owner/group of this item */
+                    stats[CHOWN_SUCCESS] += 1;
+                } else {
+                    /* hit an error changing the owner/group of this item */
+                    stats[CHOWN_FAILURE] += 1;
+
                     /* since the user running dchmod may not be the owner of the
                      * file, we could hit an EPERM error here, allow the silence
                      * option to avoid printing errors in that case */
@@ -986,7 +1014,13 @@ static void dchmod_level(
                         MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
                             dest_path, errno, strerror(errno));
                     }
+
+                    /* hit an error */
+                    rc = MFU_FAILURE;
                 }
+            } else {
+                /* skip this item */
+                stats[CHOWN_SKIPPED] += 1;
             }
         }
 
@@ -1046,7 +1080,13 @@ static void dchmod_level(
             /* finally attempt to change permissions if needed */
             if (change) {
                 /* set the mode on the file */
-                if (mfu_chmod(dest_path, new_mode) != 0) {
+                if (mfu_chmod(dest_path, new_mode) == 0) {
+                    /* succeeded in changing the permission bits of this item */
+                    stats[CHMOD_SUCCESS] += 1;
+                } else {
+                    /* hit an error changing the permission bits of this item */
+                    stats[CHMOD_FAILURE] += 1;
+
                     /* since the user running dchmod may not be the owner of the
                      * file, we could hit an EPERM error here, allow the silence
                      * option to avoid printing errors in that case */
@@ -1054,7 +1094,13 @@ static void dchmod_level(
                         MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on `%s' chmod() (errno=%d %s)",
                             dest_path, errno, strerror(errno));
                     }
+
+                    /* hit an error */
+                    rc = MFU_FAILURE;
                 }
+            } else {
+                /* skip this item */
+                stats[CHMOD_SKIPPED] += 1;
             }
         }
 
@@ -1063,10 +1109,10 @@ static void dchmod_level(
         mfu_progress_update(&chmod_count, chmod_prog);
     }
 
-    /* report number of permissions changed */
-    *dchmod_count = size;
+    /* report number of items considered */
+    stats[ITEM_COUNT] = size;
 
-    return;
+    return rc;
 }
 
 /* given an input flist, set permissions on items according to perms list,
@@ -1129,6 +1175,9 @@ void mfu_flist_chmod(
     chmod_count_total = all_count;
     chmod_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, chmod_progress_fn);
 
+    /* variable to track total stats across levels */
+    uint64_t total_stats[7] = {0};
+
     /* split files into separate lists by directory depth */
     int levels, minlevel;
     mfu_flist* lists;
@@ -1144,22 +1193,31 @@ void mfu_flist_chmod(
         mfu_flist list = mfu_flist_spread(lists[level]);
 
         /* do a dchmod on each element in the list for this level & pass it the size */
-        uint64_t size = 0;
-        dchmod_level(list, &size, head, usrname, grname, opts);
+        uint64_t stats[7] = {0};
+        chmod_list(list, stats, head, usrname, grname, opts);
 
-        /* wait for all processes to finish before we start with files at next level */
-        MPI_Barrier(MPI_COMM_WORLD);
+        /* tally up stats for above operation into running totals */
+        total_stats[ITEM_COUNT]    += stats[ITEM_COUNT];
+        total_stats[CHOWN_SUCCESS] += stats[CHOWN_SUCCESS];
+        total_stats[CHOWN_FAILURE] += stats[CHOWN_FAILURE];
+        total_stats[CHOWN_SKIPPED] += stats[CHOWN_SKIPPED];
+        total_stats[CHMOD_SUCCESS] += stats[CHMOD_SUCCESS];
+        total_stats[CHMOD_FAILURE] += stats[CHMOD_FAILURE];
+        total_stats[CHMOD_SKIPPED] += stats[CHMOD_SKIPPED];
 
         /* free list of spread items */
         mfu_flist_free(&list);
+
+        /* wait for all processes to finish before we start with files at next level */
+        MPI_Barrier(MPI_COMM_WORLD);
 
         /* stop timer and print stats */
         double end = MPI_Wtime();
         if (mfu_debug_level >= MFU_LOG_VERBOSE) {
             uint64_t min, max, sum;
-            MPI_Allreduce(&size, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-            MPI_Allreduce(&size, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-            MPI_Allreduce(&size, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(&stats[ITEM_COUNT], &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
+            MPI_Allreduce(&stats[ITEM_COUNT], &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+            MPI_Allreduce(&stats[ITEM_COUNT], &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
             double rate = 0.0;
             if (end - start > 0.0) {
                 rate = (double)sum / (end - start);
@@ -1172,12 +1230,17 @@ void mfu_flist_chmod(
         }
     }
 
+    /* finalize our progress messages */
     mfu_progress_complete(&chmod_count, &chmod_prog);
 
     /* free the array of lists */
     mfu_flist_array_free(levels, &lists);
 
-    /* wait for all tasks & end timer */
+    /* compute global totals */
+    uint64_t global_stats[7] = {0};
+    MPI_Allreduce(total_stats, global_stats, 7, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* wait for all tasks and end timer */
     MPI_Barrier(MPI_COMM_WORLD);
     double end_dchmod = MPI_Wtime();
 
@@ -1188,8 +1251,10 @@ void mfu_flist_chmod(
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        MFU_LOG(MFU_LOG_INFO, "Changed %lu items in %f seconds (%f items/sec)",
-               all_count, time_diff, rate);
+        MFU_LOG(MFU_LOG_INFO, "Processed %lu items in %f seconds (%f items/sec) skipped/success/error chown=(%lu/%lu/%lu) chmod=(%lu/%lu/%lu)",
+               all_count, time_diff, rate,
+               (unsigned long)global_stats[CHOWN_SKIPPED], (unsigned long)global_stats[CHOWN_SUCCESS], (unsigned long)global_stats[CHOWN_FAILURE],
+               (unsigned long)global_stats[CHMOD_SKIPPED], (unsigned long)global_stats[CHMOD_SUCCESS], (unsigned long)global_stats[CHMOD_FAILURE]);
     }
 
     return;
