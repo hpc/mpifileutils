@@ -979,16 +979,12 @@ static void dchmod_level(
                 /* note that we use lchown to change ownership of link itself,
                  * if path happens to be a link */
                 if (mfu_lchown(dest_path, newuid, newgid) != 0) {
-                    /* are there other EPERM conditions we do want to report? */
-
                     /* since the user running dchmod may not be the owner of the
-                     * file, we could hit an EPERM error here, and the file
-                     * will be left with the effective uid and gid of the dchmod
-                     * process, don't bother reporting an error for that case */
-                    if (errno != EPERM) {
-                        /* TODO: don't print EPERM errors if silence thrown */
+                     * file, we could hit an EPERM error here, allow the silence
+                     * option to avoid printing errors in that case */
+                    if (errno != EPERM || !opts->silence) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
-                                  dest_path, errno, strerror(errno));
+                            dest_path, errno, strerror(errno));
                     }
                 }
             }
@@ -1051,9 +1047,13 @@ static void dchmod_level(
             if (change) {
                 /* set the mode on the file */
                 if (mfu_chmod(dest_path, new_mode) != 0) {
-                    /* TODO: don't print EPERM errors if silence thrown */
-                    MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on `%s' chmod() (errno=%d %s)",
-                              dest_path, errno, strerror(errno));
+                    /* since the user running dchmod may not be the owner of the
+                     * file, we could hit an EPERM error here, allow the silence
+                     * option to avoid printing errors in that case */
+                    if (errno != EPERM || !opts->silence) {
+                        MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on `%s' chmod() (errno=%d %s)",
+                            dest_path, errno, strerror(errno));
+                    }
                 }
             }
         }
@@ -1222,6 +1222,11 @@ mfu_chmod_opts_t* mfu_chmod_opts_new(void)
     /* avoid calling chmod/chown on all items,
      * if this is set to true, call on every item */
     opts->force = false;
+
+    /* when someone is using --force on a directory of
+     * files they don't own, they'll get lots of EPERM
+     * errors, this option is to disable those */
+    opts->silence = false;
 
     return opts;
 }

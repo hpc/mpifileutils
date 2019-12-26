@@ -492,6 +492,7 @@ typedef struct {
     gid_t gid;     /* new group id for item's group, -1 for no change  */
     mode_t umask;  /* umask to apply when setting item permissions */
     bool force;    /* always call chmod/chgrp on every item */
+    bool silence;  /* avoid printing EPERM errors */
 } mfu_chmod_opts_t;
 
 /* return a newly allocated chmod structure */
