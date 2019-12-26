@@ -32,6 +32,7 @@ static void print_usage(void)
     printf("  -g, --group   <group>  - change group to specified group name or gid\n");
     printf("  -m, --mode    <string> - change mode\n");
     printf("  -f, --force            - attempt to change every item\n");
+    printf("  -s, --silent           - suppress EPERM error messages\n");
     printf("      --exclude <regex>  - exclude a list of files from command\n");
     printf("      --match   <regex>  - match a list of files from command\n");
     printf("  -n, --name             - exclude a list of files from command\n");
@@ -82,6 +83,7 @@ int main(int argc, char** argv)
         {"group",    1, 0, 'g'},
         {"mode",     1, 0, 'm'},
         {"force",    0, 0, 'f'},
+        {"silent",   0, 0, 's'},
         {"exclude",  1, 0, 'e'},
         {"match",    1, 0, 'a'},
         {"name",     0, 0, 'n'},
@@ -95,7 +97,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:u:g:m:fnvqh",
+                    argc, argv, "i:u:g:m:fsnvqh",
                     long_options, &option_index
                 );
 
@@ -118,6 +120,9 @@ int main(int argc, char** argv)
                 break;
             case 'f':
                 chmod_opts->force = true;
+                break;
+            case 's':
+                chmod_opts->silence = true;
                 break;
             case 'e':
                 regex_exp = MFU_STRDUP(optarg);
