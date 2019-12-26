@@ -67,14 +67,14 @@ mfu_param_path
 ---------------------------------------
 
 Path names provided by the user on the command line (parameters) are handled
-through the `mfu_param_path <https://github.com/hpc/mpifileutils/blob/master/src/common/mfu_param_path.h>_`
+through the `mfu_param_path <https://github.com/hpc/mpifileutils/blob/master/src/common/mfu_param_path.h>`_
 structure. Such paths may have to be checked for existence and to determine
 their type (file or directory). Additionally, the user may specify many such
 paths through invocations involving shell wildcards, so functions are available
 to check long lists of paths in parallel.
 
 ---------------------------------------
-mfu_io_and_mfu_util
+mfu_io
 ---------------------------------------
 
 The `mfu_io.h <https://github.com/hpc/mpifileutils/blob/master/src/common/mfu_io.h>`_
@@ -82,6 +82,10 @@ functions provide wrappers for many POSIX-IO functions. This is helpful for
 checking error codes in a consistent manner and automating retries on failed
 I/O calls. One should use the wrappers in mfu_io if available, and if not, one
 should consider adding the missing wrapper.
+
+---------------------------------------
+mfu_util
+---------------------------------------
 
 The `mfu_util.h <https://github.com/hpc/mpifileutils/blob/master/src/common/mfu_util.h>`_
 functions provide wrappers for error reporting and memory allocation.
