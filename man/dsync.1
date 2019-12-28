@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DSYNC" "1" "Apr 17, 2019" "0.9.1" "mpiFileUtils"
+.TH "DSYNC" "1" "Dec 28, 2019" "0.10" "mpiFileUtils"
 .SH NAME
 dsync \- synchronize directory trees
 .
@@ -61,6 +61,35 @@ to determine whether file contents are different.
 .TP
 .B \-D, \-\-delete
 Delete extraneous files from destination.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-link\-dest DIR
+Create hardlink in DEST to files in DIR when file is unchanged
+rather than create a new file. One can use this option to conserve
+storage space during an incremental backup.
+.sp
+For example in the following, any file that would be copied from
+/src to /src.bak.inc that is the same as the file already existing
+in /src.bak will instead be hardlinked to the file in /src.bak:
+.sp
+# initial backup of /src
+dsync /src /src.bak
+.sp
+# incremental backup of /src
+dsync –link\-dest /src.bak /src /src.bak.inc
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-S, \-\-sparse
+Create sparse files when possible.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP

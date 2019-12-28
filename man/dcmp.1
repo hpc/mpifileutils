@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DCMP" "1" "Apr 17, 2019" "0.9.1" "mpiFileUtils"
+.TH "DCMP" "1" "Dec 28, 2019" "0.10" "mpiFileUtils"
 .SH NAME
 dcmp \- distributed compare
 .
@@ -54,12 +54,19 @@ in which case, each option should provide a different output file name.
 .INDENT 0.0
 .TP
 .B \-t, \-\-text
-Change \-\-output to write files in text format rather than binary.
+Change –output to write files in text format rather than binary.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-b, \-\-base
-Enable base checks and normal stdout results when \-\-output is used.
+Enable base checks and normal stdout results when –output is used.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -90,7 +97,7 @@ Print the command usage, and the list of options available.
 .SH EXPRESSIONS
 .sp
 An expression is made up of one or more conditions, where each condition specifies a field and a state.
-A single condition consists of a field name, an \(aq=\(aq sign, and a state name.
+A single condition consists of a field name, an ‘=’ sign, and a state name.
 .sp
 Valid fields are listed below, along with the property of the entry that is checked.
 .TS
@@ -183,13 +190,13 @@ Meaning
 T}
 _
 T{
-EXIST=SRC_ONLY
+EXIST=ONLY_SRC
 T}	T{
 entry exists only in source path
 T}
 _
 T{
-EXIST=DST_ONLY
+EXIST=ONLY_DEST
 T}	T{
 entry exists only in destination path
 T}
@@ -230,7 +237,7 @@ For example, the following expression matches on entries which either (exist in 
 .sp
 .nf
 .ft C
-EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY
+EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC
 .ft P
 .fi
 .UNINDENT
@@ -253,7 +260,7 @@ CONTENT=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON@CONTENT=COMMON
 .sp
 A successful check on any other field also implies that EXIST=COMMON.
 .sp
-When used with the \-o option, one must also specify a file name at the end of the expression, separated with a \(aq:\(aq.
+When used with the \-o option, one must also specify a file name at the end of the expression, separated with a ‘:’.
 The list of any entries that match the expression are written to the named file.
 For example, to list any entries matching the above expression to a file named outfile1,
 one should use the following option:
@@ -268,7 +275,7 @@ one should use the following option:
 .UNINDENT
 .UNINDENT
 .sp
-If the \-\-base option is given or when no output option is specified,
+If the –base option is given or when no output option is specified,
 the following expressions are checked and numeric results are reported to stdout:
 .INDENT 0.0
 .INDENT 3.5
@@ -303,13 +310,13 @@ Compare two directories with verbose output. The verbose output prints timing an
 Write list of entries to outfile1 that are only in src1 or whose names exist in both src1 and src2 but whose types differ:
 .UNINDENT
 .sp
-\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 /src1 /src2\fP
+\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC:outfile1 /src1 /src2\fP
 .INDENT 0.0
 .IP 4. 3
 Same as above but also write list of entries to outfile2 that exist in either src1 or src2 but not both:
 .UNINDENT
 .sp
-\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 \-o EXIST=DIFFER:outfile2 /src1 /src2\fP
+\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC:outfile1 \-o EXIST=DIFFER:outfile2 /src1 /src2\fP
 .SH SEE ALSO
 .sp
 The mpiFileUtils source code and all documentation may be downloaded

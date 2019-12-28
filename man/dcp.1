@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DCP" "1" "Apr 17, 2019" "0.9.1" "mpiFileUtils"
+.TH "DCP" "1" "Dec 28, 2019" "0.10" "mpiFileUtils"
 .SH NAME
 dcp \- distributed copy
 .
@@ -37,16 +37,16 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .sp
 Parallel MPI application to recursively copy files and directories.
 .sp
-dcp is a file copy tool in the spirit of \fBcp(1)\fP that evenly distributes
-the work of scanning the directory tree, and copuing file data across a
-large cluster without any centralized state. It is designed for copying
-files that are located on a distributed parallel file system, and will
-split large file copies across multiple processes.
+dcp is a file copy tool in the spirit of \fBcp(1)\fP that evenly
+distributes the work of scanning the directory tree, and copying file
+data across a large cluster without any centralized state.  It is
+designed for copying files that are located on a distributed parallel
+file system, and it splits large file copies across multiple processes.
 .SH OPTIONS
 .INDENT 0.0
 .TP
 .B \-b, \-\-blocksize SIZE
-Set the I/O buffer to be SIZE bytes.  Units like "MB" and "GB" may
+Set the I/O buffer to be SIZE bytes.  Units like “MB” and “GB” may
 immediately follow the number without spaces (eg. 8MB). The default
 blocksize is 1MB.
 .UNINDENT
@@ -60,8 +60,8 @@ from the mpiFileUtils suite.
 .TP
 .B \-k, \-\-chunksize SIZE
 Split large files into chunks of SIZE bytes to be processed.  Multiple
-process ranks may copy a large file in parallel.  Units like "MB" and
-"GB" can immediately follow the number without spaces (eg. 64MB).
+process ranks may copy a large file in parallel.  Units like “MB” and
+“GB” can immediately follow the number without spaces (eg. 64MB).
 The default chunksize is 1MB.
 .UNINDENT
 .INDENT 0.0
@@ -72,12 +72,20 @@ Preserve permissions, group, timestamps, and extended attributes.
 .INDENT 0.0
 .TP
 .B \-s, \-\-synchronous
-Use synchronous read/write calls (open files with 0_DIRECT)
+Use synchronous read/write calls (open files with O_DIRECT).
+This also avoids caching the file data on the client nodes.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-S, \-\-sparse
-Create sparse files when possible (non\-functioning).
+Create sparse files when possible.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP

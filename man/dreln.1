@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DRELN" "1" "Apr 17, 2019" "0.9.1" "mpiFileUtils"
+.TH "DRELN" "1" "Dec 28, 2019" "0.10" "mpiFileUtils"
 .SH NAME
 dreln \- distributed relink
 .
@@ -32,7 +32,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 ..
 .SH SYNOPSIS
 .sp
-\fBdreln [OPTION] OLDPATH NEWPATH PATH ...\fP
+\fBdreln [OPTION] OLDPATH NEWPATH PATH …\fP
 .SH DESCRIPTION
 .sp
 Parallel MPI application to recursively update symlinks within a
@@ -61,6 +61,13 @@ Preserve existing modification times on links.
 .TP
 .B \-r, \-\-relative
 Replace links using target paths that are relative to NEWPATH.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP
