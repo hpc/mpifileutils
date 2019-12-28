@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DFIND" "1" "Apr 17, 2019" "0.9.1" "mpiFileUtils"
+.TH "DFIND" "1" "Dec 28, 2019" "0.10" "mpiFileUtils"
 .SH NAME
 dfind \- distributed file filtering
 .
@@ -32,7 +32,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 ..
 .SH SYNOPSIS
 .sp
-\fBdfind [OPTION] [EXPRESSION] PATH ...\fP
+\fBdfind [OPTION] [EXPRESSION] PATH …\fP
 .SH DESCRIPTION
 .sp
 Parallel MPI application to filter a list of files according to an expression.
@@ -117,22 +117,37 @@ File was last accessed N days ago.
 .INDENT 0.0
 .TP
 .B \-\-cmin N
-File\(aqs status was last changed N minutes ago.
+File’s status was last changed N minutes ago.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-cnewer FILE
-File\(aqs status was last changed more recently than FILE was modified.
+File’s status was last changed more recently than FILE was modified.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-ctime N
-File\(aqs status was last changed N days ago.
+File’s status was last changed N days ago.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-mmin N
+File’s data was last modified N minutes ago.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-newer FILE
+File was modified more recently than FILE.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-mtime N
+File’s data was last modified N days ago.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-gid N
-File\(aqs numeric group ID is N.
+File’s numeric group ID is N.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -141,8 +156,13 @@ File belongs to group NAME.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-\-mmin N
-File\(aqs data was last modified N minutes ago.
+.B \-\-uid N
+File’s numeric user ID is N.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-user NAME
+File is owned by user NAME.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -161,18 +181,8 @@ Full path to file matches POSIX regular expression REGEX.  Regular expressions p
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-\-newer FILE
-File was modified more recently than FILE.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-mtime N
-File\(aqs data was last modified N days ago.
-.UNINDENT
-.INDENT 0.0
-.TP
 .B \-\-size N
-File size is N bytes.  Units can be used like \(aqKB\(aq, \(aqMB\(aq, \(aqGB\(aq.
+File size is N bytes.  Units can be used like ‘KB’, ‘MB’, ‘GB’.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -181,6 +191,18 @@ File is of type C:
 .TS
 center;
 |l|l|.
+_
+T{
+b
+T}	T{
+block device
+T}
+_
+T{
+c
+T}	T{
+char device
+T}
 _
 T{
 d
@@ -200,17 +222,19 @@ T}	T{
 symbolic link
 T}
 _
+T{
+p
+T}	T{
+pipe
+T}
+_
+T{
+s
+T}	T{
+socket
+T}
+_
 .TE
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-uid N
-File\(aqs numeric user ID is N.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-user NAME
-File is owned by user NAME.
 .UNINDENT
 .SH ACTIONS
 .INDENT 0.0
@@ -221,7 +245,7 @@ Print file name to stdout.
 .INDENT 0.0
 .TP
 .B \-\-exec CMD ;
-Execute command CMD on file.  All following arguments are taken as arguments to the command until \(aq;\(aq is encountered.  The string \(aq{}\(aq is replaced by the current file name.
+Execute command CMD on file.  All following arguments are taken as arguments to the command until ‘;’ is encountered.  The string ‘{}’ is replaced by the current file name.
 .UNINDENT
 .SH EXAMPLES
 .INDENT 0.0

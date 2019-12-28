@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "MPIFILEUTILS" "1" "Apr 17, 2019" "0.9.1" "mpiFileUtils"
+.TH "MPIFILEUTILS" "1" "Dec 28, 2019" "0.10" "mpiFileUtils"
 .SH NAME
 mpifileutils \- mpiFileUtils Documentation
 .
@@ -131,9 +131,9 @@ entries from one location to another or compare corresponding entries across
 two different lists. A file list can be serialized and written to or read from
 a file.
 .sp
-Each MPI rank "owns" a portion of the list, and there are routines to step
+Each MPI rank “owns” a portion of the list, and there are routines to step
 through the entries owned by that process. This portion is referred to as the
-"local" list. Functions exist to get and set properties of the items in the
+“local” list. Functions exist to get and set properties of the items in the
 local list, for example to get the path name, type, and size of a file.
 Functions dealing with the local list can be called by the MPI process
 independently of other MPI processes.
@@ -152,18 +152,19 @@ entries, to slice paths into pieces, and to compute relative paths.
 .SS mfu_param_path
 .sp
 Path names provided by the user on the command line (parameters) are handled
-through the \fImfu_param_path <https://github.com/hpc/mpifileutils/blob/master/src/common/mfu_param_path.h>_\fP
+through the \fI\%mfu_param_path\fP
 structure. Such paths may have to be checked for existence and to determine
 their type (file or directory). Additionally, the user may specify many such
 paths through invocations involving shell wildcards, so functions are available
 to check long lists of paths in parallel.
-.SS mfu_io_and_mfu_util
+.SS mfu_io
 .sp
 The \fI\%mfu_io.h\fP
 functions provide wrappers for many POSIX\-IO functions. This is helpful for
 checking error codes in a consistent manner and automating retries on failed
 I/O calls. One should use the wrappers in mfu_io if available, and if not, one
 should consider adding the missing wrapper.
+.SS mfu_util
 .sp
 The \fI\%mfu_util.h\fP
 functions provide wrappers for error reporting and memory allocation.
@@ -183,7 +184,7 @@ install mpiFileUtis directly after installing its dependencies with Spack
 .sp
 To use \fI\%Spack\fP, it is recommended that one first create a \fIpackages.yaml\fP file to list system\-provided packages, like MPI.
 Without doing this, Spack will fetch and install an MPI library that may not work on your system.
-Make sure that you\(aqve set up spack in your shell (see \fI\%these instructions\fP).
+Make sure that you’ve set up spack in your shell (see \fI\%these instructions\fP).
 .sp
 Once Spack has been configured, mpiFileUtils can be installed as:
 .INDENT 0.0
@@ -203,7 +204,7 @@ or to enable all features:
 .sp
 .nf
 .ft C
-spack install mpifileutils +lustre +experimental
+spack install mpifileutils +lustre +gpfs +experimental
 .ft P
 .fi
 .UNINDENT
@@ -251,6 +252,9 @@ cd ..
 .UNINDENT
 .UNINDENT
 .sp
+To build on PowerPC, one may need to add \fB\-\-build=powerpc64le\-redhat\-linux\-gnu\fP
+to the configure commands.
+.sp
 Assuming the dependencies have been placed in
 an \fIinstall\fP directory as shown above, build mpiFileUtils from a release like v0.9:
 .INDENT 0.0
@@ -291,13 +295,14 @@ make install
 .UNINDENT
 .UNINDENT
 .sp
-To enable Lustre and experimental tools, add the following flags during CMake:
+To enable Lustre, GPFS, and experimental tools, add the following flags during CMake:
 .INDENT 0.0
 .INDENT 3.5
 .sp
 .nf
 .ft C
 \-DENABLE_LUSTRE=ON
+\-DENABLE_GPFS=ON
 \-DENABLE_EXPERIMENTAL=ON
 .ft P
 .fi
@@ -333,7 +338,7 @@ cmake ../mpifileutils
 .UNINDENT
 .UNINDENT
 .sp
-The other way to use spack is to create a "view" to the installed dependencies.
+The other way to use spack is to create a “view” to the installed dependencies.
 Details on this are coming soon.
 .SS Project Design Principles
 .sp
@@ -395,7 +400,7 @@ number of MPI processes.
 .TP
 .B \-s, \-\-size SIZE
 The chunk size in bytes used to segment files during the broadcast.
-Units like "MB" and "GB" should be immediately follow the number
+Units like “MB” and “GB” should be immediately follow the number
 without spaces (ex. 2MB). The default size is 1MB. It is recommended
 to use the stripe size of a file if this is known.
 .UNINDENT
@@ -440,13 +445,13 @@ When decompressing, the .dbz2 extension will be dropped from the file name.
 .SS OPTIONS
 .INDENT 0.0
 .TP
-.B \-d, \-\-decompress
-Decompress the file
+.B \-z, \-\-compress
+Compress the file
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-z, \-\-compress
-Compress the file
+.B \-d, \-\-decompress
+Decompress the file
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -455,19 +460,24 @@ Keep the input file.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-f, \-\-overwrite
+.B \-f, \-\-force
 Overwrite the output file, if it exists.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-b, \-\-block SIZE
+.B \-b, \-\-blocksize SIZE
 Set the compression block size, from 1 to 9.
-Where 1=100kB ... and 9=900kB. Default is 9.
+Where 1=100kB … and 9=900kB. Default is 9.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-v, \-\-verbose
 Verbose output (optional).
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-q, \-\-quiet
+Quiet output
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -500,7 +510,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dchmod
 .SS SYNOPSIS
 .sp
-\fBdchmod [OPTION] PATH ...\fP
+\fBdchmod [OPTION] PATH …\fP
 .SS DESCRIPTION
 .sp
 Parallel MPI application to recursively change permissions and/or group
@@ -519,20 +529,35 @@ from the mpiFileUtils suite.
 .INDENT 0.0
 .TP
 .B \-u, \-\-owner USER
-Change owner to specified USER name.
+Change owner to specified USER name or numeric user id.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-g, \-\-group GROUP
-Change group to specified GROUP name.
+Change group to specified GROUP name or numeric group id.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-m, \-\-mode MODE
 The mode to apply to each item. MODE may be octal or symbolic syntax
-similar to \fBchmod(1)\fP\&. In symbolic notation, "ugoa" are supported
-as are "rwxX". As with chmod, if no leading letter "ugoa" is provided,
+similar to \fBchmod(1)\fP\&. In symbolic notation, “ugoa” are supported
+as are “rwxX”. As with chmod, if no leading letter “ugoa” is provided,
 mode bits are combined with umask to determine the actual mode.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-f, \-\-force
+Attempt to change every item.  By default, dchmod avoids unncessary
+chown and chmod calls, for example trying to change the group
+on an item that already has the correct group, or trying to change
+the group on an item that is not owned by the user running the tool.
+With –force, dchmod executes chown/chmod calls on every item.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-s, \-\-silent
+Suppress EPERM error messages, which is useful when running dchmod
+on large directories with files owned by other users.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -548,9 +573,16 @@ Only modify items whose full path matches REGEX, processed by
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-\-name
-Change \-\-exclude and \-\-match to apply to item name rather than its
+.B \-n, \-\-name
+Change –exclude and –match to apply to item name rather than its
 full path.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -597,7 +629,7 @@ regex:
 .sp
 \fBmpirun \-np 128 dchmod \-\-name \-\-exclude ‘afilename’ \-\-mode u+rw /directory\fP
 .sp
-Note: You can use \-\-match to change file permissions on all of the
+Note: You can use –match to change file permissions on all of the
 files/directories that match the regex.
 .SS SEE ALSO
 .sp
@@ -628,12 +660,19 @@ in which case, each option should provide a different output file name.
 .INDENT 0.0
 .TP
 .B \-t, \-\-text
-Change \-\-output to write files in text format rather than binary.
+Change –output to write files in text format rather than binary.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-b, \-\-base
-Enable base checks and normal stdout results when \-\-output is used.
+Enable base checks and normal stdout results when –output is used.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -664,7 +703,7 @@ Print the command usage, and the list of options available.
 .SS EXPRESSIONS
 .sp
 An expression is made up of one or more conditions, where each condition specifies a field and a state.
-A single condition consists of a field name, an \(aq=\(aq sign, and a state name.
+A single condition consists of a field name, an ‘=’ sign, and a state name.
 .sp
 Valid fields are listed below, along with the property of the entry that is checked.
 .TS
@@ -757,13 +796,13 @@ Meaning
 T}
 _
 T{
-EXIST=SRC_ONLY
+EXIST=ONLY_SRC
 T}	T{
 entry exists only in source path
 T}
 _
 T{
-EXIST=DST_ONLY
+EXIST=ONLY_DEST
 T}	T{
 entry exists only in destination path
 T}
@@ -804,7 +843,7 @@ For example, the following expression matches on entries which either (exist in 
 .sp
 .nf
 .ft C
-EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY
+EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC
 .ft P
 .fi
 .UNINDENT
@@ -827,7 +866,7 @@ CONTENT=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON@CONTENT=COMMON
 .sp
 A successful check on any other field also implies that EXIST=COMMON.
 .sp
-When used with the \-o option, one must also specify a file name at the end of the expression, separated with a \(aq:\(aq.
+When used with the \-o option, one must also specify a file name at the end of the expression, separated with a ‘:’.
 The list of any entries that match the expression are written to the named file.
 For example, to list any entries matching the above expression to a file named outfile1,
 one should use the following option:
@@ -842,7 +881,7 @@ one should use the following option:
 .UNINDENT
 .UNINDENT
 .sp
-If the \-\-base option is given or when no output option is specified,
+If the –base option is given or when no output option is specified,
 the following expressions are checked and numeric results are reported to stdout:
 .INDENT 0.0
 .INDENT 3.5
@@ -877,13 +916,13 @@ Compare two directories with verbose output. The verbose output prints timing an
 Write list of entries to outfile1 that are only in src1 or whose names exist in both src1 and src2 but whose types differ:
 .UNINDENT
 .sp
-\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 /src1 /src2\fP
+\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC:outfile1 /src1 /src2\fP
 .INDENT 0.0
 .IP 4. 3
 Same as above but also write list of entries to outfile2 that exist in either src1 or src2 but not both:
 .UNINDENT
 .sp
-\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=SRC_ONLY:outfile1 \-o EXIST=DIFFER:outfile2 /src1 /src2\fP
+\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC:outfile1 \-o EXIST=DIFFER:outfile2 /src1 /src2\fP
 .SS SEE ALSO
 .sp
 The mpiFileUtils source code and all documentation may be downloaded
@@ -896,16 +935,32 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .sp
 Parallel MPI application to recursively copy files and directories.
 .sp
-dcp is a file copy tool in the spirit of \fBcp(1)\fP that evenly distributes
-work across a large cluster without any centralized state. It is
+dcp is a file copy tool in the spirit of \fBcp(1)\fP that evenly
+distributes the work of scanning the directory tree, and copying file
+data across a large cluster without any centralized state.  It is
 designed for copying files that are located on a distributed parallel
-file system.
+file system, and it splits large file copies across multiple processes.
 .SS OPTIONS
+.INDENT 0.0
+.TP
+.B \-b, \-\-blocksize SIZE
+Set the I/O buffer to be SIZE bytes.  Units like “MB” and “GB” may
+immediately follow the number without spaces (eg. 8MB). The default
+blocksize is 1MB.
+.UNINDENT
 .INDENT 0.0
 .TP
 .B \-i, \-\-input FILE
 Read source list from FILE. FILE must be generated by another tool
 from the mpiFileUtils suite.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-k, \-\-chunksize SIZE
+Split large files into chunks of SIZE bytes to be processed.  Multiple
+process ranks may copy a large file in parallel.  Units like “MB” and
+“GB” can immediately follow the number without spaces (eg. 64MB).
+The default chunksize is 1MB.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -915,12 +970,20 @@ Preserve permissions, group, timestamps, and extended attributes.
 .INDENT 0.0
 .TP
 .B \-s, \-\-synchronous
-Use synchronous read/write calls (open files with 0_DIRECT)
+Use synchronous read/write calls (open files with O_DIRECT).
+This also avoids caching the file data on the client nodes.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-S, \-\-sparse
-Create sparse files when possible (non\-functioning).
+Create sparse files when possible.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1026,7 +1089,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dfind
 .SS SYNOPSIS
 .sp
-\fBdfind [OPTION] [EXPRESSION] PATH ...\fP
+\fBdfind [OPTION] [EXPRESSION] PATH …\fP
 .SS DESCRIPTION
 .sp
 Parallel MPI application to filter a list of files according to an expression.
@@ -1111,22 +1174,37 @@ File was last accessed N days ago.
 .INDENT 0.0
 .TP
 .B \-\-cmin N
-File\(aqs status was last changed N minutes ago.
+File’s status was last changed N minutes ago.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-cnewer FILE
-File\(aqs status was last changed more recently than FILE was modified.
+File’s status was last changed more recently than FILE was modified.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-ctime N
-File\(aqs status was last changed N days ago.
+File’s status was last changed N days ago.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-mmin N
+File’s data was last modified N minutes ago.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-newer FILE
+File was modified more recently than FILE.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-mtime N
+File’s data was last modified N days ago.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-gid N
-File\(aqs numeric group ID is N.
+File’s numeric group ID is N.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1135,8 +1213,13 @@ File belongs to group NAME.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-\-mmin N
-File\(aqs data was last modified N minutes ago.
+.B \-\-uid N
+File’s numeric user ID is N.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-user NAME
+File is owned by user NAME.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1155,18 +1238,8 @@ Full path to file matches POSIX regular expression REGEX.  Regular expressions p
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-\-newer FILE
-File was modified more recently than FILE.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-mtime N
-File\(aqs data was last modified N days ago.
-.UNINDENT
-.INDENT 0.0
-.TP
 .B \-\-size N
-File size is N bytes.  Units can be used like \(aqKB\(aq, \(aqMB\(aq, \(aqGB\(aq.
+File size is N bytes.  Units can be used like ‘KB’, ‘MB’, ‘GB’.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1175,6 +1248,18 @@ File is of type C:
 .TS
 center;
 |l|l|.
+_
+T{
+b
+T}	T{
+block device
+T}
+_
+T{
+c
+T}	T{
+char device
+T}
 _
 T{
 d
@@ -1194,17 +1279,19 @@ T}	T{
 symbolic link
 T}
 _
+T{
+p
+T}	T{
+pipe
+T}
+_
+T{
+s
+T}	T{
+socket
+T}
+_
 .TE
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-uid N
-File\(aqs numeric user ID is N.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-user NAME
-File is owned by user NAME.
 .UNINDENT
 .SS ACTIONS
 .INDENT 0.0
@@ -1215,7 +1302,7 @@ Print file name to stdout.
 .INDENT 0.0
 .TP
 .B \-\-exec CMD ;
-Execute command CMD on file.  All following arguments are taken as arguments to the command until \(aq;\(aq is encountered.  The string \(aq{}\(aq is replaced by the current file name.
+Execute command CMD on file.  All following arguments are taken as arguments to the command until ‘;’ is encountered.  The string ‘{}’ is replaced by the current file name.
 .UNINDENT
 .SS EXAMPLES
 .INDENT 0.0
@@ -1243,7 +1330,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dreln
 .SS SYNOPSIS
 .sp
-\fBdreln [OPTION] OLDPATH NEWPATH PATH ...\fP
+\fBdreln [OPTION] OLDPATH NEWPATH PATH …\fP
 .SS DESCRIPTION
 .sp
 Parallel MPI application to recursively update symlinks within a
@@ -1272,6 +1359,13 @@ Preserve existing modification times on links.
 .TP
 .B \-r, \-\-relative
 Replace links using target paths that are relative to NEWPATH.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1318,7 +1412,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS drm
 .SS SYNOPSIS
 .sp
-\fBdrm [OPTION] PATH...\fP
+\fBdrm [OPTION] PATH…\fP
 .SS DESCRIPTION
 .sp
 Parallel MPI application to recursively delete a directory and its
@@ -1331,11 +1425,11 @@ drm behaves like \fIrm \-rf\fP, but it is faster.
 .INDENT 0.0
 .INDENT 3.5
 DO NOT USE SHELL REGEX!!!
-The \-\-match and \-\-exclude options use POSIX regex syntax. Because of
+The –match and –exclude options use POSIX regex syntax. Because of
 this make sure that the shell does not try to interpret your regex before
 it gets passed to the program. You can generally use quotes around your
 regex to prevent the shell from expanding. An example of this using the
-\-\-match option with \-\-dryrun would be:
+–match option with –dryrun would be:
 .sp
 \fBmpirun \-np 128 drm \-\-dryrun \-v \-\-name \-\-match \(aqfile_.*\(aq /path/to/dir/*\fP
 .UNINDENT
@@ -1349,8 +1443,25 @@ from the mpiFileUtils suite.
 .UNINDENT
 .INDENT 0.0
 .TP
+.B \-o, \-\-output FILE
+Write the list of items drm attempts to delete to FILE in mpiFileUtils format.
+Format can be changed with –text option.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-t, \-\-text
+Must be used with the –output option. Write list of items drm attempts
+to delete to FILE in ascii text format.
+.UNINDENT
+.INDENT 0.0
+.TP
 .B \-l, \-\-lite
 Walk file system without stat.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-stat
+Walk file system with stat.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1366,27 +1477,34 @@ Only remove items whose full path matches REGEX, processed by
 .INDENT 0.0
 .TP
 .B \-\-name
-Change \-\-exclude and match to apply to item name rather than its
+Change –exclude and match to apply to item name rather than its
 full path.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-dryrun
 Print a list of files that \fBwould\fP be deleted without deleting
-them. This is useful to check list of items satisfying \-\-exclude or
-\-\-match options before actually deleting anything.
+them. This is useful to check list of items satisfying –exclude or
+–match options before actually deleting anything.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-aggressive
 This option will delete files during the walk phase, and then
 delete directories by level after the walk in drm. You cannot
-use this option with \-\-dryrun.
+use this option with –dryrun.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-T, \-\-traceless
 Delete child items without updating the mtime on their parent directory.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1436,7 +1554,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dstripe
 .SS SYNOPSIS
 .sp
-\fBdstripe [OPTION] PATH...\fP
+\fBdstripe [OPTION] PATH…\fP
 .SS DESCRIPTION
 .sp
 Parallel MPI application to restripe files.
@@ -1459,16 +1577,16 @@ the lustre file system default is used. The default stripe count is
 .INDENT 0.0
 .TP
 .B \-s, \-\-size STRIPE_SIZE
-The stripe size to use during file restriping. Units like "MB" and
-"GB" can immediately follow the number without spaces (ex. 2MB). The
+The stripe size to use during file restriping. Units like “MB” and
+“GB” can immediately follow the number without spaces (ex. 2MB). The
 default stripe size is 1MB.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-m, \-\-minsize SIZE
 The minimum size a file must be to be a candidate for restriping.
-Files smaller than SIZE will not be restriped. Units like "MB" and
-"GB" can immediately follow the number without spaces (ex. 2MB). The
+Files smaller than SIZE will not be restriped. Units like “MB” and
+“GB” can immediately follow the number without spaces (ex. 2MB). The
 default minimum file size is 0MB.
 .UNINDENT
 .INDENT 0.0
@@ -1476,6 +1594,13 @@ default minimum file size is 0MB.
 .B \-r, \-\-report
 Display the file size, stripe count, and stripe size of all files
 found in PATH. No restriping is performed when using this option.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -1565,6 +1690,35 @@ Delete extraneous files from destination.
 .UNINDENT
 .INDENT 0.0
 .TP
+.B \-\-link\-dest DIR
+Create hardlink in DEST to files in DIR when file is unchanged
+rather than create a new file. One can use this option to conserve
+storage space during an incremental backup.
+.sp
+For example in the following, any file that would be copied from
+/src to /src.bak.inc that is the same as the file already existing
+in /src.bak will instead be hardlinked to the file in /src.bak:
+.sp
+# initial backup of /src
+dsync /src /src.bak
+.sp
+# incremental backup of /src
+dsync –link\-dest /src.bak /src /src.bak.inc
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-S, \-\-sparse
+Create sparse files when possible.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
+.UNINDENT
+.INDENT 0.0
+.TP
 .B \-v, \-\-verbose
 Run in verbose mode. Prints a list of statistics/timing data for the
 command. Files walked, started, completed, seconds, files, bytes
@@ -1594,7 +1748,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dwalk
 .SS SYNOPSIS
 .sp
-\fBdwalk [OPTION] PATH ...\fP
+\fBdwalk [OPTION] PATH …\fP
 .SS DESCRIPTION
 .sp
 Parallel MPI application to recursively walk and list contents in a
@@ -1619,12 +1773,12 @@ from the mpiFileUtils suite.
 .TP
 .B \-o, \-\-output FILE
 Write the processed list to FILE in binary format. Format can be changed
-With \-\-text option.
+With –text option.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-t, \-\-text
-Must be used with the \-\-output option. Write processed list of files to
+Must be used with the –output option. Write processed list of files to
 FILE in ascii text format.
 .UNINDENT
 .INDENT 0.0
@@ -1722,7 +1876,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dgrep
 .SS SYNOPSIS
 .sp
-dgrep ...
+dgrep …
 .SS DESCRIPTION
 .SS OPTIONS
 .INDENT 0.0
@@ -1743,7 +1897,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dparallel
 .SS SYNOPSIS
 .sp
-dparallel ...
+dparallel …
 .SS DESCRIPTION
 .SS OPTIONS
 .INDENT 0.0
@@ -1764,7 +1918,7 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SS dtar
 .SS SYNOPSIS
 .sp
-\fBdtar ...\fP
+\fBdtar …\fP
 .SS DESCRIPTION
 .SS OPTIONS
 .INDENT 0.0

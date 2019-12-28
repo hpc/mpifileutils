@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DCHMOD" "1" "Apr 17, 2019" "0.9.1" "mpiFileUtils"
+.TH "DCHMOD" "1" "Dec 28, 2019" "0.10" "mpiFileUtils"
 .SH NAME
 dchmod \- distributed tool to set permissions and group
 .
@@ -32,7 +32,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 ..
 .SH SYNOPSIS
 .sp
-\fBdchmod [OPTION] PATH ...\fP
+\fBdchmod [OPTION] PATH …\fP
 .SH DESCRIPTION
 .sp
 Parallel MPI application to recursively change permissions and/or group
@@ -51,20 +51,35 @@ from the mpiFileUtils suite.
 .INDENT 0.0
 .TP
 .B \-u, \-\-owner USER
-Change owner to specified USER name.
+Change owner to specified USER name or numeric user id.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-g, \-\-group GROUP
-Change group to specified GROUP name.
+Change group to specified GROUP name or numeric group id.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-m, \-\-mode MODE
 The mode to apply to each item. MODE may be octal or symbolic syntax
-similar to \fBchmod(1)\fP\&. In symbolic notation, "ugoa" are supported
-as are "rwxX". As with chmod, if no leading letter "ugoa" is provided,
+similar to \fBchmod(1)\fP\&. In symbolic notation, “ugoa” are supported
+as are “rwxX”. As with chmod, if no leading letter “ugoa” is provided,
 mode bits are combined with umask to determine the actual mode.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-f, \-\-force
+Attempt to change every item.  By default, dchmod avoids unncessary
+chown and chmod calls, for example trying to change the group
+on an item that already has the correct group, or trying to change
+the group on an item that is not owned by the user running the tool.
+With –force, dchmod executes chown/chmod calls on every item.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-s, \-\-silent
+Suppress EPERM error messages, which is useful when running dchmod
+on large directories with files owned by other users.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -80,9 +95,16 @@ Only modify items whose full path matches REGEX, processed by
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-\-name
-Change \-\-exclude and \-\-match to apply to item name rather than its
+.B \-n, \-\-name
+Change –exclude and –match to apply to item name rather than its
 full path.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -129,7 +151,7 @@ regex:
 .sp
 \fBmpirun \-np 128 dchmod \-\-name \-\-exclude ‘afilename’ \-\-mode u+rw /directory\fP
 .sp
-Note: You can use \-\-match to change file permissions on all of the
+Note: You can use –match to change file permissions on all of the
 files/directories that match the regex.
 .SH SEE ALSO
 .sp
