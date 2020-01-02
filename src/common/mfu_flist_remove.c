@@ -371,7 +371,7 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
     circle_count = 0;
 
     /* initialize libcircle */
-    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
+    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL | CIRCLE_TERM_TREE);
 
     /* set libcircle verbosity level */
     enum CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;

@@ -757,7 +757,7 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
     }
 
     /* initialize libcircle */
-    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL);
+    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_TERM_TREE);
 
     /* set libcircle verbosity level */
     enum CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
@@ -806,6 +806,13 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
     CIRCLE_cb_reduce_init(&reduce_init);
     CIRCLE_cb_reduce_op(&reduce_exec);
     CIRCLE_cb_reduce_fini(&reduce_fini);
+
+    /* set libcircle reduction period */
+    int reduce_secs = 0;
+    if (mfu_progress_timeout > 0) {
+        reduce_secs = mfu_progress_timeout;
+    }
+    CIRCLE_set_reduce_period(reduce_secs);
 
     /* run the libcircle job */
     CIRCLE_begin();
