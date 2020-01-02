@@ -309,6 +309,7 @@ static void print_usage(void)
     printf("  -d, --distribution <field>:<separators> \n                          - print distribution by field\n");
     printf("  -f, --file_histogram    - print default size distribution of items\n");
     printf("  -p, --print             - print files to screen\n");
+    printf("      --progress <N>      - print progress every N seconds\n");
     printf("  -v, --verbose           - verbose output\n");
     printf("  -q, --quiet             - quiet output\n");
     printf("  -h, --help              - print usage\n");
@@ -372,6 +373,7 @@ int main(int argc, char** argv)
         {"distribution",   1, 0, 'd'},
         {"file_histogram", 0, 0, 'f'},
         {"print",          0, 0, 'p'},
+        {"progress",       1, 0, 'P'},
         {"verbose",        0, 0, 'v'},
         {"quiet",          0, 0, 'q'},
         {"help",           0, 0, 'h'},
@@ -412,6 +414,9 @@ int main(int argc, char** argv)
             case 'p':
                 print = 1;
                 break;
+            case 'P':
+                mfu_progress_timeout = atoi(optarg);
+                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
@@ -432,6 +437,14 @@ int main(int argc, char** argv)
                     printf("?? getopt returned character code 0%o ??\n", c);
                 }
         }
+    }
+
+    /* check that we got a valid progress value */
+    if (mfu_progress_timeout < 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Seconds in --progress must be non-negative: %d invalid", mfu_progress_timeout);
+        }
+        usage = 1;
     }
 
     /* paths to walk come after the options */
