@@ -303,6 +303,7 @@ int main(int argc, \
     CIRCLE_cb_reduce_init(&DCOPY_reduce_init);
     CIRCLE_cb_reduce_op(&DCOPY_reduce_op);
     CIRCLE_cb_reduce_fini(&DCOPY_reduce_fini);
+    CIRCLE_set_reduce_period(10);
 
     /* Initialize statistics */
     DCOPY_statistics.total_dirs  = 0;

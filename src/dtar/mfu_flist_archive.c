@@ -460,7 +460,7 @@ static void mfu_flist_archive_create_libcircle(mfu_flist flist, const char* arch
     }
 
     /* prepare libcircle */
-    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL);
+    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL | CIRCLE_TERM_TREE);
     CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
     CIRCLE_enable_logging(loglevel);
 
