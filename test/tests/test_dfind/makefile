@@ -2,14 +2,14 @@ SHELL=/bin/bash
 .sh:
 	cp $? `basename $? .sh`
 	chmod +x `basename $? .sh`
-
+.ONESHELL
 ####################
 # Perform testing of the dfind command
 # Tests will be numbered and will report both
 # the command name and the number as part of the
 # diagnostic output.
 ####################
-PROJECTROOT := $(shell bash ./getgitroot.sh)
+PROJECTROOT=$(shell git rev-parse --git-dir)/..
 
 ####################
 # Define all of the hpc FIND command variables that come in from the 
@@ -30,8 +30,10 @@ PROJECTROOT := $(shell bash ./getgitroot.sh)
 # ../test/dest . The directory relative to mpifileutils where test
 #                output is placed
 #                DFIND_DEST_DIR
-# dfind.test.sh  The shell script generated inside this script to perform
-#                the testing.
+# dfind.test.sh  The shell script installed inside this script to perform
+#                the testing. These scripts are found in the same directory
+#                as the make file and are copied into the ../test/bin
+#                directory to provide an actual test script.
 #                DFIND_TMP_FILE
 # ../test/bin .. the directory in which executable files (including this
 #                script and the generated script) are placed to avoid
@@ -53,35 +55,33 @@ PROJECTROOT := $(shell bash ./getgitroot.sh)
 #
 # To facilitate finding the root of the project from within the directory
 # where you run the tests (the above was done to keep from cluttering this
-# directory as well), there is a short script "getgitroot" which determines
-# the project root directory by walking up the tree to find the .git
-# directory:
-# Find and return the parent directory that contains ".git"
-#
-# That is the parent directory that is the "root" of all evil so that we can
-# execute binaries located in ../install/bin
+# directory as well), we use the "git rev-parse --git-dir" to find the .git
+# root directory:
 ####################
-# while [ ! -d .git ]
-# do
-# 	cd ..
-# done
-# pwd
-####################
-DFIND_INSTALL_DIR := $(PROJECTROOT)/../install/bin
-DFIND_TEST_BIN := $(DFIND_INSTALL_DIR)/dfind
-DFIND_MPIRUN_BIN := $(shell which srun)
-DFIND_CMP_BIN := $(shell which diff)
-DFIND_SRC_DIR := $(PROJECTROOT)/../test/src
-DFIND_DEST_DIR := $(PROJECTROOT)/../test/dest
-DFIND_TMP_FILE := dfind_test.sh
-DFIND_TESTING_BIN_DIR := $(PROJECTROOT)/../test/bin
+DFIND_INSTALL_DIR?=$(PROJECTROOT)/../install/bin
+DFIND_TEST_BIN?=$(DFIND_INSTALL_DIR)/dfind
+DFIND_MPIRUN_BIN?=$(shell which srun)
+DFIND_CMP_BIN?=$(shell which diff)
+DFIND_SRC_DIR?=$(PROJECTROOT)/../test/src
+DFIND_DEST_DIR?=$(PROJECTROOT)/../test/dest
+DFIND_TMP_FILE?=dfind_test.sh
+DFIND_TESTING_BIN_DIR?=$(PROJECTROOT)/../test/bin
+GNU_FIND?=find
+VERBOSE?=1
 
+####################
+# At first blush it may seem redundant to pass in the test name...
+# until you have to re-order the testing sequence
+####################
 TEST-01 := test_dfind_spaces
-TEST-02 := test_dfind_exec_stderr_redirect
+TEST-01_Number := 01
 DFIND_TEST_NUM-01 := $(DFIND_TESTING_BIN_DIR)/$(TEST-01)
+
+TEST-02 := test_dfind_exec_stderr_redirect
+TEST-02_Number := 02
 DFIND_TEST_NUM-02 := $(DFIND_TESTING_BIN_DIR)/$(TEST-02)
 
-TESTS = getgitroot $(TEST-01) $(TEST-02)
+TESTS = $(TEST-01) $(TEST-02)
 
 .PHONY: all clean install uninstall run run1 run2
 
@@ -107,11 +107,15 @@ run: run1 run2
 run1:  install $(DFIND_TEST_NUM-01) $(DFIND_TEST_BIN)
 	rm -rf ${DFIND_SRC_DIR} ${DFIND_DEST_DIR}
 	mkdir -p $(DFIND_SRC_DIR) $(DFIND_DEST_DIR) $(DFIND_TESTING_BIN_DIR)
-	$(DFIND_TEST_NUM-01) $(DFIND_TEST_BIN) $(DFIND_MPIRUN_BIN) $(DFIND_CMP_BIN) \
-							$(DFIND_SRC_DIR) $(DFIND_DEST_DIR) $(DFIND_TMP_FILE) $(DFIND_TESTING_BIN_DIR)
+	DFIND_TEST_VERBOSE=$(VERBOSE) $(DFIND_TEST_NUM-01) $(DFIND_TEST_BIN) \
+										 $(DFIND_MPIRUN_BIN) $(DFIND_CMP_BIN) $(DFIND_SRC_DIR) \
+										 $(DFIND_DEST_DIR) $(DFIND_TMP_FILE) \
+										 $(DFIND_TESTING_BIN_DIR) $(TEST-01_Number) $(GNU_FIND)
 run2:  install $(DFIND_TEST_NUM-02) $(DFIND_TEST_BIN)
 	rm -rf ${DFIND_SRC_DIR} ${DFIND_DEST_DIR}
 	mkdir -p $(DFIND_SRC_DIR) $(DFIND_DEST_DIR) $(DFIND_TESTING_BIN_DIR)
-	$(DFIND_TEST_NUM-02) $(DFIND_TEST_BIN) $(DFIND_MPIRUN_BIN) $(DFIND_CMP_BIN) \
-							$(DFIND_SRC_DIR) $(DFIND_DEST_DIR) $(DFIND_TMP_FILE) $(DFIND_TESTING_BIN_DIR)
+	DFIND_TEST_VERBOSE=$(VERBOSE) $(DFIND_TEST_NUM-02) $(DFIND_TEST_BIN) \
+										 $(DFIND_MPIRUN_BIN) $(DFIND_CMP_BIN) $(DFIND_SRC_DIR) \
+										 $(DFIND_DEST_DIR) $(DFIND_TMP_FILE) \
+										 $(DFIND_TESTING_BIN_DIR) $(TEST-02_Number)  $(GNU_FIND)
 # vim: set syntax=makefile,sw=4,t=4
