@@ -1,6 +1,4 @@
 #!/bin/bash
-DFIND_TEST_VERBOSE=0
-# set -x
 ####################
 # Author: Robert E. Novak
 # email: novak5@llnl.gov
@@ -74,39 +72,51 @@ DFIND_SRC_DIR=${DFIND_SRC_DIR:-${4}}
 DFIND_DEST_DIR=${DFIND_DEST_DIR:-${5}}
 DFIND_TMP_FILE=${DFIND_TMP_FILE:-${6}}
 DFIND_TESTING_BIN_DIR=${DFIND_TESTING_BIN_DIR:-${7}}
-echo "\${DFIND_TESTING_BIN_DIR} = ${DFIND_TESTING_BIN_DIR}"
+DFIND_TEST_NUMBER=${DFIND_TEST_NUMBER:-${8}}
+GNU_FIND_BIN=${GNU_FIND_BIN:-${9}}
+
+####################
+# To make the rest of the script more legible
+####################
+DFIND=${DFIND_TEST_BIN}
+MPIRUN=${DFIND_MPIRUN_BIN}
+CMP=${DFIND_CMP_BIN}
+SRCDIR=${DFIND_SRC_DIR}
+DESTDIR=${DFIND_DEST_DIR}
+TMPFILE=${DFIND_TMP_FILE}
+TESTBINDIR=${DFIND_TESTING_BIN_DIR}
+
 ####################
 # Define the Test Number
 ####################
-DFIND_TEST_NUMBER=02
-TEST_PREFIX="TEST-${DFIND_TEST_NUMBER}"
+TEST_PREFIX="TEST_${DFIND_TEST_NUMBER}"
 
 ####################
 # Make the directories REAL
 ####################
-DFIND_TEST_BIN=$(realpath ${DFIND_TEST_BIN})
-DFIND_SRC_DIR=$(realpath ${DFIND_SRC_DIR})
-DFIND_DEST_DIR=$(realpath ${DFIND_DEST_DIR})
-DFIND_TESTING_BIN_DIR=$(realpath ${DFIND_TESTING_BIN_DIR})
-DFIND_CMP_RESULT=${DFIND_DEST_DIR}/${TEST_PREFIX}_cmp_result.txt
-
-####################
-# Where we will put the output in the DEST_DIR
-####################
-DFIND_FIND_OUT=${DFIND_DEST_DIR}/${TEST_PREFIX}_dfind_find_out.txt
+DFIND=$(realpath ${DFIND})
+SRCDIR=$(realpath ${SRCDIR})
+DESTDIR=$(realpath ${DESTDIR})
+TESTBINDIR=$(realpath ${TESTBINDIR})
 
 ####################
 # Define the GNU programs that we are testing against.
 ####################
-GNU_FIND_BIN=$(which find)
-GNU_FIND_OUT=${DFIND_DEST_DIR}/${TEST_PREFIX}_gnu_find_out.txt
+GFIND=$(which ${GNU_FIND_BIN})
+
+####################
+# Where we will put the output data
+####################
+DFIND_OUT=${DESTDIR}/${TEST_PREFIX}_dfind_find_out.txt
+GFIND_OUT=${DESTDIR}/${TEST_PREFIX}_gnu_find_out.txt
+DFIND_CMP_RESULT=${DESTDIR}/${TEST_PREFIX}_cmp_result.txt
 
 ####################
 # The verbose name of this test.  We had to wait until here so that
 # the binaries are named.
 ####################
-DFIND_TEST_NAME="Test ${DFIND_TEST_NUMBER} --> ${DFIND_TEST_BIN} vs. ${GNU_FIND_BIN} \r\n
-Test ${DFIND_TEST_NUMBER} --> $(basename ${DFIND_TEST_BIN}) vs. $(basename ${GNU_FIND_BIN})\r\n
+DFIND_TEST_NAME="Test ${DFIND_TEST_NUMBER} --> ${DFIND} vs. ${GFIND} \r\n
+Test ${DFIND_TEST_NUMBER} --> $(basename ${DFIND}) vs. $(basename ${GFIND})\r\n
 for dfind --exec {} redirection of stderr fails\r\n"
 
 ####################
@@ -114,74 +124,82 @@ for dfind --exec {} redirection of stderr fails\r\n"
 ####################
 if [ $DFIND_TEST_VERBOSE -gt 0 ]
 then
-	echo -e "Using dfind binary at:\t\t${DFIND_TEST_BIN}"
-	echo -e "Using mpirun binary at:\t\t${DFIND_MPIRUN_BIN}"
-	echo -e "Using cmp binary at:\t\t${DFIND_CMP_BIN}"
+	echo -e "Using dfind binary at:\t\t${DFIND}"
+	echo -e "Using mpirun binary at:\t\t${MPIRUN}"
+	echo -e "Using cmp binary at:\t\t${CMP}"
 
 	####################
 	# This helps to confirm that the comparison test is from GNU
 	####################
-	strings ${DFIND_CMP_BIN} | egrep '^GNU'
-	echo -e "Using src directory at:\t\t${DFIND_SRC_DIR}"
-	echo -e "Using dest directory at:\t${DFIND_DEST_DIR}"
-	echo -e "Using tmp file at:\t\t${DFIND_TMP_FILE}"
-	echo -e "Using testing bin dir at:\t${DFIND_TESTING_BIN_DIR}"
-	echo -e "Comparison test against:\t${GNU_FIND_BIN}"
+	strings ${CMP} | egrep '^GNU'
+	echo -e "Using src directory at:\t\t${SRCDIR}"
+	echo -e "Using dest directory at:\t${DESTDIR}"
+	echo -e "Using tmp file at:\t\t${TMPFILE}"
+	echo -e "Using testing bin dir at:\t${TESTBINDIR}"
+	echo -e "Comparison test against:\t${GFIND}"
 	echo -e "Test Prefix:\t\t${TEST_PREFIX}"
 	echo -e "Test Name: ${DFIND_TEST_NAME}"
 	####################
 	# This helps to confirm that the comparison is against the GNU version
 	####################
-	strings ${GNU_FIND_BIN} | egrep "^GNU"
+	strings ${GFIND} | egrep "^GNU"
 fi
 
+################################################################################
+#$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+#
+# Everything up to here has been a preamble.  Here is where we construct the
+# test data to perform the test.
+#
+################################################################################
+################################################################################
 ####################
 # Construct the test case
 # Create a file name with no spaces
 ####################
-echo "A file with no spaces in the name" > ${DFIND_SRC_DIR}/A_file_with_no_spaces_in_the_name
-echo "A file with spaces in the name" > "${DFIND_SRC_DIR}/A_file_with spaces_in_the_name"
+echo "A file with no spaces in the name" > ${SRCDIR}/A_file_with_no_spaces_in_the_name
+echo "A file with spaces in the name" > "${SRCDIR}/A_file_with spaces_in_the_name"
 
 ####################
 # Test the GNU find in single mode
 ####################
 if [ ${DFIND_TEST_VERBOSE} -gt 0 ]
 then
-	echo "find ${DFIND_SRC_DIR} -exec ls {}a 2>> ${GNU_FIND_OUT}.err ';' > ${GNU_FIND_OUT}"
+	echo "${GFIND} ${SRCDIR} -exec ls {}a 2>> ${GFIND_OUT}.err ';' > ${GFIND_OUT}"
 fi
-find ${DFIND_SRC_DIR} -exec ls {}a 2>> ${GNU_FIND_OUT}.err ';' > ${GNU_FIND_OUT}
+${GFIND} ${SRCDIR} -exec ls {}a 2>> ${GFIND_OUT}.err ';' > ${GFIND_OUT}
 
 ####################
 # Test the HPC find in single mode
 ####################
 if [ ${DFIND_TEST_VERBOSE} -gt 0 ]
 then
-#	echo "${DFIND_MPIRUN_BIN} -n 1 ${DFIND_TEST_BIN} ${DFIND_SRC_DIR} --exec ls {} ';' > ${DFIND_FIND_OUT}"
-	echo "#!/bin/bash > ${DFIND_TESTING_BIN_DIR}/${DFIND_TMP_FILE}"
-	echo "${DFIND_TEST_BIN} ${DFIND_SRC_DIR} --exec ls {}a 2>> ${DFIND_FIND_OUT}.err ';' 2>&1 >> ${DFIND_FIND_OUT} > ${DFIND_TESTING_BIN_DIR}/${DFIND_TMP_FILE}"
-	echo "chmod +x ${DFIND_TESTING_BIN_DIR}/${DFIND_TMP_FILE}"
-	echo "# ${DFIND_MPIRUN_BIN} -n 1 ${DFIND_TESTING_BIN_DIR}/${DFIND_TMP_FILE}"
+#	echo "${MPIRUN} -n 1 ${DFIND} ${SRCDIR} --exec ls {} ';' > ${DFIND_OUT}"
+	echo "#!/bin/bash > ${TESTBINDIR}/${TMPFILE}"
+	echo "${DFIND} ${SRCDIR} --exec ls {}a 2>> ${DFIND_OUT}.err ';' 2>&1 >> ${DFIND_OUT} > ${TESTBINDIR}/${TMPFILE}"
+	echo "chmod +x ${TESTBINDIR}/${TMPFILE}"
+	echo "# ${MPIRUN} -n 1 ${TESTBINDIR}/${TMPFILE}"
 fi
-echo "#!/bin/bash" > ${DFIND_TESTING_BIN_DIR}/${DFIND_TMP_FILE}
-echo "${DFIND_TEST_BIN} ${DFIND_SRC_DIR} --exec ls {}a 2>> ${DFIND_FIND_OUT}.err ';' 2>&1 >> ${DFIND_FIND_OUT}" > ${DFIND_TESTING_BIN_DIR}/${DFIND_TMP_FILE}
-chmod +x ${DFIND_TESTING_BIN_DIR}/${DFIND_TMP_FILE}
+echo "#!/bin/bash" > ${TESTBINDIR}/${TMPFILE}
+echo "${DFIND} ${SRCDIR} --exec ls {}a 2>> ${DFIND_OUT}.err ';' 2>&1 >> ${DFIND_OUT}" > ${TESTBINDIR}/${TMPFILE}
+chmod +x ${TESTBINDIR}/${TMPFILE}
 
-# ${DFIND_MPIRUN_BIN} -n 1 ${DFIND_TESTING_BIN_DIR}/${DFIND_TMP_FILE}
-/bin/bash ${DFIND_TESTING_BIN_DIR}/${DFIND_TMP_FILE}
+# ${MPIRUN} -n 1 ${TESTBINDIR}/${TMPFILE}
+/bin/bash ${TESTBINDIR}/${TMPFILE}
 
 ####################
 # Compare the result files.
 ####################
 if [ ${DFIND_TEST_VERBOSE} -gt 0 ]
 then
-	echo "${DFIND_CMP_BIN} ${GNU_FIND_OUT} ${DFIND_FIND_OUT} 2>&1 > ${DFIND_CMP_RESULT}"
+	echo "${CMP} ${GFIND_OUT} ${DFIND_OUT} 2>&1 > ${DFIND_CMP_RESULT}"
 fi
-${DFIND_CMP_BIN} ${GNU_FIND_OUT} ${DFIND_FIND_OUT} 2>&1 > ${DFIND_CMP_RESULT}
+${CMP} ${GFIND_OUT} ${DFIND_OUT} 2>&1 > ${DFIND_CMP_RESULT}
 if [ $? -ne 0 ]
 then
 	echo -e "FAILURE: $DFIND_TEST_NAME"
 	echo "RESULT:"
-	cat ${DFIND_CMP_RESULT} ${GNU_FIND_OUT}.err ${DFIND_FIND_OUT}.err
+	cat ${DFIND_CMP_RESULT} ${GFIND_OUT}.err ${DFIND_OUT}.err
 else
 	####################
 	# Only report success in verbose mode
