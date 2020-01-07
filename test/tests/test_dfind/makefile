@@ -2,7 +2,7 @@ SHELL=/bin/bash
 .sh:
 	cp $? `basename $? .sh`
 	chmod +x `basename $? .sh`
-.ONESHELL
+.ONESHELL:
 ####################
 # Perform testing of the dfind command
 # Tests will be numbered and will report both
@@ -27,6 +27,14 @@ PROJECTROOT=$(shell git rev-parse --git-dir)/..
 # ../test/src .. the directory relative to mpifileutils where source
 #                test data is place
 #                DFIND_SRC_DIR
+# 
+# Using the parameters from test_dcp/test_fiemap.sh as a starting point.
+# The test template uses a makefile to harness the tests.
+# 
+# Two Tests implemented:
+# 
+# 1) Test for the correct handling of hpc dfind vs. GNU find for having blanks in file names when passing files to --exec.
+# 2) Test that illustrates that stderr redirection is incorrect for hpc dfind vs. GNU find.  This will later be reported as a separate issue and the second test will be placed on a branch to repair that issue.
 # ../test/dest . The directory relative to mpifileutils where test
 #                output is placed
 #                DFIND_DEST_DIR
@@ -110,12 +118,16 @@ run1:  install $(DFIND_TEST_NUM-01) $(DFIND_TEST_BIN)
 	DFIND_TEST_VERBOSE=$(VERBOSE) $(DFIND_TEST_NUM-01) $(DFIND_TEST_BIN) \
 										 $(DFIND_MPIRUN_BIN) $(DFIND_CMP_BIN) $(DFIND_SRC_DIR) \
 										 $(DFIND_DEST_DIR) $(DFIND_TMP_FILE) \
-										 $(DFIND_TESTING_BIN_DIR) $(TEST-01_Number) $(GNU_FIND)
+										 $(DFIND_TESTING_BIN_DIR) $(TEST-01_Number) \
+										 $(GNU_FIND) 2>&1 | \
+										 tee $(DFIND_DEST_DIR)/result-$(TEST-01_Number)_$(TEST-01)
 run2:  install $(DFIND_TEST_NUM-02) $(DFIND_TEST_BIN)
 	rm -rf ${DFIND_SRC_DIR} ${DFIND_DEST_DIR}
 	mkdir -p $(DFIND_SRC_DIR) $(DFIND_DEST_DIR) $(DFIND_TESTING_BIN_DIR)
 	DFIND_TEST_VERBOSE=$(VERBOSE) $(DFIND_TEST_NUM-02) $(DFIND_TEST_BIN) \
 										 $(DFIND_MPIRUN_BIN) $(DFIND_CMP_BIN) $(DFIND_SRC_DIR) \
 										 $(DFIND_DEST_DIR) $(DFIND_TMP_FILE) \
-										 $(DFIND_TESTING_BIN_DIR) $(TEST-02_Number)  $(GNU_FIND)
+										 $(DFIND_TESTING_BIN_DIR) $(TEST-02_Number) \
+										 $(GNU_FIND) 2>&1 | \
+										 tee $(DFIND_DEST_DIR)/result-$(TEST-02)_$(TEST-02)
 # vim: set syntax=makefile,sw=4,t=4
