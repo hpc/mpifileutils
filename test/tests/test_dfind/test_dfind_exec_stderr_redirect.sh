@@ -131,7 +131,7 @@ then
 	####################
 	# This helps to confirm that the comparison test is from GNU
 	####################
-	strings ${CMP} | egrep '^GNU'
+	strings ${CMP} | egrep '^GNU '
 	echo -e "Using src directory at:\t\t${SRCDIR}"
 	echo -e "Using dest directory at:\t${DESTDIR}"
 	echo -e "Using tmp file at:\t\t${TMPFILE}"
@@ -142,7 +142,7 @@ then
 	####################
 	# This helps to confirm that the comparison is against the GNU version
 	####################
-	strings ${GFIND} | egrep "^GNU"
+	strings ${GFIND} | egrep '^GNU '
 fi
 
 ################################################################################
@@ -151,7 +151,7 @@ fi
 # Everything up to here has been a preamble.  Here is where we construct the
 # test data to perform the test.
 #
-################################################################################
+#$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 ################################################################################
 ####################
 # Construct the test case
