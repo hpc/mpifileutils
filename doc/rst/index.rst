@@ -26,10 +26,10 @@ User Guide
 .. toctree::
    :maxdepth: 3
 
+   proj-design.rst
    tools.rst
    libmfu.rst
    build.rst
-   proj-design.rst
 
 Man Pages
 ***************************

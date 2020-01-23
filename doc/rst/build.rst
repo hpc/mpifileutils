@@ -45,12 +45,12 @@ Then to install the dependencies, run the following commands:
 
    mkdir deps
    cd deps
-     wget https://github.com/hpc/libcircle/releases/download/0.2.1-rc.1/libcircle-0.2.1-rc.1.tar.gz
+     wget https://github.com/hpc/libcircle/releases/download/v0.3/libcircle-0.3.0.tar.gz
      wget https://github.com/llnl/lwgrp/releases/download/v1.0.2/lwgrp-1.0.2.tar.gz
      wget https://github.com/llnl/dtcmp/releases/download/v1.1.0/dtcmp-1.1.0.tar.gz
      
-     tar -zxf libcircle-0.2.1-rc.1.tar.gz
-     cd libcircle-0.2.1-rc.1
+     tar -zxf libcircle-0.3.0.tar.gz
+     cd libcircle-0.3.0
        ./configure --prefix=$installdir
        make install
      cd ..
@@ -72,15 +72,15 @@ To build on PowerPC, one may need to add :code:`--build=powerpc64le-redhat-linux
 to the configure commands.
 
 Assuming the dependencies have been placed in
-an `install` directory as shown above, build mpiFileUtils from a release like v0.9:
+an `install` directory as shown above, build mpiFileUtils from a release like v0.10:
 
 .. code-block:: Bash
 
-   wget https://github.com/hpc/mpifileutils/archive/v0.9.tar.gz
-   tar -zxf v0.9.tar.gz
+   wget https://github.com/hpc/mpifileutils/archive/v0.10.tar.gz
+   tar -zxf v0.10.tar.gz
    mkdir build install
    cd build
-   cmake ../mpifileutils-0.9 \
+   cmake ../mpifileutils-0.10 \
      -DWITH_DTCMP_PREFIX=../install \
      -DWITH_LibCircle_PREFIX=../install \
      -DCMAKE_INSTALL_PREFIX=../install
