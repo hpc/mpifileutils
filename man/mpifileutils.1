@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "MPIFILEUTILS" "1" "Dec 28, 2019" "0.10" "mpiFileUtils"
+.TH "MPIFILEUTILS" "1" "Jan 27, 2020" "0.10" "mpiFileUtils"
 .SH NAME
 mpifileutils \- mpiFileUtils Documentation
 .
@@ -42,6 +42,41 @@ jobs like copy, remove, and compare for such datasets, providing speedups of up
 to 50x. The libmfu library simplifies the creation of new tools
 and it can be called directly from within HPC applications.
 .SH USER GUIDE
+.SS Project Design Principles
+.sp
+The following principles drive design decisions in the project.
+.SS Scale
+.sp
+The library and tools should be designed such that running with more processes
+increases performance, provided there are sufficient data and parallelism
+available in the underlying file systems. The design of the tool should not
+impose performance scalability bottlenecks.
+.SS Performance
+.sp
+While it is tempting to mimic the interface, behavior, and file formats of
+familiar tools like cp, rm, and tar, when forced with a choice between
+compatibility and performance, mpiFileUtils chooses performance. For example,
+if an archive file format requires serialization that inhibits parallel
+performance, mpiFileUtils will opt to define a new file format that enables
+parallelism rather than being constrained to existing formats. Similarly,
+options in the tool command line interface may have different semantics from
+familiar tools in cases where performance is improved. Thus, one should be
+careful to learn the options of each tool.
+.SS Portability
+.sp
+The tools are intended to support common file systems used in HPC centers, like
+Lustre, GPFS, and NFS. Additionally, methods in the library should be portable
+and efficient across multiple file systems. Tool and library users can rely on
+mpiFileUtils to provide portable and performant implementations.
+.SS Composability
+.sp
+While the tools do not support chaining with Unix pipes, they do support
+interoperability through input and output files. One tool may process a dataset
+and generate an output file that another tool can read as input, e.g., to walk
+a directory tree with one tool, filter the list of file names with another, and
+perhaps delete a subset of matching files with a third. Additionally, when logic
+is deemed to be useful across multiple tools or is anticipated to be useful in
+future tools or applications, it should be provided in the common library.
 .SS Utilities
 .sp
 The tools in mpiFileUtils are MPI applications. They must be launched
@@ -225,12 +260,12 @@ installdir=\(gapwd\(ga/install
 
 mkdir deps
 cd deps
-  wget https://github.com/hpc/libcircle/releases/download/0.2.1\-rc.1/libcircle\-0.2.1\-rc.1.tar.gz
+  wget https://github.com/hpc/libcircle/releases/download/v0.3/libcircle\-0.3.0.tar.gz
   wget https://github.com/llnl/lwgrp/releases/download/v1.0.2/lwgrp\-1.0.2.tar.gz
   wget https://github.com/llnl/dtcmp/releases/download/v1.1.0/dtcmp\-1.1.0.tar.gz
 
-  tar \-zxf libcircle\-0.2.1\-rc.1.tar.gz
-  cd libcircle\-0.2.1\-rc.1
+  tar \-zxf libcircle\-0.3.0.tar.gz
+  cd libcircle\-0.3.0
     ./configure \-\-prefix=$installdir
     make install
   cd ..
@@ -256,17 +291,17 @@ To build on PowerPC, one may need to add \fB\-\-build=powerpc64le\-redhat\-linux
 to the configure commands.
 .sp
 Assuming the dependencies have been placed in
-an \fIinstall\fP directory as shown above, build mpiFileUtils from a release like v0.9:
+an \fIinstall\fP directory as shown above, build mpiFileUtils from a release like v0.10:
 .INDENT 0.0
 .INDENT 3.5
 .sp
 .nf
 .ft C
-wget https://github.com/hpc/mpifileutils/archive/v0.9.tar.gz
-tar \-zxf v0.9.tar.gz
+wget https://github.com/hpc/mpifileutils/archive/v0.10.tar.gz
+tar \-zxf v0.10.tar.gz
 mkdir build install
 cd build
-cmake ../mpifileutils\-0.9 \e
+cmake ../mpifileutils\-0.10 \e
   \-DWITH_DTCMP_PREFIX=../install \e
   \-DWITH_LibCircle_PREFIX=../install \e
   \-DCMAKE_INSTALL_PREFIX=../install
@@ -340,41 +375,6 @@ cmake ../mpifileutils
 .sp
 The other way to use spack is to create a “view” to the installed dependencies.
 Details on this are coming soon.
-.SS Project Design Principles
-.sp
-The following principles drive design decisions in the project.
-.SS Scale
-.sp
-The library and tools should be designed such that running with more processes
-increases performance, provided there are sufficient data and parallelism
-available in the underlying file systems. The design of the tool should not
-impose performance scalability bottlenecks.
-.SS Performance
-.sp
-While it is tempting to mimic the interface, behavior, and file formats of
-familiar tools like cp, rm, and tar, when forced with a choice between
-compatibility and performance, mpiFileUtils chooses performance. For example,
-if an archive file format requires serialization that inhibits parallel
-performance, mpiFileUtils will opt to define a new file format that enables
-parallelism rather than being constrained to existing formats. Similarly,
-options in the tool command line interface may have different semantics from
-familiar tools in cases where performance is improved. Thus, one should be
-careful to learn the options of each tool.
-.SS Portability
-.sp
-The tools are intended to support common file systems used in HPC centers, like
-Lustre, GPFS, and NFS. Additionally, methods in the library should be portable
-and efficient across multiple file systems. Tool and library users can rely on
-mpiFileUtils to provide portable and performant implementations.
-.SS Composability
-.sp
-While the tools do not support chaining with Unix pipes, they do support
-interoperability through input and output files. One tool may process a dataset
-and generate an output file that another tool can read as input, e.g., to walk
-a directory tree with one tool, filter the list of file names with another, and
-perhaps delete a subset of matching files with a third. Additionally, when logic
-is deemed to be useful across multiple tools or is anticipated to be useful in
-future tools or applications, it should be provided in the common library.
 .SH MAN PAGES
 .SS dbcast
 .SS SYNOPSIS
@@ -1816,6 +1816,13 @@ files and directories.
 .TP
 .B \-p, \-\-print
 Print files to the screen.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP

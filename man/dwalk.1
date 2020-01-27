@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DWALK" "1" "Dec 28, 2019" "0.10" "mpiFileUtils"
+.TH "DWALK" "1" "Jan 27, 2020" "0.10" "mpiFileUtils"
 .SH NAME
 dwalk \- distributed walk and list
 .
@@ -100,6 +100,13 @@ files and directories.
 .TP
 .B \-p, \-\-print
 Print files to the screen.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-progress N
+Print progress message to stdout approximately every N seconds.
+The number of seconds must be a non\-negative integer.
+A value of 0 disables progress messages.
 .UNINDENT
 .INDENT 0.0
 .TP
