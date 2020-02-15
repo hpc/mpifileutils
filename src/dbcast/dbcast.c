@@ -215,17 +215,17 @@ static int gcs_get_shmem_file(char* file, int len, MPI_Comm comm)
 {
   /* create a new key if we need to */
   if (gcs_shm_file_key == MPI_KEYVAL_INVALID) {
-    MPI_Keyval_create(&gcs_shm_file_attr_copy, &gcs_shm_file_attr_del, &gcs_shm_file_key, (void*)0);
+    MPI_Comm_create_keyval(&gcs_shm_file_attr_copy, &gcs_shm_file_attr_del, &gcs_shm_file_key, (void*)0);
   }
 
   /* fetch attribute value associated with our key from the communicator */
   int flag;
   char* file_tmp = NULL;
-  MPI_Attr_get(comm, gcs_shm_file_key, &file_tmp, &flag);
+  MPI_Comm_get_attr(comm, gcs_shm_file_key, &file_tmp, &flag);
   if (!flag) {
     /* if no value is set, build the filename for this communicator and set the attr value */
     file_tmp = gcs_build_shmem_file(comm);
-    MPI_Attr_put(comm, gcs_shm_file_key, (void*) file_tmp);
+    MPI_Comm_set_attr(comm, gcs_shm_file_key, (void*) file_tmp);
   }
 
   /* check that we got two valid pointers */
