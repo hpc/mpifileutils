@@ -16,34 +16,113 @@
 int MFU_PRED_EXEC  (mfu_flist flist, uint64_t idx, void* arg);
 int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg);
 
-int MFU_PRED_EXEC (mfu_flist flist, uint64_t idx, void* arg)
+static char* escape_name (const char* name, char c)
 {
-    int argmax = 1024*1024;;
-    int written = 0;
-    int ret;
-    char* command = MFU_STRDUP((char*) arg);
-    char* cmdline = (char*) MFU_MALLOC(argmax);
-    char* subst = strstr(command, "{}");
+    /* allocate buffer to hold our output string */
+    int argmax = 1024*1024;
+    char* newname = (char*) MFU_MALLOC(argmax);
 
-    if (subst) {
-        subst[0] = '\0';
-        subst += 2; /* Point to the first char after '{}' */
+    /* intialize the output string and its size */
+    int len = 0;
+    newname[0] = '\0';
+
+    /* dup input name so we can modify it */
+    char* tmpname = (char*) MFU_STRDUP(name);
+
+    /* compute pointer to end of name */
+    int namelen = strlen(tmpname);
+    char* end = tmpname + namelen;
+
+    /* escape spaces that might be in file name */
+    char* ptr = tmpname;
+    while (ptr < end) {
+        /* look for target character in string,
+         * and get pointer to it if found */
+        char* start = strchr(ptr, c);
+
+        /* copy remainder of string and break if not found */
+        if (start == NULL) {
+            int copylen = strlen(ptr);
+            if (len + copylen < argmax) {
+                strcat(newname, ptr);
+            } else {
+                /* error: out of space */
+            }
+            len += copylen;
+
+            /* we've reached the end of the string */
+            break;
+        }
+
+        /* otherwise, we found the character,
+         * replace it with NULL to terminate string */
+        *start = '\0';
+
+        /* copy over portion of string up to character */
+        if (start > ptr) {
+            int copylen = strlen(ptr);
+            if (len + copylen < argmax) {
+                strcat(newname, ptr);
+            } else {
+                /* error: out of space */
+            }
+            len += copylen;
+        }
+
+        /* precede character with '\' */
+        if (len + 2 < argmax) {
+            newname[len + 0] = '\\';
+            newname[len + 1] = c;
+            newname[len + 2] = '\0';
+        } else {
+            /* error: out of space */
+        }
+        len += 2;
+
+        /* advance past current character */
+        ptr = start + 1;
     }
 
+    /* free off our temporary copy of the input string */
+    mfu_free(&tmpname);
+
+    return newname;
+}
+
+int MFU_PRED_EXEC (mfu_flist flist, uint64_t idx, void* arg)
+{
+    /* get full path to this item */
     const char* name = mfu_flist_file_get_name(flist, idx);
 
-    written = snprintf(cmdline, argmax/sizeof(char), "%s%s%s", command, name, subst);
+    /* escape any spaces in the name */
+    char* newname = escape_name(name, ' ');
+
+    char* command = MFU_STRDUP((char*) arg);
+
+    char* subst = strstr(command, "{}");
+    if (subst) {
+        subst[0] = '\0';
+
+        /* Point to the first char after '{}' */
+        subst += 2;
+    }
+
+    int argmax = 1024*1024;
+    char* cmdline = (char*) MFU_MALLOC(argmax);
+    int written = snprintf(cmdline, argmax/sizeof(char), "%s%s%s", command, newname, subst);
     if (written > argmax/sizeof(char)) {
-        fprintf(stderr, "argument %s to exec too long.\n", cmdline);
+        fprintf(stderr, "--exec argument too long: %s\n", cmdline);
         mfu_free(&cmdline);
         mfu_free(&command);
+        mfu_free(&newname);
         return -1;
     }
 
-    ret = system(cmdline);
+    int ret = system(cmdline);
 
     mfu_free(&cmdline);
     mfu_free(&command);
+    mfu_free(&newname);
 
     return ret ? 0 : 1;
 }
