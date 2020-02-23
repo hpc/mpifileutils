@@ -260,6 +260,8 @@ int main (int argc, char** argv)
         int i;
         int space;
         char* buf;
+        int buflen;
+        int command_terminated;
         mfu_pred_times* t;
         mfu_pred_times_rel* tr;
         regex_t* r;
@@ -270,29 +272,52 @@ int main (int argc, char** argv)
 
     	switch (c) {
     	case 'e':
+            command_terminated = 0;
             space = 1024 * 1024;
     	    buf = (char *)MFU_MALLOC(space);
-    	    for (i = optind-1; strcmp(";", argv[i]); i++) {
-    	        if (i > argc) {
-                    if (rank == 0) {
-    	                printf("%s: exec missing terminating ';'\n", argv[0]);
-                    }
-    	            exit(1);
-    	        }
+            buf[0] = '\0';
+    	    for (i = optind - 1; i < argc; i++) {
+                /* check for terminating ';' */
+                if (strcmp(argv[i], ";") == 0) {
+                    /* found the trailing ';' character so we can
+                     * copying the command */
+                    command_terminated = 1;
+                    break;
+                }
+
+                /* found an item that is not the terminating ';',
+                 * so copy it into our command buffer */
     	        strncat(buf, argv[i], space);
+
+                /* account for reduced space in our command buffer */
     	        space -= strlen(argv[i]) + 1; /* save room for space or null */
     	        if (space <= 0) {
                     if (rank == 0) {
     	                printf("%s: exec argument list too long.\n", argv[0]);
                     }
     	            mfu_free(&buf);
-    	            continue;
+                    return 1;
     	        }
+
+                /* tack on a space to separate this word from the next */
     	        strcat(buf, " ");
     	        optind++;
     	    }
-    	    buf[strlen(buf)] = '\0'; /* clobbers trailing space */
-    	    mfu_pred_add(pred_head, MFU_PRED_EXEC, buf);
+    	    if (! command_terminated) {
+                if (rank == 0) {
+    	            printf("%s: exec missing terminating ';'\n", argv[0]);
+                }
+    	        mfu_free(&buf);
+                return 1;
+    	    }
+
+            /* clobber any trailing space */
+            buflen = strlen(buf);
+            if (buflen > 0) {
+    	        buf[buflen - 1] = '\0';
+            }
+
+    	    mfu_pred_add(pred_head, MFU_PRED_EXEC, (void*)buf);
     	    break;
 
     	case 'd':
