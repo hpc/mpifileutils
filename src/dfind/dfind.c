@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <limits.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include <regex.h>
 
@@ -18,34 +20,118 @@ int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg);
 
 int MFU_PRED_EXEC (mfu_flist flist, uint64_t idx, void* arg)
 {
-    int argmax = 1024*1024;;
-    int written = 0;
-    int ret;
-    char* command = MFU_STRDUP((char*) arg);
-    char* cmdline = (char*) MFU_MALLOC(argmax);
-    char* subst = strstr(command, "{}");
-
-    if (subst) {
-        subst[0] = '\0';
-        subst += 2; /* Point to the first char after '{}' */
-    }
-
+    /* get file name for this item */
     const char* name = mfu_flist_file_get_name(flist, idx);
 
-    written = snprintf(cmdline, argmax/sizeof(char), "%s%s%s", command, name, subst);
-    if (written > argmax/sizeof(char)) {
-        fprintf(stderr, "argument %s to exec too long.\n", cmdline);
-        mfu_free(&cmdline);
-        mfu_free(&command);
-        return -1;
+    /* get pointer to encoded argc count and argv array */
+    char* buf = (char*) arg;
+
+    /* get number of argv parameters */
+    int count = *(int*)buf;
+
+    /* allocate a char* for each item in the argv array,
+     * plus one more for a trailing NULL */
+    char** argv = (char**) MFU_MALLOC(sizeof(char*) * (count + 1));
+
+    /* set final pointer to NULL to terminate argv list */
+    argv[count] = NULL;
+
+    /* set pointer to first item in encoded argv array */
+    char* ptr = buf + sizeof(int);
+
+    /* generate string for each argv item */
+    int i;
+    for (i = 0; i < count; i++) {
+        /* count number of bytes we need to allocate for this item,
+         * initialize count to 0 */
+        size_t len = 0;
+
+        /* count number of bytes needed to represent this item
+         * after we'd replace any {} with the file name */
+        char* start = ptr;
+        char* end = ptr + strlen(ptr);
+        while (start < end) {
+            /* search for any {} in this item */
+            char* subst = strstr(start, "{}");
+            if (subst == NULL) {
+                /* there is no {} in this item,
+                 * we'll copy it in verbatim */
+                size_t startlen = strlen(start);
+                len += startlen;
+                start += startlen;
+            } else {
+                /* found a {} in this item, count number of chars
+                 * up to that point + strlen(file) */
+                len += subst - start;
+                len += strlen(name);
+
+                /* advance to first character past end of {} */
+                start = subst + 2;
+            }
+        }
+        /* one more for trailing NULL to terminate this string */
+        len += 1;
+
+        /* now that we know the length,
+         * allocate space to hold this item */
+        argv[i] = (char*) MFU_MALLOC(len);
+
+        /* construct string for this item */
+        len = 0;
+        start = ptr;
+        end = ptr + strlen(ptr);
+        while (start < end) {
+            /* search for any {} in this item */
+            char* subst = strstr(start, "{}");
+            if (subst == NULL) {
+                /* there is no {} left in this item,
+                 * so copy it in verbatim */
+                strcpy(argv[i] + len, start);
+                size_t startlen = strlen(start);
+                len += startlen;
+                start += startlen;
+            } else {
+                /* we have a {} in this item, copy portion of item
+                 * up to start of {} string */
+                memcpy(argv[i] + len, start, subst - start);
+                len += subst - start;
+    
+                /* replace {} with file name */
+                memcpy(argv[i] + len, name, strlen(name));
+                len += strlen(name);
+    
+                /* advance to first character past end of {} */
+                start = subst + 2;
+            }
+        }
+        /* terminate string */
+        argv[i][len] = '\0';
+
+        /* advance to next item in encoded argv array */
+        ptr += strlen(ptr) + 1;
     }
 
-    ret = system(cmdline);
+    /* fork and exec child process */
+    pid_t pid = fork();
+    if (pid == 0) {
+        execvp(argv[0], argv);
+    }
 
-    mfu_free(&cmdline);
-    mfu_free(&command);
+    /* wait for child process to return */
+    int status;
+    pid = wait(&status);
 
-    return ret ? 0 : 1;
+    /* get exit code from child process */
+    int ret = WEXITSTATUS(status);
+
+    /* free memory we allocated for argv array to exec call */
+    for (i = 0; i < count; i++) {
+        mfu_free(&argv[i]);
+    }
+    mfu_free(&argv);
+
+    /* return success or failure depending on exit code from child process */
+    return (ret == 0) ? 1 : 0;
 }
 
 int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg)
@@ -259,9 +345,11 @@ int main (int argc, char** argv)
 
         int i;
         int space;
+        size_t buflen;
         char* buf;
-        int buflen;
-        int command_terminated;
+        char* ptr;
+        int argc_start;
+        int argc_end;
         mfu_pred_times* t;
         mfu_pred_times_rel* tr;
         regex_t* r;
@@ -272,50 +360,39 @@ int main (int argc, char** argv)
 
     	switch (c) {
     	case 'e':
-            command_terminated = 0;
-            space = 1024 * 1024;
-    	    buf = (char *)MFU_MALLOC(space);
-            buf[0] = '\0';
-    	    for (i = optind - 1; i < argc; i++) {
+            argc_start = optind - 1;
+            argc_end = -1;
+            buflen = sizeof(int);
+    	    for (i = argc_start; i < argc; i++) {
                 /* check for terminating ';' */
                 if (strcmp(argv[i], ";") == 0) {
                     /* found the trailing ';' character so we can
                      * copying the command */
-                    command_terminated = 1;
+                    argc_end = i;
                     break;
                 }
 
-                /* found an item that is not the terminating ';',
-                 * so copy it into our command buffer */
-    	        strncat(buf, argv[i], space);
-
-                /* account for reduced space in our command buffer */
-    	        space -= strlen(argv[i]) + 1; /* save room for space or null */
-    	        if (space <= 0) {
-                    if (rank == 0) {
-    	                printf("%s: exec argument list too long.\n", argv[0]);
-                    }
-    	            mfu_free(&buf);
-                    return 1;
-    	        }
+                /* count up bytes in this parameter */
+                buflen += strlen(argv[i]) + 1;
 
                 /* tack on a space to separate this word from the next */
-    	        strcat(buf, " ");
     	        optind++;
     	    }
-    	    if (! command_terminated) {
+    	    if (argc_end == -1) {
                 if (rank == 0) {
     	            printf("%s: exec missing terminating ';'\n", argv[0]);
                 }
-    	        mfu_free(&buf);
                 return 1;
     	    }
 
-            /* clobber any trailing space */
-            buflen = strlen(buf);
-            if (buflen > 0) {
-    	        buf[buflen - 1] = '\0';
-            }
+            buf = (char*) MFU_MALLOC(buflen);
+            *(int*)buf = argc_end - argc_start;
+
+            ptr = buf + sizeof(int);
+    	    for (i = argc_start; i < argc_end; i++) {
+                strcpy(ptr, argv[i]);
+                ptr += strlen(argv[i]) + 1;
+    	    }
 
     	    mfu_pred_add(pred_head, MFU_PRED_EXEC, (void*)buf);
     	    break;
