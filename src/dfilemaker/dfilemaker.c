@@ -585,7 +585,8 @@ int main(int narg, char** arg)
      *----------------------------------------------*/
     if (narg < 4) {
         if (rank == 0) {
-            printf("Usage: dfilemaker <nitems> <nlevels> <maxflen> [-i seed]\n");
+            printf("Usage: dfilemaker <ntotal> <nlevels> <maxflen> [-i seed]\n");
+            printf("       where ntotal > (levels * (nlevels + 1) /2)\n");
         }
         MPI_Finalize();
         exit(0);
@@ -609,7 +610,7 @@ int main(int narg, char** arg)
     nfiles[0] = ntotal / nsum;
     if (nfiles[0] < 1) {
         if (rank == 0) {
-            printf("nfiles must be greater than nlevels\n");
+            printf("ntotal must be greater than (levels * (nlevels + 1) /2)\n");
         }
         MPI_Finalize();
         exit(0);
