@@ -1261,7 +1261,9 @@ static int dsync_sync_files(
         mfu_flist dst_remove_list,
         mfu_flist link_dst_list,
         mfu_flist src_cp_list,
-        mfu_copy_opts_t* mfu_copy_opts)
+        mfu_copy_opts_t* mfu_copy_opts,
+        mfu_file_t* mfu_src_file,
+        mfu_file_t* mfu_dst_file)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -1273,7 +1275,7 @@ static int dsync_sync_files(
 
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
-    mfu_param_path_check_copy(1, src_path, dest_path, &valid, &copy_into_dir);
+    mfu_param_path_check_copy(1, src_path, dest_path, mfu_src_file, mfu_dst_file, &valid, &copy_into_dir);
 
     /* record copy_into_dir flag result from check_copy into
      * mfu copy options structure */
@@ -1316,7 +1318,8 @@ static int dsync_sync_files(
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Copying items to destination");
         }
-        tmp_rc = mfu_flist_copy(src_cp_list, 1, src_path, dest_path, mfu_copy_opts);
+        tmp_rc = mfu_flist_copy(src_cp_list, 1, src_path, dest_path, mfu_copy_opts,
+                                mfu_src_file, mfu_dst_file);
         if (tmp_rc < 0) {
             rc = -1;
         }
@@ -1333,7 +1336,8 @@ static int dsync_sync_files(
             if (rank == 0) {
                 MFU_LOG(MFU_LOG_INFO, "Linking items in destination");
             }
-            tmp_rc = mfu_flist_hardlink(link_dst_list, link_path, dest_path, mfu_copy_opts);
+            tmp_rc = mfu_flist_hardlink(link_dst_list, link_path, dest_path,
+                                        mfu_copy_opts, mfu_src_file, mfu_dst_file);
             if (tmp_rc < 0) {
                 rc = -1;
             }
@@ -1503,7 +1507,9 @@ static int dsync_strmap_compare(
     mfu_copy_opts_t* mfu_copy_opts,
     const mfu_param_path* src_path,
     const mfu_param_path* dest_path,
-    const mfu_param_path* link_path)
+    const mfu_param_path* link_path,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -1784,7 +1790,7 @@ static int dsync_strmap_compare(
         /* sync the files that are in the source and destination directories */
         tmp_rc = dsync_sync_files(src_map, dst_map,
             src_path, dest_path, link_path, dst_list, dst_remove_list,
-            link_dst_list, cp_list, mfu_copy_opts);
+            link_dst_list, cp_list, mfu_copy_opts, mfu_src_file, mfu_dst_file);
         if (tmp_rc < 0) {
             rc = -1;
         }
@@ -1809,7 +1815,8 @@ static int dsync_strmap_compare(
             uint64_t dst_index = (uint64_t) dst_i;
 
             /* copy metadata values from source to destination, if needed */
-            tmp_rc = mfu_flist_file_sync_meta(src_list, src_index, dst_list, dst_index);
+            tmp_rc = mfu_flist_file_sync_meta(src_list, src_index, dst_list,
+                                              dst_index, mfu_dst_file);
             if (tmp_rc < 0) {
                 rc = -1;
             }
@@ -2958,6 +2965,10 @@ int main(int argc, char **argv)
     mfu_flist flist_tmp_src = mfu_flist_new();
     mfu_flist flist_tmp_dst = mfu_flist_new();
 
+    /* create new mfu_file objects */
+    mfu_file_t* mfu_src_file = mfu_file_new();
+    mfu_file_t* mfu_dst_file = mfu_file_new();
+
     mfu_param_path* linkpath = NULL;
     mfu_flist flist_tmp_link = MFU_FLIST_NULL;     
     if (options.link_dest != NULL) {
@@ -2989,7 +3000,7 @@ int main(int argc, char **argv)
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking source path");
     }
-    mfu_flist_walk_param_paths(1, srcpath, walk_opts, flist_tmp_src);
+    mfu_flist_walk_param_paths(1, srcpath, walk_opts, flist_tmp_src, mfu_src_file);
 
     /* check that we actually got something so that we don't delete
      * an entire target directory because of a typo on the source dir */
@@ -3016,14 +3027,14 @@ int main(int argc, char **argv)
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking destination path");
     }
-    mfu_flist_walk_param_paths(1, destpath, walk_opts, flist_tmp_dst);
+    mfu_flist_walk_param_paths(1, destpath, walk_opts, flist_tmp_dst, mfu_dst_file);
 
     /* walk link-dest path if we have one */
     if (options.link_dest != NULL) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Walking link-dest path");
         }
-        mfu_flist_walk_param_paths(1, linkpath, walk_opts, flist_tmp_link);
+        mfu_flist_walk_param_paths(1, linkpath, walk_opts, flist_tmp_link, mfu_dst_file);
     }
 
     /* store src and dest path strings */
@@ -3061,7 +3072,7 @@ int main(int argc, char **argv)
 
     /* compare files in map_src with those in map_dst */
     int tmp_rc = dsync_strmap_compare(flist_src, map_src, flist_dst, map_dst, flist_link, map_link,
-        strlen(path_src), mfu_copy_opts, srcpath, destpath, linkpath);
+        strlen(path_src), mfu_copy_opts, srcpath, destpath, linkpath, mfu_src_file, mfu_dst_file);
     if (tmp_rc < 0) {
         rc = 1;
     }
@@ -3099,6 +3110,10 @@ int main(int argc, char **argv)
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);
+
+    /* delete file objects */
+    mfu_file_delete(&mfu_src_file);
+    mfu_file_delete(&mfu_dst_file);
 
     /* shut down */
     mfu_finalize();

@@ -33,6 +33,8 @@ extern "C" {
 
 #include "mfu_progress.h"
 
+#include "mfu_io.h"
+
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 #ifdef HAVE_BYTESWAP_H
 # define mfu_ntoh16(x) bswap_16(x)
@@ -68,6 +70,14 @@ typedef enum {
     MFU_LOG_DBG     = 6
 } mfu_loglevel;
 
+#ifdef DAOS_SUPPORT
+enum handleType {
+        POOL_HANDLE,
+        CONT_HANDLE,
+        ARRAY_HANDLE
+};
+#endif
+
 extern int mfu_initialized;
 
 /* set during mfu_init, used in MFU_LOG */
@@ -102,6 +112,20 @@ extern int mfu_progress_timeout;
             fflush(mfu_debug_stream); \
         } \
     } while (0)
+
+/******** DAOS utility functions ********/
+#ifdef DAOS_SUPPORT
+bool daos_uuid_valid(const uuid_t uuid);
+
+/* Distribute process 0's pool or container handle to others. */
+void HandleDistribute(int rank, daos_handle_t *handle,
+                      daos_handle_t* poh, enum handleType type);
+
+/* connect to DAOS pool, and then open container */
+void daos_connect(int* rank, daos_handle_t* poh,
+                  daos_handle_t* coh, uuid_t* pool_uuid,
+                  uuid_t* cont_uuid, char* svc);
+#endif
 
 /* initialize mfu library,
  * reference counting allows for multiple init/finalize pairs */
@@ -234,15 +258,15 @@ void mfu_stat_set_ctimes(struct stat* sb, uint64_t secs, uint64_t nsecs);
 /* compares contents of two files and optionally overwrite dest with source,
  * returns -1 on error, 0 if equal, 1 if different */
 int mfu_compare_contents(
-    const char* src,         /* IN  - path name to souce file */
-    const char* dst,         /* IN  - path name to destination file */
-    off_t offset,            /* IN  - offset with file to start comparison */
-    off_t length,            /* IN  - number of bytes to be compared */
-    size_t bufsize,          /* IN  - size of I/O buffer to be used during compare */
-    int overwrite,           /* IN  - whether to replace dest with source contents (1) or not (0) */
-    uint64_t* bytes_read,    /* OUT - number of bytes read (src + dest) */
-    uint64_t* bytes_written, /* OUT - number of bytes written to dest */
-    mfu_progress* prg        /* IN  - progress message structure */
+    const char* src,          /* IN  - path name to souce file */
+    const char* dst,          /* IN  - path name to destination file */
+    off_t offset,             /* IN  - offset with file to start comparison */
+    off_t length,             /* IN  - number of bytes to be compared */
+    size_t bufsize,           /* IN  - size of I/O buffer to be used during compare */
+    int overwrite,            /* IN  - whether to replace dest with source contents (1) or not (0) */
+    uint64_t* bytes_read,     /* OUT - number of bytes read (src + dest) */
+    uint64_t* bytes_written,  /* OUT - number of bytes written to dest */
+    mfu_progress* prg         /* IN  - progress message structure */
 );
 
 /* uses the lustre api to obtain stripe count and stripe size of a file */

@@ -36,6 +36,114 @@ mfu_loglevel mfu_debug_level = MFU_LOG_ERR;
 /* default progress message timeout in seconds */
 int mfu_progress_timeout = 10;
 
+/***** DAOS utility functions ******/
+#ifdef DAOS_SUPPORT
+bool daos_uuid_valid(const uuid_t uuid)
+{
+	return uuid && !uuid_is_null(uuid);
+}
+
+/* Distribute process 0's pool or container handle to others. */
+void HandleDistribute(int rank, daos_handle_t *handle,
+                      daos_handle_t* poh, enum handleType type)
+{
+        d_iov_t global;
+        int        rc;
+
+        global.iov_buf = NULL;
+        global.iov_buf_len = 0;
+        global.iov_len = 0;
+
+        if (rank == 0) {
+                /* Get the global handle size. */
+                if (type == POOL_HANDLE) {
+                    rc = daos_pool_local2global(*handle, &global);
+                } else {
+                    rc = daos_cont_local2global(*handle, &global);
+                }
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_INFO, "Failed to get global handle size");
+                }
+        }
+
+        MPI_Bcast(&global.iov_buf_len, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+ 
+        global.iov_len = global.iov_buf_len;
+        global.iov_buf = malloc(global.iov_buf_len);
+        if (global.iov_buf == NULL) {
+            MPI_Abort(MPI_COMM_WORLD, -1);
+        }
+
+        if (rank == 0) {
+                if (type == POOL_HANDLE) {
+                    rc = daos_pool_local2global(*handle, &global);
+                } else {
+                    rc = daos_cont_local2global(*handle, &global);
+                }
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_INFO, "Failed to create global handle");
+                }
+        }
+
+        MPI_Bcast(global.iov_buf, global.iov_buf_len, MPI_BYTE, 0, MPI_COMM_WORLD);
+
+        if (rank != 0) {
+                if (type == POOL_HANDLE) {
+                    rc = daos_pool_global2local(global, handle);
+                } else {
+                    rc = daos_cont_global2local(*poh, global, handle);
+                }
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_INFO, "Failed to get local handle");
+                }
+        }
+
+        free(global.iov_buf);
+}
+
+void daos_connect(int* rank, daos_handle_t* poh, daos_handle_t* coh,
+                  uuid_t* pool_uuid, uuid_t* cont_uuid, char* svc)
+{ 
+    /* TODO: if src daos path and dst daos path are false 
+    *  skip connecting to daos pool */
+    int rc = 0;
+    if (*rank == 0) {
+        d_rank_list_t *svcl = NULL;
+        daos_pool_info_t pool_info;
+        daos_cont_info_t co_info;
+
+        svcl = daos_rank_list_parse(svc, ":");
+        if (svcl == NULL) {
+ 	    MPI_Abort(MPI_COMM_WORLD, -1);
+        }
+
+        /** Connect to DAOS pool */
+        rc = daos_pool_connect(*pool_uuid, NULL, svcl, DAOS_PC_RW,
+                               poh, &pool_info, NULL);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to connect to pool");
+        }
+        d_rank_list_free(svcl);
+
+        rc = daos_cont_open(*poh, *cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
+        /* If NOEXIST we create it */
+        if (rc != 0) {
+            uuid_t cuuid;
+            rc = dfs_cont_create(*poh, cuuid, NULL, NULL, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to create DFS container");
+            }
+            rc = daos_cont_open(*poh, cuuid, DAOS_COO_RW, coh, &co_info, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to open DFS container");
+            }
+        }
+    }
+    HandleDistribute(*rank, poh, poh, POOL_HANDLE);
+    HandleDistribute(*rank, coh, poh, CONT_HANDLE);
+}
+#endif
+
 /* initialize mfu library,
  * reference counting allows for multiple init/finalize pairs */
 int mfu_init()
@@ -44,10 +152,10 @@ int mfu_init()
         /* set globals */
         MPI_Comm_rank(MPI_COMM_WORLD, &mfu_rank);
         mfu_debug_stream = stdout;
-
         DTCMP_Init();
         mfu_initialized++;
     }
+
     return MFU_SUCCESS;
 }
 

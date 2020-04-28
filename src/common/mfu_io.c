@@ -9,13 +9,204 @@
 #include <string.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <assert.h>
+#include <libgen.h>
+
+#ifdef DAOS_SUPPORT
+#include <gurt/common.h>
+#include <gurt/hash.h>
+#endif
 
 #include "mfu.h"
 
 #define MFU_IO_TRIES  (5)
 #define MFU_IO_USLEEP (100)
 
+static int mpi_rank;
+
+#ifdef DAOS_SUPPORT
+struct d_hash_table *dir_hash;
+
+struct mfu_dir_hdl {
+        d_list_t	entry;
+        dfs_obj_t	*oh;
+        char		name[PATH_MAX];
+};
+
+static inline struct mfu_dir_hdl* hdl_obj(d_list_t *rlink)
+{
+        return container_of(rlink, struct mfu_dir_hdl, entry);
+}
+
+static bool key_cmp(struct d_hash_table *htable, d_list_t *rlink,
+	const void *key, unsigned int ksize)
+{
+        struct mfu_dir_hdl *hdl = hdl_obj(rlink);
+
+        return (strcmp(hdl->name, (const char *)key) == 0);
+}
+
+static void rec_free(struct d_hash_table *htable, d_list_t *rlink)
+{
+        struct mfu_dir_hdl *hdl = hdl_obj(rlink);
+
+        assert(d_hash_rec_unlinked(&hdl->entry));
+        dfs_release(hdl->oh);
+        free(hdl);
+}
+
+static d_hash_table_ops_t hdl_hash_ops = {
+        .hop_key_cmp	= key_cmp,
+        .hop_rec_free	= rec_free
+};
+
+static dfs_obj_t* lookup_insert_dir(const char *name, mfu_file_t* mfu_file)
+{
+        struct mfu_dir_hdl *hdl;
+        d_list_t *rlink;
+        int rc;
+
+	if (dir_hash == NULL) {
+	    rc = d_hash_table_create(0, 16, NULL, &hdl_hash_ops, &dir_hash);
+	    if (rc) {
+		    fprintf(stderr, "Failed to initialize dir hashtable");
+		    return NULL;
+	    }
+	}
+
+        rlink = d_hash_rec_find(dir_hash, name, strlen(name));
+        if (rlink != NULL) {
+                hdl = hdl_obj(rlink);
+                return hdl->oh;
+        }
+
+        hdl = calloc(1, sizeof(struct mfu_dir_hdl));
+        if (hdl == NULL)
+		return NULL;
+
+        strncpy(hdl->name, name, PATH_MAX-1);
+        hdl->name[PATH_MAX-1] = '\0';
+
+        rc = dfs_lookup(mfu_file->dfs, name, O_RDWR, &hdl->oh, NULL, NULL);
+	if (rc) {
+		fprintf(stderr, "dfs_lookup() of %s Failed", name);
+		return NULL;
+	}
+
+        rc = d_hash_rec_insert(dir_hash, hdl->name, strlen(hdl->name),
+                               &hdl->entry, true);
+	if (rc)
+		return NULL;
+
+        return hdl->oh;
+}
+
+static int parse_filename(const char* path, char** _obj_name, char** _cont_name)
+{
+	char *f1 = NULL;
+	char *f2 = NULL;
+	char *fname = NULL;
+	char *cont_name = NULL;
+	int rc = 0;
+
+	if (path == NULL || _obj_name == NULL || _cont_name == NULL)
+		return -EINVAL;
+
+	if (strcmp(path, "/") == 0) {
+		*_cont_name = strdup("/");
+		if (*_cont_name == NULL)
+			return -ENOMEM;
+		*_obj_name = NULL;
+		return 0;
+	}
+
+	f1 = strdup(path);
+	if (f1 == NULL) {
+                rc = -ENOMEM;
+                goto out;
+        }
+
+	f2 = strdup(path);
+	if (f2 == NULL) {
+                rc = -ENOMEM;
+                goto out;
+        }
+
+	fname = basename(f1);
+	cont_name = dirname(f2);
+
+	if (cont_name[0] == '.' || cont_name[0] != '/') {
+		char cwd[1024];
+
+		if (getcwd(cwd, 1024) == NULL) {
+                        rc = -ENOMEM;
+                        goto out;
+                }
+
+		if (strcmp(cont_name, ".") == 0) {
+			cont_name = strdup(cwd);
+			if (cont_name == NULL) {
+                                rc = -ENOMEM;
+                                goto out;
+                        }
+		} else {
+			char *new_dir = calloc(strlen(cwd) + strlen(cont_name)
+					       + 1, sizeof(char));
+			if (new_dir == NULL) {
+                                rc = -ENOMEM;
+                                goto out;
+                        }
+
+			strcpy(new_dir, cwd);
+			if (cont_name[0] == '.') {
+				strcat(new_dir, &cont_name[1]);
+			} else {
+				strcat(new_dir, "/");
+				strcat(new_dir, cont_name);
+			}
+			cont_name = new_dir;
+		}
+		*_cont_name = cont_name;
+	} else {
+		*_cont_name = strdup(cont_name);
+		if (*_cont_name == NULL) {
+                        rc = -ENOMEM;
+                        goto out;
+                }
+	}
+
+	*_obj_name = strdup(fname);
+	if (*_obj_name == NULL) {
+		free(*_cont_name);
+		*_cont_name = NULL;
+                rc = -ENOMEM;
+                goto out;
+	}
+
+out:
+	if (f1)
+		free(f1);
+	if (f2)
+		free(f2);
+	return rc;
+}
+#endif
+
 /* calls access, and retries a few times if we get EIO or EINTR */
+int mfu_file_access(const char* path, int amode, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_access(path, amode);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_access(path, amode);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  path, mfu_file->type);
+    }
+}
+
 int mfu_access(const char* path, int amode)
 {
     int rc;
@@ -34,6 +225,14 @@ retry:
         }
     }
     return rc;
+}
+
+int daos_access(const char* path, int amode)
+{
+#ifdef DAOS_SUPPORT
+    /* noop becuase daos have an access call */
+    return 0;
+#endif
 }
 
 /* calls lchown, and retries a few times if we get EIO or EINTR */
@@ -57,7 +256,33 @@ retry:
     return rc;
 }
 
-/* calls chmod, and retries a few times if we get EIO or EINTR */
+int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(path, &name, &dir_name);
+    assert(dir_name);
+
+    dfs_obj_t *parent = NULL;
+    int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+    if (parent != NULL) {
+        rc = dfs_chmod(mfu_file->dfs, parent, name, mode);
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_chmod %s failed (%d %s)",
+                    name, rc, strerror(rc));
+            errno = rc;
+            rc = -1;
+        }
+    } else {
+        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
+        errno = ENOENT;
+        rc = -1;
+    }
+    return rc;
+#endif
+}
+
 int mfu_chmod(const char* path, mode_t mode)
 {
     int rc;
@@ -76,6 +301,21 @@ retry:
         }
     }
     return rc;
+}
+
+/* calls chmod, and retries a few times if we get EIO or EINTR */
+int mfu_file_chmod(const char* path, mode_t mode, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_chmod(path, mode);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_chmod(path, mode, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  path, mfu_file->type);
+    }
 }
 
 /* calls utimensat, and retries a few times if we get EIO or EINTR */
@@ -99,9 +339,37 @@ retry:
     return rc;
 }
 
-/* calls lstat, and retries a few times if we get EIO or EINTR */
-int mfu_lstat(const char* path, struct stat* buf)
-{
+int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file) {
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(path, &name, &dir_name);
+    assert(dir_name);
+
+    dfs_obj_t *parent = NULL;
+    int rc;
+    if (mfu_file->only_daos) {
+        rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
+            errno = ENOENT;
+            rc = -1;
+        }
+    } else {
+        parent = lookup_insert_dir(dir_name, mfu_file);
+    }
+    rc = dfs_stat(mfu_file->dfs, parent, name, buf);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_stat %s failed (%d %s)",
+                name, rc, strerror(rc));
+        errno = rc;
+        rc = -1;
+    }
+    return rc;
+#endif
+}
+
+int mfu_lstat(const char* path, struct stat* buf) {
     int rc;
     int tries = MFU_IO_TRIES;
 retry:
@@ -118,6 +386,21 @@ retry:
         }
     }
     return rc;
+}
+
+/* calls lstat, and retries a few times if we get EIO or EINTR */
+int mfu_file_lstat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_lstat(path, buf);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_stat(path, buf, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  path, mfu_file->type);
+    }
 }
 
 /* calls lstat64, and retries a few times if we get EIO or EINTR */
@@ -141,7 +424,12 @@ retry:
     return rc;
 }
 
-/* call mknod, retry a few times on EINTR or EIO */
+/* use a noop, daos does not have a mknod function */
+int daos_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file)
+{
+    return 0;
+}
+
 int mfu_mknod(const char* path, mode_t mode, dev_t dev)
 {
     int rc;
@@ -160,6 +448,21 @@ retry:
         }
     }
     return rc;
+}
+
+/* call mknod, retry a few times on EINTR or EIO */
+int mfu_file_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_mknod(path, mode, dev);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_mknod(path, mode, dev, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  path, mfu_file->type);
+    }
 }
 
 /* call remove, retry a few times on EINTR or EIO */
@@ -253,6 +556,33 @@ retry:
 /*****************************
  * Files
  ****************************/
+void daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(file, &name, &dir_name);
+    assert(dir_name);
+
+    dfs_obj_t *parent = NULL;
+    int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+    if (parent != NULL) {
+        rc = dfs_open(mfu_file->dfs, parent, name,
+                      S_IFREG | mode, flags,
+                      0, 0, NULL, &(mfu_file->obj));
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_open %s failed (%d %s)",
+                    name, rc, strerror(rc));
+            errno = rc;
+            rc = -1;
+        }
+    } else {
+        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
+        errno = ENOENT;
+        rc = -1;
+    }
+#endif
+}
 
 /* open file with specified flags and mode, retry open a few times on failure */
 int mfu_open(const char* file, int flags, ...)
@@ -297,13 +627,54 @@ int mfu_open(const char* file, int flags, ...)
             tries--;
         }
 
-        /* if we still don't have a valid file, consider it an error */
-        if (fd < 0) {
-            /* we could abort, but probably don't want to here */
-        }
+         /* if we still don't have a valid file, consider it an error */
+         if (fd < 0) {
+             /* we could abort, but probably don't want to here */
+         }
+    }
+    return fd;
+}
+
+void mfu_file_open(const char* file, int flags, mfu_file_t* mfu_file, ...)
+{
+    /* extract the mode (see man 2 open) */
+    int mode_set = 0;
+    mode_t mode  = 0;
+    if (flags & O_CREAT) {
+        va_list ap;
+        va_start(ap, mfu_file);
+        mode = va_arg(ap, mode_t);
+        va_end(ap);
+        mode_set = 1;
     }
 
-    return fd;
+    if (mfu_file->type == POSIX) {
+        if (mode_set) {
+            mfu_file->fd = mfu_open(file, flags, mode);
+        } else {
+            mfu_file->fd = mfu_open(file, flags);
+        }
+    } else if (mfu_file->type == DAOS) {
+        daos_open(file, flags, mode, mfu_file);
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  file, mfu_file->type);
+    }
+}
+
+/* release an open object */
+int daos_close(const char* file, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    int rc = dfs_release(mfu_file->obj);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_close %s failed (%d %s)",
+                file, rc, strerror(rc));
+        errno = rc;
+        rc = -1;
+    }
+    return rc;
+#endif
 }
 
 /* close file */
@@ -326,6 +697,40 @@ retry:
     return rc;
 }
 
+int mfu_file_close(const char* file, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_close(file, mfu_file->fd);
+        if (rc == 0) {
+            mfu_file->fd = -1;
+        }
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_close(file, mfu_file);
+#ifdef DAOS_SUPPORT
+        if (rc == 0) {
+            mfu_file->obj = NULL;
+        }
+#endif
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  file, mfu_file->type);
+    }
+}
+
+int daos_lseek(const char* file, mfu_file_t* mfu_file, off_t pos, int whence)
+{
+#ifdef DAOS_SUPPORT
+    if (whence == SEEK_SET) {
+        mfu_file->offset = (daos_off_t)pos;
+    } else {
+        MFU_ABORT(-1, "daos_lseek whence type not known: %d", whence);
+    }
+    return 0;
+#endif
+}
+
 /* seek file descriptor to specified position */
 off_t mfu_lseek(const char* file, int fd, off_t pos, int whence)
 {
@@ -346,7 +751,52 @@ retry:
     return rc;
 }
 
+off_t mfu_file_lseek(const char* file, mfu_file_t* mfu_file, off_t pos, int whence)
+{
+    if (mfu_file->type == POSIX) {
+        off_t rc = mfu_lseek(file, mfu_file->fd, pos, whence);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        off_t rc = daos_lseek(file, mfu_file, pos, whence);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  file, mfu_file->type);
+    }
+}
+
 /* reliable read from file descriptor (retries, if necessary, until hard error) */
+ssize_t mfu_file_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        ssize_t got_size = mfu_read(file, mfu_file->fd, buf, size);
+        return got_size;
+    } else if (mfu_file->type == DAOS) {
+        ssize_t got_size = daos_read(file, buf, size, mfu_file);
+        return got_size;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  file, mfu_file->type);
+    }
+}
+
+ssize_t daos_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    daos_size_t got_size;
+    mfu_file->sgl->sg_iovs[0].iov_len = size;
+    int rc = dfs_read(mfu_file->dfs, mfu_file->obj, mfu_file->sgl, mfu_file->offset, &got_size, NULL); 
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_read %s failed (%d %s)",
+                file, rc, strerror(rc));
+        errno = rc;
+        rc = -1;
+    }
+    mfu_file->offset += (daos_off_t)got_size;
+    return (ssize_t)got_size;
+#endif
+}
+
 ssize_t mfu_read(const char* file, int fd, void* buf, size_t size)
 {
     int tries = MFU_IO_TRIES;
@@ -384,6 +834,20 @@ ssize_t mfu_read(const char* file, int fd, void* buf, size_t size)
 }
 
 /* reliable write to file descriptor (retries, if necessary, until hard error) */
+ssize_t mfu_file_write(const char* file, const void* buf, size_t size, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        ssize_t num_bytes_written = mfu_write(file, mfu_file->fd, buf, size);
+        return num_bytes_written;
+    } else if (mfu_file->type == DAOS) {
+        ssize_t num_bytes_written = daos_write(file, buf, size, mfu_file);
+        return num_bytes_written;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  file, mfu_file->type);
+    }
+}
+
 ssize_t mfu_write(const char* file, int fd, const void* buf, size_t size)
 {
     int tries = 10;
@@ -419,6 +883,22 @@ ssize_t mfu_write(const char* file, int fd, const void* buf, size_t size)
     return n;
 }
 
+ssize_t daos_write(const char* file, const void* buf, size_t size, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    mfu_file->sgl->sg_iovs[0].iov_len = size;
+    int rc = dfs_write(mfu_file->dfs, mfu_file->obj, mfu_file->sgl, mfu_file->offset, NULL); 
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_write %s failed (%d %s)",
+                file, rc, strerror(rc));
+        errno = rc;
+        rc = -1;
+    }
+    mfu_file->offset += (daos_off_t)size;
+    return (ssize_t)size;
+#endif
+}
+
 /* truncate a file */
 int mfu_truncate(const char* file, off_t length)
 {
@@ -440,7 +920,22 @@ retry:
     return rc;
 }
 
-/* ftruncate a file */
+/* TODO: need to fix this function for dfs */
+int daos_ftruncate(mfu_file_t* mfu_file, off_t length)
+{
+#ifdef DAOS_SUPPORT
+    daos_off_t offset = (daos_off_t) length;
+    int rc = dfs_punch(mfu_file->dfs, mfu_file->obj, offset, DFS_MAX_FSIZE);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_punch failed (%d)",
+                rc, strerror(rc));
+        errno = rc;
+        rc = -1;
+    }
+    return rc;
+#endif
+}
+
 int mfu_ftruncate(int fd, off_t length)
 {
     int rc;
@@ -459,6 +954,21 @@ retry:
         }
     }
     return rc;
+}
+
+/* ftruncate a file */
+int mfu_file_ftruncate(mfu_file_t* mfu_file, off_t length)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_ftruncate(mfu_file->fd, length);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_ftruncate(mfu_file, length);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known, type=%d",
+                  mfu_file->type);
+    }
 }
 
 /* delete a file */
@@ -519,7 +1029,31 @@ void mfu_getcwd(char* buf, size_t size)
     }
 }
 
-/* create directory, retry a few times on EINTR or EIO */
+int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file) {
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(dir, &name, &dir_name);
+    assert(dir_name);
+
+    /* Need to lookup parent directory in DFS */
+    dfs_obj_t *parent = NULL;
+    int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+
+    /* only call mkdir if the dir_name is not the root DFS directory */
+    if (strcmp(dir_name, "/") != 0) {
+        rc = dfs_mkdir(mfu_file->dfs, parent, name, S_IRWXU, 0);
+    }
+
+    if (rc) {
+        errno = rc;
+        rc = -1;
+    }
+
+    return rc;
+#endif
+}
+
 int mfu_mkdir(const char* dir, mode_t mode)
 {
     int rc;
@@ -538,6 +1072,21 @@ retry:
         }
     }
     return rc;
+}
+
+/* create directory, retry a few times on EINTR or EIO */
+int mfu_file_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_mkdir(dir, mode);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_mkdir(dir, mode, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  dir, mfu_file->type);
+    }
 }
 
 /* remove directory, retry a few times on EINTR or EIO */
@@ -561,6 +1110,36 @@ retry:
     return rc;
 }
 
+#define NUM_DIRENTS 24
+
+#ifdef DAOS_SUPPORT
+struct dfs_mfu_t {
+    dfs_obj_t *dir;
+    struct dirent ents[NUM_DIRENTS];
+    daos_anchor_t anchor;
+    int num_ents;
+};
+#endif
+
+DIR* daos_opendir(const char* dir, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    struct dfs_mfu_t* dirp = calloc(1, sizeof(*dirp));
+    if (dirp == NULL) {
+        errno = ENOMEM;
+        return NULL;
+    }
+    int rc = dfs_lookup(mfu_file->dfs, dir, O_RDWR, &dirp->dir, NULL, NULL);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir);
+        errno = ENOENT;
+        free(dirp);
+        return NULL;
+    }
+    return (DIR *)dirp;
+#endif
+}
+
 /* open directory, retry a few times on EINTR or EIO */
 DIR* mfu_opendir(const char* dir)
 {
@@ -580,6 +1159,37 @@ retry:
         }
     }
     return dirp;
+}
+
+/* open directory, retry a few times on EINTR or EIO */
+DIR* mfu_file_opendir(const char* dir, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        DIR* dirp = mfu_opendir(dir);
+        return dirp;
+    } else if (mfu_file->type == DAOS) {
+        DIR* dirp = daos_opendir(dir, mfu_file);
+        return dirp;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  dir, mfu_file->type);
+    }
+}
+
+int daos_closedir(DIR* _dirp, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    struct dfs_mfu_t *dirp = (struct dfs_mfu_t *)_dirp;
+    int rc = dfs_release(dirp->dir);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d)",
+                rc, strerror(rc));
+        errno = rc;
+        rc = -1;
+    }
+    free(dirp);
+    return rc;
+#endif
 }
 
 /* close directory, retry a few times on EINTR or EIO */
@@ -603,6 +1213,52 @@ retry:
     return rc;
 }
 
+int mfu_file_closedir(DIR* dirp, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_closedir(dirp);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_closedir(dirp, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known, type=%d",
+                  mfu_file->type);
+    }
+}
+
+struct dirent* daos_readdir(DIR* _dirp, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    struct dfs_mfu_t *dirp = (struct dfs_mfu_t *)_dirp;
+    if (dirp->num_ents) {
+        goto ret;
+    }
+    dirp->num_ents = NUM_DIRENTS;
+    int rc;
+    while (!daos_anchor_is_eof(&dirp->anchor)) {
+        rc = dfs_readdir(mfu_file->dfs, dirp->dir,
+                         &dirp->anchor, &dirp->num_ents,
+	                 dirp->ents);
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_readdir failed (%d %s)", rc, strerror(rc));
+            dirp->num_ents = 0;
+            errno = ENOENT;
+            return NULL;
+        }
+        if (dirp->num_ents == 0) {
+	    continue;
+        }
+	goto ret;
+    }
+    assert(daos_anchor_is_eof(&dirp->anchor));
+    return NULL;
+ret:
+    dirp->num_ents--;
+    return &dirp->ents[dirp->num_ents];
+#endif
+}
+
 /* read directory entry, retry a few times on ENOENT, EIO, or EINTR */
 struct dirent* mfu_readdir(DIR* dirp)
 {
@@ -623,4 +1279,18 @@ retry:
         }
     }
     return entry;
+}
+
+struct dirent* mfu_file_readdir(DIR* dirp, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        struct dirent* entry = mfu_readdir(dirp);
+        return entry;
+    } else if (mfu_file->type == DAOS) {
+        struct dirent* entry = daos_readdir(dirp, mfu_file);
+        return entry;
+    } else {
+        MFU_ABORT(-1, "File type not known, type=%d",
+                  mfu_file->type);
+    }
 }

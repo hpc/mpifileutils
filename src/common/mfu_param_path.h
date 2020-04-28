@@ -14,6 +14,7 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 #include "mpi.h"
+#include "mfu_io.h"
 
 /* for struct stat */
 #include <sys/types.h>
@@ -51,6 +52,20 @@ typedef struct mfu_param_path_t {
     struct stat target_stat; /* stat of target path */
 } mfu_param_path;
 
+/* options passed to I/O functions that tell them which backend filesystem to use */
+typedef struct {
+    enum        {POSIX, DAOS} type;
+    int         fd;
+    bool        only_daos;
+#ifdef DAOS_SUPPORT
+    /* DAOS specific variables for I/O */
+    d_sg_list_t* sgl;
+    daos_off_t   offset;
+    dfs_obj_t*   obj;
+    dfs_t*       dfs;
+#endif
+} mfu_file_t;
+
 /* set fields in param according to path */
 void mfu_param_path_set(const char* path, mfu_param_path* param);
 
@@ -75,15 +90,17 @@ void mfu_param_path_check_copy(
     uint64_t num,                   /* IN  - number of source paths */
     const mfu_param_path* paths,    /* IN  - array of source param paths */
     const mfu_param_path* destpath, /* IN  - dest param path */
+    mfu_file_t* mfu_src_file,       /* IN  - mfu_file for source that specifies which I/O calls to make */
+    mfu_file_t* mfu_dst_file,       /* IN  - mfu_file for destination that specifies which I/O calls to make */
     int* flag_valid,                /* OUT - flag indicating whether combination of source and dest param paths are valid (1) or not (0) */
     int* flag_copy_into_dir         /* OUT - flag indicating whether source items should be copied into destination directory (1) or not (0) */
 );
 
 /* options passed to walk that effect how the walk is executed */
 typedef struct {
-    int    dir_perms;    /* flag option to update dir perms during walk */
-    int    remove;       /* flag option to remove files during walk */
-    int    use_stat;     /* flag option on whether or not to stat files during walk */
+    int    dir_perms;          /* flag option to update dir perms during walk */
+    int    remove;             /* flag option to remove files during walk */
+    int    use_stat;           /* flag option on whether or not to stat files during walk */
 } mfu_walk_opts_t;
 
 /* options passed to mfu_ */
@@ -114,7 +131,9 @@ char* mfu_param_path_copy_dest(
     int numpaths,                   /* IN  - number of source paths */
     const mfu_param_path* paths,    /* IN  - array of source param paths */
     const mfu_param_path* destpath, /* IN  - dest param path */
-    mfu_copy_opts_t* mfu_copy_opts  /* IN  - options to be used during copy */
+    mfu_copy_opts_t* mfu_copy_opts, /* IN  - options to be used during copy */
+    mfu_file_t* mfu_src_file,       /* IN  - I/O filesystem functions to use for copy of src */
+    mfu_file_t* mfu_dst_file        /* IN  - I/O filesystem functions to use for copy of dst */
 );
 
 #endif /* MFU_PARAM_PATH_H */
