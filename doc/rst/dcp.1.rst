@@ -19,12 +19,37 @@ file system, and it splits large file copies across multiple processes.
 
 OPTIONS
 -------
-
 .. option:: -b, --blocksize SIZE
 
    Set the I/O buffer to be SIZE bytes.  Units like "MB" and "GB" may
    immediately follow the number without spaces (eg. 8MB). The default
    blocksize is 1MB.
+
+.. option:: --daos-src-pool POOL
+
+   Specify the DAOS source pool to be used.
+
+.. option:: --daos-dst-pool POOL
+
+   Specify the DAOS destination pool to be used.
+
+.. option:: --daos-src-cont CONTAINER
+
+   Specify the DAOS source container to be used.
+
+.. option:: --daos-dst-cont CONTAINER
+
+   Specify the DAOS destination container to be used.
+
+.. option:: --daos-svcl SVC
+
+   Specify the DAOS replication level to be used.
+
+.. option:: --daos-prefix PREFIX
+
+   Specify the DAOS prefix to be used. This is only necessary
+   if copying a subset of a POSIX container in DAOS using a
+   Unified Namespace path.
 
 .. option:: -i, --input FILE
 

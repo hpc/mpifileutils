@@ -181,7 +181,8 @@ void mfu_flist_free(mfu_flist* flist);
 void mfu_flist_walk_path(
     const char* path,           /* IN  - path to be walked */
     mfu_walk_opts_t* walk_opts, /* IN  - functions to perform during the walk */
-    mfu_flist flist             /* OUT - flist to insert walked items into */
+    mfu_flist flist,            /* OUT - flist to insert walked items into */
+    mfu_file_t* mfu_file        /* IN  - I/O filesystem functions to use during the walk */
 );
 
 /* create file list by walking list of directories */
@@ -189,7 +190,8 @@ void mfu_flist_walk_paths(
     uint64_t num_paths,         /* IN  - number of paths in array */
     const char** paths,         /* IN  - array of paths to be walkted */
     mfu_walk_opts_t* walk_opts, /* IN  - functions to perform during the walk */
-    mfu_flist flist             /* OUT - flist to insert walked items into */
+    mfu_flist flist,            /* OUT - flist to insert walked items into */
+    mfu_file_t* mfu_file        /* IN  - I/O filesystem functions to use during the walk */
 );
 
 /* given a list of param_paths, walk each one and add to flist */
@@ -197,7 +199,8 @@ void mfu_flist_walk_param_paths(
     uint64_t num,                 /* IN  - number of paths in array */
     const mfu_param_path* params, /* IN  - array of paths to be walkted */
     mfu_walk_opts_t* walk_opts,   /* IN  - functions to perform during the walk */
-    mfu_flist flist               /* OUT - flist to insert walked items into */
+    mfu_flist flist,              /* OUT - flist to insert walked items into */
+    mfu_file_t* mfu_file          /* IN  - I/O filesystem functions to use during the walk */
 );
 
 /* skip function pointer: given a path input, along with user-provided
@@ -433,6 +436,13 @@ int mfu_flist_sort(const char* fields, mfu_flist* flist);
  * Functions to create / remove data on file system based on input list
  ****************************************/
 
+/* allocate a new mfu_file_t structure,
+ * and set its fields with default values */
+mfu_file_t* mfu_file_new(void);
+
+/* free object allocated in mfu_file_new */
+void mfu_file_delete(mfu_file_t** mfile);
+
 /* allocate a new mfu_copy_opts structure,
  * and set its fields with default values */
 mfu_copy_opts_t* mfu_copy_opts_new(void);
@@ -448,7 +458,9 @@ int mfu_flist_copy(
     int numpaths,                   /* IN - number of source paths */
     const mfu_param_path* paths,    /* IN - array of source pathts */
     const mfu_param_path* destpath, /* IN - destination path */
-    mfu_copy_opts_t* mfu_copy_opts  /* IN - options to be used during copy */
+    mfu_copy_opts_t* mfu_copy_opts, /* IN - options to be used during copy */
+    mfu_file_t* mfu_src_file,       /* IN - I/O filesystem functions to use for copy of src */
+    mfu_file_t* mfu_dst_file        /* IN - I/O filesystem functions to use for copy of dst */
 );
 
 /* link items in list from source paths to destination,
@@ -458,14 +470,17 @@ int mfu_flist_hardlink(
     mfu_flist src_link_list,         /* IN - flist providing source items */
     const mfu_param_path* srcpath,   /* IN - the source patht */
     const mfu_param_path* destpath,  /* IN - destination path */
-    mfu_copy_opts_t* mfu_copy_opts   /* IN - options to be used during copy */
+    mfu_copy_opts_t* mfu_copy_opts,  /* IN - options to be used during copy */
+    mfu_file_t* mfu_src_file,        /* IN - I/O filesystem functions for src */
+    mfu_file_t* mfu_dst_file         /* IN - I/O filesystem functions for dst */
 );
 
 /* fill files in list with data
  * returns 0 on success -1 on error */
 int mfu_flist_fill(
     mfu_flist list,                 /* IN - flist providing items */
-    mfu_copy_opts_t* mfu_copy_opts  /* IN - options to be used during fill */
+    mfu_copy_opts_t* mfu_copy_opts, /* IN - options to be used during fill */
+    mfu_file_t* mfu_file            /* IN - I/O filesystem functions */
 );
 
 /* allocate a new mfu_walk_opts structure,
@@ -517,7 +532,9 @@ void mfu_flist_chmod(
 
 /* given a source and destination file, update destination metadata
  * to match source if needed, returns 0 on success -1 on error */
-int mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index, mfu_flist dst_list, uint64_t dst_index);
+int mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index,
+                             mfu_flist dst_list, uint64_t dst_index,
+                             mfu_file_t* mfu_file);
 
 /* TODO: integrate this into the file list proper, or otherwise move it to another file */
 /* element structure in linked list returned by mfu_file_chunk_list_alloc */

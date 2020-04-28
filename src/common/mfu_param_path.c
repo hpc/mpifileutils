@@ -329,7 +329,8 @@ static void mfu_unpack_param(const char** pptr, mfu_param_path* param)
  * path to this item and then prepend destination prefix. */
 char* mfu_param_path_copy_dest(const char* name, int numpaths,
         const mfu_param_path* paths, const mfu_param_path* destpath, 
-        mfu_copy_opts_t* mfu_copy_opts)
+        mfu_copy_opts_t* mfu_copy_opts, mfu_file_t* mfu_src_file,
+        mfu_file_t* mfu_dst_file)
 {
     /* identify which source directory this came from */
     int i;
@@ -397,11 +398,19 @@ char* mfu_param_path_copy_dest(const char* name, int numpaths,
 
 /* check that source and destination paths are valid */
 void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths, 
-        const mfu_param_path* destpath, int* flag_valid, int* flag_copy_into_dir)
+        const mfu_param_path* destpath, mfu_file_t* mfu_src_file,
+        mfu_file_t* mfu_dst_file, int* flag_valid,
+        int* flag_copy_into_dir)
 {
     /* initialize output params */
     *flag_valid = 0;
     *flag_copy_into_dir = 0;
+
+    if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
+        if (num != 1) {
+            MFU_LOG(MFU_LOG_ERR, "Only one source can be specified when using DAOS");
+        }
+    }
 
     /* need at least two paths to have a shot at being valid */
     if (num < 1 || paths == NULL || destpath == NULL) {
@@ -422,7 +431,7 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
         int num_readable = 0;
         for(i = 0; i < num; i++) {
             const char* path = paths[i].path;
-            if(mfu_access(path, R_OK) == 0) {
+            if(mfu_file_access(path, R_OK, mfu_src_file) == 0) {
                 num_readable++;
             }
             else {
@@ -507,7 +516,7 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
             }
 
             /* check that dest is writable */
-            if(mfu_access(destpath->path, W_OK) < 0) {
+            if(mfu_file_access(destpath->path, W_OK, mfu_dst_file) < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Destination is not writable `%s'",
                     destpath->path);
                 valid = 0;
@@ -525,7 +534,7 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
             mfu_path_delete(&parent);
 
             /* check that parent is writable */
-            if(mfu_access(parent_str, W_OK) < 0) {
+            if(mfu_file_access(parent_str, W_OK, mfu_dst_file) < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Destination parent directory is not writable `%s'",
                     parent_str);
                 valid = 0;
