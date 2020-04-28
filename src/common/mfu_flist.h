@@ -486,13 +486,15 @@ void mfu_flist_mknod(mfu_flist flist);
 void mfu_flist_unlink(mfu_flist flist, bool traceless);
 
 typedef struct {
-    uid_t getuid;  /* result from getuid */
-    uid_t geteuid; /* result from geteuid */
-    uid_t uid;     /* new user id for item's owner, -1 for no change */
-    gid_t gid;     /* new group id for item's group, -1 for no change  */
-    mode_t umask;  /* umask to apply when setting item permissions */
-    bool force;    /* always call chmod/chgrp on every item */
-    bool silence;  /* avoid printing EPERM errors */
+    uid_t getuid;   /* result from getuid */
+    uid_t geteuid;  /* result from geteuid */
+    uid_t uid;      /* new user id for item's owner, -1 for no change */
+    gid_t gid;      /* new group id for item's group, -1 for no change  */
+    mode_t umask;   /* umask to apply when setting item permissions */
+    bool capchown;  /* whether process has CAP_CHOWN capability */
+    bool capfowner; /* whether process has CAP_FOWNER capability */
+    bool force;     /* always call chmod/chgrp on every item */
+    bool silence;   /* avoid printing EPERM errors */
 } mfu_chmod_opts_t;
 
 /* return a newly allocated chmod structure */
