@@ -299,8 +299,11 @@ int main(int argc, char** argv)
     /* allocate a file list */
     mfu_flist flist = mfu_flist_new();
 
+    /* create new mfu_file object */
+    mfu_file_t* mfu_file = mfu_file_new();
+
     /* Walk the path(s) to build the flist */
-    mfu_flist_walk_path(dir, walk_opts, flist);
+    mfu_flist_walk_path(dir, walk_opts, flist, mfu_file);
 
     /* TODO: spread list among procs? */
 
@@ -507,6 +510,9 @@ int main(int argc, char** argv)
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);
+
+    /* delete file objects */
+    mfu_file_delete(&mfu_file);
 
     mfu_free(&group_rank);
     mfu_free(&group_ranks);

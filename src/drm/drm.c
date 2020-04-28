@@ -257,11 +257,14 @@ int main(int argc, char** argv)
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
 
+    /* create new mfu_file objects */
+    mfu_file_t* mfu_file = mfu_file_new();
+
     /* get our list of files, either by walking or reading an
      * input file */
     if (walk) {
         /* walk list of input paths */
-        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_file);
     }
     else {
         /* read list from file */
@@ -326,6 +329,9 @@ int main(int argc, char** argv)
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);
+
+    /* delete file objects */
+    mfu_file_delete(&mfu_file);
 
     /* shut down MPI */
     mfu_finalize();
