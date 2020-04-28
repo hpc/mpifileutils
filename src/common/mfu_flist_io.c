@@ -354,7 +354,7 @@ static uint64_t get_filesize(const char* name)
 {
     uint64_t size = 0;
     struct stat sb;
-    int rc = mfu_lstat(name, &sb);
+    int rc = posix_lstat(name, &sb);
     if (rc == 0) {
         size = (uint64_t) sb.st_size;
     }

@@ -10,6 +10,6 @@ int mfu_decompress_bz2(const char* src_name, const char* dst_name);
 
 #include "sys/types.h"
 
-int mfu_create_fully_striped(const char* name, mode_t mode);
+void mfu_create_fully_striped(const char* name, mode_t mode, int* fd);
 
 #endif /* MFU_BZ2_H */

@@ -50,12 +50,16 @@ static const char** CURRENT_DIRS;
 static flist_t* CURRENT_LIST;
 static int SET_DIR_PERMS;
 static int REMOVE_FILES;
+static bool stop_walk;
+static mfu_file_t** pfile;
 
+double start_time;
+int stonewall;
+extern daos_path dpath;
 /****************************************
  * Global counter and callbacks for LIBCIRCLE reductions
  ***************************************/
 
-static double   reduce_start;
 static uint64_t reduce_items;
 
 static void reduce_init(void)
@@ -77,18 +81,8 @@ static void reduce_fini(const void* buf, size_t size)
     const uint64_t* a = (const uint64_t*) buf;
     unsigned long long val = (unsigned long long) a[0];
 
-    /* get current time */
-    double now = MPI_Wtime();
-
-    /* compute walk rate */
-    double rate = 0.0;
-    double secs = now - reduce_start;
-    if (secs > 0.0) {
-        rate = (double)val / secs;
-    }
-
     /* print status to stdout */
-    MFU_LOG(MFU_LOG_INFO, "Walked %llu items in %f secs (%f items/sec) ...", val, secs, rate);
+    MFU_LOG(MFU_LOG_INFO, "Items walked %llu", val);
 }
 
 #ifdef LUSTRE_SUPPORT
@@ -131,6 +125,175 @@ static void lustre_stripe_info(void* buf)
     return;
 }
 
+static int lustre_mds_stat(int fd, char* fname, struct stat* sb)
+{
+    /* allocate a buffer */
+    size_t pathlen = strlen(fname) + 1;
+    size_t bufsize = pathlen;
+    //size_t datasize = sizeof(lstat_t) + lov_user_md_size(LOV_MAX_STRIPE_COUNT, LOV_USER_MAGIC_V3);
+    size_t datasize = sizeof(struct lov_user_mds_data) + LOV_MAX_STRIPE_COUNT * sizeof(struct lov_user_ost_data_v1);
+    if (datasize > bufsize) {
+        bufsize = datasize;
+    }
+    char* buf = (char*) MFU_MALLOC(bufsize);
+
+    /* Usage: ioctl(fd, IOC_MDC_GETFILEINFO, buf)
+     * IN: fd open file descriptor of file's parent directory
+     * IN: buf file name (no path)
+     * OUT: buf lstat_t */
+    strcpy(buf, fname);
+    //  strncpy(buf, fname, bufsize);
+
+    int ret = ioctl(fd, IOC_MDC_GETFILEINFO, buf);
+
+    /* Copy lstat_t to struct stat */
+    if (ret != -1) {
+        lstat_t* ls = (lstat_t*) & ((struct lov_user_mds_data*) buf)->lmd_st;
+        sb->st_dev     = ls->st_dev;
+        sb->st_ino     = ls->st_ino;
+        sb->st_mode    = ls->st_mode;
+        sb->st_nlink   = ls->st_nlink;
+        sb->st_uid     = ls->st_uid;
+        sb->st_gid     = ls->st_gid;
+        sb->st_rdev    = ls->st_rdev;
+        sb->st_size    = ls->st_size;
+        sb->st_blksize = ls->st_blksize;
+        sb->st_blocks  = ls->st_blocks;
+        sb->st_atime   = ls->st_atime;
+        sb->st_mtime   = ls->st_mtime;
+        sb->st_ctime   = ls->st_ctime;
+
+        lustre_stripe_info(buf);
+    }
+    else {
+        MFU_LOG(MFU_LOG_ERR, "ioctl fd=%d (errno=%d %s)", fd, errno, strerror(errno));
+    }
+
+    /* free the buffer */
+    mfu_free(&buf);
+
+    return ret;
+}
+
+static void walk_lustrestat_process_dir(const char* dir, CIRCLE_handle* handle)
+{
+    /* TODO: may need to try these functions multiple times */
+    DIR* dirp;
+    mfu_file_t* mfu_file;
+    mfu_file = *pfile;
+    dirp = mfu_file_opendir(dir, mfu_file);
+
+    if (! dirp) {
+        /* TODO: print error */
+    }
+    else {
+        /* get file descriptor for open directory */
+        int fd = dirfd(dirp);
+        if (fd < 0) {
+            /* TODO: print error */
+            goto done;
+        }
+
+        /* Read all directory entries */
+        while (1) {
+            /* read next directory entry */
+            struct dirent* entry; 
+            entry = mfu_file_readdir(dirp, mfu_file);
+            if (entry == NULL) {
+                break;
+            }
+
+            /* process component, unless it's "." or ".." */
+            char* name = entry->d_name;
+            if ((strncmp(name, ".", 2)) && (strncmp(name, "..", 3))) {
+                /* <dir> + '/' + <name> + '/0' */
+                char newpath[CIRCLE_MAX_STRING_LEN];
+                size_t len = strlen(dir) + 1 + strlen(name) + 1;
+                if (len < sizeof(newpath)) {
+                    /* build full path to item */
+                    strcpy(newpath, dir);
+                    strcat(newpath, "/");
+                    strcat(newpath, name);
+
+                    /* stat item */
+                    mode_t mode;
+                    int have_mode = 0;
+                    struct stat st;
+                    int status = lustre_mds_stat(fd, name, &st);
+                    if (status != -1) {
+                        have_mode = 1;
+                        mode = st.st_mode;
+                        mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, &st);
+                    }
+                    else {
+                        /* error */
+                    }
+
+                    /* increment our item count */
+                    reduce_items++;
+
+                    /* recurse into directories */
+                    if (have_mode && S_ISDIR(mode)) {
+                        handle->enqueue(newpath);
+                    }
+                }
+                else {
+                    /* name is too long */
+                    MFU_LOG(MFU_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu", len, sizeof(newpath));
+                }
+            }
+        }
+    }
+
+done:
+    mfu_file_closedir(dirp, mfu_file);
+
+    return;
+}
+
+/** Call back given to initialize the dataset. */
+static void walk_lustrestat_create(CIRCLE_handle* handle)
+{
+    uint64_t i;
+    for (i = 0; i < CURRENT_NUM_DIRS; i++) {
+        const char* path = CURRENT_DIRS[i];
+
+        /* stat top level item */
+        struct stat st;
+        int status;
+        mfu_file_t* mfu_file;
+        mfu_file = *pfile;
+        status = mfu_file_lstat(path, &st, mfu_file);
+        if (status != 0) {
+            /* TODO: print error */
+            return;
+        }
+
+        /* increment our item count */
+        reduce_items++;
+
+        /* record item info */
+        mfu_flist_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
+
+        /* recurse into directory */
+        if (S_ISDIR(st.st_mode)) {
+            walk_lustrestat_process_dir(path, handle);
+        }
+    }
+
+    return;
+}
+
+/** Callback given to process the dataset. */
+static void walk_lustrestat_process(CIRCLE_handle* handle)
+{
+    /* in this case, only items on queue are directories */
+    char path[CIRCLE_MAX_STRING_LEN];
+    handle->dequeue(path);
+    walk_lustrestat_process_dir(path, handle);
+    return;
+}
+
 #endif /* LUSTRE_SUPPORT */
 
 /****************************************
@@ -152,8 +315,10 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
     char buf[BUF_SIZE];
 
     /* TODO: may need to try these functions multiple times */
-    int fd = mfu_open(dir, O_RDONLY | O_DIRECTORY);
-    if (fd == -1) {
+    mfu_file_t* mfu_file;
+    mfu_file = *pfile;
+    mfu_file_open(dir, O_RDONLY | O_DIRECTORY, mfu_file);
+    if (mfu_file->fd == -1) {
         /* print error */
         MFU_LOG(MFU_LOG_ERR, "Failed to open directory for reading: `%s' (errno=%d %s)", dir, errno, strerror(errno));
         return;
@@ -162,7 +327,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
     /* Read all directory entries */
     while (1) {
         /* execute system call to get block of directory entries */
-        int nread = syscall(SYS_getdents, fd, buf, (int) BUF_SIZE);
+        int nread = syscall(SYS_getdents, mfu_file->fd, buf, (int) BUF_SIZE);
         if (nread == -1) {
             MFU_LOG(MFU_LOG_ERR, "syscall to getdents failed when reading `%s' (errno=%d %s)", dir, errno, strerror(errno));
             break;
@@ -225,12 +390,12 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
                     /* insert a record for this item into our list */
                     mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, NULL);
 
+                    /* increment our item count */
+                    reduce_items++;
+
                     /* recurse on directory if we have one */
                     if (d_type == DT_DIR) {
                         handle->enqueue(newpath);
-                    } else {
-                        /* increment our item count */
-                        reduce_items++;
                     }
                 }
                 else {
@@ -243,7 +408,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
         }
     }
 
-    mfu_close(dir, fd);
+    mfu_file_close(dir, mfu_file);
 
     return;
 }
@@ -257,7 +422,10 @@ static void walk_getdents_create(CIRCLE_handle* handle)
 
         /* stat top level item */
         struct stat st;
-        int status = mfu_lstat(path, &st);
+        int status;
+        mfu_file_t* mfu_file;
+        mfu_file = *pfile;
+        status = mfu_file_lstat(path, &st, mfu_file);
         if (status != 0) {
             /* TODO: print error */
             return;
@@ -285,7 +453,6 @@ static void walk_getdents_process(CIRCLE_handle* handle)
     char path[CIRCLE_MAX_STRING_LEN];
     handle->dequeue(path);
     walk_getdents_process_dir(path, handle);
-    reduce_items++;
     return;
 }
 
@@ -296,19 +463,24 @@ static void walk_getdents_process(CIRCLE_handle* handle)
 static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
 {
     /* TODO: may need to try these functions multiple times */
-    DIR* dirp = mfu_opendir(dir);
+    DIR* dirp;
+    mfu_file_t* mfu_file;
+    mfu_file = *pfile;
+    dirp = mfu_file_opendir(dir, mfu_file);
 
     /* if there is a permissions error and the usr read & execute are being turned
      * on when walk_stat=0 then catch the permissions error and turn the bits on */
     if (dirp == NULL) {
         if (errno == EACCES && SET_DIR_PERMS) {
             struct stat st;
-            mfu_lstat(dir, &st);
+            int status;
+            status = mfu_file_lstat(dir, &st, mfu_file);
+
             // turn on the usr read & execute bits
             st.st_mode |= S_IRUSR;
             st.st_mode |= S_IXUSR;
-            mfu_chmod(dir, st.st_mode);
-            dirp = mfu_opendir(dir);
+            mfu_file_chmod(dir, st.st_mode, mfu_file);
+            dirp = mfu_file_opendir(dir, mfu_file);
             if (dirp == NULL) {
                 if (errno == EACCES) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to open directory with opendir: `%s' (errno=%d %s)", dir, errno, strerror(errno));
@@ -323,8 +495,15 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
     else {
         /* Read all directory entries */
         while (1) {
+    	    double cur = MPI_Wtime();
+	    if (stonewall && cur - start_time >= stonewall) {
+		stop_walk = true;
+		break;
+	    }
+
             /* read next directory entry */
-            struct dirent* entry = mfu_readdir(dirp);
+            struct dirent* entry;
+            entry = mfu_file_readdir(dirp, mfu_file);
             if (entry == NULL) {
                 break;
             }
@@ -360,7 +539,8 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
                     else {
                         /* type is unknown, we need to stat it */
                         struct stat st;
-                        int status = mfu_lstat(newpath, &st);
+                        int status;
+                        status = mfu_file_lstat(newpath, &st, mfu_file);
                         if (status == 0) {
                             have_mode = 1;
                             mode = st.st_mode;
@@ -377,12 +557,12 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
                         }
                     }
 
+                    /* increment our item count */
+                    reduce_items++;
+
                     /* recurse into directories */
                     if (have_mode && S_ISDIR(mode)) {
                         handle->enqueue(newpath);
-                    } else {
-                        /* increment our item count */
-                        reduce_items++;
                     }
 #endif
                 }
@@ -395,7 +575,7 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
         }
     }
 
-    mfu_closedir(dirp);
+    mfu_file_closedir(dirp, mfu_file);
 
     return;
 }
@@ -409,7 +589,10 @@ static void walk_readdir_create(CIRCLE_handle* handle)
 
         /* stat top level item */
         struct stat st;
-        int status = mfu_lstat(path, &st);
+        int status;
+        mfu_file_t* mfu_file;
+        mfu_file = *pfile;
+        status = mfu_file_lstat(path, &st, mfu_file);
         if (status != 0) {
             /* TODO: print error */
             return;
@@ -437,7 +620,6 @@ static void walk_readdir_process(CIRCLE_handle* handle)
     char path[CIRCLE_MAX_STRING_LEN];
     handle->dequeue(path);
     walk_readdir_process_dir(path, handle);
-    reduce_items++;
     return;
 }
 
@@ -448,15 +630,25 @@ static void walk_readdir_process(CIRCLE_handle* handle)
 static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
 {
     /* TODO: may need to try these functions multiple times */
-    DIR* dirp = mfu_opendir(dir);
+    DIR* dirp;
+    mfu_file_t* mfu_file;
+    mfu_file = *pfile;
+    dirp = mfu_file_opendir(dir, mfu_file);
 
     if (! dirp) {
         /* TODO: print error */
     }
     else {
         while (1) {
+    	    double cur = MPI_Wtime();
+	    if (stonewall && cur - start_time >= stonewall) {
+		stop_walk = true;
+		break;
+	    }
+
             /* read next directory entry */
-            struct dirent* entry = mfu_readdir(dirp);
+            struct dirent* entry;
+            entry = mfu_file_readdir(dirp, mfu_file);
             if (entry == NULL) {
                 break;
             }
@@ -483,9 +675,7 @@ static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
             }
         }
     }
-
-    mfu_closedir(dirp);
-
+    mfu_file_closedir(dirp, mfu_file);
     return;
 }
 
@@ -506,10 +696,12 @@ static void walk_stat_process(CIRCLE_handle* handle)
     /* get path from queue */
     char path[CIRCLE_MAX_STRING_LEN];
     handle->dequeue(path);
+    mfu_file_t* mfu_file = *pfile;
 
     /* stat item */
     struct stat st;
-    int status = mfu_lstat(path, &st);
+    int status;
+    status = mfu_file_lstat(path, &st, mfu_file);
     if (status != 0) {
         /* print error */
         return;
@@ -539,29 +731,31 @@ static void walk_stat_process(CIRCLE_handle* handle)
             if (!((usr_r_mask & st.st_mode) && (usr_x_mask & st.st_mode))) {
                 st.st_mode |= S_IRUSR;
                 st.st_mode |= S_IXUSR;
-                mfu_chmod(path, st.st_mode);
+                mfu_file_chmod(path, st.st_mode, mfu_file);
             }
         }
-
         /* TODO: check that we can recurse into directory */
         walk_stat_process_dir(path, handle);
     }
-
     return;
 }
 
 /* Set up and execute directory walk */
-void mfu_flist_walk_path(const char* dirpath, mfu_walk_opts_t* walk_opts,
-                         mfu_flist bflist)
+void mfu_flist_walk_path(const char* dirpath,
+                         mfu_walk_opts_t* walk_opts,
+                         mfu_flist bflist,
+                         mfu_file_t* mfu_file)
 {
-    mfu_flist_walk_paths(1, &dirpath, walk_opts, bflist);
+    mfu_flist_walk_paths(1, &dirpath, walk_opts, bflist, mfu_file);
     return;
 }
 
 /* Set up and execute directory walk */
 void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
-                          mfu_walk_opts_t* walk_opts, mfu_flist bflist)
+                          mfu_walk_opts_t* walk_opts, mfu_flist bflist,
+                          mfu_file_t* mfu_file)
 {
+
     /* report walk count, time, and rate */
     double start_walk = MPI_Wtime();
 
@@ -594,7 +788,7 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
     }
 
     /* initialize libcircle */
-    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_TERM_TREE);
+    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL);
 
     /* set libcircle verbosity level */
     enum CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
@@ -622,10 +816,13 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
     }
 
     /* register callbacks */
+    pfile = &mfu_file;
     if (walk_opts->use_stat) {
         /* walk directories by calling stat on every item */
         CIRCLE_cb_create(&walk_stat_create);
         CIRCLE_cb_process(&walk_stat_process);
+        //        CIRCLE_cb_create(&walk_lustrestat_create);
+        //        CIRCLE_cb_process(&walk_lustrestat_process);
     }
     else {
         /* walk directories using file types in readdir */
@@ -636,18 +833,10 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
     }
 
     /* prepare callbacks and initialize variables for reductions */
-    reduce_start = start_walk;
     reduce_items = 0;
     CIRCLE_cb_reduce_init(&reduce_init);
     CIRCLE_cb_reduce_op(&reduce_exec);
     CIRCLE_cb_reduce_fini(&reduce_fini);
-
-    /* set libcircle reduction period */
-    int reduce_secs = 0;
-    if (mfu_progress_timeout > 0) {
-        reduce_secs = mfu_progress_timeout;
-    }
-    CIRCLE_set_reduce_period(reduce_secs);
 
     /* run the libcircle job */
     CIRCLE_begin();
@@ -666,7 +855,7 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        MFU_LOG(MFU_LOG_INFO, "Walked %lu items in %f seconds (%f items/sec)",
+        MFU_LOG(MFU_LOG_INFO, "Walked %lu items in %f seconds (%f files/sec)",
                all_count, time_diff, rate
               );
     }
@@ -681,7 +870,8 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
 void mfu_flist_walk_param_paths(uint64_t num,
                                 const mfu_param_path* params,
                                 mfu_walk_opts_t* walk_opts,
-                                mfu_flist flist)
+                                mfu_flist flist,
+                                mfu_file_t* mfu_file)
 {
     /* allocate memory to hold a list of paths */
     const char** path_list = (const char**) MFU_MALLOC(num * sizeof(char*));
@@ -694,7 +884,7 @@ void mfu_flist_walk_param_paths(uint64_t num,
     }
 
     /* walk file tree and record stat data for each file */
-    mfu_flist_walk_paths((uint64_t) num, path_list, walk_opts, flist);
+    mfu_flist_walk_paths((uint64_t) num, path_list, walk_opts, flist, mfu_file);
 
     /* free the list */
     mfu_free(&path_list);
@@ -729,6 +919,8 @@ void mfu_flist_stat(
     /* step through each item in input list and stat it */
     uint64_t idx;
     uint64_t size = mfu_flist_size(input_flist);
+    mfu_file_t* mfu_file;
+    mfu_file = *pfile;
     for (idx = 0; idx < size; idx++) {
         /* get name of item */
         const char* name = mfu_flist_file_get_name(input_flist, idx);
@@ -742,7 +934,8 @@ void mfu_flist_stat(
 
         /* stat the item */
         struct stat st;
-        int status = mfu_lstat(name, &st);
+        int status;
+        status = mfu_file_lstat(name, &st, mfu_file);
         if (status != 0) {
             MFU_LOG(MFU_LOG_ERR, "mfu_lstat() failed: `%s' rc=%d (errno=%d %s)", name, status, errno, strerror(errno));
             continue;

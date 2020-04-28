@@ -85,6 +85,31 @@ FIND_PACKAGE(LibArchive REQUIRED)
 INCLUDE_DIRECTORIES(${LibArchive_INCLUDE_DIRS})
 LIST(APPEND MFU_EXTERNAL_LIBS ${LibArchive_LIBRARIES})
 
+#SET(CMAKE_EXE_LINKER_FLAGS -luuid)
+#INCLUDE_DIRECTORIES(/home/dsikich/daos/opt/cart/include)
+#FIND_LIBRARY(gurt_LIBRARY NAMES gurt PATHS /home/dsikich/daos/opt/cart/lib)
+#message(${gurt_LIBRARY})
+#LIST(APPEND MFU_EXTERNAL_LIBS ${gurt_LIBRARY})
+	 	
+#INCLUDE_DIRECTORIES(/home/dsikich/daos/include)
+#FIND_LIBRARY(dfs_LIBRARY NAMES dfs PATHS /home/dsikich/daos/lib64)
+#message(${dfs_LIBRARY})
+#LIST(APPEND MFU_EXTERNAL_LIBS ${dfs_LIBRARY})
+
+#FIND_LIBRARY(duns_LIBRARY NAMES duns PATHS /home/dsikich/daos/lib64)
+#message(${duns_LIBRARY})
+#LIST(APPEND MFU_EXTERNAL_LIBS ${duns_LIBRARY})
+		
+#INCLUDE_DIRECTORIES(/home/dsikich/daos/include)
+#FIND_LIBRARY(daos_LIBRARY NAMES daos PATHS /home/dsikich/daos/lib64)
+#message(${daos_LIBRARY})
+#LIST(APPEND MFU_EXTERNAL_LIBS ${daos_LIBRARY})
+		
+#INCLUDE_DIRECTORIES(/home/dsikich/daos/include)
+#FIND_LIBRARY(daos-common_LIBRARY NAMES daos_common PATHS /home/dsikich/daos/lib64)
+#message(${daos-common_LIBRARY})
+#LIST(APPEND MFU_EXTERNAL_LIBS ${daos-common_LIBRARY})
+		
 ## LIBCIRCLE
 FIND_PACKAGE(LibCircle REQUIRED)
 INCLUDE_DIRECTORIES(${LibCircle_INCLUDE_DIRS})
@@ -93,6 +118,14 @@ LIST(APPEND MFU_EXTERNAL_LIBS ${LibCircle_LIBRARIES})
 ## BZip2
 FIND_PACKAGE(BZip2 REQUIRED)
 LIST(APPEND MFU_EXTERNAL_LIBS ${BZIP2_LIBRARIES})
+
+## libcap for checks on linux capabilities
+FIND_PACKAGE(LibCap)
+IF(LibCap_FOUND)
+  ADD_DEFINITIONS(-DHAVE_LIBCAP)
+  INCLUDE_DIRECTORIES(${LibCap_INCLUDE_DIRS})
+  LIST(APPEND MFU_EXTERNAL_LIBS ${LibCap_LIBRARIES})
+ENDIF(LibCap_FOUND)
 
 ## OPENSSL for ddup
 FIND_PACKAGE(OpenSSL)

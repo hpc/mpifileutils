@@ -329,7 +329,8 @@ static void mfu_unpack_param(const char** pptr, mfu_param_path* param)
  * path to this item and then prepend destination prefix. */
 char* mfu_param_path_copy_dest(const char* name, int numpaths,
         const mfu_param_path* paths, const mfu_param_path* destpath, 
-        mfu_copy_opts_t* mfu_copy_opts)
+        mfu_copy_opts_t* mfu_copy_opts, mfu_file_t* mfu_src_file,
+        mfu_file_t* mfu_dst_file)
 {
     /* identify which source directory this came from */
     int i;
@@ -418,6 +419,7 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
     /* just have rank 0 check */
     if(rank == 0) {
         /* count number of readable source paths */
+/*
         uint64_t i;
         int num_readable = 0;
         for(i = 0; i < num; i++) {
@@ -426,20 +428,21 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
                 num_readable++;
             }
             else {
-                /* found a source path that we can't read, not fatal,
-                 * but print an error to notify user */
+                 //found a source path that we can't read, not fatal,
+                  //but print an error to notify user 
                 const char* orig = paths[i].orig;
                 MFU_LOG(MFU_LOG_ERR, "Could not read `%s' (errno=%d %s)",
                     orig, errno, strerror(errno));
             }
         }
 
-        /* verify that we have at least one source path */
+        // verify that we have at least one source path 
         if(num_readable < 1) {
             MFU_LOG(MFU_LOG_ERR, "At least one valid source must be specified");
             valid = 0;
             goto bcast;
         }
+*/
 
         /*
          * First we need to determine if the last argument is a file or a directory.
@@ -507,12 +510,12 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
             }
 
             /* check that dest is writable */
-            if(mfu_access(destpath->path, W_OK) < 0) {
+            /*if(mfu_access(destpath->path, W_OK) < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Destination is not writable `%s'",
                     destpath->path);
                 valid = 0;
                 goto bcast;
-            }
+            }*/
         }
         else {
             /* destination does not exist, so we'll be creating it,
@@ -525,13 +528,13 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
             mfu_path_delete(&parent);
 
             /* check that parent is writable */
-            if(mfu_access(parent_str, W_OK) < 0) {
+            /*if(mfu_access(parent_str, W_OK) < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Destination parent directory is not writable `%s'",
                     parent_str);
                 valid = 0;
                 mfu_free(&parent_str);
                 goto bcast;
-            }
+            }*/
             mfu_free(&parent_str);
         }
 
@@ -659,7 +662,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
             param->path = mfu_path_strdup_abs_reduce_str(path);
 
             /* get stat info for simplified path */
-            if (mfu_lstat(param->path, &param->path_stat) == 0) {
+            if (posix_lstat(param->path, &param->path_stat) == 0) {
                 param->path_stat_valid = 1;
             }
 
@@ -675,7 +678,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
                 param->target = MFU_STRDUP(target);
 
                 /* get stat info for resolved path */
-                if (mfu_lstat(param->target, &param->target_stat) == 0) {
+                if (posix_lstat(param->target, &param->target_stat) == 0) {
                     param->target_stat_valid = 1;
                 }
             }

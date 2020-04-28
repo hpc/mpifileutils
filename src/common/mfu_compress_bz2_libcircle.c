@@ -96,7 +96,7 @@ static void DBz2_Dequeue(CIRCLE_handle* handle)
     off_t pos = block_no * block_size;
 
     /* seek to offset in source file for this block */
-    off_t lseek_rc = mfu_lseek(src_name, fd, pos, SEEK_SET);
+    off_t lseek_rc = mfu_lseek(mfu_io.in_lseek_fn, src_name, fd, pos, SEEK_SET);
     if (lseek_rc == (off_t)-1) {
         MFU_LOG(MFU_LOG_ERR, "Failed to seek in source file: %s offset=%lx errno=%d (%s)",
             src_name, pos, errno, strerror(errno));
@@ -116,7 +116,7 @@ static void DBz2_Dequeue(CIRCLE_handle* handle)
     char* ibuf = MFU_MALLOC(nread);
 
     /* read block from input file */
-    ssize_t inSize = mfu_read(src_name, fd, ibuf, nread);
+    ssize_t inSize = mfu_read(mfu_io.in_read_fn, src_name, fd, ibuf, nread, NULL, 0, NULL);
     if (inSize != nread) {
         MFU_LOG(MFU_LOG_ERR, "Failed to read from source file: %s offset=%lx got=%d expected=%d errno=%d (%s)",
             src_name, pos, inSize, nread, errno, strerror(errno));
@@ -194,7 +194,7 @@ static void find_wave_size(int64_t size, int opts_memory)
     MPI_Allreduce(&blocks_pn_pw, &wave_blocks, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
 }
 
-int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssize_t opts_memory)
+int mfu_compress_bz2_libcircle(io_funcs* io, const char* src, const char* dst, int b_size, ssize_t opts_memory)
 {
     int rc = MFU_SUCCESS;
 
@@ -213,7 +213,7 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
     filesize = 0;
     if (rank == 0) {
         /* stat file to get file size */
-        int lstat_rc = mfu_lstat(src_name, &st);
+        int lstat_rc = mfu_lstat(io->in_lstat_fn, src_name, &st);
         if (lstat_rc == 0) {
             filesize = (int64_t) st.st_size;
         } else {
@@ -236,7 +236,7 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
     }
 
     /* open the source file for reading */
-    fd = mfu_open(src_name, O_RDONLY);
+    mfu_open(io->in_open_fn, src_name, O_RDONLY, &fd, NULL);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading: %s errno=%d (%s)",
             src_name, errno, strerror(errno));
@@ -247,7 +247,7 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
         /* some process failed to open so bail with error,
          * if we opened ok, close file */
         if (fd >= 0) {
-            mfu_close(src_name, fd);
+            mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
         }
         mfu_free(&src_name);
         mfu_free(&dst_name);
@@ -255,7 +255,7 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
     }
 
     /* open destination file for writing */
-    fd_out = mfu_create_fully_striped(dst_name, FILE_MODE);
+    mfu_create_fully_striped(dst_name, FILE_MODE, &fd_out);
     if (fd_out < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
             dst_name, errno, strerror(errno));
@@ -266,11 +266,11 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
         /* some process failed to open so bail with error,
          * if we opened ok, close file */
         if (fd_out >= 0) {
-            mfu_close(dst_name, fd_out);
+            mfu_close(mfu_io.out_close_fn, dst_name, fd_out, NULL);
         }
         mfu_free(&src_name);
         mfu_free(&dst_name);
-        mfu_close(src_name, fd);
+        mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
         return MFU_FAILURE;
     }
 
@@ -406,7 +406,7 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
             off_t pos = my_blocks[my_prev_blocks + k].offset;
 
             /* seek to position in destination file for this block */
-            off_t lseek_rc = mfu_lseek(dst_name, fd_out, pos, SEEK_SET);
+            off_t lseek_rc = mfu_lseek(mfu_io.out_lseek_fn, dst_name, fd_out, pos, SEEK_SET);
             if (lseek_rc == (off_t)-1) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to seek to compressed block in target file: %s offset=%lx errno=%d (%s)",
                     dst_name, pos, errno, strerror(errno));
@@ -415,7 +415,7 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
 
             /* write out block */
             size_t my_length = (size_t) my_blocks[my_prev_blocks + k].length;
-            ssize_t nwritten = mfu_write(dst_name, fd_out, a[k], my_length);
+            ssize_t nwritten = mfu_write(mfu_io.out_write_fn, dst_name, fd_out, a[k], my_length, NULL, 0, NULL);
             if (nwritten != my_length) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to write compressed block to target file: %s offset=%lx got=%d expected=%d errno=%d (%s)",
                     dst_name, pos, nwritten, my_length, errno, strerror(errno));
@@ -443,7 +443,7 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
     for (int k = 0; k < my_tot_blocks; k++) {
         /* seek to metadata location for this block */
         off_t pos = last_offset + my_blocks[k].sno * 16;
-        off_t lseek_rc = mfu_lseek(dst_name, fd_out, pos, SEEK_SET);
+        off_t lseek_rc = mfu_lseek(mfu_io.out_lseek_fn, dst_name, fd_out, pos, SEEK_SET);
         if (lseek_rc == (off_t)-1) {
             MFU_LOG(MFU_LOG_ERR, "Failed to seek to block metadata in target file: %s offset=%lx errno=%d (%s)",
                 dst_name, pos, errno, strerror(errno));
@@ -453,7 +453,7 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
         /* write offset of block in destination file */
         int64_t my_offset = my_blocks[k].offset;
         int64_t net_offset = mfu_hton64(my_offset);
-        ssize_t nwritten = mfu_write(dst_name, fd_out, &net_offset, 8);
+        ssize_t nwritten = mfu_write(mfu_io.out_write_fn, dst_name, fd_out, &net_offset, 8, NULL, 0, NULL);
         if (nwritten != 8) {
             MFU_LOG(MFU_LOG_ERR, "Failed to write block offset to target file: %s pos=%lx got=%d expected=%d errno=%d (%s)",
                 dst_name, pos, nwritten, 8, errno, strerror(errno));
@@ -463,7 +463,7 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
         /* write length of block in destination file */
         int64_t my_length = my_blocks[k].length;
         int64_t net_length = mfu_hton64(my_length);
-        nwritten = mfu_write(dst_name, fd_out, &net_length, 8);
+        nwritten = mfu_write(mfu_io.out_write_fn, dst_name, fd_out, &net_length, 8, NULL, 0, NULL);
         if (nwritten != 8) {
             MFU_LOG(MFU_LOG_ERR, "Failed to write block length to target file: %s pos=%lx got=%d expected=%d errno=%d (%s)",
                 dst_name, pos+8, nwritten, 8, errno, strerror(errno));
@@ -484,7 +484,7 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
 
         /* seek to position to write footer */
         off_t pos = last_offset + tot_blocks * 16;
-        off_t lseek_rc = mfu_lseek(dst_name, fd_out, pos, SEEK_SET);
+        off_t lseek_rc = mfu_lseek(mfu_io.out_lseek_fn, dst_name, fd_out, pos, SEEK_SET);
         if (lseek_rc == (off_t)-1) {
             MFU_LOG(MFU_LOG_ERR, "Failed to seek to footer in target file: %s offset=%lx errno=%d (%s)",
                 dst_name, pos, errno, strerror(errno));
@@ -493,7 +493,7 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
 
         /* write footer */
         size_t footer_size = 6 * 8;
-        ssize_t nwritten = mfu_write(dst_name, fd_out, footer, footer_size);
+        ssize_t nwritten = mfu_write(mfu_io.out_write_fn, dst_name, fd_out, footer, footer_size, NULL, 0, NULL);
         if (nwritten != footer_size) {
             MFU_LOG(MFU_LOG_ERR, "Failed to write footer to target file: %s pos=%lx got=%d expected=%d errno=%d (%s)",
                 dst_name, pos, nwritten, footer_size, errno, strerror(errno));
@@ -509,15 +509,15 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
 
     /* close source and target files */
     mfu_fsync(dst_name, fd_out);
-    mfu_close(dst_name, fd_out);
-    mfu_close(src_name, fd);
+    mfu_close(mfu_io.out_close_fn, dst_name, fd_out, NULL);
+    mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
 
     /* ensure that everyone has closed and synced before updating timestamps */
     MPI_Barrier(MPI_COMM_WORLD);
 
     if (rank == 0) {
         /* set mode and group */
-        mfu_chmod(dst_name, st.st_mode);
+        mfu_chmod(mfu_io.out_chmod_fn, dst_name, st.st_mode);
         mfu_lchown(dst_name, st.st_uid, st.st_gid);
 
         /* set timestamps, mode, and group */
