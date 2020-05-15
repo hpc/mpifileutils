@@ -70,6 +70,12 @@ typedef enum {
     MFU_LOG_DBG     = 6
 } mfu_loglevel;
 
+enum handleType {
+        POOL_HANDLE,
+        CONT_HANDLE,
+	ARRAY_HANDLE
+};
+
 extern int mfu_initialized;
 
 /* set during mfu_init, used in MFU_LOG */
@@ -104,6 +110,18 @@ extern int mfu_progress_timeout;
             fflush(mfu_debug_stream); \
         } \
     } while (0)
+
+/******** DAOS utility functions ********/
+bool daos_uuid_valid(const uuid_t uuid);
+
+/* Distribute process 0's pool or container handle to others. */
+void HandleDistribute(int rank, daos_handle_t *handle,
+                      daos_handle_t* poh, enum handleType type);
+
+/* connect to DAOS pool, and then open container */
+void daos_connect(int* rank, daos_handle_t* poh,
+                  daos_handle_t* coh, uuid_t* pool_uuid,
+                  uuid_t* cont_uuid, char* svc);
 
 /* initialize mfu library,
  * reference counting allows for multiple init/finalize pairs */

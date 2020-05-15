@@ -1,7 +1,7 @@
 # todo re-asses if all of these must be *installed*
 LIST(APPEND libmfu_install_headers
   mfu.h
-#  mfu_bz2.h
+  mfu_bz2.h
   mfu_flist.h
   mfu_flist_internal.h
   mfu_io.h
@@ -15,17 +15,17 @@ INSTALL(FILES ${libmfu_install_headers} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 # common library
 LIST(APPEND libmfu_srcs
-#  mfu_bz2.c
-#  mfu_bz2_static.c
-#  mfu_compress_bz2_libcircle.c
-#  mfu_decompress_bz2_libcircle.c
+  mfu_bz2.c
+  mfu_bz2_static.c
+  mfu_compress_bz2_libcircle.c
+  mfu_decompress_bz2_libcircle.c
   mfu_flist.c
   mfu_flist_chunk.c
   mfu_flist_copy.c
   mfu_flist_io.c
   mfu_flist_chmod.c
   mfu_flist_create.c
-#  mfu_flist_remove.c
+  mfu_flist_remove.c
   mfu_flist_sort.c
   mfu_flist_usrgrp.c
   mfu_flist_walk.c

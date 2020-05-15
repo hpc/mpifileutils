@@ -55,7 +55,6 @@ static mfu_file_t** pfile;
 
 double start_time;
 int stonewall;
-extern daos_path dpath;
 /****************************************
  * Global counter and callbacks for LIBCIRCLE reductions
  ***************************************/

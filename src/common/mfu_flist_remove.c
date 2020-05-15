@@ -480,7 +480,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
                 /* stat the item */
                 struct stat st;
                 char *pdir = strings[idx];
-                int status = posix_lstat(pdir, &st);
+                int status = mfu_lstat(pdir, &st);
 
                 if (status != 0) {
                     MFU_LOG(MFU_LOG_DBG, "mfu_lstat(%s): %d", pdir, status);

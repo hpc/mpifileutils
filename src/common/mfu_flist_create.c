@@ -4,9 +4,6 @@
 #include "mfu.h"
 #include "mfu_flist_internal.h"
 
-dfs_t *dfs1;
-dfs_t *dfs2;
-dfs_t *dfs;
 static int create_directory(mfu_flist list, uint64_t idx)
 {
     /* get name of directory */
@@ -18,7 +15,7 @@ static int create_directory(mfu_flist list, uint64_t idx)
 
     /* create the destination directory */
     MFU_LOG(MFU_LOG_DBG, "Creating directory `%s'", name);
-    int rc = posix_mkdir(name, mode);
+    int rc = mfu_mkdir(name, mode);
     if (rc < 0) {
         if (errno == EEXIST) {
             MFU_LOG(MFU_LOG_WARN,
@@ -135,7 +132,7 @@ static int create_file(mfu_flist list, uint64_t idx)
     * see makedev() to create valid dev */
     dev_t dev;
     memset(&dev, 0, sizeof(dev_t));
-    int mknod_rc = posix_mknod(name, mode | S_IFREG, dev);
+    int mknod_rc = mfu_mknod(name, mode | S_IFREG, dev);
 
     if (mknod_rc < 0) {
         if (errno == EEXIST) {

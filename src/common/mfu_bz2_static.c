@@ -40,7 +40,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
     int64_t filesize = 0;
     if (rank == 0) {
         /* stat file to get file size */
-        int lstat_rc = mfu_lstat(mfu_io.in_lstat_fn, src_name, &st);
+        int lstat_rc = mfu_lstat(src_name, &st);
         if (lstat_rc == 0) {
             filesize = (int64_t) st.st_size;
         } else {
@@ -89,8 +89,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
     }
 
     /* open the source file for reading */
-    int fd;
-    mfu_open(mfu_io.in_open_fn, src_name, O_RDONLY | O_LARGEFILE, &fd, NULL);
+    int fd = mfu_open(src_name, O_RDONLY | O_LARGEFILE);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading: %s errno=%d (%s)",
             src_name, errno, strerror(errno));
@@ -99,16 +98,15 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
     /* check that all processes were able to open the file */
     if (! mfu_alltrue(fd >= 0, MPI_COMM_WORLD)) {
         /* some process failed to open so bail with error,
-         * if we opened ok, close file */
+ *          * if we opened ok, close file */
         if (fd >= 0) {
-            mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
+            mfu_close(src_name, fd);
         }
         return MFU_FAILURE;
     }
 
     /* open destination file for writing */
-    int fd_out;
-    mfu_create_fully_striped(dst_name, FILE_MODE, &fd_out);
+    int fd_out = mfu_create_fully_striped(dst_name, FILE_MODE);
     if (fd_out < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
             dst_name, errno, strerror(errno));
@@ -117,16 +115,16 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
     /* check that all processes were able to open the file */
     if (! mfu_alltrue(fd_out >= 0, MPI_COMM_WORLD)) {
         /* some process failed to open so bail with error,
-         * if we opened ok, close file */
+ *          * if we opened ok, close file */
         if (fd_out >= 0) {
-            mfu_close(mfu_io.out_close_fn, dst_name, fd_out, NULL);
+            mfu_close(dst_name, fd_out);
         }
-        mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
+        mfu_close(src_name, fd);
         return MFU_FAILURE;
     }
 
     /* given original data of size B, BZ2 compressed data can take up to B * 1.01 + 600 bytes,
-     * we use 2% to be on safe side */
+ *      * we use 2% to be on safe side */
     int64_t comp_buff_size = (int64_t) (1.02 * (double)block_size + 600.0);
 
     /* define amount of memory to use for compressing data */
@@ -146,7 +144,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
     }
 
     /* allocate array to track offsets into compressed file where we
-     * write each of our compressed blocks */
+ *      * write each of our compressed blocks */
     uint64_t* my_offsets = (uint64_t*) MFU_MALLOC(blocks_per_rank * sizeof(uint64_t));
     uint64_t* my_lengths = (uint64_t*) MFU_MALLOC(blocks_per_rank * sizeof(uint64_t));
 
@@ -184,7 +182,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
             off_t pos = block_no * block_size;
             if (pos < filesize) {
                 /* seek to offset in source file for this block */
-                off_t lseek_rc = mfu_lseek(mfu_io.in_lseek_fn, src_name, fd, pos, SEEK_SET);
+                off_t lseek_rc = mfu_lseek(src_name, fd, pos, SEEK_SET);
                 if (lseek_rc == (off_t)-1) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to seek in source file: %s offset=%lx errno=%d (%s)",
                         src_name, pos, errno, strerror(errno));
@@ -200,7 +198,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
                 }
 
                 /* read block from input file */
-                ssize_t inSize = mfu_read(mfu_io.in_read_fn, src_name, fd, ibuf, nread, NULL, 0, NULL);
+                ssize_t inSize = mfu_read(src_name, fd, ibuf, nread);
                 if (inSize != nread) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to read from source file: %s offset=%lx got=%d expected=%d errno=%d (%s)",
                         src_name, pos, inSize, nread, errno, strerror(errno));
@@ -227,15 +225,15 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
         }
 
         /* execute scan and allreduce to compute offsets in compressed file
-         * for each of our blocks in this wave */
+ *          * for each of our blocks in this wave */
         MPI_Exscan(block_lengths,    block_offsets, blocks_per_buffer, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
         MPI_Allreduce(block_lengths, block_totals,  blocks_per_buffer, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
         /* Each process writes out the blocks it processed in current wave at the correct offset */
         for (int k = 0; k < blocks_per_buffer; k++) {
             /* write out our block if we have one,
-             * this assumes a compressed block with consume
-             * at least 1 byte, which is ensured by BZ2 */
+ *              * this assumes a compressed block with consume
+ *                           * at least 1 byte, which is ensured by BZ2 */
             if (block_lengths[k] > 0) {
                 /* compute offset into compressed file for our block */
                 off_t pos = last_offset + block_offsets[k];
@@ -246,7 +244,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
                 my_blocks++;
 
                 /* seek to position in destination file for this block */
-                off_t lseek_rc = mfu_lseek(mfu_io.out_lseek_fn, dst_name, fd_out, pos, SEEK_SET);
+                off_t lseek_rc = mfu_lseek(dst_name, fd_out, pos, SEEK_SET);
                 if (lseek_rc == (off_t)-1) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to seek to compressed block in target file: %s offset=%lx errno=%d (%s)",
                         dst_name, pos, errno, strerror(errno));
@@ -254,7 +252,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
                 }
 
                 /* write out block */
-                ssize_t nwritten = mfu_write(mfu_io.out_write_fn, dst_name, fd_out, a[k], block_lengths[k], NULL, 0, NULL);
+                ssize_t nwritten = mfu_write(dst_name, fd_out, a[k], block_lengths[k]);
                 if (nwritten != block_lengths[k]) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to write compressed block to target file: %s offset=%lx got=%d expected=%d errno=%d (%s)",
                         dst_name, pos, nwritten, block_lengths[k], errno, strerror(errno));
@@ -271,26 +269,26 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
     MPI_Barrier(MPI_COMM_WORLD);
 
 /*
-    size_t footer_offset_size = 10 * 1024 * 1024;
-    size_t single_pair_size = 16 * ranks;
-    if (footer_offset_size < single_pair_size) {
-        footer_offset_size = single_pair_size;
-    }
-    int64_t pairs_per_gather_step = footer_offset_size / single_pair_size;
-    for (i = 0; i < pairs_per_gather_step; i++) {
-    }
-*/
+ *     size_t footer_offset_size = 10 * 1024 * 1024;
+ *         size_t single_pair_size = 16 * ranks;
+ *             if (footer_offset_size < single_pair_size) {
+ *                     footer_offset_size = single_pair_size;
+ *                         }
+ *                             int64_t pairs_per_gather_step = footer_offset_size / single_pair_size;
+ *                                 for (i = 0; i < pairs_per_gather_step; i++) {
+ *                                     }
+ *                                     */
 
     /* TODO: gather these in larger blocks to rank 0 for writing,
-     * tight interleaving as written will not perform well with
-     * byte range locking on lustre */
+ *      * tight interleaving as written will not perform well with
+ *           * byte range locking on lustre */
 
     /* Each process writes the offset of all blocks processed by it at corect location in trailer */
     for (int k = 0; k < my_blocks; k++) {
         /* seek to metadata location for this block */
         int64_t block_no = ranks * k + rank;
         off_t pos = last_offset + block_no * 16;
-        off_t lseek_rc = mfu_lseek(mfu_io.out_lseek_fn, dst_name, fd_out, pos, SEEK_SET);
+        off_t lseek_rc = mfu_lseek(dst_name, fd_out, pos, SEEK_SET);
         if (lseek_rc == (off_t)-1) {
             MFU_LOG(MFU_LOG_ERR, "Failed to seek to block metadata in target file: %s offset=%lx errno=%d (%s)",
                 dst_name, pos, errno, strerror(errno));
@@ -298,7 +296,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
         }
 
         /* write offset of block in destination file */
-        ssize_t nwritten = mfu_write(mfu_io.out_write_fn, dst_name, fd_out, &my_offsets[k], 8, NULL, 0, NULL);
+        ssize_t nwritten = mfu_write(dst_name, fd_out, &my_offsets[k], 8);
         if (nwritten != 8) {
             MFU_LOG(MFU_LOG_ERR, "Failed to write block offset to target file: %s pos=%lx got=%d expected=%d errno=%d (%s)",
                 dst_name, pos, nwritten, 8, errno, strerror(errno));
@@ -306,7 +304,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
         }
 
         /* write length of block in destination file */
-        nwritten = mfu_write(mfu_io.out_write_fn, dst_name, fd_out, &my_lengths[k], 8, NULL, 0, NULL);
+        nwritten = mfu_write(dst_name, fd_out, &my_lengths[k], 8);
         if (nwritten != 8) {
             MFU_LOG(MFU_LOG_ERR, "Failed to write block length to target file: %s pos=%lx got=%d expected=%d errno=%d (%s)",
                 dst_name, pos+8, nwritten, 8, errno, strerror(errno));
@@ -327,7 +325,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
 
         /* seek to position to write footer */
         off_t pos = last_offset + tot_blocks * 16;
-        off_t lseek_rc = mfu_lseek(mfu_io.out_lseek_fn, dst_name, fd_out, pos, SEEK_SET);
+        off_t lseek_rc = mfu_lseek(dst_name, fd_out, pos, SEEK_SET);
         if (lseek_rc == (off_t)-1) {
             MFU_LOG(MFU_LOG_ERR, "Failed to seek to footer in target file: %s offset=%lx errno=%d (%s)",
                 dst_name, pos, errno, strerror(errno));
@@ -336,7 +334,7 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
 
         /* write footer */
         size_t footer_size = 6 * 8;
-        ssize_t nwritten = mfu_write(mfu_io.out_write_fn, dst_name, fd_out, footer, footer_size, NULL, 0, NULL);
+        ssize_t nwritten = mfu_write(dst_name, fd_out, footer, footer_size);
         if (nwritten != footer_size) {
             MFU_LOG(MFU_LOG_ERR, "Failed to write footer to target file: %s pos=%lx got=%d expected=%d errno=%d (%s)",
                 dst_name, pos, nwritten, footer_size, errno, strerror(errno));
@@ -364,14 +362,14 @@ int mfu_compress_bz2_static(const char* src_name, const char* dst_name, int b_si
 
     /* close source and target files */
     mfu_fsync(dst_name, fd_out);
-    mfu_close(mfu_io.out_close_fn, dst_name, fd_out, NULL);
-    mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
+    mfu_close(dst_name, fd_out);
+    mfu_close(src_name, fd);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
     if (rank == 0) {
         /* set mode and group */
-        mfu_chmod(mfu_io.out_chmod_fn, dst_name, st.st_mode);
+        mfu_chmod(dst_name, st.st_mode);
         mfu_lchown(dst_name, st.st_uid, st.st_gid);
 
         /* set timestamps, mode, and group */
@@ -400,8 +398,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* open compressed file for reading */
-    int fd;
-    mfu_open(mfu_io.in_open_fn, src_name, O_RDONLY | O_LARGEFILE, &fd, NULL);
+    int fd = mfu_open(src_name, O_RDONLY | O_LARGEFILE);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for reading: %s errno=%d (%s)",
             src_name, errno, strerror(errno));
@@ -410,9 +407,9 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
     /* check that all processes were able to open the file */
     if (! mfu_alltrue(fd >= 0, MPI_COMM_WORLD)) {
         /* some process failed to open so bail with error,
-         * if we opened ok, close file */
+ *          * if we opened ok, close file */
         if (fd >= 0) {
-            mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
+            mfu_close(src_name, fd);
         }
         return MFU_FAILURE;
     }
@@ -426,7 +423,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
     if (rank == 0) {
         /* seek to read footer from end of file */
         size_t footer_size = 6 * 8;
-        off_t lseek_rc = mfu_lseek(mfu_io.in_lseek_fn, src_name, fd, -footer_size, SEEK_END);
+        off_t lseek_rc = mfu_lseek(src_name, fd, -footer_size, SEEK_END);
         if (lseek_rc == (off_t)-1) {
             /* failed to seek to position to read footer */
             footer_flag = 0;
@@ -436,7 +433,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
 
         /* read footer from end of file */
         uint64_t file_footer[6] = {0};
-        ssize_t read_rc = mfu_read(mfu_io.in_read_fn, src_name, fd, file_footer, footer_size, NULL, 0, NULL);
+        ssize_t read_rc = mfu_read(src_name, fd, file_footer, footer_size);
         if (read_rc == footer_size) {
             /* got the footer, convert fields from network to host order */
             footer[0] = mfu_ntoh64(file_footer[0]);
@@ -453,7 +450,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
         }
 
         /* get size of file */
-        int lstat_rc = mfu_lstat(mfu_io.in_lstat_fn, src_name, &st);
+        int lstat_rc = mfu_lstat(src_name, &st);
         if (lstat_rc == 0) {
             footer[6] = (uint64_t) st.st_size;
         } else {
@@ -471,7 +468,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
     /* check whether we read the footer successfully */
     if (! footer_flag) {
         /* failed to read footer for some reason */
-        mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
+        mfu_close(src_name, fd);
         return MFU_FAILURE;
     }
 
@@ -490,7 +487,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
             MFU_LOG(MFU_LOG_ERR, "Source file does not seem to be a dbz2 file: %s",
                 src_name);
         }
-        mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
+        mfu_close(src_name, fd);
         return MFU_FAILURE;
     }
 
@@ -500,13 +497,12 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
             MFU_LOG(MFU_LOG_ERR, "Source dbz2 file has unsupported version (%llu): %s",
                 (unsigned long long)version, src_name);
         }
-        mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
+        mfu_close(src_name, fd);
         return MFU_FAILURE;
     }
 
     /* open destination file for writing */
-    int fd_out;
-    mfu_create_fully_striped(dst_name, FILE_MODE, &fd_out);
+    int fd_out = mfu_create_fully_striped(dst_name, FILE_MODE);
     if (fd_out < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
             dst_name, errno, strerror(errno));
@@ -515,18 +511,18 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
     /* check that all processes were able to open the file */
     if (! mfu_alltrue(fd_out >= 0, MPI_COMM_WORLD)) {
         /* some process failed to open so bail with error,
-         * if we opened ok, close file */
+ *          * if we opened ok, close file */
         if (fd_out >= 0) {
-            mfu_close(mfu_io.out_close_fn, dst_name, fd_out, NULL);
+            mfu_close(dst_name, fd_out);
         }
-        mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
+        mfu_close(src_name, fd);
         return MFU_FAILURE;
     }
 
     /* for an uncompressed block of size block_size, BZ2 compression
-     * may compressed this to block_size * 1.01 + 600.  User 2% for
-     * some breathing room when allocating buffer to read in compressed
-     * block */
+ *      * may compressed this to block_size * 1.01 + 600.  User 2% for
+ *           * some breathing room when allocating buffer to read in compressed
+ *                * block */
     size_t bufsize = (size_t) ((double)block_size * 1.02 + 600.0);
     char* obuf = (char*) MFU_MALLOC(bufsize);
     char* ibuf = (char*) MFU_MALLOC(bufsize);
@@ -540,7 +536,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
         if (block_no < block_total) {
             /* seek to metadata for this block */
             off_t pos = (off_t) (block_meta + block_no * 16);
-            off_t lseek_rc = mfu_lseek(mfu_io.in_lseek_fn, src_name, fd, pos, SEEK_SET);
+            off_t lseek_rc = mfu_lseek(src_name, fd, pos, SEEK_SET);
             if (lseek_rc == (off_t)-1) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to seek to block metadata in source file: %s offset=%lx errno=%d (%s)",
                     src_name, pos, errno, strerror(errno));
@@ -550,7 +546,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
         
             /* read offset of block */
             uint64_t net_offset;
-            ssize_t nread = mfu_read(mfu_io.in_read_fn, src_name, fd, &net_offset, 8, NULL, 0, NULL);
+            ssize_t nread = mfu_read(src_name, fd, &net_offset, 8);
             if (nread != 8) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to read block offset from source file: %s offset=%lx got=%d expected=%d errno=%d (%s)",
                     src_name, pos, nread, 8, errno, strerror(errno));
@@ -560,7 +556,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
 
             /* read length of block */
             uint64_t net_length;
-            nread = mfu_read(mfu_io.in_read_fn, src_name, fd, &net_length, 8, NULL, 0, NULL);
+            nread = mfu_read(src_name, fd, &net_length, 8);
             if (nread != 8) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to read block length from source file: %s offset=%lx got=%d expected=%d errno=%d (%s)",
                     src_name, pos+8, nread, 8, errno, strerror(errno));
@@ -573,11 +569,11 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
             int64_t length = mfu_ntoh64(net_length);
     
             /* compute max size of buffer to hold uncompressed data:
-             * BZ2 scheme requires block_size + 1% + 600 bytes */
+ *              * BZ2 scheme requires block_size + 1% + 600 bytes */
             unsigned int outSize = (unsigned int)block_size;
     
             /* seek to start of compressed block in source file */
-            lseek_rc = mfu_lseek(mfu_io.in_lseek_fn, src_name, fd, offset, SEEK_SET);
+            lseek_rc = mfu_lseek(src_name, fd, offset, SEEK_SET);
             if (lseek_rc == (off_t)-1) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to seek to block in source file: %s offset=%lx errno=%d (%s)",
                     src_name, offset, errno, strerror(errno));
@@ -586,7 +582,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
             }
 
             /* Read compressed block from source file */
-            ssize_t inSize = mfu_read(mfu_io.in_read_fn, src_name, fd, (char*)ibuf, length, NULL, 0, NULL);
+            ssize_t inSize = mfu_read(src_name, fd, (char*)ibuf, length);
             if (inSize != (ssize_t)length) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to read block from source file: %s offset=%lx got=%d expected=%d errno=%d (%s)",
                     src_name, offset, inSize, length, errno, strerror(errno));
@@ -606,7 +602,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
             int64_t in_offset = block_no * block_size;
     
             /* seek to position to write block in target file */
-            lseek_rc = mfu_lseek(mfu_io.out_lseek_fn, dst_name, fd_out, in_offset, SEEK_SET);
+            lseek_rc = mfu_lseek(dst_name, fd_out, in_offset, SEEK_SET);
             if (lseek_rc == (off_t)-1) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to seek to block in target file: %s offset=%lx errno=%d (%s)",
                     dst_name, in_offset, errno, strerror(errno));
@@ -615,7 +611,7 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
             }
 
             /* write decompressed block to target file */
-            ssize_t nwritten = mfu_write(mfu_io.out_write_fn, dst_name, fd_out, obuf, outSize, NULL, 0, NULL);
+            ssize_t nwritten = mfu_write(dst_name, fd_out, obuf, outSize);
             if (nwritten != outSize) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to write block in target file: %s offset=%lx got=%d expected=%d errno=%d (%s)",
                     dst_name, in_offset, nwritten, outSize, errno, strerror(errno));
@@ -636,15 +632,15 @@ int mfu_decompress_bz2_static(const char* src_name, const char* dst_name)
 
     /* close source and target files */
     mfu_fsync(dst_name, fd_out);
-    mfu_close(mfu_io.out_close_fn, dst_name, fd_out, NULL);
-    mfu_close(mfu_io.in_close_fn, src_name, fd, NULL);
+    mfu_close(dst_name, fd_out);
+    mfu_close(src_name, fd);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* have rank 0 set meta data on target file */
     if (rank == 0) {
         /* set mode and group on file */
-        mfu_chmod(mfu_io.out_chmod_fn, dst_name, st.st_mode);
+        mfu_chmod(dst_name, st.st_mode);
         mfu_lchown(dst_name, st.st_uid, st.st_gid);
 
         /* set timestamps on file */

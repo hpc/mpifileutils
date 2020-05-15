@@ -35,18 +35,18 @@ int mfu_decompress_bz2(const char* src_name, const char* dst_name)
     return mfu_decompress_bz2_static(src_name, dst_name);
 }
 
-static void mfu_create_output(const char* name, mode_t mode, int* fd)
+static int mfu_create_output(const char* name, mode_t mode)
 {
     /* get our rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     /* The file for output is opened and options set */
-    *fd = -1;
+    int fd = -1;
     if (rank == 0) {
         /* open file */
-        mfu_open(mfu_io.in_open_fn, name, O_WRONLY | O_CREAT | O_TRUNC, fd, NULL, mode);
-        if (*fd < 0) {
+        fd = mfu_open(name, O_WRONLY | O_CREAT | O_TRUNC, mode);
+        if (fd < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
                 name, errno, strerror(errno));
         }
@@ -57,15 +57,17 @@ static void mfu_create_output(const char* name, mode_t mode, int* fd)
 
     /* have rest of ranks open the file */
     if (rank != 0) {
-        mfu_open(mfu_io.in_open_fn, name, O_WRONLY, fd, NULL);
-        if (*fd < 0) {
+        fd = mfu_open(name, O_WRONLY);
+        if (fd < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
                 name, errno, strerror(errno));
         }
     }
+
+    return fd;
 }
 
-void mfu_create_fully_striped(const char* name, mode_t mode, int *fd)
+int mfu_create_fully_striped(const char* name, mode_t mode)
 {
     /* get our rank */
     int rank;
@@ -100,8 +102,8 @@ void mfu_create_fully_striped(const char* name, mode_t mode, int *fd)
     MPI_Bcast(&on_lustre, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
     /* if on lustre, set striping while opening file,
-     * otherwise fallback to something basic */
-    *fd = -1;
+ *      * otherwise fallback to something basic */
+    int fd = -1;
     if (on_lustre) {
         /* have rank 0 create the file with striping */
         if (rank == 0) {
@@ -112,8 +114,8 @@ void mfu_create_fully_striped(const char* name, mode_t mode, int *fd)
         MPI_Barrier(MPI_COMM_WORLD);
     
         /* open the file */
-        mfu_open(mfu_io.open_fn, name, O_WRONLY, fd, NULL);
-        if (*fd < 0) {
+        fd = mfu_open(name, O_WRONLY);
+        if (fd < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: %s errno=%d (%s)",
                 name, errno, strerror(errno));
         }
@@ -121,6 +123,8 @@ void mfu_create_fully_striped(const char* name, mode_t mode, int *fd)
         fd = mfu_create_output(name, mode);
     }
 #else
-    mfu_create_output(name, mode, fd);
+    int fd = mfu_create_output(name, mode);
 #endif
+
+    return fd;
 }
