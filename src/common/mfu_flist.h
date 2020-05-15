@@ -140,12 +140,6 @@ typedef struct mfu_perms_t {
     struct mfu_perms_t* next;  /* pointer to next perms struct in linked list */
 } mfu_perms;
 
-typedef struct daos_path_t {
-    bool only_daos;
-    enum {SRC, DST} path_type;
-    char* daos_prefix;
-} daos_path;
-
 /****************************************
  * Functions to create, free, and inspect mode strings
  ****************************************/

@@ -662,7 +662,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
             param->path = mfu_path_strdup_abs_reduce_str(path);
 
             /* get stat info for simplified path */
-            if (posix_lstat(param->path, &param->path_stat) == 0) {
+            if (mfu_lstat(param->path, &param->path_stat) == 0) {
                 param->path_stat_valid = 1;
             }
 
@@ -678,7 +678,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
                 param->target = MFU_STRDUP(target);
 
                 /* get stat info for resolved path */
-                if (posix_lstat(param->target, &param->target_stat) == 0) {
+                if (mfu_lstat(param->target, &param->target_stat) == 0) {
                     param->target_stat_valid = 1;
                 }
             }

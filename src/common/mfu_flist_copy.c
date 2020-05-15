@@ -89,10 +89,6 @@ typedef struct {
  * Define globals
  ***************************************/
 
-dfs_t *dfs1;
-dfs_t *dfs2;
-dfs_t *dfs;
-extern daos_path dpath;
 /** Where we should keep statistics related to this file copy. */
 static mfu_copy_stats_t mfu_copy_stats;
 

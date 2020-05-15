@@ -1088,7 +1088,7 @@ static int chmod_list(
             /* finally attempt to change permissions if needed */
             if (change) {
                 /* set the mode on the file */
-                if (posix_chmod(dest_path, new_mode) == 0) {
+                if (mfu_chmod(dest_path, new_mode) == 0) {
                     /* succeeded in changing the permission bits of this item */
                     stats[CHMOD_SUCCESS] += 1;
                 } else {
