@@ -549,7 +549,11 @@ int main(int argc, char* argv[])
 
     /* walk list of input paths and stat as we walk */
     mfu_flist flist = mfu_flist_new();
-    mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
+
+    /* create new mfu_file objects */
+    mfu_file_t* mfu_file = mfu_file_new();
+
+    mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_file);
 
     /* filter down our list to files which don't meet our striping requirements */
     mfu_flist filtered = filter_list(flist, stripes, stripe_size, min_size, &create_prog_count_total, &stripe_prog_bytes_total);
@@ -686,6 +690,9 @@ int main(int argc, char* argv[])
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);
+
+    /* delete file object */
+    mfu_file_delete(&mfu_file);
 
     /* free filtered list, path parameters */
     mfu_flist_free(&filtered);

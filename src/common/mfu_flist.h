@@ -470,14 +470,17 @@ int mfu_flist_hardlink(
     mfu_flist src_link_list,         /* IN - flist providing source items */
     const mfu_param_path* srcpath,   /* IN - the source patht */
     const mfu_param_path* destpath,  /* IN - destination path */
-    mfu_copy_opts_t* mfu_copy_opts   /* IN - options to be used during copy */
+    mfu_copy_opts_t* mfu_copy_opts,  /* IN - options to be used during copy */
+    mfu_file_t* mfu_src_file,        /* IN  - I/O filesystem funcstions for src */
+    mfu_file_t* mfu_dst_file         /* IN  - I/O filesystem funcstions for dst */
 );
 
 /* fill files in list with data
  * returns 0 on success -1 on error */
 int mfu_flist_fill(
     mfu_flist list,                 /* IN - flist providing items */
-    mfu_copy_opts_t* mfu_copy_opts  /* IN - options to be used during fill */
+    mfu_copy_opts_t* mfu_copy_opts, /* IN - options to be used during fill */
+    mfu_file_t* mfu_file            /* IN  - I/O filesystem funcstions */
 );
 
 /* allocate a new mfu_walk_opts structure,

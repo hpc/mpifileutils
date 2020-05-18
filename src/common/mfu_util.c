@@ -791,13 +791,11 @@ int mfu_compare_contents(
     int overwrite,                 /* IN  - whether to replace dest with source contents (1) or not (0) */
     uint64_t* count_bytes_read,    /* OUT - number of bytes read (src + dest) */
     uint64_t* count_bytes_written, /* OUT - number of bytes written to dest */
-    mfu_progress* prg,             /* IN  - progress message structure */
-    mfu_file_t* mfu_src_file,      /* IN  - mfu file object abstracts use of objects vs. fds for src */
-    mfu_file_t* mfu_dst_file)      /* IN  - mfu file object abstracts use of objects vs. fds for dst  */
+    mfu_progress* prg)             /* IN  - progress message structure */
 {
-    /* open source file */
-    mfu_file_open(src_name, O_RDONLY, mfu_src_file);
-    if (mfu_src_file->fd < 0) {
+ /* open source file */
+    int src_fd = mfu_open(src_name, O_RDONLY);
+    if (src_fd < 0) {
         /* log error if there is an open failure on the src side */
         MFU_LOG(MFU_LOG_ERR, "Failed to open `%s' (errno=%d %s)",
           src_name, errno, strerror(errno));
@@ -811,39 +809,39 @@ int mfu_compare_contents(
     }
 
     /* open destination file */
-    mfu_file_open(dst_name, dst_flags, mfu_dst_file);
-    if (mfu_dst_file->fd < 0) {
+    int dst_fd = mfu_open(dst_name, dst_flags);
+    if (dst_fd < 0) {
         /* log error if there is an open failure on the dst side */
         MFU_LOG(MFU_LOG_ERR, "Failed to open `%s' (errno=%d %s)",
           dst_name, errno, strerror(errno));
-        mfu_file_close(src_name, mfu_src_file);
+        mfu_close(src_name, src_fd);
         return -1;
     }
 
     /* hint that we'll read from file sequentially */
-    posix_fadvise(mfu_src_file->fd, offset, length, POSIX_FADV_SEQUENTIAL);
-    posix_fadvise(mfu_dst_file->fd, offset, length, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(src_fd, offset, length, POSIX_FADV_SEQUENTIAL);
+    posix_fadvise(dst_fd, offset, length, POSIX_FADV_SEQUENTIAL);
 
     /* assume we'll find that file contents are the same */
     int rc = 0;
 
     /* seek to offset in source file */
-    if (mfu_file_lseek(src_name, mfu_src_file, offset, SEEK_SET) == (off_t)-1) {
+    if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
         /* log error if there is an lseek failure on the src side */
         MFU_LOG(MFU_LOG_ERR, "Failed to lseek `%s', offset: %lx (errno=%d %s)",
           src_name, (unsigned long)offset, errno, strerror(errno));
-        mfu_file_close(dst_name, mfu_dst_file);
-        mfu_file_close(src_name, mfu_src_file);
+        mfu_close(dst_name, dst_fd);
+        mfu_close(src_name, src_fd);
         return -1;
     }
 
     /* seek to offset in destination file */
-    if (mfu_file_lseek(dst_name, mfu_dst_file, offset, SEEK_SET) == (off_t)-1) {
+    if (mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
         /* log error if there is an lseek failure on the dst side */
         MFU_LOG(MFU_LOG_ERR, "Failed to lseek `%s', offset: %lx (errno=%d %s)",
           dst_name, (unsigned long)offset, errno, strerror(errno));
-        mfu_file_close(dst_name, mfu_dst_file);
-        mfu_file_close(src_name, mfu_src_file);
+        mfu_close(dst_name, dst_fd);
+        mfu_close(src_name, src_fd);
         return -1;
     }
 
@@ -869,7 +867,7 @@ int mfu_compare_contents(
         }
 
         /* read data from source file */
-        ssize_t src_read = mfu_file_read(src_name, (ssize_t*)src_buf, left_to_read, mfu_src_file);
+        ssize_t src_read = mfu_read(src_name, src_fd, (ssize_t*)src_buf, left_to_read);
         if (src_read < 0) {
             /* hit a read error */
             MFU_LOG(MFU_LOG_ERR, "Failed to read `%s' at offset %llx (errno=%d %s)",
@@ -882,7 +880,7 @@ int mfu_compare_contents(
         *count_bytes_read += (uint64_t) src_read;
 
         /* read data from destination file */
-        ssize_t dst_read = mfu_file_read(dst_name, (ssize_t*)dest_buf, left_to_read, mfu_dst_file);
+        ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf, left_to_read);
         if (dst_read < 0) {
             /* hit a read error */
             MFU_LOG(MFU_LOG_ERR, "Failed to read `%s' at offset %llx (errno=%d %s)",
@@ -930,7 +928,7 @@ int mfu_compare_contents(
          * then copy the bytes from the source into the destination */
         if (overwrite && need_copy == 1) {
             /* seek back to position to write to in destination file */
-            if (mfu_file_lseek(dst_name, mfu_dst_file, pos, SEEK_SET) == (off_t)-1) {
+            if (mfu_lseek(dst_name, dst_fd, pos, SEEK_SET) == (off_t)-1) {
                 /* log error if there is an lseek failure on the dst side */
                 MFU_LOG(MFU_LOG_ERR, "Failed to lseek `%s', offset: %llx (errno=%d %s)",
                   dst_name, (unsigned long long)pos, strerror(errno));
@@ -940,7 +938,7 @@ int mfu_compare_contents(
 
             /* write data to destination file */
             size_t bytes_to_write = (size_t) src_read;
-            ssize_t bytes_written = mfu_file_write(dst_name, src_buf, bytes_to_write, mfu_dst_file);
+            ssize_t bytes_written = mfu_write(dst_name, dst_fd, src_buf, bytes_to_write);
             if (bytes_written < 0) {
                 /* hit a write error */
                 MFU_LOG(MFU_LOG_ERR, "Failed to write `%s' at offset %llx (errno=%d %s)",
@@ -968,8 +966,8 @@ int mfu_compare_contents(
     mfu_free(&src_buf);
 
     /* close files */
-    mfu_file_close(dst_name, mfu_dst_file);
-    mfu_file_close(src_name, mfu_src_file);
+    mfu_close(dst_name, dst_fd);
+    mfu_close(src_name, src_fd);
 
     return rc;
 }
