@@ -86,10 +86,12 @@ typedef struct {
     int         fd;
     bool        only_daos;
     /* DAOS specific variables for I/O */
+#ifdef DAOS_SUPPORT
     d_sg_list_t* sgl;
     daos_off_t   offset;
     dfs_obj_t*   obj;
     dfs_t*       dfs;
+#endif
 } mfu_file_t;
 
 /* options passed to walk that effect how the walk is executed */

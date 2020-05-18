@@ -37,6 +37,7 @@ mfu_loglevel mfu_debug_level = MFU_LOG_ERR;
 int mfu_progress_timeout = 10;
 
 /***** DAOS utility functions ******/
+#ifdef DAOS_SUPPORT
 bool daos_uuid_valid(const uuid_t uuid)
 {
 	return uuid && !uuid_is_null(uuid);
@@ -138,6 +139,7 @@ void daos_connect(int* rank, daos_handle_t* poh, daos_handle_t* coh,
     HandleDistribute(*rank, poh, poh, POOL_HANDLE);
     HandleDistribute(*rank, coh, poh, CONT_HANDLE);
 }
+#endif
 
 /* initialize mfu library,
  * reference counting allows for multiple init/finalize pairs */

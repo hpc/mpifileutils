@@ -45,8 +45,10 @@
 #include <stdbool.h>
 #include "libcircle.h"
 #include "dtcmp.h"
+#ifdef DAOS_SUPPORT
 #include <gurt/common.h>
 #include <gurt/hash.h>
+#endif
 #include "mfu.h"
 #include "mfu_flist_internal.h"
 #include "strmap.h"
@@ -82,7 +84,9 @@ typedef struct {
     char* name;    /* name of open file (NULL if none) */
     int   read;    /* whether file is open for read-only (1) or write (0) */
     int   fd;      /* file descriptor */
+#ifdef DAOS_SUPPORT
     dfs_obj_t* obj; /* open object */
+#endif
 } mfu_copy_file_cache_t;
 
 /****************************************
@@ -105,15 +109,20 @@ static void mfu_copy_open_file(const char* file, int read_flag,
     if (name != NULL) {
         /* we have a cached file descriptor */
         int fd         = cache->fd;
+#ifdef DAOS_SUPPORT
         dfs_obj_t* obj = cache->obj;
+#endif
         if (strcmp(name, file) == 0 && cache->read == read_flag) {
             /* the file we're trying to open matches name and read/write mode,
              * so just return the cached descriptor */
             if (fd > 0) {
                 return fd;
-            } else {
+            } 
+#ifdef DAOS_SUPPORT
+            else {
                 return obj;
             }
+#endif
         } else {
             /* the file we're trying to open is different,
              * close the old file and delete the name */
@@ -139,11 +148,13 @@ static void mfu_copy_open_file(const char* file, int read_flag,
     }
 
     /* cache the file descriptor */
-    if (mfu_file->fd != -1 && mfu_file->obj != NULL) {
+    if (mfu_file->fd != -1) {
         cache->name = MFU_STRDUP(file);
         cache->fd   = mfu_file->fd;
         cache->read = read_flag;
+#ifdef DAOS_SUPPORT
         cache->obj  = mfu_file->obj;
+#endif
 #ifdef LUSTRE_SUPPORT
         /* Zero is an invalid ID for grouplock. */
         if (mfu_copy_opts->grouplock_id != 0) {
@@ -495,8 +506,9 @@ static int mfu_copy_close_file(mfu_copy_file_cache_t* cache, mfu_file_t* mfu_fil
     char* name = cache->name;
     if (name != NULL) {
         int fd = cache->fd;
+#ifdef DAOS_SUPPORT
         dfs_obj_t* obj = cache->obj;
-
+#endif
         /* if open for write, fsync */
         int read_flag = cache->read;
         if (! read_flag) {
@@ -1286,9 +1298,11 @@ static int mfu_copy_file_normal(
     }
 
     /* declare daos vars */
+#ifdef DAOS_SUPPORT
     daos_size_t		got_size;
     d_sg_list_t		sgl;
     d_iov_t		iov;
+#endif
 
     /* declare buffers */
     size_t buf_size;
@@ -1300,6 +1314,7 @@ static int mfu_copy_file_normal(
     buf = mfu_copy_opts->block_buf1;
 
     /* set daos vars and buffers */
+#ifdef DAOS_SUPPORT
     mfu_src_file->offset = (daos_off_t) offset;
     mfu_dst_file->offset = (daos_off_t) offset;
     sgl.sg_nr = 1;
@@ -1310,25 +1325,30 @@ static int mfu_copy_file_normal(
     sgl.sg_nr_out = 1;
     mfu_src_file->sgl = &sgl;
     mfu_dst_file->sgl = &sgl;
+#endif
 
     /* write data */
     size_t total_bytes = 0;
-    char* buffer;
+    char* buffer = mfu_copy_opts->block_buf1;
     while(total_bytes <= (size_t)length) {
         /* determine number of bytes that we
          * can read = max(buf size, remaining chunk) */
         size_t left_to_read = (size_t)length - total_bytes;
         
         if(left_to_read > buf_size) {
+#ifdef DAOS_SUPPORT
             newbuf = mfu_copy_opts->block_buf1;
   	    D_REALLOC(newbuf, buf, left_to_read);
             d_iov_set(&iov, newbuf, left_to_read);
+#endif
             left_to_read = buf_size;
         }
 	ssize_t num_of_bytes_read;
 
         /* read data from source file */
+#ifdef DAOS_SUPPORT
         buffer            = sgl.sg_iovs[0].iov_buf;
+#endif
         num_of_bytes_read = mfu_file_read(src, buffer, left_to_read, mfu_src_file);
 
         /* check for EOF */
@@ -1415,9 +1435,10 @@ static int mfu_copy_file_normal(
 
         /* add bytes to our total (use bytes read,
          * which may be less than number written) */
-        //off += num_of_bytes_read;
+#ifdef DAOS_SUPPORT
         mfu_src_file->offset += num_of_bytes_read;
         mfu_dst_file->offset += num_of_bytes_read;
+#endif
         total_bytes += (size_t) num_of_bytes_read;
     }
 
@@ -1425,12 +1446,12 @@ static int mfu_copy_file_normal(
     mfu_copy_stats.total_size += (int64_t) total_bytes;
     mfu_copy_stats.total_bytes_copied += (int64_t) total_bytes;
 
-#if 0
     /* force data to file system */
-    if(total_bytes > 0) {
-        mfu_fsync(dest, out_fd);
+    if (mfu_dst_file->type != DAOS) {
+        if(total_bytes > 0) {
+            mfu_fsync(dest, mfu_dst_file->fd);
+        }
     }
-#endif
 
     /* no need to truncate if sparse file is enabled,
      * since we truncated files when they were first created */
@@ -1453,9 +1474,11 @@ static int mfu_copy_file_normal(
     }
 
     /* we don't bother closing the file because our cache does it for us */
+#ifdef DAOS_SUPPORT
     if (buf != NULL) {
         D_FREE(buf);
     }
+#endif
     return 0;
 }
 
@@ -1651,7 +1674,7 @@ static int mfu_copy_file(
     /* open the input file */
     mfu_copy_open_file(src, 1, &mfu_copy_src_cache,
                        mfu_copy_opts, mfu_src_file);
-    if (mfu_src_file->fd < 0 && mfu_src_file->obj == NULL) {
+    if (mfu_src_file->fd < 0 && mfu_src_file->type != DAOS) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open input file `%s' (errno=%d %s)",
             src, errno, strerror(errno));
         return -1;
@@ -1660,7 +1683,7 @@ static int mfu_copy_file(
     /* open the output file */
     mfu_copy_open_file(dest, 0, &mfu_copy_dst_cache,
                        mfu_copy_opts, mfu_dst_file);
-    if (mfu_dst_file->fd < 0 && mfu_dst_file->obj == NULL) {
+    if (mfu_dst_file->fd < 0 && mfu_dst_file->type != DAOS) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open output file `%s' (errno=%d %s)", dest, errno, strerror(errno));
         return -1;
     }
@@ -2389,8 +2412,10 @@ mfu_file_t* mfu_file_new(void)
     mfile->type       = POSIX;
     mfile->fd         = -1;
     mfile->only_daos  = 0;
+#ifdef DAOS_SUPPORT
     mfile->obj        = NULL;
     mfile->dfs        = NULL;
+#endif
     return mfile;
 }
 
