@@ -144,15 +144,21 @@ int main(int argc, char* argv[])
   /* pointer to mfu_copy opts */
   mfu_copy_opts_t* mfu_copy_opts = mfu_copy_opts_new();
 
+  /* create new mfu_file objects */
+  mfu_file_t* mfu_file = mfu_file_new();
+
   mfu_flist_mkdir(flist);
   mfu_flist_mknod(flist);
-  mfu_flist_fill(flist, mfu_copy_opts);
+  mfu_flist_fill(flist, mfu_copy_opts, mfu_file);
   //mfu_flist_setmeta()
 
   mfu_flist_free(&flist);
 
   /* free the copy options */
   mfu_copy_opts_delete(&mfu_copy_opts);
+
+  /* delete file objects */
+  mfu_file_delete(&mfu_file);
 
   /* shut down */
   mfu_finalize();

@@ -266,9 +266,7 @@ int mfu_compare_contents(
     int overwrite,            /* IN  - whether to replace dest with source contents (1) or not (0) */
     uint64_t* bytes_read,     /* OUT - number of bytes read (src + dest) */
     uint64_t* bytes_written,  /* OUT - number of bytes written to dest */
-    mfu_progress* prg,        /* IN  - progress message structure */
-    mfu_file_t* mfu_src_file, /* IN  - mfu file object abstracts use of objects vs. fds for src */
-    mfu_file_t* mfu_dst_file  /* IN  - mfu file object abstracts use of objects vs. fds for dst  */
+    mfu_progress* prg         /* IN  - progress message structure */
 );
 
 /* uses the lustre api to obtain stripe count and stripe size of a file */

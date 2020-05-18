@@ -484,6 +484,27 @@ retry:
     return rc;
 }
 
+/* call hardlink, retry a few times on EINTR or EIO */
+int mfu_hardlink(const char* oldpath, const char* newpath)
+{
+    int rc;
+    int tries = MFU_IO_TRIES;
+retry:
+    errno = 0;
+    rc = link(oldpath, newpath);
+    if (rc < 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(MFU_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
 /*****************************
  *  * Files
  *   ****************************/

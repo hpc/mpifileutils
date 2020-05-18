@@ -108,6 +108,9 @@ int daos_closedir(DIR* dirp, mfu_file_t* mfu_file);
 /* call readlink, retry a few times on EINTR or EIO */
 ssize_t mfu_readlink(const char* path, char* buf, size_t bufsize);
 
+/* call hardlink, retry a few times on EINTR or EIO */
+int mfu_hardlink(const char* oldpath, const char* newpath);
+
 /* call symlink, retry a few times on EINTR or EIO */
 int mfu_symlink(const char* oldpath, const char* newpath);
 

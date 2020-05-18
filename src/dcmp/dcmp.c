@@ -2191,16 +2191,19 @@ int main(int argc, char **argv)
     mfu_flist flist1 = mfu_flist_new();
     mfu_flist flist2 = mfu_flist_new();
 
+    /* create new mfu_file objects */
+    mfu_file_t* mfu_src_file = mfu_file_new();
+    mfu_file_t* mfu_dst_file = mfu_file_new();
 
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking source path");
     }
-    mfu_flist_walk_param_paths(1,  srcpath, walk_opts, flist1);
+    mfu_flist_walk_param_paths(1,  srcpath, walk_opts, flist1, mfu_src_file);
 
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking destination path");
     }
-    mfu_flist_walk_param_paths(1, destpath, walk_opts, flist2);
+    mfu_flist_walk_param_paths(1, destpath, walk_opts, flist2, mfu_dst_file);
 
     /* store src and dest path strings */
     const char* path1 = srcpath->path;
@@ -2238,6 +2241,10 @@ int main(int argc, char **argv)
     mfu_flist_free(&flist2);
     mfu_flist_free(&flist3);
     mfu_flist_free(&flist4);
+
+    /* delete file objects */
+    mfu_file_delete(&mfu_src_file);
+    mfu_file_delete(&mfu_dst_file);
 
     /* free all param paths */
     mfu_param_path_free_all(numargs, paths);
