@@ -33,8 +33,10 @@ extern "C" {
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <dirent.h>
+#ifdef DAOS_SUPPORT
 #include <daos.h>
 #include <daos_fs.h>
+#endif
 #include "mfu_param_path.h"
 
 /* Intent is to wrap all POSIX I/O routines used by mfu tools.  May

@@ -9,17 +9,20 @@
 #include <stdbool.h>
 
 /* for daos */
+#ifdef DAOS_SUPPORT
 #include <uuid/uuid.h>
 #include <gurt/common.h>
 #include <gurt/hash.h>
 #include <daos.h>
 #include <daos_fs.h>
 #include <daos_uns.h>
+#endif
 
 #include "mpi.h"
 #include "libcircle.h"
 #include "mfu.h" 
 
+#ifdef DAOS_SUPPORT
 static void daos_set_paths(int* rank, struct duns_attr_t dattr, struct duns_attr_t ddattr,
 			   const char** argpaths, uuid_t* src_pool_uuid, uuid_t* src_cont_uuid,
                            uuid_t* dst_pool_uuid, uuid_t* dst_cont_uuid, char* dfs_prefix,
@@ -89,6 +92,7 @@ static void daos_set_paths(int* rank, struct duns_attr_t dattr, struct duns_attr
         }
     }
 }
+#endif 
 
 static int input_flist_skip(const char* name, void *args)
 {
@@ -167,6 +171,7 @@ int main(int argc, char** argv)
     int rc = 0;
 
     /* DAOS vars */ 
+#ifdef DAOS_SUPPORT
     daos_handle_t src_poh;
     daos_handle_t src_coh;
     daos_handle_t dst_poh;
@@ -179,6 +184,7 @@ int main(int argc, char** argv)
     dfs_t *dfs2;
     char* svc;
     char* dfs_prefix = NULL;
+#endif
 
     /* initialize MPI */
     MPI_Init(&argc, &argv);
@@ -293,6 +299,7 @@ int main(int argc, char** argv)
                 }
                 break;
 #endif
+#ifdef DAOS_SUPPORT
             case 'x':
 	        rc = uuid_parse(optarg, src_pool_uuid);
 	        if (rc) {
@@ -327,6 +334,7 @@ int main(int argc, char** argv)
             case 'X':
     	        dfs_prefix = MFU_STRDUP(optarg);
     	        break;
+#endif
             case 'i':
                 inputname = MFU_STRDUP(optarg);
                 if(rank == 0) {
@@ -369,7 +377,7 @@ int main(int argc, char** argv)
                 }
         }
     }
-
+#ifdef DAOS_SUPPORT
     rc = daos_init();
 
     /* TODO: Don't exit and fail if daos fails init,
@@ -457,6 +465,7 @@ int main(int argc, char** argv)
      * DFS mount within DAOS */
     mfu_src_file->dfs = dfs1;
     mfu_dst_file->dfs = dfs2;
+#endif
 
     /* paths to walk come after the options */
     int numpaths = 0;
@@ -567,6 +576,7 @@ int main(int argc, char** argv)
     mfu_walk_opts_delete(&walk_opts);
 
     /* DAOS: unmount DFS, and close containers and pools */
+#ifdef DAOS_SUPPORT
     if (mfu_src_file->type == DAOS) {
         rc = dfs_umount(mfu_src_file->dfs);
         MPI_Barrier(MPI_COMM_WORLD);
@@ -608,14 +618,16 @@ int main(int argc, char** argv)
             MFU_LOG(MFU_LOG_ERR, "Failed to disconnect from destination pool");
         }
     }
+#endif
 
     /* free the mfu_file object */
     mfu_file_delete(&mfu_src_file);
     mfu_file_delete(&mfu_dst_file);
 
+#ifdef DAOS_SUPPORT
     /* finalize daos */
     rc = daos_fini();
-
+#endif
     mfu_finalize();
 
     /* shut down MPI */

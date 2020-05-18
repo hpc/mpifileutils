@@ -11,15 +11,18 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <libgen.h>
-
+#ifdef DAOS_SUPPORT
 #include <gurt/common.h>
 #include <gurt/hash.h>
+#endif
 #include "mfu.h"
 
 #define MFU_IO_TRIES  (5)
 #define MFU_IO_USLEEP (100)
 
 static int mpi_rank;
+
+#ifdef DAOS_SUPPORT
 struct d_hash_table *dir_hash;
 
 struct mfu_dir_hdl {
@@ -185,6 +188,7 @@ out:
 		free(f2);
 	return rc;
 }
+#endif
 
 /* calls access, and retries a few times if we get EIO or EINTR */
 int mfu_access(const char* path, int amode)
@@ -230,6 +234,7 @@ retry:
 
 int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
 {
+#ifdef DAOS_SUPPORT
     int rc;
     dfs_obj_t *parent = NULL;
     char *name = NULL, *dir_name = NULL;
@@ -245,6 +250,7 @@ int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
         fprintf(stderr, "dfs_chmod %s failed (%d)\n", name, rc);
     }
     return rc;
+#endif
 }
 
 int mfu_chmod(const char* path, mode_t mode)
@@ -301,6 +307,7 @@ retry:
 }
 
 int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file) {
+#ifdef DAOS_SUPPORT
     int rc;
     dfs_obj_t *parent = NULL;
     char *name = NULL, *dir_name = NULL;
@@ -317,6 +324,7 @@ int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file) {
         fprintf(stderr, "dfs_stat %s failed (%d)\n", name, rc);
     }
     return rc;
+#endif
 }
 
 int mfu_lstat(const char* path, struct stat* buf) {
@@ -482,7 +490,7 @@ retry:
 void daos_open(const char* file, int flags,
                int* mode_set, mode_t mode, mfu_file_t* mfu_file)
 {
-
+#ifdef DAOS_SUPPORT
     int rc; 
     dfs_obj_t *parent = NULL;
     char *name = NULL, *dir_name = NULL;
@@ -502,6 +510,7 @@ void daos_open(const char* file, int flags,
     if (rc) {
         fprintf(stderr, "dfs_open %s failed (%d)\n", name, rc);
     }
+#endif
 }
 
 /* open file with specified flags and mode, retry open a few times on failure */
@@ -581,9 +590,11 @@ void mfu_file_open(const char* file, int flags, mfu_file_t* mfu_file, ...)
 /* release an open object */
 int daos_close(const char* file, mfu_file_t* mfu_file)
 {
+#ifdef DAOS_SUPPORT
     int rc;
     rc = dfs_release(mfu_file->obj);
     return rc;
+#endif
 }
 
 /* close file */
@@ -668,6 +679,7 @@ ssize_t mfu_file_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_
 
 ssize_t daos_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_file)
 {
+#ifdef DAOS_SUPPORT
     daos_size_t got_size;
     ssize_t size_read;
     int rc;
@@ -678,6 +690,7 @@ ssize_t daos_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_file
         printf("READ FAIL %d with file: %s\n", rc, file);
     }
     return (ssize_t)got_size;
+#endif
 }
 
 ssize_t mfu_read(const char* file, int fd, void* buf, size_t size)
@@ -762,12 +775,14 @@ ssize_t mfu_write(const char* file, int fd, const void* buf, size_t size)
 
 ssize_t daos_write(const char* file, const void* buf, size_t size, mfu_file_t* mfu_file)
 {
+#ifdef DAOS_SUPPORT
     int rc;
     ssize_t num_of_bytes_written;
     mfu_file->sgl->sg_iovs[0].iov_len = size;
     rc = dfs_write(mfu_file->dfs, mfu_file->obj, mfu_file->sgl, mfu_file->offset, NULL); 
     num_of_bytes_written = (ssize_t)size;
     return num_of_bytes_written;
+#endif
 }
 
 /* truncate a file */
@@ -794,6 +809,7 @@ retry:
 /* TODO: need to fix this function for dfs */
 int daos_ftruncate(mfu_file_t* mfu_file, off_t length)
 {
+#ifdef DAOS_SUPPORT
     int rc;
     daos_off_t offset = (daos_off_t) length;
     rc = dfs_punch(mfu_file->dfs, mfu_file->obj, offset, DFS_MAX_FSIZE);
@@ -802,6 +818,7 @@ int daos_ftruncate(mfu_file_t* mfu_file, off_t length)
 	return rc;
     }
     return rc;
+#endif
 }
 
 int mfu_ftruncate(int fd, off_t length)
@@ -895,6 +912,7 @@ void mfu_getcwd(char* buf, size_t size)
 }
 
 int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file) {
+#ifdef DAOS_SUPPORT
     int rc;
     dfs_obj_t *parent = NULL;
     char *name = NULL, *dir_name = NULL;
@@ -909,6 +927,7 @@ int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file) {
     }
     rc = dfs_mkdir(mfu_file->dfs, parent, name, S_IRWXU, 0);
     return rc;
+#endif
 }
 
 int mfu_mkdir(const char* dir, mode_t mode)
@@ -966,15 +985,18 @@ retry:
 
 #define NUM_DIRENTS 24
 
+#ifdef DAOS_SUPPORT
 struct dfs_mfu_t {
 	dfs_obj_t *dir;
 	struct dirent ents[NUM_DIRENTS];
 	daos_anchor_t anchor;
 	int num_ents;
 };
+#endif
 
 DIR* daos_opendir(const char* dir, mfu_file_t* mfu_file)
 {
+#ifdef DAOS_SUPPORT
     struct dfs_mfu_t *dirp = NULL;
     int rc;
 
@@ -989,6 +1011,7 @@ DIR* daos_opendir(const char* dir, mfu_file_t* mfu_file)
     }
 
     return (DIR *)dirp;
+#endif
 }
 
 /* open directory, retry a few times on EINTR or EIO */
@@ -1026,14 +1049,15 @@ DIR* mfu_file_opendir(const char* dir, mfu_file_t* mfu_file)
 
 int daos_closedir(DIR* _dirp, mfu_file_t* mfu_file)
 {
-    int rc;
-    struct dfs_mfu_t *dirp = (struct dfs_mfu_t *)_dirp;
+#ifdef DAOS_SUPPORT
+    int rc; struct dfs_mfu_t *dirp = (struct dfs_mfu_t *)_dirp;
 
     rc = dfs_release(dirp->dir);
     if (rc)
 	    return rc;
     free(dirp);
     return rc;
+#endif
 }
 
 /* close directory, retry a few times on EINTR or EIO */
@@ -1070,6 +1094,7 @@ int mfu_file_closedir(DIR* dirp, mfu_file_t* mfu_file)
 
 struct dirent* daos_readdir(DIR* _dirp, mfu_file_t* mfu_file)
 {
+#ifdef DAOS_SUPPORT
     int rc;
     struct dfs_mfu_t *dirp = (struct dfs_mfu_t *)_dirp;
 
@@ -1096,6 +1121,7 @@ struct dirent* daos_readdir(DIR* _dirp, mfu_file_t* mfu_file)
 ret:
     dirp->num_ents--;
     return &dirp->ents[dirp->num_ents];
+#endif
 }
 
 /* read directory entry, retry a few times on ENOENT, EIO, or EINTR */
