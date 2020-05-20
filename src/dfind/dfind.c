@@ -15,8 +15,51 @@
 #include "mfu.h"
 #include "common.h"
 
+/* DAOS includes */
+#ifdef DAOS_SUPPORT
+#include <uuid/uuid.h>
+#include <gurt/common.h>
+#include <gurt/hash.h>
+#include <daos.h>
+#include <daos_fs.h>
+#include <daos_uns.h>
+#endif
+
 int MFU_PRED_EXEC  (mfu_flist flist, uint64_t idx, void* arg);
 int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg);
+
+#ifdef DAOS_SUPPORT
+static void daos_check_path(int* rank, const char** argpaths,
+                            uuid_t* pool_uuid, uuid_t* cont_uuid,
+                            mfu_file_t* mfu_file)
+{
+    /* find out if a dfs_prefix is being used,
+     * if so, then that means that the container
+     * is not being copied from the root of the
+     * UNS path  */
+    int rc = 0;
+    struct duns_attr_t dattr  = {0}; 
+    char* path = argpaths[0];
+
+    /* assume both are daos paths for UNS, if resolve path
+     * doesn't succeed then set accordingly */
+    int path_rc;
+    path_rc = duns_resolve_path(path, &dattr);
+    /* Forward slash is "root" of container to walk
+     * in daos. Cannot walk from Unified namespace
+     * path given /tmp/dsikich/dfs, it is only used
+     * to lookup pool/cont uuids, and tells you
+     * if that path is mapped to pool/cont uuid in
+     * DAOS */
+    if (path_rc == 0) {
+        mfu_file->type = DAOS;
+        uuid_copy(*pool_uuid, dattr.da_puuid);
+        uuid_copy(*cont_uuid, dattr.da_cuuid);
+        argpaths[0]  = "/";
+    }
+}
+#endif 
+
 
 int MFU_PRED_EXEC (mfu_flist flist, uint64_t idx, void* arg)
 {
@@ -271,6 +314,17 @@ static void pred_commit (mfu_pred* p)
 
 int main (int argc, char** argv)
 {
+    /* DAOS vars */ 
+#ifdef DAOS_SUPPORT
+    daos_handle_t poh;
+    daos_handle_t coh;
+    uuid_t pool_uuid;
+    uuid_t cont_uuid;
+    dfs_t *dfs;
+    char* svc;
+    char* dfs_prefix = NULL;
+#endif
+
     /* initialize MPI */
     MPI_Init(&argc, &argv);
     mfu_init();
@@ -288,6 +342,7 @@ int main (int argc, char** argv)
     mfu_pred_times* now_t = mfu_pred_now();
 
     int ch;
+    int rc;
 
     mfu_pred* pred_head = mfu_pred_new();
     char* inputname  = NULL;
@@ -301,6 +356,12 @@ int main (int argc, char** argv)
         {"verbose",   0, 0, 'v'},
         {"quiet",     0, 0, 'q'},
         {"help",      0, 0, 'h'},
+
+	/* DAOS specific options */
+        { "daos-pool"           , required_argument, 0, 'x' },
+        { "daos-cont"           , required_argument, 0, 'y' },
+        { "svcl"                , required_argument, 0, 'z' },
+        { "prefix"              , required_argument, 0, 'X' },
 
         { "maxdepth", required_argument, NULL, 'd' },
 
@@ -503,7 +564,28 @@ int main (int argc, char** argv)
     	case 'p':
     	    mfu_pred_add(pred_head, MFU_PRED_PRINT, NULL);
     	    break;
-
+#ifdef DAOS_SUPPORT
+            case 'x':
+	        rc = uuid_parse(optarg, pool_uuid);
+	        if (rc) {
+		        printf("%s: invalid pool uuid %s\n", argv[0], optarg);
+		        exit(1);
+	        }
+    	        break;
+            case 'y':
+	        rc = uuid_parse(optarg, cont_uuid);
+	        if (rc) {
+		    printf("%s: invalid container uuid %s\n", argv[0], optarg);
+		    exit(1);
+	        }
+    	        break;
+            case 'z':
+    	        svc = MFU_STRDUP(optarg);
+    	        break;
+            case 'X':
+    	        dfs_prefix = MFU_STRDUP(optarg);
+    	        break;
+#endif
     	case 't':
             ret = add_type(pred_head, *optarg);
             if (ret != 1) {
@@ -538,6 +620,36 @@ int main (int argc, char** argv)
             }
     	}
     }
+
+    /* create new mfu_file objects */
+    mfu_file_t* mfu_file = mfu_file_new();
+
+#ifdef DAOS_SUPPORT
+    rc = daos_init();
+
+    /* If DAOS "path" then path needs to be reset to path within DAOS container */ 
+    const char** argpaths = (const char**)(&argv[optind]);
+
+    /* Figure out if daos path is a UNS path */
+    if (!daos_uuid_valid(pool_uuid)) {
+        daos_check_path(&rank, argpaths, &pool_uuid, &cont_uuid, mfu_file);
+    } else if (daos_uuid_valid(pool_uuid)) {
+        mfu_file->type = DAOS;
+    }
+
+    if (mfu_file->type == DAOS) {
+        daos_connect(&rank, &poh, &coh, &pool_uuid, &cont_uuid, svc);
+    }
+
+    if (mfu_file->type == DAOS) {
+        /* DFS is mounted for the container */
+        rc = dfs_mount(poh, coh, O_RDWR, &dfs);
+    }
+
+    /* set source and destination files to address of their
+     * DFS mount within DAOS */
+    mfu_file->dfs = dfs;
+#endif
 
     pred_commit(pred_head);
 
@@ -581,12 +693,8 @@ int main (int argc, char** argv)
         return 0;
     }
 
-
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
-
-    /* create new mfu_file objects */
-    mfu_file_t* mfu_file = mfu_file_new();
 
     if (walk) {
         /* walk list of input paths */
@@ -633,6 +741,28 @@ int main (int argc, char** argv)
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);
+
+    /* DAOS: unmount DFS, and close containers and pools */
+#ifdef DAOS_SUPPORT
+    if (mfu_file->type == DAOS) {
+        rc = dfs_umount(mfu_file->dfs);
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to mount DFS namespace");
+        }
+        rc = daos_cont_close(coh, NULL);
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to close container (%d)", rc);
+        }
+
+        rc = daos_pool_disconnect(poh, NULL);
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to disconnect from source pool");
+        }
+    }
+#endif
 
     /* delete file objects */
     mfu_file_delete(&mfu_file);
