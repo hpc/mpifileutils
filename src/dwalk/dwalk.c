@@ -514,6 +514,14 @@ int main(int argc, char** argv)
         }
     }
 
+    /* at least one filter was applied which requires stat */
+    if (walk_opts->use_stat == 0 && pred_head->next != NULL) {
+        if (rank == 0) {
+            printf("Filters (atime, mtime, etc.) requires stat\n");
+        }
+        usage = 1;
+    }
+
     /* if user is trying to sort, verify the sort fields are valid */
     if (sortfields != NULL) {
         int maxfields;
