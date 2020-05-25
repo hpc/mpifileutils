@@ -315,10 +315,31 @@ static void print_usage(void)
     printf("  -h, --help              - print usage\n");
     printf("\n");
     printf("Fields: name,user,group,uid,gid,atime,mtime,ctime,size\n");
+    printf("\n");
+    printf("Tests:\n");
+    printf("  --atime N      - last accessed N days ago\n");
     printf("For more information see https://mpifileutils.readthedocs.io. \n");
     printf("\n");
     fflush(stdout);
     return;
+}
+
+static void pred_commit (mfu_pred* p)
+{
+    int need_print = 1;
+
+    mfu_pred* cur = p;
+    while (cur) {
+//        if (cur->f == MFU_PRED_PRINT || cur->f == MFU_PRED_EXEC) {
+//            need_print = 0;
+//            break;
+//        }
+        cur = cur->next;
+    }
+
+    if (need_print) {
+//        mfu_pred_add(p, MFU_PRED_PRINT, NULL);
+    }
 }
 
 int main(int argc, char** argv)
@@ -337,6 +358,10 @@ int main(int argc, char** argv)
     /* pointer to mfu_walk_opts */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
+    /* capture current time for any time based queries,
+     * to get a consistent value, capture and bcast from rank 0 */
+    mfu_pred_times* now_t = mfu_pred_now();
+
     /* TODO: extend options
      *   - allow user to cache scan result in file
      *   - allow user to load cached scan as input
@@ -348,6 +373,7 @@ int main(int argc, char** argv)
      *   - allow user to sort by different fields
      *   - allow user to group output (sum all bytes, group by user) */
 
+    mfu_pred* pred_head = mfu_pred_new();
     char* inputname      = NULL;
     char* outputname     = NULL;
     char* sortfields     = NULL;
@@ -377,6 +403,8 @@ int main(int argc, char** argv)
         {"verbose",        0, 0, 'v'},
         {"quiet",          0, 0, 'q'},
         {"help",           0, 0, 'h'},
+
+        { "atime",    required_argument, NULL, 'A' },
         {0, 0, 0, 0}
     };
 
@@ -390,6 +418,8 @@ int main(int argc, char** argv)
         if (c == -1) {
             break;
         }
+
+        mfu_pred_times_rel* tr;
 
         switch (c) {
             case 'i':
@@ -417,6 +447,10 @@ int main(int argc, char** argv)
             case 'P':
                 mfu_progress_timeout = atoi(optarg);
                 break;
+            case 'A':
+                tr = mfu_pred_relative(optarg, now_t);
+                mfu_pred_add(pred_head, MFU_PRED_ATIME, (void *)tr);
+                break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
@@ -438,6 +472,8 @@ int main(int argc, char** argv)
                 }
         }
     }
+
+    pred_commit(pred_head);
 
     /* check that we got a valid progress value */
     if (mfu_progress_timeout < 0) {
@@ -583,37 +619,44 @@ int main(int argc, char** argv)
 
     /* TODO: filter files */
     //filter_files(&flist);
+    mfu_flist flist2 = mfu_flist_filter_pred(flist, pred_head);
 
     /* sort files */
     if (sortfields != NULL) {
         /* TODO: don't sort unless all_count > 0 */
-        mfu_flist_sort(sortfields, &flist);
+        mfu_flist_sort(sortfields, &flist2);
     }
 
     /* print details for individual files */
     if (print) {
-        mfu_flist_print(flist);
+        mfu_flist_print(flist2);
     }
 
-    /* print summary statistics of flist */
-    mfu_flist_print_summary(flist);
+    /* print summary statistics of flist2 */
+    mfu_flist_print_summary(flist2);
 
     /* print distribution if user specified this option */
     if (distribution != NULL || file_histogram) {
-        print_flist_distribution(file_histogram, &option, &flist, rank);
+        print_flist_distribution(file_histogram, &option, &flist2, rank);
     }
 
     /* write data to cache file */
     if (outputname != NULL) {
         if (!text) {
-            mfu_flist_write_cache(outputname, flist);
+            mfu_flist_write_cache(outputname, flist2);
         } else {
-            mfu_flist_write_text(outputname, flist);
+            mfu_flist_write_text(outputname, flist2);
         }
     }
 
+    /* free off the filtered list */
+    mfu_flist_free(&flist2);
+
     /* free users, groups, and files objects */
     mfu_flist_free(&flist);
+
+    /* free predicate list */
+    mfu_pred_free(&pred_head);
 
     /* free memory allocated for options */
     mfu_free(&distribution);
