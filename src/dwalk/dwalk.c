@@ -325,6 +325,12 @@ static void print_usage(void)
     printf("  --ctime N      - status last changed N days ago\n");
     printf("  --mmin N       - data last modified N minutes ago\n");
     printf("  --mtime N      - data last modified N days ago\n");
+    printf("\n");
+    printf("  --gid N        - numeric group ID is N\n");
+    printf("  --group NAME   - belongs to group NAME\n");
+    printf("  --uid N        - numeric user ID is N\n");
+    printf("  --user NAME    - owned by user NAME\n");
+    printf("\n");
     printf("For more information see https://mpifileutils.readthedocs.io. \n");
     printf("\n");
     fflush(stdout);
@@ -437,6 +443,11 @@ int main(int argc, char** argv)
         { "mmin",     required_argument, NULL, 'm' },
         { "mtime",    required_argument, NULL, 'M' },
 
+        { "gid",      required_argument, NULL, 'g' },
+        { "group",    required_argument, NULL, 'G' },
+        { "uid",      required_argument, NULL, 'u' },
+        { "user",     required_argument, NULL, 'U' },
+
         {0, 0, 0, 0}
     };
 
@@ -451,6 +462,7 @@ int main(int argc, char** argv)
             break;
         }
 
+        char* buf;
         mfu_pred_times* t;
         mfu_pred_times_rel* tr;
 
@@ -528,6 +540,28 @@ int main(int argc, char** argv)
                 mfu_pred_add(pred_head, MFU_PRED_CNEWER, (void *)t);
                 break;
 
+            case 'g':
+                /* TODO: error check argument */
+                buf = MFU_STRDUP(optarg);
+                mfu_pred_add(pred_head, MFU_PRED_GID, (void *)buf);
+                break;
+        
+            case 'G':
+                buf = MFU_STRDUP(optarg);
+                mfu_pred_add(pred_head, MFU_PRED_GROUP, (void *)buf);
+                break;
+        
+            case 'u':
+                /* TODO: error check argument */
+                buf = MFU_STRDUP(optarg);
+                mfu_pred_add(pred_head, MFU_PRED_UID, (void *)buf);
+                break;
+        
+            case 'U':
+                buf = MFU_STRDUP(optarg);
+                mfu_pred_add(pred_head, MFU_PRED_USER, (void *)buf);
+                break;
+        
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
