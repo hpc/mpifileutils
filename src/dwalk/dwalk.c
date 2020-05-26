@@ -321,7 +321,9 @@ static void print_usage(void)
     printf("  --anewer FILE  - last accessed more recently than FILE modified\n");
     printf("  --atime N      - last accessed N days ago\n");
     printf("  --cmin N       - status last changed N minutes ago\n");
+    printf("  --cnewer FILE  - status last changed more recently than FILE modified\n");
     printf("  --mmin N       - data last modified N minutes ago\n");
+    printf("  --mtime N      - data last modified N days ago\n");
     printf("For more information see https://mpifileutils.readthedocs.io. \n");
     printf("\n");
     fflush(stdout);
@@ -429,7 +431,10 @@ int main(int argc, char** argv)
         { "anewer",   required_argument, NULL, 'B' },
         { "atime",    required_argument, NULL, 'A' },
         { "cmin",     required_argument, NULL, 'c' },
+        { "cnewer",   required_argument, NULL, 'D' },
         { "mmin",     required_argument, NULL, 'm' },
+        { "mtime",    required_argument, NULL, 'M' },
+
         {0, 0, 0, 0}
     };
 
@@ -491,6 +496,10 @@ int main(int argc, char** argv)
                 tr = mfu_pred_relative(optarg, now_t);
                 mfu_pred_add(pred_head, MFU_PRED_ATIME, (void *)tr);
                 break;
+            case 'M':
+                tr = mfu_pred_relative(optarg, now_t);
+                mfu_pred_add(pred_head, MFU_PRED_MTIME, (void *)tr);
+                break;
 
             case 'B':
                     t = get_mtimes(optarg);
@@ -501,6 +510,16 @@ int main(int argc, char** argv)
                    exit(1);
                 }
                 mfu_pred_add(pred_head, MFU_PRED_ANEWER, (void *)t);
+                break;
+            case 'D':
+                t = get_mtimes(optarg);
+                if (t == NULL) {
+                    if (rank == 0) {
+                       printf("%s: can't find file %s\n", argv[0], optarg);
+                    }
+                exit(1);
+                }
+                mfu_pred_add(pred_head, MFU_PRED_CNEWER, (void *)t);
                 break;
 
             case 'v':
