@@ -322,6 +322,7 @@ static void print_usage(void)
     printf("  --atime N      - last accessed N days ago\n");
     printf("  --cmin N       - status last changed N minutes ago\n");
     printf("  --cnewer FILE  - status last changed more recently than FILE modified\n");
+    printf("  --ctime N      - status last changed N days ago\n");
     printf("  --mmin N       - data last modified N minutes ago\n");
     printf("  --mtime N      - data last modified N days ago\n");
     printf("For more information see https://mpifileutils.readthedocs.io. \n");
@@ -432,6 +433,7 @@ int main(int argc, char** argv)
         { "atime",    required_argument, NULL, 'A' },
         { "cmin",     required_argument, NULL, 'c' },
         { "cnewer",   required_argument, NULL, 'D' },
+        { "ctime",    required_argument, NULL, 'C' },
         { "mmin",     required_argument, NULL, 'm' },
         { "mtime",    required_argument, NULL, 'M' },
 
@@ -499,6 +501,10 @@ int main(int argc, char** argv)
             case 'M':
                 tr = mfu_pred_relative(optarg, now_t);
                 mfu_pred_add(pred_head, MFU_PRED_MTIME, (void *)tr);
+                break;
+            case 'C':
+                tr = mfu_pred_relative(optarg, now_t);
+                mfu_pred_add(pred_head, MFU_PRED_CTIME, (void *)tr);
                 break;
 
             case 'B':
