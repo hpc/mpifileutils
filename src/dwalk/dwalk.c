@@ -316,12 +316,33 @@ static void print_usage(void)
     printf("\n");
     printf("Fields: name,user,group,uid,gid,atime,mtime,ctime,size\n");
     printf("\n");
-    printf("Tests:\n");
+    printf("Filters:\n");
+    printf("  --amin N       - last accessed N minutes ago\n");
+    printf("  --anewer FILE  - last accessed more recently than FILE modified\n");
     printf("  --atime N      - last accessed N days ago\n");
+    printf("  --cmin N       - status last changed N minutes ago\n");
+    printf("  --mmin N       - data last modified N minutes ago\n");
     printf("For more information see https://mpifileutils.readthedocs.io. \n");
     printf("\n");
     fflush(stdout);
     return;
+}
+
+
+/* look up mtimes for specified file,
+ * return secs/nsecs in newly allocated mfu_pred_times struct,
+ * return NULL on error */
+static mfu_pred_times* get_mtimes(const char* file)
+{
+    mfu_param_path param_path;
+    mfu_param_path_set(file, &param_path);
+    if (! param_path.path_stat_valid) {
+        return NULL;
+    }
+    mfu_pred_times* t = (mfu_pred_times*) MFU_MALLOC(sizeof(mfu_pred_times));
+    mfu_stat_get_mtimes(&param_path.path_stat, &t->secs, &t->nsecs);
+    mfu_param_path_free(&param_path);
+    return t;
 }
 
 static void pred_commit (mfu_pred* p)
@@ -404,7 +425,11 @@ int main(int argc, char** argv)
         {"quiet",          0, 0, 'q'},
         {"help",           0, 0, 'h'},
 
+        { "amin",     required_argument, NULL, 'a' },
+        { "anewer",   required_argument, NULL, 'B' },
         { "atime",    required_argument, NULL, 'A' },
+        { "cmin",     required_argument, NULL, 'c' },
+        { "mmin",     required_argument, NULL, 'm' },
         {0, 0, 0, 0}
     };
 
@@ -419,6 +444,7 @@ int main(int argc, char** argv)
             break;
         }
 
+        mfu_pred_times* t;
         mfu_pred_times_rel* tr;
 
         switch (c) {
@@ -447,10 +473,36 @@ int main(int argc, char** argv)
             case 'P':
                 mfu_progress_timeout = atoi(optarg);
                 break;
+
+            case 'a':
+                tr = mfu_pred_relative(optarg, now_t);
+       	        mfu_pred_add(pred_head, MFU_PRED_AMIN, (void *)tr);
+                break;
+            case 'm':
+                tr = mfu_pred_relative(optarg, now_t);
+                mfu_pred_add(pred_head, MFU_PRED_MMIN, (void *)tr);
+                break;
+            case 'c':
+                tr = mfu_pred_relative(optarg, now_t);
+                mfu_pred_add(pred_head, MFU_PRED_CMIN, (void *)tr);
+                break;
+
             case 'A':
                 tr = mfu_pred_relative(optarg, now_t);
                 mfu_pred_add(pred_head, MFU_PRED_ATIME, (void *)tr);
                 break;
+
+            case 'B':
+                    t = get_mtimes(optarg);
+                    if (t == NULL) {
+                        if (rank == 0) {
+                            printf("%s: can't find file %s\n", argv[0], optarg);
+                        }
+                   exit(1);
+                }
+                mfu_pred_add(pred_head, MFU_PRED_ANEWER, (void *)t);
+                break;
+
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
