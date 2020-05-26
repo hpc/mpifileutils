@@ -1,0 +1,12 @@
+#!/bin/bash
+set -x
+
+#mfuinstall=/path/to/mfu/install
+#dtcmpinstall=/path/to/dtcmp/install
+#libcircleinstall=/path/to/libcircle/install
+
+mfuinstall=`pwd`/../../install
+dtcmpinstall=$mfuinstall
+circleinstall=$mfuinstall
+
+mpicc -g -O0 -o dhardlink dhardlink.c -I ${mfuinstall}/include/ -L ${mfuinstall}/lib64 -L ${dtcmpinstall}/lib -L ${circleinstall}/lib -Wl,-rpath,${mfuinstall}/lib64 -Wl,-rpath,${dtcmpinstall}/lib -Wl,-rpath,${circleinstall}/lib -lmfu -ldtcmp -lcircle
