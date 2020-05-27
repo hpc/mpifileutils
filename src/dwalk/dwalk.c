@@ -331,6 +331,8 @@ static void print_usage(void)
     printf("  --uid N        - numeric user ID is N\n");
     printf("  --user NAME    - owned by user NAME\n");
     printf("\n");
+    printf("  --type C       - of type C: d=dir, f=file, l=symlink\n");
+    printf("\n");
     printf("For more information see https://mpifileutils.readthedocs.io. \n");
     printf("\n");
     fflush(stdout);
@@ -352,6 +354,44 @@ static mfu_pred_times* get_mtimes(const char* file)
     mfu_stat_get_mtimes(&param_path.path_stat, &t->secs, &t->nsecs);
     mfu_param_path_free(&param_path);
     return t;
+}
+
+static int add_type(mfu_pred* p, char t)
+{
+    mode_t* type = (mode_t*) MFU_MALLOC(sizeof(mode_t));
+    switch (t) {
+    case 'b':
+        *type = S_IFBLK;
+        break;
+    case 'c':
+        *type = S_IFCHR;
+        break;
+    case 'd':
+        *type = S_IFDIR;
+        break;
+    case 'f':
+        *type = S_IFREG;
+        break;
+    case 'l':
+        *type = S_IFLNK;
+        break;
+    case 'p':
+        *type = S_IFIFO;
+        break;
+    case 's':
+        *type = S_IFSOCK;
+        break;
+
+    default:
+        /* unsupported type character */
+        mfu_free(&type);
+        return -1;
+        break;
+    }
+
+    /* add check for this type */
+    mfu_pred_add(p, MFU_PRED_TYPE, (void *)type);
+    return 1;
 }
 
 static void pred_commit (mfu_pred* p)
@@ -448,6 +488,8 @@ int main(int argc, char** argv)
         { "uid",      required_argument, NULL, 'u' },
         { "user",     required_argument, NULL, 'U' },
 
+        { "type",     required_argument, NULL, 'T' },
+
         {0, 0, 0, 0}
     };
 
@@ -465,6 +507,7 @@ int main(int argc, char** argv)
         char* buf;
         mfu_pred_times* t;
         mfu_pred_times_rel* tr;
+        int ret;
 
         switch (c) {
             case 'i':
@@ -560,6 +603,16 @@ int main(int argc, char** argv)
             case 'U':
                 buf = MFU_STRDUP(optarg);
                 mfu_pred_add(pred_head, MFU_PRED_USER, (void *)buf);
+                break;
+
+            case 'T':
+                ret = add_type(pred_head, *optarg);
+                if (ret != 1) {
+                    if (rank == 0) {
+                    printf("%s: unsupported file type %s\n", argv[0], optarg);
+                    }
+                exit(1);
+                }
                 break;
         
             case 'v':
