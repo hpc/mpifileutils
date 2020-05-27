@@ -331,6 +331,7 @@ static void print_usage(void)
     printf("  --uid N        - numeric user ID is N\n");
     printf("  --user NAME    - owned by user NAME\n");
     printf("\n");
+    printf("  --size N       - size is N bytes.  Supports attached units like KB, MB, GB\n");
     printf("  --type C       - of type C: d=dir, f=file, l=symlink\n");
     printf("\n");
     printf("For more information see https://mpifileutils.readthedocs.io. \n");
@@ -488,6 +489,7 @@ int main(int argc, char** argv)
         { "uid",      required_argument, NULL, 'u' },
         { "user",     required_argument, NULL, 'U' },
 
+        { "size",     required_argument, NULL, 'S' },
         { "type",     required_argument, NULL, 'T' },
 
         {0, 0, 0, 0}
@@ -603,6 +605,11 @@ int main(int argc, char** argv)
             case 'U':
                 buf = MFU_STRDUP(optarg);
                 mfu_pred_add(pred_head, MFU_PRED_USER, (void *)buf);
+                break;
+
+            case 'S':
+                buf = MFU_STRDUP(optarg);
+                mfu_pred_add(pred_head, MFU_PRED_SIZE, (void *)buf);
                 break;
 
             case 'T':
