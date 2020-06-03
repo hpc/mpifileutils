@@ -304,7 +304,6 @@ static void print_usage(void)
     printf("  -i, --input <file>      - read list from file\n");
     printf("  -o, --output <file>     - write processed list to file in binary format\n");
     printf("  --text-output <file>    - write processed list to file in ascii format\n");
-    printf("  -t, --text              - use with -o; write processed list to file in ascii format\n");
     printf("  -l, --lite              - walk file system without stat\n");
     printf("  -s, --sort <fields>     - sort output by comma-delimited fields\n");
     printf("  -d, --distribution <field>:<separators> \n                          - print distribution by field\n");
@@ -467,7 +466,6 @@ int main(int argc, char** argv)
         {"input",          1, 0, 'i'},
         {"output",         1, 0, 'o'},
         {"text-output",     required_argument, NULL, 'z' },
-        {"text",           0, 0, 't'},
         {"lite",           0, 0, 'l'},
         {"sort",           1, 0, 's'},
         {"distribution",   1, 0, 'd'},
@@ -633,9 +631,6 @@ int main(int argc, char** argv)
                 break;
             case 'q':
                 mfu_debug_level = 0;
-                break;
-            case 't':
-                text = 1;
                 break;
             case 'h':
                 usage = 1;
@@ -827,11 +822,7 @@ int main(int argc, char** argv)
 
     /* write data to cache file */
     if (outputname != NULL) {
-        if (!text) {
-            mfu_flist_write_cache(outputname, flist2);
-        } else {
-            mfu_flist_write_text(outputname, flist2);
-        }
+        mfu_flist_write_cache(outputname, flist2);
     }
 
     /* write text version if also requested 
