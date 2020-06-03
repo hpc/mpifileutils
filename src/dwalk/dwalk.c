@@ -303,6 +303,7 @@ static void print_usage(void)
     printf("Options:\n");
     printf("  -i, --input <file>      - read list from file\n");
     printf("  -o, --output <file>     - write processed list to file in binary format\n");
+    printf("  --text-output <file>    - write processed list to file in ascii format\n");
     printf("  -t, --text              - use with -o; write processed list to file in ascii format\n");
     printf("  -l, --lite              - walk file system without stat\n");
     printf("  -s, --sort <fields>     - sort output by comma-delimited fields\n");
@@ -447,6 +448,7 @@ int main(int argc, char** argv)
     mfu_pred* pred_head = mfu_pred_new();
     char* inputname      = NULL;
     char* outputname     = NULL;
+    char* textoutputname     = NULL;
     char* sortfields     = NULL;
     char* distribution   = NULL;
 
@@ -464,6 +466,7 @@ int main(int argc, char** argv)
     static struct option long_options[] = {
         {"input",          1, 0, 'i'},
         {"output",         1, 0, 'o'},
+        {"text-output",     required_argument, NULL, 'z' },
         {"text",           0, 0, 't'},
         {"lite",           0, 0, 'l'},
         {"sort",           1, 0, 's'},
@@ -517,6 +520,9 @@ int main(int argc, char** argv)
                 break;
             case 'o':
                 outputname = MFU_STRDUP(optarg);
+                break;
+            case 'z':
+                textoutputname = MFU_STRDUP(optarg);
                 break;
             case 'l':
                 /* don't stat each file on the walk */
@@ -828,6 +834,12 @@ int main(int argc, char** argv)
         }
     }
 
+    /* write text version if also requested 
+ *   independent of --output */
+    if (textoutputname != NULL) {
+        mfu_flist_write_text(textoutputname, flist2);
+    }
+
     /* free off the filtered list */
     mfu_flist_free(&flist2);
 
@@ -841,6 +853,7 @@ int main(int argc, char** argv)
     mfu_free(&distribution);
     mfu_free(&sortfields);
     mfu_free(&outputname);
+    mfu_free(&textoutputname);
     mfu_free(&inputname);
 
     /* free the path parameters */
