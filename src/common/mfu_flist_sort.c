@@ -49,11 +49,18 @@ static int sort_files_readdir(const char* sortfields, mfu_flist* pflist)
     /* get list from caller */
     mfu_flist flist = *pflist;
 
-    /* create a new list as subset of original list */
-    mfu_flist flist2 = mfu_flist_subset(flist);
-
     uint64_t incount = mfu_flist_size(flist);
     uint64_t chars   = mfu_flist_file_max_name(flist);
+
+    /* bail out if there is nothing to sort, the problem is that
+     * we end up with chars==0 in that case, and we can't create
+     * a valid comparison op for 0-length strings */
+    if (chars == 0) {
+        return MFU_SUCCESS;
+    }
+
+    /* create a new list as subset of original list */
+    mfu_flist flist2 = mfu_flist_subset(flist);
 
     /* create datatype for packed file list element */
     MPI_Datatype dt_sat;
@@ -240,13 +247,20 @@ static int sort_files_stat(const char* sortfields, mfu_flist* pflist)
     /* get list from caller */
     mfu_flist flist = *pflist;
 
-    /* create a new list as subset of original list */
-    mfu_flist flist2 = mfu_flist_subset(flist);
-
     uint64_t incount     = mfu_flist_size(flist);
     uint64_t chars       = mfu_flist_file_max_name(flist);
     uint64_t chars_user  = mfu_flist_user_max_name(flist);
     uint64_t chars_group = mfu_flist_group_max_name(flist);
+
+    /* bail out if there is nothing to sort, the problem is that
+     * we end up with chars==0 in that case, and we can't create
+     * a valid comparison op for 0-length strings */
+    if (chars == 0 || chars_user == 0 || chars_group == 0) {
+        return MFU_SUCCESS;
+    }
+
+    /* create a new list as subset of original list */
+    mfu_flist flist2 = mfu_flist_subset(flist);
 
     /* create datatype for packed file list element */
     MPI_Datatype dt_sat;
