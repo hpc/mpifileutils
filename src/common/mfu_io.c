@@ -358,6 +358,9 @@ ssize_t mfu_read(const char* file, int fd, void* buf, size_t size)
             /* read some data */
             n += rc;
             tries = MFU_IO_TRIES;
+
+            /* return, even if we got a short read */
+            return n;
         }
         else if (rc == 0) {
             /* EOF */
