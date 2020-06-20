@@ -1584,11 +1584,15 @@ static int mfu_copy_file_normal(
 
     /* write data */
     size_t total_bytes = 0;
-    while(total_bytes <= (size_t)length) {
+    while(total_bytes < (size_t)length) {
         /* determine number of bytes that we
          * can read = max(buf size, remaining chunk) */
         size_t left_to_read = (size_t)length - total_bytes;
         if(left_to_read > buf_size) {
+            left_to_read = buf_size;
+        }
+        if(mfu_copy_opts->synchronous) {
+            /* O_DIRECT requires particular read sizes */
             left_to_read = buf_size;
         }
 
