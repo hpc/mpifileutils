@@ -32,23 +32,23 @@ struct block_info {
     int64_t sno;
 };
 
-struct block_info* my_blocks;
-int64_t blocks_processed = 0;
-char** a;
-int64_t my_prev_blocks = 0;
-int64_t blocks_pn_pw;
-int64_t block_size;
-int64_t comp_buff_size;
-int64_t blocks_done = 0;
-int64_t wave_blocks;
-int64_t tot_blocks;
-int bc_size;
-int64_t filesize;
-char* src_name;
-char* dst_name;
-int fd;
-int fd_out;
-int64_t my_tot_blocks = 0;
+static struct block_info* my_blocks;
+static int64_t blocks_processed = 0;
+static char** a;
+static int64_t my_prev_blocks = 0;
+static int64_t blocks_pn_pw;
+static int64_t block_size;
+static int64_t comp_buff_size;
+static int64_t blocks_done = 0;
+static int64_t wave_blocks;
+static int64_t tot_blocks;
+static int bc_size;
+static int64_t filesize;
+static char* src_name;
+static char* dst_name;
+static int fd;
+static int fd_out;
+static int64_t my_tot_blocks = 0;
 
 /* To use libcircle, this function creates work for compression.
  * It simply puts the all the block numbers for the file in the queue. */
