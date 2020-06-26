@@ -17,26 +17,23 @@
 #include <time.h> /* asctime / localtime */
 #include <regex.h>
 
-/* These headers are needed to query the Lustre MDS for stat
- * information.  This information may be incomplete, but it
- * is faster than a normal stat, which requires communication
- * with the MDS plus every OST a file is striped across. */
-//#define LUSTRE_STAT
-#ifdef LUSTRE_STAT
-#include <sys/ioctl.h>
-#include <lustre/lustre_user.h>
-#endif /* LUSTRE_STAT */
-
 #include <pwd.h> /* for getpwent */
 #include <grp.h> /* for getgrent */
 #include <errno.h>
 #include <string.h>
 
-#include <libgen.h> /* dirname */
-
 #include "dtcmp.h"
 #include "mfu.h"
 #include "mfu_flist_internal.h"
+
+/* variables to query for MPI error string */
+static int mpierrlen;
+static char mpierrstr[MPI_MAX_ERROR_STRING];
+
+/* we try to use external32 when supported, since this format is standard
+ * across MPI libraries, we'll fall back to native */
+static char datarep_ext32[]  = "external32";
+static char datarep_native[] = "native";
 
 static void mfu_pack_io_uint32(char** pptr, uint32_t value)
 {
@@ -369,7 +366,7 @@ static uint64_t get_filesize(const char* name)
 static void read_cache_variable(
     const char* name,
     MPI_File fh,
-    char* datarep,
+    const char* datarep,
     flist_t* flist)
 {
     MPI_Status status;
@@ -428,7 +425,11 @@ static void read_cache_variable(
     void* buf  = buf1;
 
     /* set file view to be sequence of characters past header */
-    MPI_File_set_view(fh, disp, MPI_CHAR, MPI_CHAR, datarep, MPI_INFO_NULL);
+    int mpirc = MPI_File_set_view(fh, disp, MPI_CHAR, MPI_CHAR, datarep, MPI_INFO_NULL);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_LOG(MFU_LOG_ERR, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* compute offset of first byte we'll read,
      * the set_view above means we should start our offset at 0 */
@@ -452,7 +453,11 @@ static void read_cache_variable(
     if (read_offset > 0) {
         /* read last byte in chunk before our first */
         MPI_Offset pos = read_offset - 1;
-        MPI_File_read_at(fh, pos, buf, 1, MPI_CHAR, &status);
+        mpirc = MPI_File_read_at(fh, pos, buf, 1, MPI_CHAR, &status);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_LOG(MFU_LOG_ERR, "Failed to read file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
 
         /* if last character is not newline, we need to scan past
          * first new line in our chunk */
@@ -481,7 +486,11 @@ static void read_cache_variable(
 
         /* read in our chunk */
         char* bufstart = (char*) buf + bufoffset;
-        MPI_File_read_at(fh, read_offset, bufstart, read_count, MPI_CHAR, &status);
+        mpirc = MPI_File_read_at(fh, read_offset, bufstart, read_count, MPI_CHAR, &status);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_LOG(MFU_LOG_ERR, "Failed to read file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
 
         /* TODO: check number of items read in status, in case file
          * size changed somehow since we first read the file size */
@@ -597,7 +606,7 @@ static void read_cache_v3(
     const char* name,
     MPI_Offset* outdisp,
     MPI_File fh,
-    char* datarep,
+    const char* datarep,
     uint64_t* outstart,
     uint64_t* outend,
     flist_t* flist)
@@ -620,9 +629,17 @@ static void read_cache_v3(
 
     /* rank 0 reads and broadcasts header */
     uint64_t header[8];
-    MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
+    int mpirc = MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
     if (rank == 0) {
-        MPI_File_read_at(fh, 0, header, 8, MPI_UINT64_T, &status);
+        mpirc = MPI_File_read_at(fh, 0, header, 8, MPI_UINT64_T, &status);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to read file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
     }
     MPI_Bcast(header, 8, MPI_UINT64_T, 0, MPI_COMM_WORLD);
     disp += 8 * 8; /* 8 consecutive uint64_t types in external32 */
@@ -666,9 +683,17 @@ static void read_cache_v3(
         users->bufsize = bufsize_user;
 
         /* read data */
-        MPI_File_set_view(fh, disp, users->dt, users->dt, datarep, MPI_INFO_NULL);
+        mpirc = MPI_File_set_view(fh, disp, users->dt, users->dt, datarep, MPI_INFO_NULL);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_LOG(MFU_LOG_ERR, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
         if (rank == 0) {
-            MPI_File_read_at(fh, 0, users->buf, (int)users->count, users->dt, &status);
+            mpirc = MPI_File_read_at(fh, 0, users->buf, (int)users->count, users->dt, &status);
+            if (mpirc != MPI_SUCCESS) {
+                MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+                MFU_LOG(MFU_LOG_ERR, "Failed to read file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+            }
         }
         MPI_Bcast(users->buf, (int)users->count, users->dt, 0, MPI_COMM_WORLD);
         disp += (MPI_Offset) bufsize_user;
@@ -689,9 +714,17 @@ static void read_cache_v3(
         groups->bufsize = bufsize_group;
 
         /* read data */
-        MPI_File_set_view(fh, disp, groups->dt, groups->dt, datarep, MPI_INFO_NULL);
+        mpirc = MPI_File_set_view(fh, disp, groups->dt, groups->dt, datarep, MPI_INFO_NULL);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_LOG(MFU_LOG_ERR, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
         if (rank == 0) {
-            MPI_File_read_at(fh, 0, groups->buf, (int)groups->count, groups->dt, &status);
+            mpirc = MPI_File_read_at(fh, 0, groups->buf, (int)groups->count, groups->dt, &status);
+            if (mpirc != MPI_SUCCESS) {
+                MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+                MFU_LOG(MFU_LOG_ERR, "Failed to read file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+            }
         }
         MPI_Bcast(groups->buf, (int)groups->count, groups->dt, 0, MPI_COMM_WORLD);
         disp += (MPI_Offset) bufsize_group;
@@ -732,7 +765,11 @@ static void read_cache_v3(
         MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
 
         /* set file view to be sequence of datatypes past header */
-        MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
+        mpirc = MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_LOG(MFU_LOG_ERR, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
 
         /* compute byte offset to read our element */
         MPI_Offset read_offset = (MPI_Offset)offset;
@@ -751,7 +788,11 @@ static void read_cache_v3(
 
             /* issue a collective read */
             //MPI_File_read_at_all(fh, read_offset, buf, read_count, dt, &status);
-            MPI_File_read_at(fh, read_offset, buf, read_count, dt, &status);
+            mpirc = MPI_File_read_at(fh, read_offset, buf, read_count, dt, &status);
+            if (mpirc != MPI_SUCCESS) {
+                MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+                MFU_LOG(MFU_LOG_ERR, "Failed to read file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+            }
 
             /* update our offset with the number of items we just read */
             read_offset += (MPI_Offset)read_count;
@@ -804,7 +845,7 @@ static void read_cache_v4(
     const char* name,
     MPI_Offset* outdisp,
     MPI_File fh,
-    char* datarep,
+    const char* datarep,
     flist_t* flist)
 {
     MPI_Status status;
@@ -826,10 +867,20 @@ static void read_cache_v4(
     /* rank 0 reads and broadcasts header */
     uint64_t header[6];
     int header_size = 6 * 8; /* 6 consecutive uint64_t */
-    MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    int mpirc = MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
+
     if (rank == 0) {
         uint64_t header_packed[6];
-        MPI_File_read_at(fh, 0, header_packed, header_size, MPI_BYTE, &status);
+        mpirc = MPI_File_read_at(fh, 0, header_packed, header_size, MPI_BYTE, &status);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to read file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
+
         const char* ptr = (const char*) header_packed;
         mfu_unpack_io_uint64(&ptr, &header[0]);
         mfu_unpack_io_uint64(&ptr, &header[1]);
@@ -877,12 +928,22 @@ static void read_cache_v4(
         users->buf = (void*) MFU_MALLOC(bufsize_user);
         users->bufsize = bufsize_user;
 
+        /* set view to read data */
+        mpirc = MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
+
         /* read data */
-        MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
         int user_buf_size = (int) buft_pack_size(users);
         if (rank == 0) {
             char* user_buf = (char*) MFU_MALLOC(user_buf_size);
-            MPI_File_read_at(fh, 0, user_buf, user_buf_size, MPI_BYTE, &status);
+            mpirc = MPI_File_read_at(fh, 0, user_buf, user_buf_size, MPI_BYTE, &status);
+            if (mpirc != MPI_SUCCESS) {
+                MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+                MFU_ABORT(1, "Failed to read file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+            }
             buft_unpack(user_buf, users);
             mfu_free(&user_buf);
         }
@@ -904,12 +965,22 @@ static void read_cache_v4(
         groups->buf = (void*) MFU_MALLOC(bufsize_group);
         groups->bufsize = bufsize_group;
 
+        /* set view to read data */
+        mpirc = MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
+
         /* read data */
-        MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
         int group_buf_size = (int) buft_pack_size(groups);
         if (rank == 0) {
             char* group_buf = (char*) MFU_MALLOC(group_buf_size);
-            MPI_File_read_at(fh, 0, group_buf, group_buf_size, MPI_BYTE, &status);
+            mpirc = MPI_File_read_at(fh, 0, group_buf, group_buf_size, MPI_BYTE, &status);
+            if (mpirc != MPI_SUCCESS) {
+                MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+                MFU_ABORT(1, "Failed to read file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+            }
             buft_unpack(group_buf, groups);
             mfu_free(&group_buf);
         }
@@ -947,7 +1018,11 @@ static void read_cache_v4(
         MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
 
         /* set file view to be sequence of datatypes past header */
-        MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+        mpirc = MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
 
         /* compute byte offset to read our element */
         MPI_Offset read_offset = (MPI_Offset)offset * elem_size;
@@ -969,7 +1044,11 @@ static void read_cache_v4(
 
             /* issue a collective read */
             //MPI_File_read_at_all(fh, read_offset, buf, read_size, MPI_BYTE, &status);
-            MPI_File_read_at(fh, read_offset, buf, read_size, MPI_BYTE, &status);
+            mpirc = MPI_File_read_at(fh, read_offset, buf, read_size, MPI_BYTE, &status);
+            if (mpirc != MPI_SUCCESS) {
+                MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+                MFU_ABORT(1, "Failed to read file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+            }
 
             /* update our offset with the number of items we just read */
             read_offset += (MPI_Offset)read_size;
@@ -1021,13 +1100,12 @@ void mfu_flist_read_cache(
     }
 
     /* open file */
-    int rc;
     MPI_Status status;
     MPI_File fh;
-    char datarep[] = "external32";
+    const char* datarep = datarep_native;
     int amode = MPI_MODE_RDONLY;
-    rc = MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
-    if (rc != MPI_SUCCESS) {
+    int mpirc = MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, MPI_INFO_NULL, &fh);
+    if (mpirc != MPI_SUCCESS) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file %s", name);
         }
@@ -1039,22 +1117,24 @@ void mfu_flist_read_cache(
 
     /* rank 0 reads and broadcasts version */
     uint64_t version;
-    MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    mpirc = MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
     if (rank == 0) {
         /* read version from file */
         uint64_t version_packed;
-        MPI_File_read_at(fh, 0, &version_packed, 8, MPI_BYTE, &status);
+        mpirc = MPI_File_read_at(fh, 0, &version_packed, 8, MPI_BYTE, &status);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to read file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
 
         /* convert version into host format */
         const char* ptr = (const char*) &version_packed;
         mfu_unpack_io_uint64(&ptr, &version);
     }
-#if 0
-    MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
-    if (rank == 0) {
-        MPI_File_read_at(fh, 0, &version, 1, MPI_UINT64_T, &status);
-    }
-#endif
     MPI_Bcast(&version, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
     disp += 1 * 8; /* 9 consecutive uint64_t types in external32 */
 
@@ -1073,7 +1153,11 @@ void mfu_flist_read_cache(
     }
 
     /* close file */
-    MPI_File_close(&fh);
+    mpirc = MPI_File_close(&fh);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to close file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* compute global summary */
     mfu_flist_summarize(bflist);
@@ -1147,8 +1231,7 @@ static void write_cache_readdir_variable(
     /* open file */
     MPI_Status status;
     MPI_File fh;
-    char datarep[] = "external32";
-    //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
+    const char* datarep = datarep_native;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
 
     /* change number of ranks to string to pass to MPI_Info */
@@ -1158,29 +1241,20 @@ static void write_cache_readdir_variable(
     /* no. of I/O devices for lustre striping is number of ranks */
     MPI_Info_set(info, "striping_factor", str_buf);
 
-    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
+    int mpirc = MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_LOG(MFU_LOG_ERR, "Failed to open file for writing: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* truncate file to 0 bytes */
-    MPI_File_set_size(fh, 0);
-
-    MPI_Offset disp = 0;
-#if 0
-    /* prepare header */
-    uint64_t header[5];
-    header[0] = 2;               /* file version */
-    header[1] = walk_start;      /* time_t when file walk started */
-    header[2] = walk_end;        /* time_t when file walk stopped */
-    header[3] = all_count;       /* total number of stat entries */
-    header[4] = (uint64_t)chars; /* number of chars in file name */
-
-    /* write the header */
-    MPI_Offset disp = 0;
-    MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
-    if (rank == 0) {
-        MPI_File_write_at(fh, disp, header, 5, MPI_UINT64_T, &status);
+    mpirc = MPI_File_set_size(fh, 0);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to truncate file: `%s' rc=%d %s", name, mpirc, mpierrstr);
     }
-    disp += 5 * 8;
-#endif
+
+    MPI_Offset disp = 0;
 
     /* in order to avoid blowing out memory, we'll pack into a smaller
      * buffer and iteratively make many collective writes */
@@ -1194,7 +1268,11 @@ static void write_cache_readdir_variable(
     void* buf = MFU_MALLOC(bufsize);
 
     /* set file view to be sequence of datatypes past header */
-    MPI_File_set_view(fh, disp, MPI_CHAR, MPI_CHAR, datarep, MPI_INFO_NULL);
+    mpirc = MPI_File_set_view(fh, disp, MPI_CHAR, MPI_CHAR, datarep, MPI_INFO_NULL);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* compute byte offset to write our element,
      * set_view above means our offset here should start from 0 */
@@ -1222,7 +1300,11 @@ static void write_cache_readdir_variable(
 
         /* write file info */
         int write_count = (int) packsize;
-        MPI_File_write_at(fh, write_offset, buf, write_count, MPI_CHAR, &status);
+        mpirc = MPI_File_write_at(fh, write_offset, buf, write_count, MPI_CHAR, &status);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to write to file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
 
         /* update our offset with the number of bytes we just wrote */
         write_offset += (MPI_Offset) packsize;
@@ -1232,334 +1314,12 @@ static void write_cache_readdir_variable(
     mfu_free(&buf);
 
     /* close file */
-    MPI_File_close(&fh);
+    mpirc = MPI_File_close(&fh);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to close file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
         
-    /* free mpi info */
-    MPI_Info_free(&info);
-
-    return;
-}
-
-/* file format:
- *   uint64_t timestamp when walk started
- *   uint64_t timestamp when walk ended
- *   uint64_t total number of files
- *   uint64_t max filename length
- *   list of <filenames(str), filetype(uint32_t)> */
-
-static void write_cache_readdir(
-    const char* name,
-    uint64_t walk_start,
-    uint64_t walk_end,
-    flist_t* flist)
-{
-    /* get our rank in job & number of ranks */
-    int rank, ranks;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-    /* use mpi io hints to stripe across OSTs */
-    MPI_Info info;
-    MPI_Info_create(&info);
-
-    /* get number of items in our list and total file count */
-    uint64_t count     = flist->list_count;
-    uint64_t all_count = flist->total_files;
-    uint64_t offset    = flist->offset;
-
-    /* find smallest length that fits max and consists of integer
-     * number of 8 byte segments */
-    int max = (int) flist->max_file_name;
-    int chars = max / 8;
-    if (chars * 8 < max) {
-        chars++;
-    }
-    chars *= 8;
-
-    /* build datatype to hold file info */
-    MPI_Datatype dt;
-    create_stattype(flist->detail, chars, &dt);
-
-    /* get extent of stat type */
-    MPI_Aint lb, extent;
-    MPI_Type_get_extent(dt, &lb, &extent);
-
-    /* open file */
-    MPI_Status status;
-    MPI_File fh;
-    char datarep[] = "external32";
-    //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
-    int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
-
-    /* change number of ranks to string to pass to MPI_Info */
-    char str_buf[12];
-    sprintf(str_buf, "%d", ranks);
-
-    /* no. of I/O devices for lustre striping is number of ranks */
-    MPI_Info_set(info, "striping_factor", str_buf);
-
-    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
-
-    /* truncate file to 0 bytes */
-    MPI_File_set_size(fh, 0);
-
-    /* prepare header */
-    uint64_t header[5];
-    header[0] = 2;               /* file version */
-    header[1] = walk_start;      /* time_t when file walk started */
-    header[2] = walk_end;        /* time_t when file walk stopped */
-    header[3] = all_count;       /* total number of stat entries */
-    header[4] = (uint64_t)chars; /* number of chars in file name */
-
-    /* write the header */
-    MPI_Offset disp = 0;
-    MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
-    if (rank == 0) {
-        MPI_File_write_at(fh, 0, header, 5, MPI_UINT64_T, &status);
-    }
-    disp += 5 * 8;
-
-    /* in order to avoid blowing out memory, we'll pack into a smaller
-     * buffer and iteratively make many collective writes */
-
-    /* allocate a buffer, ensure it's large enough to hold at least one
-     * complete record */
-    size_t bufsize = 1024 * 1024;
-    if (bufsize < (size_t) extent) {
-        bufsize = (size_t) extent;
-    }
-    void* buf = MFU_MALLOC(bufsize);
-
-    /* compute number of items we can fit in each write iteration */
-    uint64_t bufcount = (uint64_t)bufsize / (uint64_t)extent;
-
-    /* determine number of iterations we need to write all items */
-    uint64_t iters = count / bufcount;
-    if (iters * bufcount < count) {
-        iters++;
-    }
-
-    /* compute max iterations across all procs */
-    uint64_t all_iters;
-    MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-
-    /* set file view to be sequence of datatypes past header */
-    MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
-
-    /* compute byte offset to write our element */
-    MPI_Offset write_offset = (MPI_Offset)offset;
-
-    /* iterate with multiple writes until all records are written */
-    const elem_t* current = flist->list_head;
-    while (all_iters > 0) {
-        /* copy stat data into write buffer */
-        char* ptr = (char*) buf;
-        uint64_t packcount = 0;
-        while (current != NULL && packcount < bufcount) {
-            /* pack item into buffer and advance pointer */
-            size_t pack_bytes = list_elem_pack(ptr, flist->detail, (uint64_t)chars, current);
-            ptr += pack_bytes;
-            packcount++;
-            current = current->next;
-        }
-
-        /* collective write of file info */
-        int write_count = (int) packcount;
-        MPI_File_write_at_all(fh, write_offset, buf, write_count, dt, &status);
-
-        /* update our offset with the number of bytes we just wrote */
-        write_offset += (MPI_Offset)packcount;
-
-        /* one less iteration */
-        all_iters--;
-    }
-
-    /* free write buffer */
-    mfu_free(&buf);
-
-    /* close file */
-    MPI_File_close(&fh);
-
-    /* free the datatype */
-    MPI_Type_free(&dt);
-
-    /* free mpi info */
-    MPI_Info_free(&info);
-
-    return;
-}
-
-static void write_cache_stat_v3(
-    const char* name,
-    uint64_t walk_start,
-    uint64_t walk_end,
-    flist_t* flist)
-{
-    buf_t* users  = &flist->users;
-    buf_t* groups = &flist->groups;
-
-    /* get our rank in job & number of ranks */
-    int rank, ranks;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-    /* use mpi io hints to stripe across OSTs */
-    MPI_Info info;
-    MPI_Info_create(&info);
-
-    /* get number of items in our list and total file count */
-    uint64_t count     = flist->list_count;
-    uint64_t all_count = flist->total_files;
-    uint64_t offset    = flist->offset;
-
-    /* find smallest length that fits max and consists of integer
-     * number of 8 byte segments */
-    int max = (int) flist->max_file_name;
-    int chars = max / 8;
-    if (chars * 8 < max) {
-        chars++;
-    }
-    chars *= 8;
-
-    /* build datatype to hold file info */
-    MPI_Datatype dt;
-    create_stattype(flist->detail, chars, &dt);
-
-    /* get extent of stat type */
-    MPI_Aint lb, extent;
-    MPI_Type_get_extent(dt, &lb, &extent);
-
-    /* open file */
-    MPI_Status status;
-    MPI_File fh;
-    char datarep[] = "external32";
-    //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
-    int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
-
-    /* change number of ranks to string to pass to MPI_Info */
-    char str_buf[12];
-    sprintf(str_buf, "%d", ranks);
-
-    /* no. of I/O devices for lustre striping is number of ranks */
-    MPI_Info_set(info, "striping_factor", str_buf);
-
-    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
-
-    /* truncate file to 0 bytes */
-    MPI_File_set_size(fh, 0);
-
-    /* prepare header */
-    uint64_t header[9];
-    header[0] = 3;               /* file version */
-    header[1] = walk_start;      /* time_t when file walk started */
-    header[2] = walk_end;        /* time_t when file walk stopped */
-    header[3] = users->count;    /* number of user records */
-    header[4] = users->chars;    /* number of chars in user name */
-    header[5] = groups->count;   /* number of group records */
-    header[6] = groups->chars;   /* number of chars in group name */
-    header[7] = all_count;       /* total number of stat entries */
-    header[8] = (uint64_t)chars; /* number of chars in file name */
-
-    /* write the header */
-    MPI_Offset disp = 0;
-    MPI_File_set_view(fh, disp, MPI_UINT64_T, MPI_UINT64_T, datarep, MPI_INFO_NULL);
-    if (rank == 0) {
-        MPI_File_write_at(fh, 0, header, 9, MPI_UINT64_T, &status);
-    }
-    disp += 9 * 8;
-
-    if (users->dt != MPI_DATATYPE_NULL) {
-        /* get extent user */
-        MPI_Aint lb_user, extent_user;
-        MPI_Type_get_extent(users->dt, &lb_user, &extent_user);
-
-        /* write out users */
-        MPI_File_set_view(fh, disp, users->dt, users->dt, datarep, MPI_INFO_NULL);
-        if (rank == 0) {
-            int write_count = (int) users->count;
-            MPI_File_write_at(fh, 0, users->buf, write_count, users->dt, &status);
-        }
-        disp += (MPI_Offset)users->count * extent_user;
-    }
-
-    if (groups->dt != MPI_DATATYPE_NULL) {
-        /* get extent group */
-        MPI_Aint lb_group, extent_group;
-        MPI_Type_get_extent(groups->dt, &lb_group, &extent_group);
-
-        /* write out groups */
-        MPI_File_set_view(fh, disp, groups->dt, groups->dt, datarep, MPI_INFO_NULL);
-        if (rank == 0) {
-            int write_count = (int) groups->count;
-            MPI_File_write_at(fh, 0, groups->buf, write_count, groups->dt, &status);
-        }
-        disp += (MPI_Offset)groups->count * extent_group;
-    }
-
-    /* in order to avoid blowing out memory, we'll pack into a smaller
-     * buffer and iteratively make many collective writes */
-
-    /* allocate a buffer, ensure it's large enough to hold at least one
-     * complete record */
-    size_t bufsize = 1024 * 1024;
-    if (bufsize < (size_t) extent) {
-        bufsize = (size_t) extent;
-    }
-    void* buf = MFU_MALLOC(bufsize);
-
-    /* compute number of items we can fit in each write iteration */
-    uint64_t bufcount = (uint64_t)bufsize / (uint64_t)extent;
-
-    /* determine number of iterations we need to write all items */
-    uint64_t iters = count / bufcount;
-    if (iters * bufcount < count) {
-        iters++;
-    }
-
-    /* compute max iterations across all procs */
-    uint64_t all_iters;
-    MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-
-    /* set file view to be sequence of datatypes past header */
-    MPI_File_set_view(fh, disp, dt, dt, datarep, MPI_INFO_NULL);
-
-    /* compute byte offset to write our element */
-    MPI_Offset write_offset = (MPI_Offset)offset;
-
-    /* iterate with multiple writes until all records are written */
-    const elem_t* current = flist->list_head;
-    while (all_iters > 0) {
-        /* copy stat data into write buffer */
-        char* ptr = (char*) buf;
-        uint64_t packcount = 0;
-        while (current != NULL && packcount < bufcount) {
-            /* pack item into buffer and advance pointer */
-            size_t pack_bytes = list_elem_pack(ptr, flist->detail, (uint64_t)chars, current);
-            ptr += pack_bytes;
-            packcount++;
-            current = current->next;
-        }
-
-        /* collective write of file info */
-        int write_count = (int) packcount;
-        MPI_File_write_at_all(fh, write_offset, buf, write_count, dt, &status);
-
-        /* update our offset with the number of bytes we just wrote */
-        write_offset += (MPI_Offset)packcount;
-
-        /* one less iteration */
-        all_iters--;
-    }
-
-    /* free write buffer */
-    mfu_free(&buf);
-
-    /* close file */
-    MPI_File_close(&fh);
-
-    /* free the datatype */
-    MPI_Type_free(&dt);
-
     /* free mpi info */
     MPI_Info_free(&info);
 
@@ -1602,8 +1362,7 @@ static void write_cache_stat_v4(
     /* open file */
     MPI_Status status;
     MPI_File fh;
-    char datarep[] = "external32";
-    //int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE | MPI_MODE_SEQUENTIAL;
+    const char* datarep = datarep_native;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
 
     /* change number of ranks to string to pass to MPI_Info */
@@ -1613,12 +1372,21 @@ static void write_cache_stat_v4(
     /* no. of I/O devices for lustre striping is number of ranks */
     MPI_Info_set(info, "striping_factor", str_buf);
 
-    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
+    int mpirc = MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to open file for writing: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* truncate file to 0 bytes */
-    MPI_File_set_size(fh, 0);
+    mpirc = MPI_File_set_size(fh, 0);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to truncate file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* prepare header */
+    int header_bytes = 7 * 8;
     uint64_t header[7];
     char* ptr = (char*) header;
     mfu_pack_io_uint64(&ptr, 4);               /* file version */
@@ -1629,36 +1397,65 @@ static void write_cache_stat_v4(
     mfu_pack_io_uint64(&ptr, all_count);       /* total number of stat entries */
     mfu_pack_io_uint64(&ptr, (uint64_t)chars); /* number of chars in file name */
 
-    /* write the header */
+    /* set view to write the header */
     MPI_Offset disp = 0;
-    int header_bytes = 7 * 8;
-    MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    mpirc = MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
+
+    /* write the header */
     if (rank == 0) {
-        MPI_File_write_at(fh, 0, header, header_bytes, MPI_BYTE, &status);
+        mpirc = MPI_File_write_at(fh, 0, header, header_bytes, MPI_BYTE, &status);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to write to file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
     }
     disp += header_bytes;
 
     if (users->dt != MPI_DATATYPE_NULL) {
+        /* set view to write out users */
+        mpirc = MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
+
         /* write out users */
-        MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
         int user_buf_size = (int) buft_pack_size(users);
         if (rank == 0) {
             char* user_buf = (char*) MFU_MALLOC(user_buf_size);
             buft_pack(user_buf, users);
-            MPI_File_write_at(fh, 0, user_buf, user_buf_size, MPI_BYTE, &status);
+            mpirc = MPI_File_write_at(fh, 0, user_buf, user_buf_size, MPI_BYTE, &status);
+            if (mpirc != MPI_SUCCESS) {
+                MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+                MFU_ABORT(1, "Failed to write to file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+            }
             mfu_free(&user_buf);
         }
         disp += (MPI_Offset)user_buf_size;
     }
 
     if (groups->dt != MPI_DATATYPE_NULL) {
+        /* set view to write out groups */
+        mpirc = MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
+
         /* write out groups */
-        MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
         int group_buf_size = (int) buft_pack_size(groups);
         if (rank == 0) {
             char* group_buf = (char*) MFU_MALLOC(group_buf_size);
             buft_pack(group_buf, groups);
-            MPI_File_write_at(fh, 0, group_buf, group_buf_size, MPI_BYTE, &status);
+            mpirc = MPI_File_write_at(fh, 0, group_buf, group_buf_size, MPI_BYTE, &status);
+            if (mpirc != MPI_SUCCESS) {
+                MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+                MFU_ABORT(1, "Failed to write to file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+            }
             mfu_free(&group_buf);
         }
         disp += (MPI_Offset)group_buf_size;
@@ -1692,7 +1489,11 @@ static void write_cache_stat_v4(
     MPI_Allreduce(&iters, &all_iters, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
 
     /* set file view to be sequence of datatypes past header */
-    MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    mpirc = MPI_File_set_view(fh, disp, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* compute byte offset to write our element */
     MPI_Offset write_offset = (MPI_Offset)offset * elem_size;
@@ -1713,7 +1514,11 @@ static void write_cache_stat_v4(
 
         /* collective write of file info */
         int write_count = (int) packcount;
-        MPI_File_write_at_all(fh, write_offset, buf, write_count, MPI_BYTE, &status);
+        mpirc = MPI_File_write_at_all(fh, write_offset, buf, write_count, MPI_BYTE, &status);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to write to file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
 
         /* update our offset with the number of bytes we just wrote */
         write_offset += (MPI_Offset)packcount;
@@ -1726,7 +1531,11 @@ static void write_cache_stat_v4(
     mfu_free(&buf);
 
     /* close file */
-    MPI_File_close(&fh);
+    mpirc = MPI_File_close(&fh);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to close file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* free mpi info */
     MPI_Info_free(&info);
@@ -1754,11 +1563,9 @@ void mfu_flist_write_cache(
 
     if (all_count > 0) {
         if (flist->detail) {
-            //write_cache_stat_v3(name, 0, 0, flist);
             write_cache_stat_v4(name, flist);
         }
         else {
-            //write_cache_readdir(name, 0, 0, flist);
             write_cache_readdir_variable(name, flist);
         }
     }
@@ -1774,8 +1581,8 @@ void mfu_flist_write_cache(
             rate = ((double)all_count) / secs;
         }
         MFU_LOG(MFU_LOG_INFO, "Wrote %lu files in %f seconds (%f files/sec)",
-               all_count, secs, rate
-              );
+            all_count, secs, rate
+        );
     }
 
     /* wait for summary to be printed */
@@ -1930,16 +1737,28 @@ void mfu_flist_write_text(
     /* open file */
     MPI_Status status;
     MPI_File fh;
-    char datarep[] = "external32";
+    const char* datarep = datarep_native;
     int amode = MPI_MODE_WRONLY | MPI_MODE_CREATE;
 
-    MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
+    int mpirc = MPI_File_open(MPI_COMM_WORLD, (char*)name, amode, info, &fh);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to open file for writing: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* truncate file to 0 bytes */
-    MPI_File_set_size(fh, 0);
+    mpirc = MPI_File_set_size(fh, 0);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to truncate file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* set file view to be sequence of datatypes past header */
-    MPI_File_set_view(fh, 0, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    mpirc = MPI_File_set_view(fh, 0, MPI_BYTE, MPI_BYTE, datarep, MPI_INFO_NULL);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to set view on file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* compute byte offset to write our element */
     uint64_t offset = 0;
@@ -1960,7 +1779,11 @@ void mfu_flist_write_text(
         }
     
         /* collective write of file data */
-        MPI_File_write_at_all(fh, write_offset, ptr, write_count, MPI_BYTE, &status);
+        mpirc = MPI_File_write_at_all(fh, write_offset, ptr, write_count, MPI_BYTE, &status);
+        if (mpirc != MPI_SUCCESS) {
+            MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+            MFU_ABORT(1, "Failed to write to file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+        }
 
         /* update our offset into the file */
         write_offset += (MPI_Offset) write_count;
@@ -1976,7 +1799,11 @@ void mfu_flist_write_text(
     }
 
     /* close file */
-    MPI_File_close(&fh);
+    mpirc = MPI_File_close(&fh);
+    if (mpirc != MPI_SUCCESS) {
+        MPI_Error_string(mpirc, mpierrstr, &mpierrlen);
+        MFU_ABORT(1, "Failed to close file: `%s' rc=%d %s", name, mpirc, mpierrstr);
+    }
 
     /* free mpi info */
     MPI_Info_free(&info);
@@ -1995,8 +1822,8 @@ void mfu_flist_write_text(
             rate = ((double)all_count) / secs;
         }
         MFU_LOG(MFU_LOG_INFO, "Wrote %lu files in %f seconds (%f files/sec)",
-               all_count, secs, rate
-              );
+            all_count, secs, rate
+        );
     }
 
     return;

@@ -25,13 +25,13 @@
 
 #define FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)
 
-int64_t block_meta;
-int64_t block_total;
-int64_t block_size;
-char* src_name;
-char* dst_name;
-int fd;
-int fd_out;
+static int64_t block_meta;
+static int64_t block_total;
+static int64_t block_size;
+static char* src_name;
+static char* dst_name;
+static int fd;
+static int fd_out;
 
 /* This function creates work for libcircle if we are using decompression
  * The function reads the trailer, which stores the offset of all the
