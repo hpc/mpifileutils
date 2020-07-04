@@ -1,5 +1,5 @@
 Name:		mpifileutils
-Version:	0.10
+Version:	0.10.1
 Release:	1%{?dist}
 Summary:	File utilities designed for scalability and performance.
 
