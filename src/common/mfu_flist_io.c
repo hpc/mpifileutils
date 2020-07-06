@@ -86,7 +86,7 @@ static void buft_pack(void* buf, const buf_t* items)
         sptr += items->chars;
         dptr += items->chars;
 
-        /* pack uint64 into destionation */
+        /* pack uint64 into destination */
         mfu_pack_io_uint64(&dptr, *(const uint64_t*)sptr);
         sptr += sizeof(uint64_t);
     }
@@ -247,7 +247,7 @@ static size_t list_elem_pack(void* buf, int detail, uint64_t chars, const elem_t
 
     /* copy in file name */
     char* file = elem->file;
-    strcpy(ptr, file);
+    strncpy(ptr, file, chars);
     ptr += chars;
 
     if (detail) {
