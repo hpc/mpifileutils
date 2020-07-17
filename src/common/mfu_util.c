@@ -40,107 +40,125 @@ int mfu_progress_timeout = 10;
 #ifdef DAOS_SUPPORT
 bool daos_uuid_valid(const uuid_t uuid)
 {
-	return uuid && !uuid_is_null(uuid);
+    return uuid && !uuid_is_null(uuid);
 }
 
 /* Distribute process 0's pool or container handle to others. */
-void HandleDistribute(int rank, daos_handle_t *handle,
-                      daos_handle_t* poh, enum handleType type)
+void daos_bcast_handle(
+  int rank,              /* root rank for broadcast */
+  daos_handle_t* handle, /* handle value to be broadcasted */
+  daos_handle_t* poh,    /* daos pool for global2local conversion of container handle */
+  enum handleType type)  /* handle type: POOL_HANDLE or CONT_HANDLE */
 {
-        d_iov_t global;
-        int        rc;
+    int rc;
 
-        global.iov_buf = NULL;
-        global.iov_buf_len = 0;
-        global.iov_len = 0;
+    d_iov_t global;
+    global.iov_buf     = NULL;
+    global.iov_buf_len = 0;
+    global.iov_len     = 0;
 
-        if (rank == 0) {
-                /* Get the global handle size. */
-                if (type == POOL_HANDLE) {
-                    rc = daos_pool_local2global(*handle, &global);
-                } else {
-                    rc = daos_cont_local2global(*handle, &global);
-                }
-                if (rc != 0) {
-                    MFU_LOG(MFU_LOG_INFO, "Failed to get global handle size");
-                }
+    /* Get the global handle size. */
+    if (rank == 0) {
+        if (type == POOL_HANDLE) {
+            rc = daos_pool_local2global(*handle, &global);
+        } else {
+            rc = daos_cont_local2global(*handle, &global);
         }
-
-        MPI_Bcast(&global.iov_buf_len, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
- 
-        global.iov_len = global.iov_buf_len;
-        global.iov_buf = malloc(global.iov_buf_len);
-        if (global.iov_buf == NULL) {
-            MPI_Abort(MPI_COMM_WORLD, -1);
+        if (rc != 0) {
+            MFU_ABORT(-1, "Failed to get global handle size");
         }
+    }
 
-        if (rank == 0) {
-                if (type == POOL_HANDLE) {
-                    rc = daos_pool_local2global(*handle, &global);
-                } else {
-                    rc = daos_cont_local2global(*handle, &global);
-                }
-                if (rc != 0) {
-                    MFU_LOG(MFU_LOG_INFO, "Failed to create global handle");
-                }
+    /* broadcast size of global handle */
+    MPI_Bcast(&global.iov_buf_len, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+
+    /* allocate memory to hold global handle value */
+    global.iov_len = global.iov_buf_len;
+    global.iov_buf = MFU_MALLOC(global.iov_buf_len);
+
+    /* convert from local handle to global handle */
+    if (rank == 0) {
+       if (type == POOL_HANDLE) {
+           rc = daos_pool_local2global(*handle, &global);
+       } else {
+           rc = daos_cont_local2global(*handle, &global);
+       }
+       if (rc != 0) {
+           MFU_ABORT(-1, "Failed to create global handle");
+       }
+    }
+
+    /* broadcast global handle value */
+    MPI_Bcast(global.iov_buf, global.iov_buf_len, MPI_BYTE, 0, MPI_COMM_WORLD);
+
+    /* convert global handle to local value */
+    if (rank != 0) {
+        if (type == POOL_HANDLE) {
+            rc = daos_pool_global2local(global, handle);
+        } else {
+            rc = daos_cont_global2local(*poh, global, handle);
         }
-
-        MPI_Bcast(global.iov_buf, global.iov_buf_len, MPI_BYTE, 0, MPI_COMM_WORLD);
-
-        if (rank != 0) {
-                if (type == POOL_HANDLE) {
-                    rc = daos_pool_global2local(global, handle);
-                } else {
-                    rc = daos_cont_global2local(*poh, global, handle);
-                }
-                if (rc != 0) {
-                    MFU_LOG(MFU_LOG_INFO, "Failed to get local handle");
-                }
+        if (rc != 0) {
+            MFU_ABORT(-1, "Failed to get local handle");
         }
+    }
 
-        free(global.iov_buf);
+    /* free temporary buffer used to hold global handle value */
+    mfu_free(&global.iov_buf);
 }
 
-void daos_connect(int* rank, daos_handle_t* poh, daos_handle_t* coh,
-                  uuid_t* pool_uuid, uuid_t* cont_uuid, char* svc)
-{ 
+void daos_connect(
+  int rank,
+  const char* svc,
+  uuid_t pool_uuid,
+  uuid_t cont_uuid,
+  daos_handle_t* poh,
+  daos_handle_t* coh)
+{
     /* TODO: if src daos path and dst daos path are false 
-    *  skip connecting to daos pool */
-    int rc = 0;
-    if (*rank == 0) {
-        d_rank_list_t *svcl = NULL;
-        daos_pool_info_t pool_info;
-        daos_cont_info_t co_info;
+     * skip connecting to daos pool */
 
-        svcl = daos_rank_list_parse(svc, ":");
+    /* have rank 0 connect to the pool and container,
+     * we'll then broadcast the handle ids from rank 0 to everyone else */
+    if (rank == 0) {
+        d_rank_list_t* svcl = daos_rank_list_parse(svc, ":");
         if (svcl == NULL) {
- 	    MPI_Abort(MPI_COMM_WORLD, -1);
+            MFU_ABORT(-1, "Failed to parse DAOS rank list: '%s'", svc);
         }
 
-        /** Connect to DAOS pool */
-        rc = daos_pool_connect(*pool_uuid, NULL, svcl, DAOS_PC_RW,
+        /* Connect to DAOS pool */
+        daos_pool_info_t pool_info;
+        int rc = daos_pool_connect(pool_uuid, NULL, svcl, DAOS_PC_RW,
                                poh, &pool_info, NULL);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to connect to pool");
         }
         d_rank_list_free(svcl);
 
-        rc = daos_cont_open(*poh, *cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
+        /* attempt to open the daos container */
+        daos_cont_info_t co_info;
+        rc = daos_cont_open(*poh, cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
+
         /* If NOEXIST we create it */
         if (rc != 0) {
+            /* create the container */
             uuid_t cuuid;
             rc = dfs_cont_create(*poh, cuuid, NULL, NULL, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to create DFS container");
             }
+
+            /* try to open it again */
             rc = daos_cont_open(*poh, cuuid, DAOS_COO_RW, coh, &co_info, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to open DFS container");
             }
         }
     }
-    HandleDistribute(*rank, poh, poh, POOL_HANDLE);
-    HandleDistribute(*rank, coh, poh, CONT_HANDLE);
+
+    /* broadcast pool and container handles from rank 0 */
+    daos_bcast_handle(rank, poh, poh, POOL_HANDLE);
+    daos_bcast_handle(rank, coh, poh, CONT_HANDLE);
 }
 #endif
 

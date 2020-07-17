@@ -23,27 +23,33 @@
 #include "mfu.h"
 
 #ifdef DAOS_SUPPORT
-static void daos_set_paths(int* rank, char** argpaths, uuid_t* src_pool_uuid,
-			   uuid_t* src_cont_uuid, uuid_t* dst_pool_uuid, uuid_t* dst_cont_uuid,
-                           char* dfs_prefix, mfu_file_t* mfu_src_file, mfu_file_t* mfu_dst_file)
+static void daos_set_paths(
+    char** argpaths,
+    const char* dfs_prefix,
+    uuid_t src_pool_uuid,
+    uuid_t src_cont_uuid,
+    uuid_t dst_pool_uuid,
+    uuid_t dst_cont_uuid,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
 {
+    int rc = 0;
+
+    char* src_path = argpaths[0];
+    char* dst_path = argpaths[1];
+
     /* find out if a dfs_prefix is being used,
      * if so, then that means that the container
      * is not being copied from the root of the
      * UNS path  */
-    int rc = 0;
-    struct duns_attr_t dattr  = {0}; 
-    struct duns_attr_t ddattr = {0}; 
-    char* src_path            = argpaths[0];
-    char* dst_path            = argpaths[1];
-
-    /* assume both are daos paths for UNS, if resolve path
-     * doesn't succeed then set accordingly */
-    int src_rc = -1;
-    int dst_rc = -1;
     if (dfs_prefix == NULL) {
-        src_rc = duns_resolve_path(src_path, &dattr);
-        dst_rc = duns_resolve_path(dst_path, &ddattr);
+        /* assume both are daos paths for UNS, if resolve path
+         * doesn't succeed then set accordingly */
+        struct duns_attr_t src_dattr = {0}; 
+        struct duns_attr_t dst_dattr = {0}; 
+        int src_rc = duns_resolve_path(src_path, &src_dattr);
+        int dst_rc = duns_resolve_path(dst_path, &dst_dattr);
+
         /* Forward slash is "root" of container to walk
          * in daos. Cannot walk from Unified namespace
          * path given /tmp/dsikich/dfs, it is only used
@@ -53,42 +59,44 @@ static void daos_set_paths(int* rank, char** argpaths, uuid_t* src_pool_uuid,
         if (src_rc == 0 && dst_rc == 0) {
             mfu_src_file->type = DAOS;
             mfu_dst_file->type = DAOS;
-            uuid_copy(*src_pool_uuid, dattr.da_puuid);
-            uuid_copy(*src_cont_uuid, dattr.da_cuuid);
-            uuid_copy(*dst_pool_uuid, ddattr.da_puuid);
-            uuid_copy(*dst_cont_uuid, ddattr.da_cuuid);
-            argpaths[0]  = "/";
+            uuid_copy(src_pool_uuid, src_dattr.da_puuid);
+            uuid_copy(src_cont_uuid, src_dattr.da_cuuid);
+            uuid_copy(dst_pool_uuid, dst_dattr.da_puuid);
+            uuid_copy(dst_cont_uuid, dst_dattr.da_cuuid);
+            argpaths[0] = "/";
             argpaths[1] = "/";
         } else if (src_rc == 0) { 
             mfu_src_file->type = DAOS;
-            uuid_copy(*src_pool_uuid, dattr.da_puuid);
-            uuid_copy(*src_cont_uuid, dattr.da_cuuid);
-            argpaths[0]  = "/";
+            uuid_copy(src_pool_uuid, src_dattr.da_puuid);
+            uuid_copy(src_cont_uuid, src_dattr.da_cuuid);
+            argpaths[0] = "/";
         } else if (dst_rc == 0) {
             mfu_dst_file->type = DAOS;
-            uuid_copy(*dst_pool_uuid, ddattr.da_puuid);
-            uuid_copy(*dst_cont_uuid, ddattr.da_cuuid);
-            argpaths[1]  = "/";
+            uuid_copy(dst_pool_uuid, dst_dattr.da_puuid);
+            uuid_copy(dst_cont_uuid, dst_dattr.da_cuuid);
+            argpaths[1] = "/";
         }
+
         /* set daos io functions for src/dst paths */
     } else {
+        struct duns_attr_t dattr = {0}; 
         rc = duns_resolve_path(dfs_prefix, &dattr);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS UNS path");
         }
+
         /* figure out if prefix is on dst or src for 
          * for copying container subsets */
-        char* src_ret;
-        src_ret = strstr(src_path, dfs_prefix);
+        char* src_ret = strstr(src_path, dfs_prefix);
         if (src_ret != NULL) {
             mfu_src_file->type = DAOS;
-            uuid_copy(*src_pool_uuid, dattr.da_puuid);
-            uuid_copy(*src_cont_uuid, dattr.da_cuuid);
+            uuid_copy(src_pool_uuid, dattr.da_puuid);
+            uuid_copy(src_cont_uuid, dattr.da_cuuid);
             argpaths[0] = src_path + strlen(dfs_prefix);
         } else {
             mfu_dst_file->type = DAOS;
-            uuid_copy(*dst_pool_uuid, dattr.da_puuid);
-            uuid_copy(*dst_cont_uuid, dattr.da_cuuid);
+            uuid_copy(dst_pool_uuid, dattr.da_puuid);
+            uuid_copy(dst_cont_uuid, dattr.da_cuuid);
             argpaths[1] = dst_path + strlen(dfs_prefix);
         }
     }
@@ -326,25 +334,25 @@ int main(int argc, char** argv)
 #endif
 #ifdef DAOS_SUPPORT
             case 'x':
-	        rc = uuid_parse(optarg, src_pool_uuid);
+                rc = uuid_parse(optarg, src_pool_uuid);
                 if (rc != 0) {
                     if (rank == 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to parse source pool uuid: '%s'", optarg);
                     }
                     usage = 1;
                 }
-    	        break;
+                break;
             case 'D':
-	        rc = uuid_parse(optarg, dst_pool_uuid);
+                rc = uuid_parse(optarg, dst_pool_uuid);
                 if (rc != 0) {
                     if (rank == 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to parse dst pool uuid: '%s'", optarg);
                     }
                     usage = 1;
                 }
-    	        break;
+                break;
             case 'y':
-	        rc = uuid_parse(optarg, src_cont_uuid);
+                rc = uuid_parse(optarg, src_cont_uuid);
                 if (rc != 0) {
                     if (rank == 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to parse source cont uuid: '%s'", optarg);
@@ -352,9 +360,9 @@ int main(int argc, char** argv)
                     usage = 1;
                 }
                 mfu_src_file->type = DAOS;
-    	        break;
+                break;
             case 'Y':
-	        rc = uuid_parse(optarg, dst_cont_uuid);
+                rc = uuid_parse(optarg, dst_cont_uuid);
                 if (rc != 0) {
                     if (rank == 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to parse dst cont uuid: '%s'", optarg);
@@ -362,13 +370,13 @@ int main(int argc, char** argv)
                     usage = 1;
                 }
                 mfu_dst_file->type = DAOS;
-    	        break;
+                break;
             case 'z':
-    	        svc = MFU_STRDUP(optarg);
-    	        break;
+                svc = MFU_STRDUP(optarg);
+                break;
             case 'X':
-    	        dfs_prefix = MFU_STRDUP(optarg);
-    	        break;
+                dfs_prefix = MFU_STRDUP(optarg);
+                break;
 #endif
             case 'i':
                 inputname = MFU_STRDUP(optarg);
@@ -454,8 +462,8 @@ int main(int argc, char** argv)
      * prefix since the path is mapped to the root
      * of the container in the DAOS DFS mount */
     if (!daos_uuid_valid(src_pool_uuid) || !daos_uuid_valid(dst_pool_uuid)) {
-        daos_set_paths(&rank, argpaths, &src_pool_uuid, &src_cont_uuid,
-            &dst_pool_uuid, &dst_cont_uuid, dfs_prefix, mfu_src_file, mfu_dst_file);
+        daos_set_paths(argpaths, dfs_prefix, src_pool_uuid, src_cont_uuid,
+            dst_pool_uuid, dst_cont_uuid, mfu_src_file, mfu_dst_file);
     }
 
     /* check if DAOS source and destination containers are in the same pool */
@@ -468,15 +476,15 @@ int main(int argc, char** argv)
 
     /* connect to DAOS source pool if uuid is valid */
     if (mfu_src_file->type == DAOS) {
-       /* if DAOS source pool uuid is valid, then set source file type to DAOS */
-        daos_connect(&rank, &src_poh, &src_coh, &src_pool_uuid, &src_cont_uuid, svc); 
+        /* if DAOS source pool uuid is valid, then set source file type to DAOS */
+        daos_connect(rank, svc, src_pool_uuid, src_cont_uuid, &src_poh, &src_coh); 
     }
 
     if (mfu_dst_file->type == DAOS) {
         if (daos_uuid_valid(dst_pool_uuid) && !same_pool) {
             /* if DAOS is the source and destination type, and containers are in different pools,
-             *  then connect to the second pool */
-            daos_connect(&rank, &dst_poh, &dst_coh, &dst_pool_uuid, &dst_cont_uuid, svc); 
+             * then connect to the second pool */
+            daos_connect(rank, svc, dst_pool_uuid, dst_cont_uuid, &dst_poh, &dst_coh); 
         } else {
             /* if DAOS is source and destination type, and containers are in the same pool,
              * then pool is already connected, so we just need to open and/or create the container */
@@ -484,20 +492,26 @@ int main(int argc, char** argv)
                 /* create container in same pool */
                 daos_cont_info_t co_info;
                 rc = daos_cont_open(src_poh, dst_cont_uuid, DAOS_COO_RW, &dst_coh, &co_info, NULL);
-	        if (rc != 0) {
-                    /* If NOEXIST we create it */
+
+                /* If NOEXIST we create it */
+                if (rc != 0) {
+                    /* create the container */
                     uuid_t cuuid;
                     rc = dfs_cont_create(src_poh, cuuid, NULL, NULL, NULL);
                     if (rc != 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to create DFS2 container");
                     }
+
+                    /* try to open it again */
                     rc = daos_cont_open(src_poh, cuuid, DAOS_COO_RW, &dst_coh, &co_info, NULL);
                     if (rc != 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to open DFS2 container");
                     }
                 }
             }
-            HandleDistribute(rank, &dst_coh, &src_poh, CONT_HANDLE);
+
+            /* broadcast container handle from rank 0 */
+            daos_bcast_handle(rank, &dst_coh, &src_poh, CONT_HANDLE);
         }
     }
 
