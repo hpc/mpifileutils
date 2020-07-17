@@ -118,13 +118,22 @@ extern int mfu_progress_timeout;
 bool daos_uuid_valid(const uuid_t uuid);
 
 /* Distribute process 0's pool or container handle to others. */
-void HandleDistribute(int rank, daos_handle_t *handle,
-                      daos_handle_t* poh, enum handleType type);
+void daos_bcast_handle(
+  int rank,              /* root rank for broadcast */
+  daos_handle_t* handle, /* handle value to be broadcasted */
+  daos_handle_t* poh,    /* daos pool for global2local conversion of container handle */
+  enum handleType type   /* handle type: POOL_HANDLE or CONT_HANDLE */
+);
 
 /* connect to DAOS pool, and then open container */
-void daos_connect(int* rank, daos_handle_t* poh,
-                  daos_handle_t* coh, uuid_t* pool_uuid,
-                  uuid_t* cont_uuid, char* svc);
+void daos_connect(
+  int rank,
+  const char* svc,
+  uuid_t pool_uuid,
+  uuid_t cont_uuid,
+  daos_handle_t* poh,
+  daos_handle_t* coh
+);
 #endif
 
 /* initialize mfu library,
