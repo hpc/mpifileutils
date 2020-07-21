@@ -790,7 +790,7 @@ ssize_t daos_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_file
         MFU_LOG(MFU_LOG_ERR, "dfs_read %s failed (%d %s)",
                 file, rc, strerror(rc));
         errno = rc;
-        rc = -1;
+        return -1;
     }
     mfu_file->offset += (daos_off_t)got_size;
     return (ssize_t)got_size;
@@ -892,7 +892,7 @@ ssize_t daos_write(const char* file, const void* buf, size_t size, mfu_file_t* m
         MFU_LOG(MFU_LOG_ERR, "dfs_write %s failed (%d %s)",
                 file, rc, strerror(rc));
         errno = rc;
-        rc = -1;
+        return -1;
     }
     mfu_file->offset += (daos_off_t)size;
     return (ssize_t)size;
