@@ -59,7 +59,6 @@ typedef struct {
     bool        only_daos;
 #ifdef DAOS_SUPPORT
     /* DAOS specific variables for I/O */
-    d_sg_list_t* sgl;
     daos_off_t   offset;
     dfs_obj_t*   obj;
     dfs_t*       dfs;

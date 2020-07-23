@@ -1604,34 +1604,9 @@ static int mfu_copy_file_normal(
         return -1;
     }
 
-    /* declare daos vars */
-#ifdef DAOS_SUPPORT
-    daos_size_t got_size;
-    d_sg_list_t sgl;
-    d_iov_t     iov;
-#endif
-
     /* set buffer and buffer size */
     size_t buf_size = mfu_copy_opts->block_size;
     void* buf       = mfu_copy_opts->block_buf1;
-
-    /* set daos vars and buffers */
-#ifdef DAOS_SUPPORT
-    if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
-        sgl.sg_nr = 1;
-        D_ALLOC(buf, buf_size);
-        D_ASSERT(buf != NULL);
-        d_iov_set(&iov, buf, buf_size);
-        sgl.sg_iovs = &iov;
-        sgl.sg_nr_out = 1;
-        if (mfu_src_file->type == DAOS) {
-            mfu_src_file->sgl = &sgl;
-        }
-        if (mfu_dst_file->type == DAOS) {
-            mfu_dst_file->sgl = &sgl;
-        }
-    }
-#endif
 
     /* write data */
     size_t total_bytes = 0;
@@ -1773,12 +1748,6 @@ static int mfu_copy_file_normal(
     }
 
     /* we don't bother closing the file because our cache does it for us */
-
-#ifdef DAOS_SUPPORT
-    if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
-        D_FREE(buf);
-    }
-#endif
 
     return 0;
 }
