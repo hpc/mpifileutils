@@ -784,8 +784,17 @@ ssize_t daos_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_file
 {
 #ifdef DAOS_SUPPORT
     daos_size_t got_size;
-    mfu_file->sgl->sg_iovs[0].iov_len = size;
-    int rc = dfs_read(mfu_file->dfs, mfu_file->obj, mfu_file->sgl, mfu_file->offset, &got_size, NULL); 
+
+    d_sg_list_t sgl;
+    d_iov_t     iov;
+
+    sgl.sg_nr = 1;
+    d_iov_set(&iov, buf, size);
+    sgl.sg_iovs = &iov;
+    sgl.sg_nr_out = 1;
+    sgl.sg_iovs[0].iov_len = size;
+
+    int rc = dfs_read(mfu_file->dfs, mfu_file->obj, &sgl, mfu_file->offset, &got_size, NULL); 
     if (rc) {
         MFU_LOG(MFU_LOG_ERR, "dfs_read %s failed (%d %s)",
                 file, rc, strerror(rc));
@@ -886,8 +895,16 @@ ssize_t mfu_write(const char* file, int fd, const void* buf, size_t size)
 ssize_t daos_write(const char* file, const void* buf, size_t size, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
-    mfu_file->sgl->sg_iovs[0].iov_len = size;
-    int rc = dfs_write(mfu_file->dfs, mfu_file->obj, mfu_file->sgl, mfu_file->offset, NULL); 
+    d_sg_list_t sgl;
+    d_iov_t     iov;
+
+    sgl.sg_nr = 1;
+    d_iov_set(&iov, buf, size);
+    sgl.sg_iovs = &iov;
+    sgl.sg_nr_out = 1;
+    sgl.sg_iovs[0].iov_len = size;
+
+    int rc = dfs_write(mfu_file->dfs, mfu_file->obj, &sgl, mfu_file->offset, NULL); 
     if (rc) {
         MFU_LOG(MFU_LOG_ERR, "dfs_write %s failed (%d %s)",
                 file, rc, strerror(rc));
@@ -1042,7 +1059,7 @@ int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file) {
 
     /* only call mkdir if the dir_name is not the root DFS directory */
     if (strcmp(dir_name, "/") != 0) {
-        rc = dfs_mkdir(mfu_file->dfs, parent, name, S_IRWXU, 0);
+        rc = dfs_mkdir(mfu_file->dfs, parent, name, mode, 0);
     }
 
     if (rc) {
