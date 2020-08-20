@@ -99,6 +99,27 @@ or to build the latest mpiFileUtils from the master branch:
      -DCMAKE_INSTALL_PREFIX=../install
    make install
 
+build latest mpiFileUtils from the master branch with DAOS Support:
+
+.. code-block:: Bash
+
+   git clone https://github.com/hpc/mpifileutils
+   mkdir build install
+   cd build
+   cmake ../mpifileutils \
+     -DWITH_DTCMP_PREFIX=../install \
+     -DWITH_LibCircle_PREFIX=../install \
+     -DCMAKE_INSTALL_PREFIX=../install
+     -DWITH_CART_PREFIX=</path/to/daos/>
+     -DWITH_DAOS_PREFIX=</path/to/daos/>
+     -DCMAKE_INSTALL_PREFIX=../install
+     -DENABLE_DAOS=ON;
+   make install
+
+The above build with DAOS option also assumes you have already installed DAOS. If
+CART and DAOS are installed under a standard system path then specifying the CART
+and DAOS paths is unnecessary. 
+
 To enable Lustre, GPFS, and experimental tools, add the following flags during CMake:
 
 .. code-block:: Bash
