@@ -23,6 +23,21 @@
 #include "mfu.h"
 
 #ifdef DAOS_SUPPORT
+static bool daos_check_prefix(char* path, const char* dfs_prefix) 
+{
+    bool is_prefix = false;
+    /* figure out if dfs_prefix is a prefix of the file path */
+    int prefix_len = strlen(dfs_prefix);
+    if (strncmp(path, dfs_prefix, prefix_len) == 0) {
+        /* if we have another character, it must be '/' */
+        if (strlen(path) > prefix_len &&
+            path[prefix_len] == '/') {
+            is_prefix = true;
+        }
+    }
+    return is_prefix;
+}
+
 static void daos_set_paths(
     char** argpaths,
     const char* dfs_prefix,
@@ -86,14 +101,13 @@ static void daos_set_paths(
         }
 
         /* figure out if prefix is on dst or src for 
-         * for copying container subsets */
-        char* src_ret = strstr(src_path, dfs_prefix);
-        if (src_ret != NULL) {
+         * copying container subsets */
+	if (check_prefix(src_path, dfs_prefix)) {
             mfu_src_file->type = DAOS;
             uuid_copy(src_pool_uuid, dattr.da_puuid);
             uuid_copy(src_cont_uuid, dattr.da_cuuid);
             argpaths[0] = src_path + strlen(dfs_prefix);
-        } else {
+        } else if (check_prefix(dst_path, dfs_prefix)) {
             mfu_dst_file->type = DAOS;
             uuid_copy(dst_pool_uuid, dattr.da_puuid);
             uuid_copy(dst_cont_uuid, dattr.da_cuuid);
