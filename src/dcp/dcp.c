@@ -102,12 +102,12 @@ static void daos_set_paths(
 
         /* figure out if prefix is on dst or src for 
          * copying container subsets */
-	if (check_prefix(src_path, dfs_prefix)) {
+	if (daos_check_prefix(src_path, dfs_prefix)) {
             mfu_src_file->type = DAOS;
             uuid_copy(src_pool_uuid, dattr.da_puuid);
             uuid_copy(src_cont_uuid, dattr.da_cuuid);
             argpaths[0] = src_path + strlen(dfs_prefix);
-        } else if (check_prefix(dst_path, dfs_prefix)) {
+        } else if (daos_check_prefix(dst_path, dfs_prefix)) {
             mfu_dst_file->type = DAOS;
             uuid_copy(dst_pool_uuid, dattr.da_puuid);
             uuid_copy(dst_cont_uuid, dattr.da_cuuid);
@@ -175,17 +175,18 @@ void print_usage(void)
     printf("      --daos-dst-pool      - DAOS destination pool \n");
     printf("      --daos-src-cont      - DAOS source container \n");
     printf("      --daos-dst-cont      - DAOS destination container \n");
-    printf("      --daos-svcl          - DAOS service level \n");
+    printf("      --daos-src-svcl      - DAOS service level used by source DAOS pool \n");
+    printf("      --daos-dst-svcl      - DAOS service level used by destination DAOS pool \n");
     printf("      --daos-prefix        - DAOS prefix for unified namespace path \n");
-    printf("  -i, --input <file>  - read source list from file\n");
-    printf("  -k, --chunksize     - work size per task in bytes (default 1MB)\n");
-    printf("  -p, --preserve      - preserve permissions, ownership, timestamps, extended attributes\n");
-    printf("  -s, --synchronous   - use synchronous read/write calls (O_DIRECT)\n");
-    printf("  -S, --sparse        - create sparse files when possible\n");
-    printf("      --progress <N>  - print progress every N seconds\n");
-    printf("  -v, --verbose       - verbose output\n");
-    printf("  -q, --quiet         - quiet output\n");
-    printf("  -h, --help          - print usage\n");
+    printf("  -i, --input <file>       - read source list from file\n");
+    printf("  -k, --chunksize          - work size per task in bytes (default 1MB)\n");
+    printf("  -p, --preserve           - preserve permissions, ownership, timestamps, extended attributes\n");
+    printf("  -s, --synchronous        - use synchronous read/write calls (O_DIRECT)\n");
+    printf("  -S, --sparse             - create sparse files when possible\n");
+    printf("      --progress <N>       - print progress every N seconds\n");
+    printf("  -v, --verbose            - verbose output\n");
+    printf("  -q, --quiet              - quiet output\n");
+    printf("  -h, --help               - print usage\n");
     printf("For more information see https://mpifileutils.readthedocs.io.\n");
     printf("\n");
     fflush(stdout);
@@ -232,7 +233,8 @@ int main(int argc, char** argv)
     daos_handle_t dst_coh = DAOS_HDL_INVAL;
     dfs_t *dfs1           = NULL;
     dfs_t *dfs2           = NULL;
-    char* svc             = NULL;
+    char* src_svc         = NULL;
+    char* dst_svc         = NULL;
     char* dfs_prefix      = NULL;
 
     /* initalize value of DAOS UUID's to NULL with uuid_clear */
@@ -255,7 +257,8 @@ int main(int argc, char** argv)
         {"daos-dst-pool"        , required_argument, 0, 'D'},
         {"daos-src-cont"        , required_argument, 0, 'y'},
         {"daos-dst-cont"        , required_argument, 0, 'Y'},
-        {"daos-svcl"            , required_argument, 0, 'z'},
+        {"daos-src-svcl"        , required_argument, 0, 'z'},
+        {"daos-dst-svcl"        , required_argument, 0, 'Z'},
         {"daos-prefix"          , required_argument, 0, 'X'},
         {"input"                , required_argument, 0, 'i'},
         {"chunksize"            , required_argument, 0, 'k'},
@@ -386,7 +389,10 @@ int main(int argc, char** argv)
                 mfu_dst_file->type = DAOS;
                 break;
             case 'z':
-                svc = MFU_STRDUP(optarg);
+                src_svc = MFU_STRDUP(optarg);
+                break;
+            case 'Z':
+                dst_svc = MFU_STRDUP(optarg);
                 break;
             case 'X':
                 dfs_prefix = MFU_STRDUP(optarg);
@@ -491,17 +497,23 @@ int main(int argc, char** argv)
     /* connect to DAOS source pool if uuid is valid */
     if (mfu_src_file->type == DAOS) {
         /* if DAOS source pool uuid is valid, then set source file type to DAOS */
-        daos_connect(rank, svc, src_pool_uuid, src_cont_uuid, &src_poh, &src_coh); 
+        daos_connect(rank, src_svc, src_pool_uuid, src_cont_uuid, &src_poh, &src_coh); 
     }
 
     if (mfu_dst_file->type == DAOS) {
-        if (daos_uuid_valid(dst_pool_uuid) && !same_pool) {
+        if (!same_pool) {
             /* if DAOS is the source and destination type, and containers are in different pools,
              * then connect to the second pool */
-            daos_connect(rank, svc, dst_pool_uuid, dst_cont_uuid, &dst_poh, &dst_coh); 
+            daos_connect(rank, dst_svc, dst_pool_uuid, dst_cont_uuid, &dst_poh, &dst_coh); 
         } else {
-            /* if DAOS is source and destination type, and containers are in the same pool,
-             * then pool is already connected, so we just need to open and/or create the container */
+            /* Containers are using the same pool uuid.
+             * This is unlikely to ever happen but we can print an error just in case */
+            if (dst_svc != NULL && src_svc != NULL) {
+                if (strcmp(dst_svc, src_svc) != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Using same pool uuid with different svcl's");
+                    return 1;
+                }
+            }
             if (rank == 0) {
                 /* create container in same pool */
                 daos_cont_info_t co_info;
@@ -572,7 +584,7 @@ int main(int argc, char** argv)
 
         /* process each path */
 
-        mfu_param_path_set_all(numpaths, argpaths, paths);
+        mfu_param_path_set_all(numpaths, (const char**)argpaths, paths);
 
         /* advance to next set of options */
         optind += numpaths;
