@@ -20,6 +20,8 @@ jobs like copy, remove, and compare for such datasets, providing speedups of up
 to 50x. The libmfu library simplifies the creation of new tools
 and it can be called directly from within HPC applications.
 
+Video Overview: `"Scalable Management of HPC Datasets with mpiFileUtils" <https://youtu.be/cxjPOUS-ZBY>`_, HPCKP'20.
+
 User Guide
 ***************************
 
