@@ -53,65 +53,69 @@ static void daos_set_paths(
     char* src_path = argpaths[0];
     char* dst_path = argpaths[1];
 
+    bool prefix_on_src = false;
+    bool prefix_on_dst = false;
+
     /* find out if a dfs_prefix is being used,
      * if so, then that means that the container
      * is not being copied from the root of the
      * UNS path  */
-    if (dfs_prefix == NULL) {
-        /* assume both are daos paths for UNS, if resolve path
-         * doesn't succeed then set accordingly */
-        struct duns_attr_t src_dattr = {0}; 
-        struct duns_attr_t dst_dattr = {0}; 
-        int src_rc = duns_resolve_path(src_path, &src_dattr);
-        int dst_rc = duns_resolve_path(dst_path, &dst_dattr);
-
-        /* Forward slash is "root" of container to walk
-         * in daos. Cannot walk from Unified namespace
-         * path given /tmp/dsikich/dfs, it is only used
-         * to lookup pool/cont uuids, and tells you
-         * if that path is mapped to pool/cont uuid in
-         * DAOS */
-        if (src_rc == 0 && dst_rc == 0) {
-            mfu_src_file->type = DAOS;
-            mfu_dst_file->type = DAOS;
-            uuid_copy(src_pool_uuid, src_dattr.da_puuid);
-            uuid_copy(src_cont_uuid, src_dattr.da_cuuid);
-            uuid_copy(dst_pool_uuid, dst_dattr.da_puuid);
-            uuid_copy(dst_cont_uuid, dst_dattr.da_cuuid);
-            argpaths[0] = "/";
-            argpaths[1] = "/";
-        } else if (src_rc == 0) { 
-            mfu_src_file->type = DAOS;
-            uuid_copy(src_pool_uuid, src_dattr.da_puuid);
-            uuid_copy(src_cont_uuid, src_dattr.da_cuuid);
-            argpaths[0] = "/";
-        } else if (dst_rc == 0) {
-            mfu_dst_file->type = DAOS;
-            uuid_copy(dst_pool_uuid, dst_dattr.da_puuid);
-            uuid_copy(dst_cont_uuid, dst_dattr.da_cuuid);
-            argpaths[1] = "/";
-        }
-
-        /* set daos io functions for src/dst paths */
-    } else {
-        struct duns_attr_t dattr = {0}; 
+    if (dfs_prefix != NULL) {
+        struct duns_attr_t dattr = {0};
         rc = duns_resolve_path(dfs_prefix, &dattr);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS UNS path");
         }
 
-        /* figure out if prefix is on dst or src for 
+        /* figure out if prefix is on dst or src for
          * copying container subsets */
-	if (daos_check_prefix(src_path, dfs_prefix)) {
+        if (daos_check_prefix(src_path, dfs_prefix)) {
             mfu_src_file->type = DAOS;
             uuid_copy(src_pool_uuid, dattr.da_puuid);
             uuid_copy(src_cont_uuid, dattr.da_cuuid);
             argpaths[0] = src_path + strlen(dfs_prefix);
+            prefix_on_src = true;
         } else if (daos_check_prefix(dst_path, dfs_prefix)) {
             mfu_dst_file->type = DAOS;
             uuid_copy(dst_pool_uuid, dattr.da_puuid);
             uuid_copy(dst_cont_uuid, dattr.da_cuuid);
             argpaths[1] = dst_path + strlen(dfs_prefix);
+            prefix_on_dst = true;
+        }
+    }
+
+    /* Forward slash is "root" of container to walk
+     * in daos. Cannot walk from Unified namespace
+     * path given /tmp/dsikich/dfs, it is only used
+     * to lookup pool/cont uuids, and tells you
+     * if that path is mapped to pool/cont uuid in
+     * DAOS 
+     *
+     * For each of the source and destination,
+     * if it is not using a prefix then assume
+     * is is a daos path for UNS. If resolve path
+     * doesn't succeed then set accordingly */
+    if (!prefix_on_src) {
+        struct duns_attr_t src_dattr = {0};
+        int src_rc = duns_resolve_path(src_path, &src_dattr);
+        
+        if (src_rc == 0) {
+            mfu_src_file->type = DAOS;
+            uuid_copy(src_pool_uuid, src_dattr.da_puuid);
+            uuid_copy(src_cont_uuid, src_dattr.da_cuuid);
+            argpaths[0] = "/";
+        }
+    }
+
+    if (!prefix_on_dst) {
+        struct duns_attr_t dst_dattr = {0};
+        int dst_rc = duns_resolve_path(dst_path, &dst_dattr);
+
+        if (dst_rc == 0) {
+            mfu_dst_file->type = DAOS;
+            uuid_copy(dst_pool_uuid, dst_dattr.da_puuid);
+            uuid_copy(dst_cont_uuid, dst_dattr.da_cuuid);
+            argpaths[1] = "/";
         }
     }
 }
