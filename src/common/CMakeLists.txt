@@ -1,6 +1,7 @@
 # todo re-asses if all of these must be *installed*
 LIST(APPEND libmfu_install_headers
   mfu.h
+  mfu_errors.h
   mfu_bz2.h
   mfu_flist.h
   mfu_flist_internal.h

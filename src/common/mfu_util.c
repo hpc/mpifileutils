@@ -107,58 +107,89 @@ void daos_bcast_handle(
     mfu_free(&global.iov_buf);
 }
 
-void daos_connect(
+int daos_connect(
   int rank,
   const char* svc,
   uuid_t pool_uuid,
   uuid_t cont_uuid,
   daos_handle_t* poh,
-  daos_handle_t* coh)
+  daos_handle_t* coh,
+  bool connect_pool,
+  bool create_cont)
 {
-    /* TODO: if src daos path and dst daos path are false 
-     * skip connecting to daos pool */
+    /* assume failure until otherwise */
+    int valid = 0;
+    int rc;
 
     /* have rank 0 connect to the pool and container,
      * we'll then broadcast the handle ids from rank 0 to everyone else */
     if (rank == 0) {
-        d_rank_list_t* svcl = daos_rank_list_parse(svc, ":");
-        if (svcl == NULL) {
-            MFU_ABORT(-1, "Failed to parse DAOS rank list: '%s'", svc);
+        /* Parse svc and connect to DAOS pool */
+        if (connect_pool) {
+            d_rank_list_t* svcl = daos_rank_list_parse(svc, ":");
+            if (svcl == NULL) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS rank list: '%s'", svc);
+                goto bcast;
+            }
+
+            daos_pool_info_t pool_info;
+            rc = daos_pool_connect(pool_uuid, NULL, svcl, DAOS_PC_RW,
+                    poh, &pool_info, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to connect to pool");
+                d_rank_list_free(svcl);
+                goto bcast;
+            }
+            d_rank_list_free(svcl);
         }
 
-        /* Connect to DAOS pool */
-        daos_pool_info_t pool_info;
-        int rc = daos_pool_connect(pool_uuid, NULL, svcl, DAOS_PC_RW,
-                               poh, &pool_info, NULL);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to connect to pool");
-        }
-        d_rank_list_free(svcl);
-
-        /* attempt to open the daos container */
+        /* Try to open the container 
+         * If NOEXIST we create it */
         daos_cont_info_t co_info;
         rc = daos_cont_open(*poh, cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
-
-        /* If NOEXIST we create it */
         if (rc != 0) {
-            /* create the container */
-            uuid_t cuuid;
-            rc = dfs_cont_create(*poh, cuuid, NULL, NULL, NULL);
+            if (!create_cont) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to open DFS container");
+                goto bcast;
+            }
+            
+            rc = dfs_cont_create(*poh, cont_uuid, NULL, NULL, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to create DFS container");
+                goto bcast;
             }
 
             /* try to open it again */
-            rc = daos_cont_open(*poh, cuuid, DAOS_COO_RW, coh, &co_info, NULL);
+            rc = daos_cont_open(*poh, cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to open DFS container");
+                goto bcast;
             }
         }
+
+        /* everything looks good so far */
+        valid = 1;
     }
 
-    /* broadcast pool and container handles from rank 0 */
-    daos_bcast_handle(rank, poh, poh, POOL_HANDLE);
+bcast:
+    /* broadcast valid from rank 0 */
+    MPI_Bcast(&valid, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    /* return if invalid */
+    if (valid == 0) {
+        return -1;
+    }
+
+    /* broadcast pool handle from rank 0 
+     * If connect_pool is false, then the handle was unchanged */
+    if (connect_pool) {
+        daos_bcast_handle(rank, poh, poh, POOL_HANDLE);
+    }
+
+    /* broadcast container handle from rank 0 */
     daos_bcast_handle(rank, coh, poh, CONT_HANDLE);
+
+    return 0;
 }
 #endif
 
