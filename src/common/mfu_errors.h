@@ -13,11 +13,7 @@ extern "C" {
 
 /* DAOS specific error codes*/
 #define ERR_DAOS            40
-#define ERR_DAOS_INVAL_POOL 41
-#define ERR_DAOS_INVAL_CONT 42
-#define ERR_DAOS_INVAL_SVCL 43
-#define ERR_DAOS_INVAL_PRFX 44
-#define ERR_DAOS_ARG_REQ    45
+#define ERR_DAOS_INVAL_PRFX 41
 
 #endif /* MFU_ERRORS_H */
 
