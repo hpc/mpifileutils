@@ -57,6 +57,7 @@ static void print_usage(void)
     printf("      --progress <N>    - print progress every N seconds\n");
     printf("  -v, --verbose         - verbose output\n");
     printf("  -q, --quiet           - quiet output\n");
+    printf("  -s, --synchronous     - use synchronous read/write calls(O_DIRECT)\n");
     printf("  -h, --help            - print usage\n");
     printf("\n");
     printf("For more information see https://mpifileutils.readthedocs.io.\n");
@@ -2826,6 +2827,7 @@ int main(int argc, char **argv)
         {"progress",      1, 0, 'P'},
         {"verbose",       0, 0, 'v'},
         {"quiet",         0, 0, 'q'},
+        {"synchronous",   0, 0, 's'},
         {"help",          0, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -2841,7 +2843,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDo:Svqh",
+            argc, argv, "b:cDo:Svqsh",
             long_options, &option_index
         );
 
@@ -2890,6 +2892,12 @@ int main(int argc, char **argv)
             /* since process won't be printed in quiet anyway,
              * disable the algorithm to save some overhead */
             mfu_progress_timeout = 0;
+            break;
+        case 's':
+            mfu_copy_opts->synchronous = true;
+            if(rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "Using synchronous read/write (O_DIRECT)");
+            }
             break;
         case 'h':
         case '?':
