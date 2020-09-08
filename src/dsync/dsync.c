@@ -189,6 +189,11 @@ const char *dsync_default_outputs[] = {
     "EXIST=COMMON@TYPE=COMMON",
     "EXIST=DIFFER",
     "EXIST=COMMON",
+    "EXIST=COMMON@UID=DIFFER",
+    "EXIST=COMMON@GID=DIFFER",
+    "EXIST=COMMON@PERM=DIFFER",
+    "EXIST=COMMON@ATIME=DIFFER",
+    "EXIST=COMMON@MTIME=DIFFER",
     NULL,
 };
 
@@ -1591,9 +1596,6 @@ static int dsync_strmap_compare(
             continue;
         }
 
-        /* add any item that is in both source and destination to meta
-         * refresh list */
-        strmap_setf(metadata_refresh, "%llu=%llu", src_index, dst_index);
 
         /* item exists in both source and destination,
          * so update our state to record that fact */
@@ -1604,6 +1606,25 @@ static int dsync_strmap_compare(
              dst_list, dst_map, dst_index,
              key);
         assert(tmp_rc >= 0);
+
+        /* add any item that is in both source and destination to meta
+         * refresh list, only include those that have different metadata. */
+        dsync_state uid_state, gid_state, perm_state, atime_state, mtime_state;
+        tmp_rc = dsync_strmap_item_state(src_map, key, DCMPF_UID, &uid_state);
+        assert(tmp_rc == 0);
+        tmp_rc = dsync_strmap_item_state(src_map, key, DCMPF_GID, &gid_state);
+        assert(tmp_rc == 0);
+        tmp_rc = dsync_strmap_item_state(src_map, key, DCMPF_PERM, &perm_state);
+        assert(tmp_rc == 0);
+        tmp_rc = dsync_strmap_item_state(src_map, key, DCMPF_ATIME, &atime_state);
+        assert(tmp_rc == 0);
+        tmp_rc = dsync_strmap_item_state(src_map, key, DCMPF_MTIME, &mtime_state);
+        assert(tmp_rc == 0);
+        if ((uid_state == DCMPS_DIFFER) || (gid_state == DCMPS_DIFFER) ||
+            (perm_state == DCMPS_DIFFER) || (atime_state == DCMPS_DIFFER) ||
+            (mtime_state == DCMPS_DIFFER)) {
+            strmap_setf(metadata_refresh, "%llu=%llu", src_index, dst_index);
+        }
 
         /* Skip if no need to compare type.
          * All the following comparison depends on type. */
