@@ -577,7 +577,7 @@ int main(int argc, char** argv)
     if (rc != 0) {
         mfu_finalize();
         MPI_Finalize();
-        return ERR_INVAL_ARG;
+        return rc;
     }
 
     rc = daos_init();
@@ -593,8 +593,8 @@ int main(int argc, char** argv)
      * prefix since the path is mapped to the root
      * of the container in the DAOS DFS mount */
     if (!daos_uuid_valid(src_pool_uuid) || !daos_uuid_valid(dst_pool_uuid)) {
-        rc =daos_set_paths(rank, argpaths, dfs_prefix, src_pool_uuid, src_cont_uuid,
-            dst_pool_uuid, dst_cont_uuid, mfu_src_file, mfu_dst_file);
+        rc = daos_set_paths(rank, argpaths, dfs_prefix, src_pool_uuid, src_cont_uuid,
+                dst_pool_uuid, dst_cont_uuid, mfu_src_file, mfu_dst_file);
         if (rc != 0) {
             mfu_finalize();
             MPI_Finalize();
@@ -608,7 +608,7 @@ int main(int argc, char** argv)
     if (rc != 0) {
         mfu_finalize();
         MPI_Finalize();
-        return ERR_INVAL_ARG;
+        return rc;
     }
     
     /* check if DAOS source and destination containers are in the same pool */
