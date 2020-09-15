@@ -243,6 +243,10 @@ int daos_access(const char* path, int amode, mfu_file_t* mfu_file)
         errno = rc;
         rc = -1;
     }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
+    
     return rc;
 #endif
 }
@@ -291,6 +295,10 @@ int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
         errno = ENOENT;
         rc = -1;
     }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
+
     return rc;
 #endif
 }
@@ -351,7 +359,8 @@ retry:
     return rc;
 }
 
-int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file) {
+int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
+{
 #ifdef DAOS_SUPPORT
     char* name     = NULL;
     char* dir_name = NULL;
@@ -377,6 +386,10 @@ int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file) {
         errno = rc;
         rc = -1;
     }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
+
     return rc;
 #endif
 }
@@ -593,6 +606,9 @@ void daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file)
         errno = ENOENT;
         rc = -1;
     }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
 #endif
 }
 
@@ -1058,7 +1074,8 @@ void mfu_getcwd(char* buf, size_t size)
     }
 }
 
-int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file) {
+int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file)
+{
 #ifdef DAOS_SUPPORT
     char* name     = NULL;
     char* dir_name = NULL;
@@ -1069,8 +1086,8 @@ int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file) {
     dfs_obj_t* parent = NULL;
     int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
 
-    /* only call mkdir if the dir_name is not the root DFS directory */
-    if (strcmp(dir_name, "/") != 0) {
+    /* only call mkdir if name is not the root DFS directory */
+    if (name && strcmp(name, "/") != 0) {
         rc = dfs_mkdir(mfu_file->dfs, parent, name, mode, 0);
     }
 
@@ -1078,6 +1095,9 @@ int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file) {
         errno = rc;
         rc = -1;
     }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
 
     return rc;
 #endif
