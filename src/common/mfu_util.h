@@ -126,13 +126,15 @@ void daos_bcast_handle(
 );
 
 /* connect to DAOS pool, and then open container */
-void daos_connect(
+int daos_connect(
   int rank,
   const char* svc,
   uuid_t pool_uuid,
   uuid_t cont_uuid,
   daos_handle_t* poh,
-  daos_handle_t* coh
+  daos_handle_t* coh,
+  bool connect_pool,
+  bool create_cont
 );
 #endif
 
@@ -286,7 +288,7 @@ void mfu_stripe_set(const char *path, uint64_t stripe_size, int stripe_count);
 
 /* executes a logical AND operation on flag on all procs on comm,
  * returns 1 if all true and 0 otherwise */
-int mfu_alltrue(int flag, MPI_Comm comm);
+bool mfu_alltrue(bool flag, MPI_Comm comm);
 
 #endif /* MFU_UTIL_H */
 
