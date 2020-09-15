@@ -288,7 +288,7 @@ void mfu_stripe_set(const char *path, uint64_t stripe_size, int stripe_count);
 
 /* executes a logical AND operation on flag on all procs on comm,
  * returns 1 if all true and 0 otherwise */
-int mfu_alltrue(int flag, MPI_Comm comm);
+bool mfu_alltrue(bool flag, MPI_Comm comm);
 
 #endif /* MFU_UTIL_H */
 

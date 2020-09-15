@@ -1123,11 +1123,11 @@ void mfu_stripe_set(const char *path, uint64_t stripe_size, int stripe_count)
 }
 
 /* executes a logical AND operation on flag on all procs on comm,
- * returns 1 if all true and 0 otherwise */
-int mfu_alltrue(int flag, MPI_Comm comm)
+ * returns true if all true and false otherwise */
+bool mfu_alltrue(bool flag, MPI_Comm comm)
 {
     /* check that all processes wrote successfully */
-    int alltrue;
-    MPI_Allreduce(&flag, &alltrue, 1, MPI_INT, MPI_LAND, comm);
+    bool alltrue;
+    MPI_Allreduce(&flag, &alltrue, 1, MPI_C_BOOL, MPI_LAND, comm);
     return alltrue;
 }
