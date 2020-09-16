@@ -199,7 +199,7 @@ int mfu_file_access(const char* path, int amode, mfu_file_t* mfu_file)
         int rc = mfu_access(path, amode);
         return rc;
     } else if (mfu_file->type == DAOS) {
-        int rc = daos_access(path, amode, mfu_file);
+        int rc = daos_access(path, amode);
         return rc;
     } else {
         MFU_ABORT(-1, "File type not known: %s type=%d",
@@ -227,23 +227,11 @@ retry:
     return rc;
 }
 
-int daos_access(const char* path, int amode, mfu_file_t* mfu_file)
+int daos_access(const char* path, int amode)
 {
 #ifdef DAOS_SUPPORT
-    char* name     = NULL;
-    char* dir_name = NULL;
-    parse_filename(path, &name, &dir_name);
-    assert(dir_name);
-
-    dfs_obj_t* parent = NULL;
-    int rc = dfs_access(mfu_file->dfs, parent, name, amode);
-    if (rc) {
-        MFU_LOG(MFU_LOG_ERR, "dfs_access %s failed (%d %s)",
-                name, rc, strerror(rc));
-        errno = rc;
-        rc = -1;
-    }
-    return rc;
+    /* noop becuase daos have an access call */
+    return 0;
 #endif
 }
 
@@ -276,7 +264,7 @@ int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
     parse_filename(path, &name, &dir_name);
     assert(dir_name);
 
-    dfs_obj_t* parent = NULL;
+    dfs_obj_t *parent = NULL;
     int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
     if (parent != NULL) {
         rc = dfs_chmod(mfu_file->dfs, parent, name, mode);
@@ -358,7 +346,7 @@ int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file) {
     parse_filename(path, &name, &dir_name);
     assert(dir_name);
 
-    dfs_obj_t* parent = NULL;
+    dfs_obj_t *parent = NULL;
     int rc;
     if (mfu_file->only_daos) {
         rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
@@ -576,7 +564,7 @@ void daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file)
     parse_filename(file, &name, &dir_name);
     assert(dir_name);
 
-    dfs_obj_t* parent = NULL;
+    dfs_obj_t *parent = NULL;
     int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
     if (parent != NULL) {
         rc = dfs_open(mfu_file->dfs, parent, name,
@@ -1066,7 +1054,7 @@ int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file) {
     assert(dir_name);
 
     /* Need to lookup parent directory in DFS */
-    dfs_obj_t* parent = NULL;
+    dfs_obj_t *parent = NULL;
     int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
 
     /* only call mkdir if the dir_name is not the root DFS directory */
@@ -1143,7 +1131,7 @@ retry:
 
 #ifdef DAOS_SUPPORT
 struct dfs_mfu_t {
-    dfs_obj_t* dir;
+    dfs_obj_t *dir;
     struct dirent ents[NUM_DIRENTS];
     daos_anchor_t anchor;
     int num_ents;

@@ -56,7 +56,7 @@ struct stat64;
 /* calls access, and retries a few times if we get EIO or EINTR */
 int mfu_file_access(const char* path, int amode, mfu_file_t* mfu_file);
 int mfu_access(const char* path, int amode);
-int daos_access(const char* path, int amode, mfu_file_t* mfu_file);
+int daos_access(const char* path, int amode);
 
 /* calls lchown, and retries a few times if we get EIO or EINTR */
 int mfu_lchown(const char* path, uid_t owner, gid_t group);

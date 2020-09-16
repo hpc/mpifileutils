@@ -22,120 +22,7 @@
 #include "libcircle.h"
 #include "mfu.h"
 
-#include "mfu_errors.h"
-
 #ifdef DAOS_SUPPORT
-int daos_check_args(
-    int rank,
-    char** argpaths,
-    uuid_t src_pool_uuid,
-    uuid_t src_cont_uuid,
-    uuid_t dst_pool_uuid,
-    uuid_t dst_cont_uuid,
-    char* src_svc,
-    char* dst_svc,
-    char* dfs_prefix,
-    int* flag_daos_args)
-{
-    char* src_path = argpaths[0];
-    char* dst_path = argpaths[1];
-
-    bool have_src_path  = src_path != NULL;
-    bool have_dst_path  = dst_path != NULL;
-    bool have_src_pool  = daos_uuid_valid(src_pool_uuid);
-    bool have_src_cont  = daos_uuid_valid(src_cont_uuid);
-    bool have_dst_pool  = daos_uuid_valid(dst_pool_uuid);
-    bool have_dst_cont  = daos_uuid_valid(dst_cont_uuid);
-    bool have_src_svc   = src_svc != NULL;
-    bool have_dst_svc   = dst_svc != NULL;
-    bool have_prefix    = dfs_prefix != NULL;
-
-    /* Determine whether any DAOS arguments are supplied. 
-     * If not, then there is nothing to check. */
-    *flag_daos_args = 0;
-    if (have_src_pool || have_src_cont || have_dst_pool || have_dst_cont
-            || have_src_svc || have_dst_svc || have_prefix) {
-        *flag_daos_args = 1;
-    }
-    else {
-        return 0;
-    } 
-    
-    bool same_pool = false;
-    bool same_cont = false;
-    if (have_src_pool && have_dst_pool 
-            && uuid_compare(src_pool_uuid, dst_pool_uuid) == 0) {
-        same_pool = true;
-        if (have_src_cont && have_dst_cont
-                && uuid_compare(src_cont_uuid, dst_cont_uuid) == 0) {
-            same_cont = true;
-        }
-    }
-
-    int rc = 0;
-
-    if (have_src_cont && !have_src_pool) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Source container requires source pool");
-        }
-        rc = 1;
-    }
-    if (have_src_pool && !have_src_cont) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Source pool requires source container");
-        }
-        rc = 1;
-    }
-    if (have_src_pool && !have_src_svc) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Source pool requires source svcl");
-        }
-        rc = 1;
-    }
-    if (have_dst_cont && !have_dst_pool) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Destination container requires destination pool");
-        }
-        rc = 1;
-    }
-    if (have_dst_pool && !have_dst_svc) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Destination pool requires destination svcl");
-        }
-        rc = 1;
-    }
-    if (have_prefix && !have_src_svc && !have_dst_svc) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Prefix requires source or destination svcl");
-        }
-        rc = 1;
-    }
-
-    /* Containers are using the same pool uuid.
-     * Make sure they are also using the same svc.
-     * This is unlikely to ever happen but we can print an error just in case. */
-    if (same_pool && have_src_svc && have_dst_svc) {
-        if (strcmp(dst_svc, src_svc) != 0) {
-            if (rank == 0) {
-                MFU_LOG(MFU_LOG_ERR, "Using same pool uuid with different svcl's");
-            }
-            rc = 1;
-        }
-    }
-
-    /* Make sure the source and destination are different */
-    if (same_cont && have_src_path && have_dst_path) {
-        if (strcmp(src_path, dst_path) == 0) {
-            if (rank == 0) {
-                 MFU_LOG(MFU_LOG_ERR, "DAOS source is DAOS destination");
-            }
-            rc = 1;
-        }
-    }
-
-    return rc;
-}
-
 static bool daos_check_prefix(char* path, const char* dfs_prefix) 
 {
     bool is_prefix = false;
@@ -151,8 +38,7 @@ static bool daos_check_prefix(char* path, const char* dfs_prefix)
     return is_prefix;
 }
 
-static int daos_set_paths(
-    int rank,
+static void daos_set_paths(
     char** argpaths,
     const char* dfs_prefix,
     uuid_t src_pool_uuid,
@@ -178,8 +64,7 @@ static int daos_set_paths(
         struct duns_attr_t dattr = {0};
         rc = duns_resolve_path(dfs_prefix, &dattr);
         if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS Prefix UNS path");
-            return 1;
+            MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS UNS path");
         }
 
         /* figure out if prefix is on dst or src for
@@ -197,11 +82,6 @@ static int daos_set_paths(
             argpaths[1] = dst_path + strlen(dfs_prefix);
             prefix_on_dst = true;
         }
-
-        if (!prefix_on_src && !prefix_on_dst) {
-            MFU_LOG(MFU_LOG_ERR, "DAOS prefix does not match source or destination");
-            return 1;
-        }
     }
 
     /* Forward slash is "root" of container to walk
@@ -213,8 +93,8 @@ static int daos_set_paths(
      *
      * For each of the source and destination,
      * if it is not using a prefix then assume
-     * it is a daos path for UNS. If resolve path
-     * doesn't succeed then it might be a POSIX path */
+     * is is a daos path for UNS. If resolve path
+     * doesn't succeed then set accordingly */
     if (!prefix_on_src) {
         struct duns_attr_t src_dattr = {0};
         int src_rc = duns_resolve_path(src_path, &src_dattr);
@@ -238,29 +118,6 @@ static int daos_set_paths(
             argpaths[1] = "/";
         }
     }
-
-    return 0;
-}
-
-/* return 1 if any process has a local error
- * return 0 otherwise
- * ignore if no daos args supplied */
-static int daos_any_error(int rank, bool local_daos_error, int flag_daos_args)
-{
-    bool no_error = !local_daos_error;
-    if (flag_daos_args == 0) {
-        no_error = true;
-    }
-
-    if (! mfu_alltrue(no_error, MPI_COMM_WORLD)) {
-        if (rank == 0) {
-           MFU_LOG(MFU_LOG_ERR, "Detected one or more DAOS errors: "
-                   MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
-        }
-        return 1;
-    }
-
-    return 0;
 }
 #endif 
 
@@ -343,9 +200,6 @@ int main(int argc, char** argv)
 {
     /* assume we'll exit with success */
     int rc = 0;
-
-    /* for juggling multiple rc values */
-    int tmp_rc = 0;
 
     /* initialize MPI */
     MPI_Init(&argc, &argv);
@@ -616,93 +470,24 @@ int main(int argc, char** argv)
         usage = 1;
     }
 
-    /* If we need to print the usage
-     * then do so before internal processing */
-    if (usage) {
-        if (rank == 0) {
-            print_usage();
-        }
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
-
     char** argpaths = (&argv[optind]);
 
 #ifdef DAOS_SUPPORT
-    /* If only the source or destination svc is
-     * given, default the other */
-    if (src_svc != NULL && dst_svc == NULL) {
-        dst_svc = MFU_STRDUP(src_svc);
-    }
-    else if (src_svc == NULL && dst_svc != NULL) {
-        src_svc = MFU_STRDUP(dst_svc);
-    }
-
-    /* Each process keeps track of whether it had any DAOS errors.
-     * If there weren't any daos args, then ignore daos_init errors.
-     * Then, perform a reduction and exit if any process errored. */
-    bool local_daos_error = false;
-    int flag_daos_args;
-
-    /* Make sure we have the required DAOS arguments (if any).
-     * Safe to exit here, since all processes have the same values. */
-    rc = daos_check_args(rank, argpaths, src_pool_uuid, src_cont_uuid,
-            dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix,
-            &flag_daos_args);
-    if (rc != 0) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
-        }
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
-
-    /* For now, track the error.
-     * Later, ignore if no daos args supplied */
     rc = daos_init();
+
+    /* TODO: Don't exit and fail if daos fails init,
+     * could just be regular paths */
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to initialize daos");
-        local_daos_error = true;
     }
 
     /* Figure out if daos path is the src or dst,
      * using UNS path, then chop off UNS path
      * prefix since the path is mapped to the root
      * of the container in the DAOS DFS mount */
-    if (!local_daos_error
-            && (!daos_uuid_valid(src_pool_uuid) || !daos_uuid_valid(dst_pool_uuid))) {
-        rc = daos_set_paths(rank, argpaths, dfs_prefix, src_pool_uuid, src_cont_uuid,
-                dst_pool_uuid, dst_cont_uuid, mfu_src_file, mfu_dst_file);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
-            local_daos_error = true;
-        }
-    }
-
-    /* Re-check the required DAOS arguments (if any) */
-    if (!local_daos_error) {
-        rc = daos_check_args(rank, argpaths, src_pool_uuid, src_cont_uuid,
-                dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix,
-                &flag_daos_args);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
-            local_daos_error = true;
-        }
-    }
-
-    /* Make sure there weren't any errors before continuing.
-     * Since daos_connect has a collective broadcast.
-     * we have to make sure same_pool below is valid. */
-    if (daos_any_error(rank, local_daos_error, flag_daos_args)) {
-        tmp_rc = daos_fini();
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
+    if (!daos_uuid_valid(src_pool_uuid) || !daos_uuid_valid(dst_pool_uuid)) {
+        daos_set_paths(argpaths, dfs_prefix, src_pool_uuid, src_cont_uuid,
+            dst_pool_uuid, dst_cont_uuid, mfu_src_file, mfu_dst_file);
     }
 
     /* check if DAOS source and destination containers are in the same pool */
@@ -711,65 +496,76 @@ int main(int argc, char** argv)
         if (uuid_compare(src_pool_uuid, dst_pool_uuid) == 0) {
             same_pool = true;
         }
-    }
+    } 
 
     /* connect to DAOS source pool if uuid is valid */
-    if (!local_daos_error && mfu_src_file->type == DAOS) {
-        /* Open pool connection, but do not create container if non-existent */
-        rc = daos_connect(rank, src_svc, src_pool_uuid, src_cont_uuid, &src_poh, &src_coh, true, false);
-        if (rc != 0) {
-            /* rc from daos_connect is collective */
-            local_daos_error = true;
-        }
+    if (mfu_src_file->type == DAOS) {
+        /* if DAOS source pool uuid is valid, then set source file type to DAOS */
+        daos_connect(rank, src_svc, src_pool_uuid, src_cont_uuid, &src_poh, &src_coh); 
     }
 
-    /* If the source and destination are in the same pool,
-     * then open the container in that pool.
-     * Otherwise, connect to the second pool and open the container */
-    if (!local_daos_error && mfu_dst_file->type == DAOS) {
-        if (same_pool) {
-            /* Don't reconnect to pool, but do create container if non-existent */
-            rc = daos_connect(rank, dst_svc, dst_pool_uuid, dst_cont_uuid, &src_poh, &dst_coh, false, true);
+    if (mfu_dst_file->type == DAOS) {
+        if (!same_pool) {
+            /* if DAOS is the source and destination type, and containers are in different pools,
+             * then connect to the second pool */
+            daos_connect(rank, dst_svc, dst_pool_uuid, dst_cont_uuid, &dst_poh, &dst_coh); 
         } else {
-            /* Open pool connection, and create container if non-existent */
-            rc = daos_connect(rank, dst_svc, dst_pool_uuid, dst_cont_uuid, &dst_poh, &dst_coh, true, true); 
-        }
-        if (rc != 0) {
-            /* rc from daos_connect is collective */
-            local_daos_error = true;
+            /* Containers are using the same pool uuid.
+             * This is unlikely to ever happen but we can print an error just in case */
+            if (dst_svc != NULL && src_svc != NULL) {
+                if (strcmp(dst_svc, src_svc) != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Using same pool uuid with different svcl's");
+                    return 1;
+                }
+            }
+            if (rank == 0) {
+                /* create container in same pool */
+                daos_cont_info_t co_info;
+                rc = daos_cont_open(src_poh, dst_cont_uuid, DAOS_COO_RW, &dst_coh, &co_info, NULL);
+
+                /* If NOEXIST we create it */
+                if (rc != 0) {
+                    /* create the container */
+                    uuid_t cuuid;
+                    rc = dfs_cont_create(src_poh, cuuid, NULL, NULL, NULL);
+                    if (rc != 0) {
+                        MFU_LOG(MFU_LOG_ERR, "Failed to create DFS2 container");
+                    }
+
+                    /* try to open it again */
+                    rc = daos_cont_open(src_poh, cuuid, DAOS_COO_RW, &dst_coh, &co_info, NULL);
+                    if (rc != 0) {
+                        MFU_LOG(MFU_LOG_ERR, "Failed to open DFS2 container");
+                    }
+                }
+            }
+
+            /* broadcast container handle from rank 0 */
+            daos_bcast_handle(rank, &dst_coh, &src_poh, CONT_HANDLE);
         }
     }
 
-    if (!local_daos_error && mfu_src_file->type == DAOS) {
+    if (mfu_src_file->type == DAOS) {
         /* DFS is mounted for the source container */
         rc = dfs_mount(src_poh, src_coh, O_RDWR, &dfs1);
         if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
-            local_daos_error = true;
+            MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS)");
         }
     }
 
-    if (!local_daos_error && mfu_dst_file->type == DAOS) {
+    if (mfu_dst_file->type == DAOS) {
         /* DFS is mounted for the destination container */
         if (same_pool) {
             rc = dfs_mount(src_poh, dst_coh, O_RDWR, &dfs2);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS)");
+            }
         } else {
             rc = dfs_mount(dst_poh, dst_coh, O_RDWR, &dfs2);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS)");
+            }
         }
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
-            local_daos_error = true;
-        }
-    }
-
-    /* Exit if any process had a daos error */
-    if (daos_any_error(rank, local_daos_error, flag_daos_args)) {
-        tmp_rc = daos_fini();
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
     }
 
     /* set source and destination files to address of their
@@ -801,10 +597,13 @@ int main(int argc, char** argv)
         numpaths_src = numpaths - 1;
     }
 
-    if (numpaths_src == 0) {
+    if (usage || numpaths_src == 0) {
         if(rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed: "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+            if (usage != 1) {
+                MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed");
+            } else {
+                print_usage();
+            }
         }
 
         mfu_param_path_free_all(numpaths, paths);
@@ -820,13 +619,12 @@ int main(int argc, char** argv)
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
     mfu_param_path_check_copy(numpaths_src, paths, destpath, mfu_src_file, mfu_dst_file, &valid, &copy_into_dir);
-    mfu_copy_opts->copy_into_dir = copy_into_dir;
+    mfu_copy_opts->copy_into_dir = copy_into_dir; 
 
     /* exit job if we found a problem */
     if (!valid) {
         if(rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Invalid src/dest paths provided. Exiting run: "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+            MFU_LOG(MFU_LOG_ERR, "Invalid src/dest paths provided. Exiting run.\n");
         }
         mfu_param_path_free_all(numpaths, paths);
         mfu_free(&paths);
@@ -855,9 +653,9 @@ int main(int argc, char** argv)
     }
 
     /* copy flist into destination */ 
-    tmp_rc = mfu_flist_copy(flist, numpaths_src, paths,
-                            destpath, mfu_copy_opts, mfu_src_file,
-                            mfu_dst_file);
+    int tmp_rc = mfu_flist_copy(flist, numpaths_src, paths,
+                                destpath, mfu_copy_opts, mfu_src_file,
+                                mfu_dst_file);
     if (tmp_rc < 0) {
         /* hit some sort of error during copy */
         rc = 1;
@@ -884,43 +682,43 @@ int main(int argc, char** argv)
     /* DAOS: unmount DFS, and close containers and pools */
 #ifdef DAOS_SUPPORT
     if (mfu_src_file->type == DAOS) {
-        tmp_rc = dfs_umount(mfu_src_file->dfs);
+        rc = dfs_umount(mfu_src_file->dfs);
         MPI_Barrier(MPI_COMM_WORLD);
-        if (tmp_rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to umount DFS namespace");
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to mount DFS namespace");
         }
-        tmp_rc = daos_cont_close(src_coh, NULL);
+        rc = daos_cont_close(src_coh, NULL);
         MPI_Barrier(MPI_COMM_WORLD);
-        if (tmp_rc != 0) {
+        if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to close container (%d)", rc);
         }
     }
 
     if (mfu_dst_file->type == DAOS) {
-        tmp_rc = dfs_umount(mfu_dst_file->dfs);
+        rc = dfs_umount(mfu_dst_file->dfs);
         MPI_Barrier(MPI_COMM_WORLD);
-        if (tmp_rc != 0) {
+        if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed unmount DFS namespace");
         }
-        tmp_rc = daos_cont_close(dst_coh, NULL);
+        rc = daos_cont_close(dst_coh, NULL);
         MPI_Barrier(MPI_COMM_WORLD);
-        if (tmp_rc != 0) {
+        if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to close container (%d)", rc);
         }
     }
 
     if (mfu_src_file->type == DAOS) {
-        tmp_rc = daos_pool_disconnect(src_poh, NULL);
+        rc = daos_pool_disconnect(src_poh, NULL);
         MPI_Barrier(MPI_COMM_WORLD);
-        if (tmp_rc != 0) {
+        if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to disconnect from source pool");
         }
     }
 
     if (mfu_dst_file->type == DAOS && !same_pool) {
-        tmp_rc = daos_pool_disconnect(dst_poh, NULL);
+        rc = daos_pool_disconnect(dst_poh, NULL);
         MPI_Barrier(MPI_COMM_WORLD);
-        if (tmp_rc != 0) {
+        if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to disconnect from destination pool");
         }
     }
@@ -930,17 +728,9 @@ int main(int argc, char** argv)
     mfu_file_delete(&mfu_src_file);
     mfu_file_delete(&mfu_dst_file);
 
-    /* Alert the user if there were copy errors */
-    if (rc != 0) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "One or more errors were detected while copying: "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DCP_COPY));
-        }
-    }
-
 #ifdef DAOS_SUPPORT
     /* finalize daos */
-    tmp_rc = daos_fini();
+    rc = daos_fini();
 #endif
 
     mfu_finalize();
@@ -948,8 +738,5 @@ int main(int argc, char** argv)
     /* shut down MPI */
     MPI_Finalize();
 
-    if (rc != 0) {
-        return 1;
-    }
     return 0;
 }
