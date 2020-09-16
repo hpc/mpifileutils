@@ -24,6 +24,10 @@
 #include <lustre/lustreapi.h>
 #endif
 
+#ifdef DAOS_SUPPORT
+#include <gurt/common.h>
+#endif
+
 int mfu_initialized = 0;
 
 /* set globals */
