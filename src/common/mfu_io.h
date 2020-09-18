@@ -114,7 +114,7 @@ int mfu_symlink(const char* oldpath, const char* newpath);
 
 /* open file with specified flags and mode, retry open a few times on failure */
 void mfu_file_open(const char* file, int flags, mfu_file_t* mfu_file, ...);
-void daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file);
+int daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file);
 int mfu_open(const char* file, int flags, ...);
 
 /* close file */
