@@ -811,17 +811,18 @@ ssize_t mfu_file_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_
 ssize_t daos_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
-    daos_size_t got_size;
-
-    d_sg_list_t sgl;
-    d_iov_t     iov;
-
-    sgl.sg_nr = 1;
+    /* record address and size of user buffer in io vector */
+    d_iov_t iov;
     d_iov_set(&iov, buf, size);
+
+    /* define scatter-gather list for dfs_read */
+    d_sg_list_t sgl;
+    sgl.sg_nr = 1;
     sgl.sg_iovs = &iov;
     sgl.sg_nr_out = 1;
-    sgl.sg_iovs[0].iov_len = size;
 
+    /* execute read operation */
+    daos_size_t got_size;
     int rc = dfs_read(mfu_file->dfs, mfu_file->obj, &sgl, mfu_file->offset, &got_size, NULL); 
     if (rc) {
         MFU_LOG(MFU_LOG_ERR, "dfs_read %s failed (%d %s)",
@@ -829,7 +830,10 @@ ssize_t daos_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_file
         errno = rc;
         return -1;
     }
+
+    /* update file pointer with number of bytes read */
     mfu_file->offset += (daos_off_t)got_size;
+
     return (ssize_t)got_size;
 #endif
 }
@@ -887,7 +891,7 @@ ssize_t mfu_file_write(const char* file, const void* buf, size_t size, mfu_file_
 
 ssize_t mfu_write(const char* file, int fd, const void* buf, size_t size)
 {
-    int tries = 10;
+    int tries = MFU_IO_TRIES;
     ssize_t n = 0;
     while ((size_t)n < size) {
         errno = 0;
@@ -923,15 +927,18 @@ ssize_t mfu_write(const char* file, int fd, const void* buf, size_t size)
 ssize_t daos_write(const char* file, const void* buf, size_t size, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
-    d_sg_list_t sgl;
-    d_iov_t     iov;
-
-    sgl.sg_nr = 1;
+    /* record address and size of user buffer in io vector */
+    d_iov_t iov;
     d_iov_set(&iov, buf, size);
+
+    /* define scatter-gather list for dfs_write */
+    d_sg_list_t sgl;
+    sgl.sg_nr = 1;
     sgl.sg_iovs = &iov;
     sgl.sg_nr_out = 1;
-    sgl.sg_iovs[0].iov_len = size;
 
+    /* execute write operation,
+     * dfs_write writes all bytes if there is no error */
     int rc = dfs_write(mfu_file->dfs, mfu_file->obj, &sgl, mfu_file->offset, NULL); 
     if (rc) {
         MFU_LOG(MFU_LOG_ERR, "dfs_write %s failed (%d %s)",
@@ -939,7 +946,149 @@ ssize_t daos_write(const char* file, const void* buf, size_t size, mfu_file_t* m
         errno = rc;
         return -1;
     }
+
+    /* update file pointer with number of bytes written */
     mfu_file->offset += (daos_off_t)size;
+
+    return (ssize_t)size;
+#endif
+}
+
+/* reliable pread from file descriptor (retries, if necessary, until hard error) */
+ssize_t mfu_file_pread(const char* file, void* buf, size_t size, off_t offset, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        ssize_t rc = mfu_pread(file, mfu_file->fd, buf, size, offset);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        ssize_t rc = daos_pread(file, buf, size, offset, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+            file, mfu_file->type);
+    }
+}
+
+ssize_t daos_pread(const char* file, void* buf, size_t size, off_t offset, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    /* record address and size of user buffer in io vector */
+    d_iov_t iov;
+    d_iov_set(&iov, buf, size);
+
+    /* define scatter-gather list for dfs_read */
+    d_sg_list_t sgl;
+    sgl.sg_nr = 1;
+    sgl.sg_iovs = &iov;
+    sgl.sg_nr_out = 1;
+
+    /* execute read operation */
+    daos_size_t got_size;
+    int rc = dfs_read(mfu_file->dfs, mfu_file->obj, &sgl, offset, &got_size, NULL); 
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_read %s failed (%d %s)",
+            file, rc, strerror(rc));
+        errno = rc;
+        return -1;
+    }
+
+    return (ssize_t)got_size;
+#endif
+}
+
+ssize_t mfu_pread(const char* file, int fd, void* buf, size_t size, off_t offset)
+{
+    int tries = MFU_IO_TRIES;
+    while (1) {
+        ssize_t rc = pread(fd, (char*) buf, size, offset);
+        if (rc > 0) {
+            /* read some data */
+            return rc;
+        }
+        else if (rc == 0) {
+            /* EOF */
+            return rc;
+        }
+        else {   /* (rc < 0) */
+            /* something worth printing an error about */
+            tries--;
+            if (tries <= 0) {
+                /* too many failed retries, give up */
+                MFU_ABORT(-1, "Failed to read file %s errno=%d (%s)",
+                    file, errno, strerror(errno));
+            }
+
+            /* sleep a bit before consecutive tries */
+            usleep(MFU_IO_USLEEP);
+        }
+    }
+}
+
+ssize_t mfu_file_pwrite(const char* file, const void* buf, size_t size, off_t offset, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        ssize_t rc = mfu_pwrite(file, mfu_file->fd, buf, size, offset);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        ssize_t rc = daos_pwrite(file, buf, size, offset, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+            file, mfu_file->type);
+    }
+}
+
+ssize_t mfu_pwrite(const char* file, int fd, const void* buf, size_t size, off_t offset)
+{
+    int tries = MFU_IO_TRIES;
+    while (1) {
+        ssize_t rc = pwrite(fd, (const char*) buf, size, offset);
+        if (rc > 0) {
+            /* wrote some data */
+            return rc;
+        }
+        else if (rc == 0) {
+            /* didn't write anything, but not an error either */
+            return rc;
+        }
+        else { /* (rc < 0) */
+            /* something worth printing an error about */
+            tries--;
+            if (tries <= 0) {
+                /* too many failed retries, give up */
+                MFU_ABORT(-1, "Failed to write file %s errno=%d (%s)",
+                    file, errno, strerror(errno));
+            }
+
+            /* sleep a bit before consecutive tries */
+            usleep(MFU_IO_USLEEP);
+        }
+    }
+}
+
+ssize_t daos_pwrite(const char* file, const void* buf, size_t size, off_t offset, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    /* record address and size of user buffer in io vector */
+    d_iov_t iov;
+    d_iov_set(&iov, buf, size);
+
+    /* define scatter-gather list for dfs_write */
+    d_sg_list_t sgl;
+    sgl.sg_nr = 1;
+    sgl.sg_iovs = &iov;
+    sgl.sg_nr_out = 1;
+
+    /* execute write operation,
+     * dfs_write writes all bytes if there is no error */
+    int rc = dfs_write(mfu_file->dfs, mfu_file->obj, &sgl, offset, NULL); 
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_write %s failed (%d %s)",
+                file, rc, strerror(rc));
+        errno = rc;
+        return -1;
+    }
+
     return (ssize_t)size;
 #endif
 }

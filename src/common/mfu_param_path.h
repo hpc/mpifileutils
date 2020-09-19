@@ -109,7 +109,7 @@ typedef struct {
     char*  dest_path;     /* prefex of destination directory */
     char*  input_file;    /* file name of input list */
     bool   preserve;      /* whether to preserve timestamps, ownership, permissions, etc. */
-    bool   synchronous;   /* whether to use O_DIRECT */
+    bool   direct;        /* whether to use O_DIRECT */
     bool   sparse;        /* whether to create sparse files */
     size_t chunk_size;    /* size to chunk files by */
     size_t block_size;    /* block size to read/write to file system */

@@ -273,8 +273,9 @@ int mfu_compare_contents(
     const char* dst,          /* IN  - path name to destination file */
     off_t offset,             /* IN  - offset with file to start comparison */
     off_t length,             /* IN  - number of bytes to be compared */
-    size_t bufsize,           /* IN  - size of I/O buffer to be used during compare */
+    off_t file_size,          /* IN  - size of file to be compared */
     int overwrite,            /* IN  - whether to replace dest with source contents (1) or not (0) */
+    mfu_copy_opts_t* opts,    /* IN  - options to use in compare/copy */
     uint64_t* bytes_read,     /* OUT - number of bytes read (src + dest) */
     uint64_t* bytes_written,  /* OUT - number of bytes written to dest */
     mfu_progress* prg         /* IN  - progress message structure */

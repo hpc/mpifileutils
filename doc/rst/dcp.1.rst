@@ -67,10 +67,9 @@ OPTIONS
 
    Preserve permissions, group, timestamps, and extended attributes.
 
-.. option:: -s, --synchronous
+.. option:: -s, --direct
 
-   Use synchronous read/write calls (open files with O_DIRECT).
-   This also avoids caching the file data on the client nodes.
+   Use O_DIRECT to avoid caching file data.
 
 .. option:: -S, --sparse
 
