@@ -30,6 +30,7 @@ static void print_usage(void)
     printf("  -o, --output <EXPR:FILE>  - write list of entries matching EXPR to FILE\n");
     printf("  -t, --text                - change output option to write in text format\n");
     printf("  -b, --base                - enable base checks and normal output with --output\n");
+    printf("  -s, --direct              - open files with O_DIRECT\n");
     printf("      --progress <N>        - print progress every N seconds\n");
     printf("  -v, --verbose             - verbose output\n");
     printf("  -q, --quiet               - quiet output\n");
@@ -754,7 +755,8 @@ static int dcmp_strmap_compare_data(
     strmap* src_map,
     mfu_flist dst_compare_list,
     strmap* dst_map,
-    size_t strlen_prefix)
+    size_t strlen_prefix,
+    mfu_copy_opts_t* copy_opts)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -795,10 +797,13 @@ static int dcmp_strmap_compare_data(
         /* get length of section that we should compare (bytes) */
         off_t length = (off_t)src_p->length;
 
+        /* get size of file that we should compare (bytes) */
+        off_t filesize = (off_t)src_p->file_size;
+
         /* compare the contents of the files */
         int overwrite = 0;
-        int compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length,
-                1048576, overwrite, &bytes_read, &bytes_written, prg);
+        int compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length, filesize,
+                overwrite, copy_opts, &bytes_read, &bytes_written, prg);
         if (compare_rc == -1) {
             /* we hit an error while reading */
             rc = -1;
@@ -928,13 +933,15 @@ static void time_strmap_compare(mfu_flist src_list, double start_compare,
 }
 
 /* compare entries from src into dst */
-static int dcmp_strmap_compare(mfu_flist src_list,
-                                strmap* src_map,
-                                mfu_flist dst_list,
-                                strmap* dst_map,
-                                size_t strlen_prefix,
-                                const mfu_param_path* src_path,
-                                const mfu_param_path* dest_path)
+static int dcmp_strmap_compare(
+    mfu_flist src_list,
+    strmap* src_map,
+    mfu_flist dst_list,
+    strmap* dst_map,
+    size_t strlen_prefix,
+    mfu_copy_opts_t* copy_opts,
+    const mfu_param_path* src_path,
+    const mfu_param_path* dest_path)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -1092,7 +1099,7 @@ static int dcmp_strmap_compare(mfu_flist src_list,
         cmp_global_size = mfu_flist_global_size(src_compare_list);
         if (cmp_global_size > 0) {
             tmp_rc = dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list,
-                    dst_map, strlen_prefix);
+                    dst_map, strlen_prefix, copy_opts);
             if (tmp_rc < 0) {
                 /* got a read error, signal that back to caller */
                 rc = -1;
@@ -2037,8 +2044,11 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-    /* pointer to mfu_walk_opts */
+    /* allocate structure to define walk options */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
+    /* allocate structure to define copy (comparision) options */
+    mfu_copy_opts_t* copy_opts = mfu_copy_opts_new();
 
     /* TODO: allow user to specify file lists as input files */
 
@@ -2060,6 +2070,7 @@ int main(int argc, char **argv)
         {"output",   1, 0, 'o'},
         {"text",     0, 0, 't'},
         {"base",     0, 0, 'b'},
+        {"direct",   0, 0, 's'},
         {"progress", 1, 0, 'P'},
         {"verbose",  0, 0, 'v'},
         {"quiet",    0, 0, 'q'},
@@ -2076,7 +2087,7 @@ int main(int argc, char **argv)
     int help  = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "o:tbvqldh",
+            argc, argv, "o:tbsvqldh",
             long_options, &option_index
         );
 
@@ -2096,6 +2107,12 @@ int main(int argc, char **argv)
             break;
         case 'b':
             options.base++;
+            break;
+        case 's':
+            copy_opts->direct = true;
+            if(rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "Using O_DIRECT");
+            }
             break;
         case 'P':
             mfu_progress_timeout = atoi(optarg);
@@ -2218,7 +2235,7 @@ int main(int argc, char **argv)
     strmap* map2 = dcmp_strmap_creat(flist4, path2);
 
     /* compare files in map1 with those in map2 */
-    int tmp_rc = dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1), srcpath, destpath);
+    int tmp_rc = dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1), copy_opts, srcpath, destpath);
     if (tmp_rc < 0) {
         /* hit a read error on at least one file */
         rc = 1;
@@ -2253,6 +2270,9 @@ int main(int argc, char **argv)
     mfu_free(&paths);
 
     dcmp_option_fini();
+
+    /* free the copy options structure */
+    mfu_copy_opts_delete(&copy_opts);
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);

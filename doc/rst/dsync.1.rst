@@ -35,6 +35,10 @@ OPTIONS
 
    Delete extraneous files from destination.
 
+.. option:: -s, --direct
+
+   Use O_DIRECT to avoid caching file data.
+
 .. option:: --link-dest DIR
 
    Create hardlink in DEST to files in DIR when file is unchanged

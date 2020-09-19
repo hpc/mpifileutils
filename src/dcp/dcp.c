@@ -642,7 +642,7 @@ void print_usage(void)
     printf("  -i, --input <file>       - read source list from file\n");
     printf("  -k, --chunksize          - work size per task in bytes (default 1MB)\n");
     printf("  -p, --preserve           - preserve permissions, ownership, timestamps, extended attributes\n");
-    printf("  -s, --synchronous        - use synchronous read/write calls (O_DIRECT)\n");
+    printf("  -s, --direct             - open files with O_DIRECT\n");
     printf("  -S, --sparse             - create sparse files when possible\n");
     printf("      --progress <N>       - print progress every N seconds\n");
     printf("  -v, --verbose            - verbose output\n");
@@ -707,6 +707,7 @@ int main(int argc, char** argv)
         {"chunksize"            , required_argument, 0, 'k'},
         {"preserve"             , no_argument      , 0, 'p'},
         {"synchronous"          , no_argument      , 0, 's'},
+        {"direct"               , no_argument      , 0, 's'},
         {"sparse"               , no_argument      , 0, 'S'},
         {"progress"             , required_argument, 0, 'P'},
         {"verbose"              , no_argument      , 0, 'v'},
@@ -865,9 +866,9 @@ int main(int argc, char** argv)
                 }
                 break;
             case 's':
-                mfu_copy_opts->synchronous = 1;
+                mfu_copy_opts->direct = 1;
                 if(rank == 0) {
-                    MFU_LOG(MFU_LOG_INFO, "Using synchronous read/write (O_DIRECT)");
+                    MFU_LOG(MFU_LOG_INFO, "Using O_DIRECT");
                 }
                 break;
             case 'S':

@@ -36,6 +36,10 @@ OPTIONS
 
    Enable base checks and normal stdout results when --output is used.
 
+.. option:: -s, --direct
+
+   Use O_DIRECT to avoid caching file data.
+
 .. option:: --progress N
 
    Print progress message to stdout approximately every N seconds.

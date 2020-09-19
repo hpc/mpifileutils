@@ -138,6 +138,16 @@ ssize_t mfu_file_write(const char* file, const void* buf, size_t size, mfu_file_
 ssize_t daos_write(const char* file, const void* buf, size_t size, mfu_file_t* mfu_file);
 ssize_t mfu_write(const char* file, int fd, const void* buf, size_t size);
 
+/* pread from opened file descriptor (may return short read) */
+ssize_t mfu_file_pread(const char* file, void* buf, size_t size, off_t offset, mfu_file_t* mfu_file);
+ssize_t daos_pread(const char* file, void* buf, size_t size, off_t offset, mfu_file_t* mfu_file);
+ssize_t mfu_pread(const char* file, int fd, void* buf, size_t size, off_t offset);
+
+/* pwrite to opened file descriptor (may return short write) */
+ssize_t mfu_file_pwrite(const char* file, const void* buf, size_t size, off_t offset, mfu_file_t* mfu_file);
+ssize_t daos_pwrite(const char* file, const void* buf, size_t size, off_t offset, mfu_file_t* mfu_file);
+ssize_t mfu_pwrite(const char* file, int fd, const void* buf, size_t size, off_t offset);
+
 /* truncate a file */
 int mfu_truncate(const char* file, off_t length);
 

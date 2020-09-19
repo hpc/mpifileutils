@@ -843,25 +843,49 @@ int mfu_compare_contents(
     const char* dst_name,          /* IN  - path name to destination file */
     off_t offset,                  /* IN  - offset with file to start comparison */
     off_t length,                  /* IN  - number of bytes to be compared */
-    size_t bufsize,                /* IN  - size of I/O buffer to be used during compare */
+    off_t file_size,               /* IN  - size of file */
     int overwrite,                 /* IN  - whether to replace dest with source contents (1) or not (0) */
+    mfu_copy_opts_t* copy_opts,    /* IN - options for data compare/copy step */
     uint64_t* count_bytes_read,    /* OUT - number of bytes read (src + dest) */
     uint64_t* count_bytes_written, /* OUT - number of bytes written to dest */
     mfu_progress* prg)             /* IN  - progress message structure */
 {
+    /* extract values from copy options */
+    int direct = copy_opts->direct;
+    size_t buf_size = copy_opts->block_size;
+
+    /* for O_DIRECT, check that length is a multiple of buf_size */
+    if (direct &&                      /* using O_DIRECT */
+        offset + length < file_size && /* not at end of file */
+        length % buf_size != 0)        /* length not an integer multiple of block size */
+    {
+        MFU_ABORT(-1, "O_DIRECT requires chunk size to be integer multiple of block size %llu",
+            buf_size);
+    }
+
+    /* open source as read only, with optional O_DIRECT */
+    int src_flags = O_RDONLY;
+    if (direct) {
+        src_flags |= O_DIRECT;
+    }
+
     /* open source file */
-    int src_fd = mfu_open(src_name, O_RDONLY);
+    int src_fd = mfu_open(src_name, src_flags);
     if (src_fd < 0) {
         /* log error if there is an open failure on the src side */
         MFU_LOG(MFU_LOG_ERR, "Failed to open `%s' (errno=%d %s)",
-          src_name, errno, strerror(errno));
+            src_name, errno, strerror(errno));
        return -1;
     }
 
-    /* avoid opening file in write mode if we're only reading */
+    /* avoid opening file in write mode if we're only reading,
+     * optionally enable O_DIRECT */
     int dst_flags = O_RDONLY;
     if (overwrite) {
         dst_flags = O_RDWR;
+    }
+    if (direct) {
+        dst_flags |= O_DIRECT;
     }
 
     /* open destination file */
@@ -869,7 +893,7 @@ int mfu_compare_contents(
     if (dst_fd < 0) {
         /* log error if there is an open failure on the dst side */
         MFU_LOG(MFU_LOG_ERR, "Failed to open `%s' (errno=%d %s)",
-          dst_name, errno, strerror(errno));
+            dst_name, errno, strerror(errno));
         mfu_close(src_name, src_fd);
         return -1;
     }
@@ -881,53 +905,62 @@ int mfu_compare_contents(
     /* assume we'll find that file contents are the same */
     int rc = 0;
 
-    /* seek to offset in source file */
-    if (mfu_lseek(src_name, src_fd, offset, SEEK_SET) == (off_t)-1) {
-        /* log error if there is an lseek failure on the src side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek `%s', offset: %lx (errno=%d %s)",
-          src_name, (unsigned long)offset, errno, strerror(errno));
-        mfu_close(dst_name, dst_fd);
-        mfu_close(src_name, src_fd);
-        return -1;
-    }
+    /* TODO: replace this with mfu_copy_opts->buf */
+    /* allocate buffer to write files, aligned on 1MB boundaraies */
+    size_t alignment = 1024*1024;
+    void* src_buf = (char*) MFU_MEMALIGN(buf_size, alignment);
+    void* dst_buf = (char*) MFU_MEMALIGN(buf_size, alignment);
 
-    /* seek to offset in destination file */
-    if (mfu_lseek(dst_name, dst_fd, offset, SEEK_SET) == (off_t)-1) {
-        /* log error if there is an lseek failure on the dst side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to lseek `%s', offset: %lx (errno=%d %s)",
-          dst_name, (unsigned long)offset, errno, strerror(errno));
-        mfu_close(dst_name, dst_fd);
-        mfu_close(src_name, src_fd);
-        return -1;
-    }
+    /* initialize our starting offset within the file */
+    off_t off = offset;
 
-    /* allocate buffers to read file data */
-    void* src_buf  = MFU_MALLOC(bufsize);
-    void* dest_buf = MFU_MALLOC(bufsize);
+    /* if we write with O_DIRECT, we may need to truncate file */
+    int need_truncate = 0;
 
     /* read and compare data from files */
     off_t total_bytes = 0;
-    while (length == 0 || total_bytes < length) {
-        /* track current position in file for error reporting and seeking */
-        off_t pos = offset + total_bytes;
-
+    while (total_bytes < length) {
         /* whether we should copy the source bytes to the destination */
         int need_copy = 0;
 
         /* determine number of bytes to read in this iteration */
-        size_t left_to_read = bufsize;
-        if (length > 0) {
-            if (length - total_bytes < (off_t)bufsize) {
-                left_to_read = (size_t)(length - total_bytes);
+        size_t left_to_read = buf_size;
+        if (! direct) {
+            off_t remainder = length - total_bytes;
+            if (remainder < (off_t)buf_size) {
+                left_to_read = (size_t) remainder;
             }
         }
 
         /* read data from source file */
-        ssize_t src_read = mfu_read(src_name, src_fd, (ssize_t*)src_buf, left_to_read);
+        ssize_t src_read = mfu_pread(src_name, src_fd, (ssize_t*)src_buf, left_to_read, off);
+
+        /* If we're using O_DIRECT, deal with short reads.
+         * Retry with same buffer and offset since those must
+         * be aligned at block boundaries. */
+        while (direct &&                     /* using O_DIRECT */
+               src_read > 0 &&               /* read was not an error or eof */
+               src_read < left_to_read &&    /* shorter than requested */
+               (off + src_read) < file_size) /* not at end of file */
+        {
+            /* TODO: probably should retry a limited number of times then abort */
+            src_read = mfu_pread(src_name, src_fd, src_buf, left_to_read, off);
+        }
+
+        /* check for read error */
         if (src_read < 0) {
             /* hit a read error */
             MFU_LOG(MFU_LOG_ERR, "Failed to read `%s' at offset %llx (errno=%d %s)",
-              src_name, (unsigned long long)pos, errno, strerror(errno));
+                src_name, (unsigned long long)off, errno, strerror(errno));
+            rc = -1;
+            break;
+        }
+
+        /* check for early EOF */
+        if (src_read == 0) {
+            /* if the source is shorter than expected, consider this to be an error */
+            MFU_LOG(MFU_LOG_ERR, "Source `%s' is shorter %llx than expected (errno=%d %s)",
+                src_name, (unsigned long long)off, errno, strerror(errno));
             rc = -1;
             break;
         }
@@ -936,11 +969,34 @@ int mfu_compare_contents(
         *count_bytes_read += (uint64_t) src_read;
 
         /* read data from destination file */
-        ssize_t dst_read = mfu_read(dst_name, dst_fd, (ssize_t*)dest_buf, left_to_read);
+        ssize_t dst_read = mfu_pread(dst_name, dst_fd, (ssize_t*)dst_buf, left_to_read, off);
+
+        /* If we're using O_DIRECT, deal with short reads.
+         * Retry with same buffer and offset since those must
+         * be aligned at block boundaries. */
+        while (direct &&                     /* using O_DIRECT */
+               dst_read > 0 &&               /* read was not an error or eof */
+               dst_read < left_to_read &&    /* shorter than requested */
+               (off + dst_read) < file_size) /* not at end of file */
+        {
+            /* TODO: probably should retry a limited number of times then abort */
+            dst_read = mfu_pread(dst_name, dst_fd, dst_buf, left_to_read, off);
+        }
+
+        /* check for read error */
         if (dst_read < 0) {
             /* hit a read error */
             MFU_LOG(MFU_LOG_ERR, "Failed to read `%s' at offset %llx (errno=%d %s)",
-              dst_name, (unsigned long long)pos, errno, strerror(errno));
+                dst_name, (unsigned long long)off, errno, strerror(errno));
+            rc = -1;
+            break;
+        }
+
+        /* check for early EOF */
+        if (dst_read == 0) {
+            /* destination is shorter than expected, consider this to be an error */
+            MFU_LOG(MFU_LOG_ERR, "Destination `%s' is shorter than expected %llx (errno=%d %s)",
+                dst_name, (unsigned long long)off, errno, strerror(errno));
             rc = -1;
             break;
         }
@@ -948,13 +1004,17 @@ int mfu_compare_contents(
         /* tally up number of bytes read */
         *count_bytes_read += (uint64_t) dst_read;
 
-        /* TODO: could be a non-error short read, we could just adjust number
+        /* we could have a non-error short read, so adjust number
          * of bytes we compare and update offset to shorter of the two values
          * numread = min(src_read, dst_read) */
+        ssize_t min_read = src_read;
+        if (dst_read < min_read) {
+            min_read = dst_read;
+        }
 
-        /* check that we got the same number of bytes from each */
-        if (src_read != dst_read) {
-            /* one read came up shorter than the other */
+        /* if have same size buffers, and read some data, let's check the contents */
+        if (memcmp((ssize_t*)src_buf, (ssize_t*)dst_buf, (size_t)min_read) != 0) {
+            /* memory contents are different */
             rc = 1;
             if (! overwrite) {
                 break;
@@ -962,53 +1022,63 @@ int mfu_compare_contents(
             need_copy = 1;
         }
 
-        /* check for EOF */
-        if (src_read == 0) {
-            /* hit end of source file */
-            break;
-        }
-
-        /* if have same size buffers, and read some data, let's check the contents */
-        if (src_read == dst_read) {
-            if (memcmp((ssize_t*)src_buf, (ssize_t*)dest_buf, (size_t)src_read) != 0) {
-                /* memory contents are different */
-                rc = 1;
-                if (! overwrite) {
-                    break;
-                }
-                need_copy = 1;
-            }
-        }
-
         /* if the bytes are different,
          * then copy the bytes from the source into the destination */
-        if (overwrite && need_copy == 1) {
-            /* seek back to position to write to in destination file */
-            if (mfu_lseek(dst_name, dst_fd, pos, SEEK_SET) == (off_t)-1) {
-                /* log error if there is an lseek failure on the dst side */
-                MFU_LOG(MFU_LOG_ERR, "Failed to lseek `%s', offset: %llx (errno=%d %s)",
-                  dst_name, (unsigned long long)pos, strerror(errno));
-                rc = -1;
-                break;
+        if (overwrite && need_copy) {
+            /* compute number of bytes to write */
+            size_t bytes_to_write = (size_t) min_read;
+            if (direct) {
+                /* O_DIRECT requires particular write sizes,
+                 * ok to write beyond end of file so long as
+                 * we truncate in cleanup step */
+                size_t remainder = buf_size - (size_t) min_read;
+                if (remainder > 0) {
+                    /* zero out the end of the buffer for security,
+                     * don't want to leave data from another file at end of
+                     * current file if we fail before truncating */
+                    char* bufzero = ((char*)src_buf + min_read);
+                    memset(bufzero, 0, remainder);
+
+                    /* remember that we might need to truncate,
+                     * because we may write past the end of the file */
+                    need_truncate = 1;
+                }
+
+                /* assumes buf_size is magic size for O_DIRECT */
+                bytes_to_write = buf_size;
             }
 
-            /* write data to destination file */
-            size_t bytes_to_write = (size_t) src_read;
-            ssize_t bytes_written = mfu_write(dst_name, dst_fd, src_buf, bytes_to_write);
-            if (bytes_written < 0) {
-                /* hit a write error */
-                MFU_LOG(MFU_LOG_ERR, "Failed to write `%s' at offset %llx (errno=%d %s)",
-                  dst_name, (unsigned long long)pos, strerror(errno));
-                rc = -1;
-                break;
-            }
+            /* we loop to account for short writes */
+            ssize_t n = 0;
+            while (n < bytes_to_write) {
+                /* write data to destination file */
+                ssize_t bytes_written = mfu_pwrite(dst_name, dst_fd, ((char*)src_buf) + n, bytes_to_write - n, off + n);
 
-            /* tally up number of bytes written */
-            *count_bytes_written += (uint64_t) bytes_written;
+                /* check for write error */
+                if (bytes_written < 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to write `%s' at offset %llx (errno=%d %s)", 
+                        dst_name, (unsigned long long)off + n, strerror(errno));
+                    rc = -1;
+                    break;
+                }
+
+                /* So long as we're not using O_DIRECT, we can handle short writes
+                 * by advancing by the number of bytes written.  For O_DIRECT, we
+                 * need to keep buffer, file offset, and amount to write aligned
+                 * on block boundaries, so just retry the entire operation. */
+                if (!direct || bytes_written == bytes_to_write) {
+                    /* advance index by number of bytes written */
+                    n += bytes_written;
+
+                    /* tally up number of bytes written */
+                    *count_bytes_written += (uint64_t) bytes_written;
+                }
+            }
         }
 
         /* add bytes to our total */
-        total_bytes += (long unsigned int)src_read;
+        off += min_read;
+        total_bytes += (long unsigned int)min_read;
 
         /* update number of bytes read and written for progress messages */
         uint64_t count_bytes[2];
@@ -1017,8 +1087,24 @@ int mfu_compare_contents(
         mfu_progress_update(count_bytes, prg);
     }
 
+    /* truncate destination file if we might have written past the end */
+    if (need_truncate) {
+        off_t last_written = offset + length;
+        off_t file_size_offt = (off_t) file_size;
+        if (last_written >= file_size_offt) {
+            /* Use ftruncate() here rather than truncate(), because grouplock
+             * of Lustre would cause block to truncate() since the fd is different
+             * from the out_fd. */
+            if (mfu_ftruncate(dst_fd, file_size_offt) < 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
+                    dst_name, errno, strerror(errno));
+                rc = -1;
+            }
+        }
+    }
+
     /* free buffers */
-    mfu_free(&dest_buf);
+    mfu_free(&dst_buf);
     mfu_free(&src_buf);
 
     /* close files */
