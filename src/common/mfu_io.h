@@ -83,7 +83,6 @@ int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file);
 
 /* call mknod, retry a few times on EINTR or EIO */
 int mfu_file_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file);
-/* just a noop, since there is no daos_mknod */
 int daos_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file);
 int mfu_mknod(const char* path, mode_t mode, dev_t dev);
 
@@ -157,6 +156,8 @@ int daos_ftruncate(mfu_file_t* mfu_file, off_t length);
 int mfu_ftruncate(int fd, off_t length);
 
 /* delete a file */
+int mfu_file_unlink(const char* file, mfu_file_t* mfu_file);
+int daos_unlink(const char* file, mfu_file_t* mfu_file);
 int mfu_unlink(const char* file);
 
 /* force flush of written data */

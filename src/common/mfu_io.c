@@ -1227,6 +1227,67 @@ int mfu_file_ftruncate(mfu_file_t* mfu_file, off_t length)
     }
 }
 
+/* unlink a file */
+int mfu_file_unlink(const char* file, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_unlink(file);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_unlink(file, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known, type=%d",
+                  mfu_file->type);
+    } 
+}
+
+/* emulates unlink on a DAOS file or symlink */
+int daos_unlink(const char* file, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(file, &name, &dir_name);
+    assert(dir_name);
+
+    /* Need to lookup parent directory in DFS */
+    dfs_obj_t* parent = NULL;
+    mode_t mode;
+    int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, &mode, NULL);
+    if (parent == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
+        errno = ENOENT;
+        rc = -1;
+    } 
+    else {
+        /* only allow regular files and symlinks */
+        if (!S_ISREG(mode) && !S_ISLNK(mode)) {
+            MFU_LOG(MFU_LOG_ERR, "Invalid entry type (not a file or symlink)");
+            errno = EINVAL;
+            rc = -1;
+        }
+        else {
+            /* remove the file */
+            rc = dfs_remove(mfu_file->dfs, parent, name, false, NULL);
+            if (rc) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_remove failed (%d %s)",
+                        rc, strerror(rc));
+                errno = rc;
+                rc = -1;
+            }
+        }
+        /* close the parent, ignoring errors since they have no direct impact */
+        dfs_release(parent);
+    }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
+
+    return rc; 
+#endif
+}
+
 /* delete a file */
 int mfu_unlink(const char* file)
 {
@@ -1442,7 +1503,7 @@ int daos_closedir(DIR* _dirp, mfu_file_t* mfu_file)
     struct dfs_mfu_t *dirp = (struct dfs_mfu_t *)_dirp;
     int rc = dfs_release(dirp->dir);
     if (rc) {
-        MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d)",
+        MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d %s)",
                 rc, strerror(rc));
         errno = rc;
         rc = -1;

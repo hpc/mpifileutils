@@ -2053,7 +2053,7 @@ static int mfu_copy_files(mfu_flist list, uint64_t chunk_size,
                     rc = -1;
 #if 0
                     /* delete destination file */
-                    int unlink_rc = mfu_unlink(dest);
+                    int unlink_rc = mfu_file_unlink(dest, mfu_dst_file);
                     if (unlink_rc != 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to unlink `%s' (errno=%d %s)",
                                   name, errno, strerror(errno)

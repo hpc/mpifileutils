@@ -354,7 +354,7 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
                         /* unlink files here if remove option is on,
                          * and dtype is known without a stat */
                         if (REMOVE_FILES && (entry->d_type != DT_DIR)) {
-                            mfu_unlink(newpath);
+                            mfu_file_unlink(newpath, mfu_file);
                         } else {
                             /* we can read object type from directory entry */
                             have_mode = 1;
@@ -372,7 +372,7 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
                             /* unlink files here if remove option is on,
                              * and stat was necessary to get type */
                             if (REMOVE_FILES && !S_ISDIR(st.st_mode)) {
-                                mfu_unlink(newpath);
+                                mfu_file_unlink(newpath, mfu_file);
                             } else {
                                 mfu_flist_insert_stat(CURRENT_LIST, newpath, mode, &st);
                             }
@@ -527,7 +527,7 @@ static void walk_stat_process(CIRCLE_handle* handle)
     /* TODO: filter items by stat info */
 
     if (REMOVE_FILES && !S_ISDIR(st.st_mode)) {
-        mfu_unlink(path);
+        mfu_file_unlink(path, mfu_file);
     } else {
         /* record info for item in list */
         mfu_flist_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
