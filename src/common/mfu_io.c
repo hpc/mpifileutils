@@ -249,6 +249,8 @@ int daos_access(const char* path, int amode, mfu_file_t* mfu_file)
     mfu_free(&dir_name);
     
     return rc;
+#else
+    return 0;
 #endif
 }
 
@@ -303,6 +305,8 @@ int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
     mfu_free(&dir_name);
 
     return rc;
+#else
+    return 0;
 #endif
 }
 
@@ -400,6 +404,8 @@ int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
     mfu_free(&dir_name);
 
     return rc;
+#else
+    return 0;
 #endif
 }
 
@@ -512,6 +518,8 @@ int daos_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file)
     mfu_free(&dir_name);
 
     return rc;
+#else
+    return 0;
 #endif
 }
 
@@ -682,6 +690,8 @@ int daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file)
     mfu_free(&dir_name);
 
     return rc;
+#else
+    return 0;
 #endif
 }
 
@@ -775,6 +785,8 @@ int daos_close(const char* file, mfu_file_t* mfu_file)
         rc = -1;
     }
     return rc;
+#else
+    return 0;
 #endif
 }
 
@@ -828,6 +840,8 @@ int daos_lseek(const char* file, mfu_file_t* mfu_file, off_t pos, int whence)
     } else {
         MFU_ABORT(-1, "daos_lseek whence type not known: %d", whence);
     }
+    return 0;
+#else
     return 0;
 #endif
 }
@@ -908,6 +922,8 @@ ssize_t daos_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_file
     mfu_file->offset += (daos_off_t)got_size;
 
     return (ssize_t)got_size;
+#else
+    return (ssize_t)0;
 #endif
 }
 
@@ -1024,6 +1040,8 @@ ssize_t daos_write(const char* file, const void* buf, size_t size, mfu_file_t* m
     mfu_file->offset += (daos_off_t)size;
 
     return (ssize_t)size;
+#else
+    return (ssize_t)0;
 #endif
 }
 
@@ -1066,6 +1084,8 @@ ssize_t daos_pread(const char* file, void* buf, size_t size, off_t offset, mfu_f
     }
 
     return (ssize_t)got_size;
+#else
+    return (ssize_t)0;
 #endif
 }
 
@@ -1163,6 +1183,8 @@ ssize_t daos_pwrite(const char* file, const void* buf, size_t size, off_t offset
     }
 
     return (ssize_t)size;
+#else
+    return (ssize_t)0;
 #endif
 }
 
@@ -1200,6 +1222,8 @@ int daos_ftruncate(mfu_file_t* mfu_file, off_t length)
         rc = -1;
     }
     return rc;
+#else
+    return 0;
 #endif
 }
 
@@ -1295,7 +1319,9 @@ int daos_unlink(const char* file, mfu_file_t* mfu_file)
     mfu_free(&name);
     mfu_free(&dir_name);
 
-    return rc; 
+    return rc;
+#else
+    return 0;
 #endif
 }
 
@@ -1394,6 +1420,8 @@ int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file)
     mfu_free(&dir_name);
 
     return rc;
+#else
+    return 0;
 #endif
 }
 
@@ -1480,6 +1508,8 @@ DIR* daos_opendir(const char* dir, mfu_file_t* mfu_file)
         return NULL;
     }
     return (DIR *)dirp;
+#else
+    return NULL;
 #endif
 }
 
@@ -1532,6 +1562,8 @@ int daos_closedir(DIR* _dirp, mfu_file_t* mfu_file)
     }
     free(dirp);
     return rc;
+#else
+    return 0;
 #endif
 }
 
@@ -1599,6 +1631,8 @@ struct dirent* daos_readdir(DIR* _dirp, mfu_file_t* mfu_file)
 ret:
     dirp->num_ents--;
     return &dirp->ents[dirp->num_ents];
+#else
+    return NULL;
 #endif
 }
 
