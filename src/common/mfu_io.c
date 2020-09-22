@@ -66,6 +66,7 @@ static dfs_obj_t* lookup_insert_dir(const char *name, mfu_file_t* mfu_file)
         d_list_t *rlink;
         int rc;
 
+        /* TODO: need to make sure we have a corresponding d_hash_table_destroy */
 	if (dir_hash == NULL) {
 	    rc = d_hash_table_create(0, 16, NULL, &hdl_hash_ops, &dir_hash);
 	    if (rc) {
@@ -282,7 +283,11 @@ int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
 
     dfs_obj_t* parent = NULL;
     int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
-    if (parent != NULL) {
+    if (parent == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
+        errno = ENOENT;
+        rc = -1;
+    } else {
         rc = dfs_chmod(mfu_file->dfs, parent, name, mode);
         if (rc) {
             MFU_LOG(MFU_LOG_ERR, "dfs_chmod %s failed (%d %s)",
@@ -290,10 +295,8 @@ int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
             errno = rc;
             rc = -1;
         }
-    } else {
-        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
-        errno = ENOENT;
-        rc = -1;
+        /* close the parent, ignoring errors since they have no direct impact */
+        dfs_release(parent);
     }
 
     mfu_free(&name);
@@ -385,6 +388,12 @@ int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
                 name, rc, strerror(rc));
         errno = rc;
         rc = -1;
+    }
+
+    /* close the parent, ignoring errors since they have no direct impact. 
+     * only close if dfs_lookup was called here */
+    if (mfu_file->only_daos && parent != NULL) {
+        dfs_release(parent);
     }
 
     mfu_free(&name);
@@ -651,7 +660,11 @@ int daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file)
 
     dfs_obj_t* parent = NULL;
     int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
-    if (parent != NULL) {
+    if (parent == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
+        errno = ENOENT;
+        rc = -1;
+    } else {
         rc = dfs_open(mfu_file->dfs, parent, name,
                       dfs_mode, flags,
                       0, 0, NULL, &(mfu_file->obj));
@@ -661,10 +674,8 @@ int daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file)
             errno = rc;
             rc = -1;
         }
-    } else {
-        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
-        errno = ENOENT;
-        rc = -1;
+        /* close the parent, ignoring errors since they have no direct impact */
+        dfs_release(parent);
     }
 
     mfu_free(&name);
@@ -1183,7 +1194,7 @@ int daos_ftruncate(mfu_file_t* mfu_file, off_t length)
     daos_off_t offset = (daos_off_t) length;
     int rc = dfs_punch(mfu_file->dfs, mfu_file->obj, offset, DFS_MAX_FSIZE);
     if (rc) {
-        MFU_LOG(MFU_LOG_ERR, "dfs_punch failed (%d)",
+        MFU_LOG(MFU_LOG_ERR, "dfs_punch failed (%d %s)",
                 rc, strerror(rc));
         errno = rc;
         rc = -1;
@@ -1354,18 +1365,29 @@ int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file)
     parse_filename(dir, &name, &dir_name);
     assert(dir_name);
 
-    /* Need to lookup parent directory in DFS */
-    dfs_obj_t* parent = NULL;
-    int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+    int rc = 0;
 
     /* only call mkdir if name is not the root DFS directory */
     if (name && strcmp(name, "/") != 0) {
-        rc = dfs_mkdir(mfu_file->dfs, parent, name, mode, 0);
-    }
-
-    if (rc) {
-        errno = rc;
-        rc = -1;
+        /* Need to lookup parent directory in DFS */
+        dfs_obj_t* parent = NULL;
+        rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+        if (parent == NULL) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
+            errno = ENOENT;
+            rc = -1;
+        } else {
+            /* Make the directory */
+            rc = dfs_mkdir(mfu_file->dfs, parent, name, mode, 0);
+            if (rc) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_mkdir %s failed (%d %s)", 
+                        name, rc, strerror(rc));
+                errno = rc;
+                rc = -1;
+            }
+            /* close the parent, ignoring errors since they have no direct impact */
+            dfs_release(parent);
+        }
     }
 
     mfu_free(&name);
