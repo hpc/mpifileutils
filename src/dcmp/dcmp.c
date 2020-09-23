@@ -30,8 +30,8 @@ static void print_usage(void)
     printf("  -o, --output <EXPR:FILE>  - write list of entries matching EXPR to FILE\n");
     printf("  -t, --text                - change output option to write in text format\n");
     printf("  -b, --base                - enable base checks and normal output with --output\n");
-    printf("      --blocksize <SIZE>    - IO buffer size in bytes (default 1MB)\n");
-    printf("      --chunksize <SIZE>    - minimum work size per task in bytes (default 1MB)\n");
+    printf("      --blocksize <SIZE>    - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
+    printf("      --chunksize <SIZE>    - minimum work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
     printf("  -s, --direct              - open files with O_DIRECT\n");
     printf("      --progress <N>        - print progress every N seconds\n");
     printf("  -v, --verbose             - verbose output\n");

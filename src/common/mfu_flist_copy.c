@@ -2269,7 +2269,7 @@ int mfu_flist_copy(mfu_flist src_cp_list, int numpaths,
     /* hard code some configurables for now */
 
     /* Set default block size */
-    mfu_copy_opts->block_size = FD_BLOCK_SIZE;
+    mfu_copy_opts->block_size = MFU_BLOCK_SIZE;
 
     /* allocate buffer to read/write files, aligned on 1MB boundaraies */
     size_t alignment = 1024*1024;
@@ -3152,10 +3152,10 @@ mfu_copy_opts_t* mfu_copy_opts_new(void)
     opts->sparse        = false;
 
     /* Set default chunk size */
-    opts->chunk_size    = FD_CHUNK_SIZE;
+    opts->chunk_size    = MFU_CHUNK_SIZE;
 
     /* temporaries used during the copy operation for buffers to read/write data */
-    opts->block_size    = FD_BLOCK_SIZE;
+    opts->block_size    = MFU_BLOCK_SIZE;
     opts->block_buf1    = NULL;
     opts->block_buf2    = NULL;
 
