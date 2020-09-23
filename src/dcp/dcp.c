@@ -631,7 +631,8 @@ void print_usage(void)
 #ifdef LUSTRE_SUPPORT
     /* printf("  -g, --grouplock <id> - use Lustre grouplock when reading/writing file\n"); */
 #endif
-    printf("  -b, --blocksize     - IO buffer size in bytes (default 1MB)\n");
+    printf("  -b, --blocksize <SIZE>   - IO buffer size in bytes (default 1MB)\n");
+    printf("  -k, --chunksize <SIZE>   - work size per task in bytes (default 1MB)\n");
     printf("      --daos-src-pool      - DAOS source pool \n");
     printf("      --daos-dst-pool      - DAOS destination pool \n");
     printf("      --daos-src-cont      - DAOS source container \n");
@@ -640,7 +641,6 @@ void print_usage(void)
     printf("      --daos-dst-svcl      - DAOS service level used by destination DAOS pool \n");
     printf("      --daos-prefix        - DAOS prefix for unified namespace path \n");
     printf("  -i, --input <file>       - read source list from file\n");
-    printf("  -k, --chunksize          - work size per task in bytes (default 1MB)\n");
     printf("  -p, --preserve           - preserve permissions, ownership, timestamps, extended attributes\n");
     printf("  -s, --direct             - open files with O_DIRECT\n");
     printf("  -S, --sparse             - create sparse files when possible\n");

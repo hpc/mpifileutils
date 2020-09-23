@@ -30,6 +30,8 @@ static void print_usage(void)
     printf("  -o, --output <EXPR:FILE>  - write list of entries matching EXPR to FILE\n");
     printf("  -t, --text                - change output option to write in text format\n");
     printf("  -b, --base                - enable base checks and normal output with --output\n");
+    printf("      --blocksize <SIZE>    - IO buffer size in bytes (default 1MB)\n");
+    printf("      --chunksize <SIZE>    - minimum work size per task in bytes (default 1MB)\n");
     printf("  -s, --direct              - open files with O_DIRECT\n");
     printf("      --progress <N>        - print progress every N seconds\n");
     printf("  -v, --verbose             - verbose output\n");
@@ -2067,16 +2069,18 @@ int main(int argc, char **argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"output",   1, 0, 'o'},
-        {"text",     0, 0, 't'},
-        {"base",     0, 0, 'b'},
-        {"direct",   0, 0, 's'},
-        {"progress", 1, 0, 'P'},
-        {"verbose",  0, 0, 'v'},
-        {"quiet",    0, 0, 'q'},
-        {"lite",     0, 0, 'l'},
-        {"debug",    0, 0, 'd'},
-        {"help",     0, 0, 'h'},
+        {"output",    1, 0, 'o'},
+        {"text",      0, 0, 't'},
+        {"base",      0, 0, 'b'},
+        {"blocksize", 1, 0, 'B'},
+        {"chunksize", 1, 0, 'k'},
+        {"direct",    0, 0, 's'},
+        {"progress",  1, 0, 'P'},
+        {"verbose",   0, 0, 'v'},
+        {"quiet",     0, 0, 'q'},
+        {"lite",      0, 0, 'l'},
+        {"debug",     0, 0, 'd'},
+        {"help",      0, 0, 'h'},
         {0, 0, 0, 0}
     };
     int ret = 0;
@@ -2085,6 +2089,7 @@ int main(int argc, char **argv)
     /* read in command line options */
     int usage = 0;
     int help  = 0;
+    unsigned long long bytes = 0;
     while (1) {
         int c = getopt_long(
             argc, argv, "o:tbsvqldh",
@@ -2107,6 +2112,28 @@ int main(int argc, char **argv)
             break;
         case 'b':
             options.base++;
+            break;
+        case 'B':
+            if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
+                if (rank == 0) {
+                    MFU_LOG(MFU_LOG_ERR,
+                            "Failed to parse block size: '%s'", optarg);
+                }
+                usage = 1;
+            } else {
+                copy_opts->block_size = (size_t)bytes;
+            }
+            break;
+        case 'k':
+            if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
+                if (rank == 0) {
+                    MFU_LOG(MFU_LOG_ERR,
+                            "Failed to parse chunk size: '%s'", optarg);
+                }
+                usage = 1;
+            } else {
+                copy_opts->chunk_size = bytes;
+            }
             break;
         case 's':
             copy_opts->direct = true;

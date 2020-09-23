@@ -48,17 +48,19 @@ static void print_usage(void)
     printf("Usage: dsync [options] source target\n");
     printf("\n");
     printf("Options:\n");
-    printf("      --dryrun          - show differences, but do not synchronize files\n");
-    printf("  -b  --batch-files <N> - batch files into groups of N during copy\n");
-    printf("  -c, --contents        - read and compare file contents rather than compare size and mtime\n");
-    printf("  -D, --delete          - delete extraneous files from target\n");
-    printf("  -s, --direct          - open files with O_DIRECT\n");
-    printf("      --link-dest <DIR> - hardlink to files in DIR when unchanged\n");
-    printf("  -S, --sparse          - create sparse files when possible\n");
-    printf("      --progress <N>    - print progress every N seconds\n");
-    printf("  -v, --verbose         - verbose output\n");
-    printf("  -q, --quiet           - quiet output\n");
-    printf("  -h, --help            - print usage\n");
+    printf("      --dryrun            - show differences, but do not synchronize files\n");
+    printf("  -b  --batch-files <N>   - batch files into groups of N during copy\n");
+    printf("      --blocksize <SIZE>  - IO buffer size in bytes (default 1MB)\n");
+    printf("      --chunksize <SIZE>  - minimum work size per task in bytes (default 1MB)\n");
+    printf("  -c, --contents          - read and compare file contents rather than compare size and mtime\n");
+    printf("  -D, --delete            - delete extraneous files from target\n");
+    printf("  -s, --direct            - open files with O_DIRECT\n");
+    printf("      --link-dest <DIR>   - hardlink to files in DIR when unchanged\n");
+    printf("  -S, --sparse            - create sparse files when possible\n");
+    printf("      --progress <N>      - print progress every N seconds\n");
+    printf("  -v, --verbose           - verbose output\n");
+    printf("  -q, --quiet             - quiet output\n");
+    printf("  -h, --help              - print usage\n");
     printf("\n");
     printf("For more information see https://mpifileutils.readthedocs.io.\n");
     fflush(stdout);
@@ -2848,6 +2850,8 @@ int main(int argc, char **argv)
     static struct option long_options[] = {
         {"dryrun",        0, 0, 'n'},
         {"batch-files",   1, 0, 'b'},
+        {"blocksize",     1, 0, 'B'},
+        {"chunksize",     1, 0, 'k'},
         {"contents",      0, 0, 'c'},
         {"delete",        0, 0, 'D'},
         {"direct",        0, 0, 's'},
@@ -2867,6 +2871,7 @@ int main(int argc, char **argv)
     /* read in command line options */
     int usage = 0;
     int help  = 0;
+    unsigned long long bytes = 0;
 
     /* Don't delete dst files by default */
     options.delete = 0;
@@ -2884,6 +2889,28 @@ int main(int argc, char **argv)
         switch (c) {
         case 'b':
             copy_opts->batch_files = atoi(optarg);
+            break;
+        case 'B':
+            if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
+                if (rank == 0) {
+                    MFU_LOG(MFU_LOG_ERR,
+                            "Failed to parse block size: '%s'", optarg);
+                }
+                usage = 1;
+            } else {
+                copy_opts->block_size = (size_t)bytes;
+            }
+            break;
+        case 'k':
+            if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
+                if (rank == 0) {
+                    MFU_LOG(MFU_LOG_ERR,
+                            "Failed to parse chunk size: '%s'", optarg);
+                }
+                usage = 1;
+            } else {
+                copy_opts->chunk_size = bytes;
+            }
             break;
         case 'c':
             options.contents++;
