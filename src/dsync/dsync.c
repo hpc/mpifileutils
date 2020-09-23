@@ -50,8 +50,8 @@ static void print_usage(void)
     printf("Options:\n");
     printf("      --dryrun            - show differences, but do not synchronize files\n");
     printf("  -b  --batch-files <N>   - batch files into groups of N during copy\n");
-    printf("      --blocksize <SIZE>  - IO buffer size in bytes (default 1MB)\n");
-    printf("      --chunksize <SIZE>  - minimum work size per task in bytes (default 1MB)\n");
+    printf("      --blocksize <SIZE>  - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
+    printf("      --chunksize <SIZE>  - minimum work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
     printf("  -c, --contents          - read and compare file contents rather than compare size and mtime\n");
     printf("  -D, --delete            - delete extraneous files from target\n");
     printf("  -s, --direct            - open files with O_DIRECT\n");

@@ -631,8 +631,8 @@ void print_usage(void)
 #ifdef LUSTRE_SUPPORT
     /* printf("  -g, --grouplock <id> - use Lustre grouplock when reading/writing file\n"); */
 #endif
-    printf("  -b, --blocksize <SIZE>   - IO buffer size in bytes (default 1MB)\n");
-    printf("  -k, --chunksize <SIZE>   - work size per task in bytes (default 1MB)\n");
+    printf("  -b, --blocksize <SIZE>   - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
+    printf("  -k, --chunksize <SIZE>   - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
     printf("      --daos-src-pool      - DAOS source pool \n");
     printf("      --daos-dst-pool      - DAOS destination pool \n");
     printf("      --daos-src-cont      - DAOS source container \n");
