@@ -3171,10 +3171,10 @@ mfu_file_t* mfu_file_new(void)
     mfu_file_t* mfile = (mfu_file_t*) MFU_MALLOC(sizeof(mfu_file_t));
     mfile->type       = POSIX;
     mfile->fd         = -1;
-    mfile->only_daos  = false;
 #ifdef DAOS_SUPPORT
     mfile->obj        = NULL;
     mfile->dfs        = NULL;
+    mfile->dfs_hash   = NULL;
 #endif
     return mfile;
 }

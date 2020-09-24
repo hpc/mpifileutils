@@ -4,6 +4,7 @@
 #include "mfu.h"
 #include "mpi.h"
 #include "dtcmp.h"
+#include "mfu_errors.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +27,7 @@
 
 #ifdef DAOS_SUPPORT
 #include <gurt/common.h>
+#include <gurt/hash.h>
 #endif
 
 int mfu_initialized = 0;
@@ -194,6 +196,40 @@ bcast:
     daos_bcast_handle(rank, coh, poh, CONT_HANDLE);
 
     return 0;
+}
+
+int daos_mount(
+  mfu_file_t* mfu_file,
+  daos_handle_t* poh,
+  daos_handle_t* coh)
+{
+    /* Mount dfs */
+    int rc = dfs_mount(*poh, *coh, O_RDWR, &mfu_file->dfs);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): "
+                MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
+        rc = -1;
+    }
+
+    return rc;
+}
+
+int daos_umount(
+  mfu_file_t* mfu_file)
+{
+    /* Unmount dfs */
+    int rc = dfs_umount(mfu_file->dfs);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to unmount DFS namespace");
+        rc = -1;
+    }
+
+    /* Clean up the hash */
+    if (mfu_file->dfs_hash != NULL) {
+        d_hash_table_destroy(mfu_file->dfs_hash, true);
+    }
+
+    return rc;
 }
 #endif
 
