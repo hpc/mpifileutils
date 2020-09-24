@@ -136,6 +136,19 @@ int daos_connect(
   bool connect_pool,
   bool create_cont
 );
+
+/* Mount DAOS dfs */
+int daos_mount(
+  mfu_file_t* mfu_file,
+  daos_handle_t* poh,
+  daos_handle_t* coh
+);
+
+/* Unmount DAOS dfs.
+ * Cleanup up hash */
+int daos_umount(
+  mfu_file_t* mfu_file
+);
 #endif
 
 /* initialize mfu library,

@@ -25,81 +25,136 @@
 static int mpi_rank;
 
 #ifdef DAOS_SUPPORT
-struct d_hash_table *dir_hash;
-
-struct mfu_dir_hdl {
-        d_list_t	entry;
-        dfs_obj_t	*oh;
-        char		name[PATH_MAX];
+/* Handle for a hash table entry */
+struct daos_dir_hdl {
+    d_list_t    entry;
+    dfs_obj_t*  oh;
+    char*       name;
 };
 
-static inline struct mfu_dir_hdl* hdl_obj(d_list_t *rlink)
+/* Return a newly allocated daos_dir_hdl structure */
+static struct daos_dir_hdl* daos_dir_hdl_new(void)
 {
-        return container_of(rlink, struct mfu_dir_hdl, entry);
+    struct daos_dir_hdl* hdl = (struct daos_dir_hdl*) MFU_MALLOC(sizeof(struct daos_dir_hdl));
+    hdl->oh = NULL;
+    hdl->name = NULL;
+
+    return hdl;
 }
 
-static bool key_cmp(struct d_hash_table *htable, d_list_t *rlink,
-	const void *key, unsigned int ksize)
+/* free a daos_dir_hdl structure */
+static void daos_dir_hdl_delete(struct daos_dir_hdl** phdl)
 {
-        struct mfu_dir_hdl *hdl = hdl_obj(rlink);
-
-        return (strcmp(hdl->name, (const char *)key) == 0);
-}
-
-static void rec_free(struct d_hash_table *htable, d_list_t *rlink)
-{
-        struct mfu_dir_hdl *hdl = hdl_obj(rlink);
-
-        assert(d_hash_rec_unlinked(&hdl->entry));
-        dfs_release(hdl->oh);
-        free(hdl);
-}
-
-static d_hash_table_ops_t hdl_hash_ops = {
-        .hop_key_cmp	= key_cmp,
-        .hop_rec_free	= rec_free
-};
-
-static dfs_obj_t* lookup_insert_dir(const char *name, mfu_file_t* mfu_file)
-{
-        struct mfu_dir_hdl *hdl;
-        d_list_t *rlink;
-        int rc;
-
-        /* TODO: need to make sure we have a corresponding d_hash_table_destroy */
-	if (dir_hash == NULL) {
-	    rc = d_hash_table_create(0, 16, NULL, &hdl_hash_ops, &dir_hash);
-	    if (rc) {
-		    fprintf(stderr, "Failed to initialize dir hashtable");
-		    return NULL;
-	    }
-	}
-
-        rlink = d_hash_rec_find(dir_hash, name, strlen(name));
-        if (rlink != NULL) {
-                hdl = hdl_obj(rlink);
-                return hdl->oh;
+    if (phdl != NULL) {
+        struct daos_dir_hdl* hdl = *phdl;
+        if (hdl->oh != NULL) {
+            dfs_release(hdl->oh);
         }
+        mfu_free(&hdl->name);
+        mfu_free(phdl);
+    }
+}
 
-        hdl = calloc(1, sizeof(struct mfu_dir_hdl));
-        if (hdl == NULL)
-		return NULL;
+/* Get the daos_dir_hdl from its entry */
+static inline struct daos_dir_hdl* hdl_obj(d_list_t* rlink)
+{
+    return container_of(rlink, struct daos_dir_hdl, entry);
+}
 
-        strncpy(hdl->name, name, PATH_MAX-1);
-        hdl->name[PATH_MAX-1] = '\0';
+/* Simple string comparison of hdl->name as the key */
+static bool key_cmp(struct d_hash_table* htable, d_list_t* rlink, 
+        const void* key, unsigned int ksize)
+{
+    struct daos_dir_hdl* hdl = hdl_obj(rlink);
 
-        rc = dfs_lookup(mfu_file->dfs, name, O_RDWR, &hdl->oh, NULL, NULL);
-	if (rc) {
-		fprintf(stderr, "dfs_lookup() of %s Failed", name);
-		return NULL;
-	}
+    return (strcmp(hdl->name, (const char *)key) == 0);
+}
 
-        rc = d_hash_rec_insert(dir_hash, hdl->name, strlen(hdl->name),
-                               &hdl->entry, true);
-	if (rc)
-		return NULL;
+/* Since we only delete entries when we are finished with them,
+ * this should always return true so rec_free is called */
+static bool rec_decref(struct d_hash_table* htable, d_list_t* rlink)
+{
+    return true;
+}
 
+/* Free a hash entry. Called when the table is destroyed */
+static void rec_free(struct d_hash_table* htable, d_list_t* rlink)
+{
+    struct daos_dir_hdl* hdl = hdl_obj(rlink);
+
+    assert(d_hash_rec_unlinked(&hdl->entry));
+    daos_dir_hdl_delete(&hdl);
+}
+
+/* Operations for the hash table */
+static d_hash_table_ops_t hdl_hash_ops = {
+    .hop_key_cmp    = key_cmp,
+    .hop_rec_decref = rec_decref,
+    .hop_rec_free   = rec_free
+};
+
+/* Caches calls to dfs_lookup and returns lookups from the cache. */
+static dfs_obj_t* daos_hash_lookup(const char* name, mfu_file_t* mfu_file)
+{
+    struct daos_dir_hdl* hdl;
+    d_list_t* rlink;
+    int rc;
+
+    /* Make sure the hash is initialized */
+    if (mfu_file->dfs_hash == NULL) {
+        rc = d_hash_table_create(D_HASH_FT_NOLOCK, 16, NULL, &hdl_hash_ops, &mfu_file->dfs_hash);
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to initialize dir hashtable");
+            return NULL;
+        }
+    }
+
+    /* If cached, return it */
+    rlink = d_hash_rec_find(mfu_file->dfs_hash, name, strlen(name));
+    if (rlink != NULL) {
+        hdl = hdl_obj(rlink);
         return hdl->oh;
+    }
+
+    /* Create a new entry */
+    hdl = daos_dir_hdl_new();
+    if (hdl == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to initialze hash entry");
+        daos_dir_hdl_delete(&hdl);
+        return NULL;
+    }
+
+    /* Allocate space for name, up to PATH_MAX,
+     * leaving 1 extra for the null terminator */
+    size_t name_len = strnlen(name, PATH_MAX-1);
+    if (name_len >= PATH_MAX-1) {
+        MFU_LOG(MFU_LOG_ERR, "name is too long");
+        daos_dir_hdl_delete(&hdl);
+        return NULL;
+    }
+    hdl->name = MFU_STRDUP(name);
+
+    /* Lookup the object handle */
+    rc = dfs_lookup(mfu_file->dfs, name, O_RDWR, &hdl->oh, NULL, NULL);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_lookup() of %s Failed", name);
+        daos_dir_hdl_delete(&hdl);
+        return NULL;
+    }
+
+    /* Store this entry in the hash.
+     * Since we have already called d_hash_rec_find,
+     * pass exclusive=false to avoid another find being called */
+    rc = d_hash_rec_insert(mfu_file->dfs_hash, hdl->name, name_len,
+                            &hdl->entry, false);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to insert hash entry");
+        daos_dir_hdl_delete(&hdl);
+        return NULL;
+    }
+
+    /* Return the object */
+    return hdl->oh;
 }
 
 static int parse_filename(const char* path, char** _obj_name, char** _cont_name)
@@ -283,10 +338,10 @@ int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
     parse_filename(path, &name, &dir_name);
     assert(dir_name);
 
-    dfs_obj_t* parent = NULL;
-    int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+    int rc = 0;
+
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
     if (parent == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
         errno = ENOENT;
         rc = -1;
     } else {
@@ -297,8 +352,6 @@ int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
             errno = rc;
             rc = -1;
         }
-        /* close the parent, ignoring errors since they have no direct impact */
-        dfs_release(parent);
     }
 
     mfu_free(&name);
@@ -366,6 +419,7 @@ retry:
     return rc;
 }
 
+/* stat a DAOS path */
 int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
@@ -374,30 +428,22 @@ int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
     parse_filename(path, &name, &dir_name);
     assert(dir_name);
 
-    dfs_obj_t* parent = NULL;
-    int rc;
-    if (mfu_file->only_daos) {
-        rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+    int rc = 0;
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    if (parent == NULL) {
+        errno = ENOENT;
+        rc = -1;
+    } else {
+        /* Stat the path */
+        rc = dfs_stat(mfu_file->dfs, parent, name, buf);
         if (rc) {
-            MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
-            errno = ENOENT;
+            MFU_LOG(MFU_LOG_ERR, "dfs_stat %s failed (%d %s)",
+                    name, rc, strerror(rc));
+            errno = rc;
             rc = -1;
         }
-    } else {
-        parent = lookup_insert_dir(dir_name, mfu_file);
-    }
-    rc = dfs_stat(mfu_file->dfs, parent, name, buf);
-    if (rc) {
-        MFU_LOG(MFU_LOG_ERR, "dfs_stat %s failed (%d %s)",
-                name, rc, strerror(rc));
-        errno = rc;
-        rc = -1;
-    }
-
-    /* close the parent, ignoring errors since they have no direct impact. 
-     * only close if dfs_lookup was called here */
-    if (mfu_file->only_daos && parent != NULL) {
-        dfs_release(parent);
     }
 
     mfu_free(&name);
@@ -482,10 +528,11 @@ int daos_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file)
     parse_filename(path, &name, &dir_name);
     assert(dir_name);
 
-    dfs_obj_t* parent = NULL;
-    int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+    int rc = 0;
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
     if (parent == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
         errno = ENOENT;
         rc = -1;
     }
@@ -510,8 +557,6 @@ int daos_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file)
                 rc = -1;
             }
         }
-        /* close the parent, ignoring errors since they have no direct impact */
-        dfs_release(parent);
     }
 
     mfu_free(&name);
@@ -666,10 +711,11 @@ int daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file)
     parse_filename(file, &name, &dir_name);
     assert(dir_name);
 
-    dfs_obj_t* parent = NULL;
-    int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+    int rc = 0;
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
     if (parent == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
         errno = ENOENT;
         rc = -1;
     } else {
@@ -682,8 +728,6 @@ int daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file)
             errno = rc;
             rc = -1;
         }
-        /* close the parent, ignoring errors since they have no direct impact */
-        dfs_release(parent);
     }
 
     mfu_free(&name);
@@ -1277,7 +1321,10 @@ int mfu_file_unlink(const char* file, mfu_file_t* mfu_file)
     } 
 }
 
-/* emulates unlink on a DAOS file or symlink */
+/* emulates unlink on a DAOS file or symlink.
+ * Since checking the file type would require another
+ * lookup, for performance considerations,
+ * this also works on directories. */
 int daos_unlink(const char* file, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
@@ -1286,34 +1333,23 @@ int daos_unlink(const char* file, mfu_file_t* mfu_file)
     parse_filename(file, &name, &dir_name);
     assert(dir_name);
 
-    /* Need to lookup parent directory in DFS */
-    dfs_obj_t* parent = NULL;
-    mode_t mode;
-    int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, &mode, NULL);
+    int rc = 0;
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
     if (parent == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
         errno = ENOENT;
         rc = -1;
     } 
     else {
-        /* only allow regular files and symlinks */
-        if (!S_ISREG(mode) && !S_ISLNK(mode)) {
-            MFU_LOG(MFU_LOG_ERR, "Invalid entry type (not a file or symlink)");
-            errno = EINVAL;
+        /* remove the file */
+        rc = dfs_remove(mfu_file->dfs, parent, name, false, NULL);
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_remove failed (%d %s)",
+                    rc, strerror(rc));
+            errno = rc;
             rc = -1;
         }
-        else {
-            /* remove the file */
-            rc = dfs_remove(mfu_file->dfs, parent, name, false, NULL);
-            if (rc) {
-                MFU_LOG(MFU_LOG_ERR, "dfs_remove failed (%d %s)",
-                        rc, strerror(rc));
-                errno = rc;
-                rc = -1;
-            }
-        }
-        /* close the parent, ignoring errors since they have no direct impact */
-        dfs_release(parent);
     }
 
     mfu_free(&name);
@@ -1395,11 +1431,9 @@ int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file)
 
     /* only call mkdir if name is not the root DFS directory */
     if (name && strcmp(name, "/") != 0) {
-        /* Need to lookup parent directory in DFS */
-        dfs_obj_t* parent = NULL;
-        rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+        /* Lookup the parent directory */
+        dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
         if (parent == NULL) {
-            MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
             errno = ENOENT;
             rc = -1;
         } else {
@@ -1411,8 +1445,6 @@ int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file)
                 errno = rc;
                 rc = -1;
             }
-            /* close the parent, ignoring errors since they have no direct impact */
-            dfs_release(parent);
         }
     }
 
@@ -1492,6 +1524,7 @@ struct dfs_mfu_t {
 };
 #endif
 
+/* open directory. This is not cached in mfu_file->dir_hash */
 DIR* daos_opendir(const char* dir, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
@@ -1501,7 +1534,7 @@ DIR* daos_opendir(const char* dir, mfu_file_t* mfu_file)
         return NULL;
     }
     int rc = dfs_lookup(mfu_file->dfs, dir, O_RDWR, &dirp->dir, NULL, NULL);
-    if (rc) {
+    if (dirp->dir == NULL) {
         MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir);
         errno = ENOENT;
         free(dirp);
@@ -1549,6 +1582,7 @@ DIR* mfu_file_opendir(const char* dir, mfu_file_t* mfu_file)
     }
 }
 
+/* close dir. This is not cached in mfu_file->dir_hash */
 int daos_closedir(DIR* _dirp, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT

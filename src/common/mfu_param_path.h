@@ -54,14 +54,14 @@ typedef struct mfu_param_path_t {
 
 /* options passed to I/O functions that tell them which backend filesystem to use */
 typedef struct {
-    enum        {POSIX, DAOS} type;
-    int         fd;
-    bool        only_daos;
+    enum                 {POSIX, DAOS} type;
+    int                  fd;
 #ifdef DAOS_SUPPORT
     /* DAOS specific variables for I/O */
-    daos_off_t   offset;
-    dfs_obj_t*   obj;
-    dfs_t*       dfs;
+    daos_off_t           offset;
+    dfs_obj_t*           obj;
+    dfs_t*               dfs;
+    struct d_hash_table* dfs_hash;
 #endif
 } mfu_file_t;
 

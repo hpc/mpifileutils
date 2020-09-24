@@ -35,8 +35,6 @@ typedef struct {
     uuid_t dst_pool_uuid;  /* destination pool UUID */
     uuid_t src_cont_uuid;  /* source container UUID */
     uuid_t dst_cont_uuid;  /* destination container UUID */
-    dfs_t* dfs1;           /* source dfs object */
-    dfs_t* dfs2;           /* destination dfs object */
     char* src_svc;         /* source service level */
     char* dst_svc;         /* destination service level */
     char* dfs_prefix;      /* prefix for UNS */
@@ -52,8 +50,6 @@ static daos_args_t* daos_args_new(void)
     da->dst_poh    = DAOS_HDL_INVAL;
     da->src_coh    = DAOS_HDL_INVAL;
     da->dst_coh    = DAOS_HDL_INVAL;
-    da->dfs1       = NULL;
-    da->dfs2       = NULL;
     da->src_svc    = NULL;
     da->dst_svc    = NULL;
     da->dfs_prefix = NULL;
@@ -67,8 +63,7 @@ static daos_args_t* daos_args_new(void)
     return da;
 }
 
-/* free a daos_args_t structure.
- * dfs is handled in dfs_umount */
+/* free a daos_args_t structure */
 static void daos_args_delete(daos_args_t** pda)
 {
     if (pda != NULL) {
@@ -461,10 +456,8 @@ static int daos_setup(
 
     if (!local_daos_error && mfu_src_file->type == DAOS) {
         /* DFS is mounted for the source container */
-        tmp_rc = dfs_mount(da->src_poh, da->src_coh, O_RDWR, &da->dfs1);
+        tmp_rc = daos_mount(mfu_src_file, &da->src_poh, &da->src_coh);
         if (tmp_rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
             local_daos_error = true;
         }
     }
@@ -472,13 +465,11 @@ static int daos_setup(
     if (!local_daos_error && mfu_dst_file->type == DAOS) {
         /* DFS is mounted for the destination container */
         if (same_pool) {
-            tmp_rc = dfs_mount(da->src_poh, da->dst_coh, O_RDWR, &da->dfs2);
+            tmp_rc = daos_mount(mfu_dst_file, &da->src_poh, &da->dst_coh);
         } else {
-            tmp_rc = dfs_mount(da->dst_poh, da->dst_coh, O_RDWR, &da->dfs2);
+            tmp_rc = daos_mount(mfu_dst_file, &da->dst_poh, &da->dst_coh);
         }
         if (tmp_rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
             local_daos_error = true;
         }
     }
@@ -488,11 +479,6 @@ static int daos_setup(
         tmp_rc = daos_fini();
         return 1;
     }
-
-    /* set source and destination files to address of their
-     * DFS mount within DAOS */
-    mfu_src_file->dfs = da->dfs1;
-    mfu_dst_file->dfs = da->dfs2;
 
     /* Everything looks good so far */
     return 0;
@@ -518,12 +504,13 @@ static int daos_cleanup(
     }
 
     if (mfu_src_file->type == DAOS) {
-        tmp_rc = dfs_umount(mfu_src_file->dfs);
+        tmp_rc = daos_umount(mfu_src_file);
         MPI_Barrier(MPI_COMM_WORLD);
         if (tmp_rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to umount DFS namespace");
             rc = 1;
         }
+
+        /* Close the container */
         tmp_rc = daos_cont_close(da->src_coh, NULL);
         MPI_Barrier(MPI_COMM_WORLD);
         if (tmp_rc != 0) {
@@ -533,12 +520,13 @@ static int daos_cleanup(
     }
 
     if (mfu_dst_file->type == DAOS) {
-        tmp_rc = dfs_umount(mfu_dst_file->dfs);
+        tmp_rc = daos_umount(mfu_dst_file);
         MPI_Barrier(MPI_COMM_WORLD);
         if (tmp_rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed unmount DFS namespace");
             rc = 1;
         }
+
+        /* Close the container */
         tmp_rc = daos_cont_close(da->dst_coh, NULL);
         MPI_Barrier(MPI_COMM_WORLD);
         if (tmp_rc != 0) {
