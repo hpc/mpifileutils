@@ -161,6 +161,9 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
         return;
     }
 
+#if !defined(SYS_getdents) && defined(SYS_getdents64)
+#define SYS_getdents SYS_getdents64
+#endif
     /* Read all directory entries */
     while (1) {
         /* execute system call to get block of directory entries */
