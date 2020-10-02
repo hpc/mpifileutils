@@ -393,6 +393,44 @@ mfu_file_chunk* mfu_file_chunk_list_alloc(mfu_flist list, uint64_t chunk_size)
         tail = p;
     }
 
+    /* free the send and receive flag arrays */
+    mfu_free(&sendlist);
+    mfu_free(&recvlist);
+
+    /* free the linked lists, packed send buffers, and related arrays */
+    for (int i = 0; i < send_ranks; i++) {
+        mfu_free(&sendbufs[i]);
+
+        /* free the element linked list for each rank.
+         * Do not free elem->name because it is needed by the mfu_flist entry. */
+        mfu_file_chunk* elem = heads[i];
+        mfu_file_chunk* tmp;
+        while (elem != NULL) {
+            tmp = elem;
+            elem = elem->next;
+            mfu_free(&tmp);
+        }
+    }
+    mfu_free(&heads);
+    mfu_free(&tails);
+    mfu_free(&counts);
+    mfu_free(&bytes);
+    mfu_free(&sendbufs);
+
+    /* free the array for ranks recevied from */
+    mfu_free(&recvranklist);
+
+    /* free the request and status messages */
+    mfu_free(&request);
+    mfu_free(&status);
+    
+    /* free the bytes counts arrays */
+    mfu_free(&send_counts);
+    mfu_free(&recv_counts);
+
+    /* free the receive buffer */
+    mfu_free(&recvbuf);
+
     return head;
 }
 
