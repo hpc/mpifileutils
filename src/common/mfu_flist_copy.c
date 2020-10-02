@@ -1084,7 +1084,7 @@ static int mfu_create_link(
 
     /* read link target */
     char path[PATH_MAX + 1];
-    ssize_t readlink_rc = mfu_readlink(src_path, path, sizeof(path) - 1);
+    ssize_t readlink_rc = mfu_file_readlink(src_path, path, sizeof(path) - 1, mfu_src_file);
     if(readlink_rc < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() (errno=%d %s)",
             src_path, errno, strerror(errno)
@@ -1097,7 +1097,7 @@ static int mfu_create_link(
     path[readlink_rc] = '\0';
 
     /* create new link */
-    int symlink_rc = mfu_symlink(path, dest_path);
+    int symlink_rc = mfu_file_symlink(path, dest_path, mfu_dst_file);
     if(symlink_rc < 0) {
         if(errno == EEXIST) {
             MFU_LOG(MFU_LOG_WARN,
