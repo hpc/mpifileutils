@@ -126,8 +126,8 @@ static dfs_obj_t* daos_hash_lookup(const char* name, mfu_file_t* mfu_file)
 
     /* Allocate space for name, up to PATH_MAX,
      * leaving 1 extra for the null terminator */
-    size_t name_len = strnlen(name, PATH_MAX-1);
-    if (name_len >= PATH_MAX-1) {
+    size_t name_len = strnlen(name, PATH_MAX);
+    if (name_len > PATH_MAX-1) {
         MFU_LOG(MFU_LOG_ERR, "name is too long");
         daos_dir_hdl_delete(&hdl);
         return NULL;
@@ -628,6 +628,54 @@ retry:
  * Links
  ****************************/
 
+/* emulates readlink with dfs_lookup, dfs_get_symlink_value */
+ssize_t daos_readlink(const char* path, char* buf, size_t bufsize, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(path, &name, &dir_name);
+    assert(dir_name);
+
+    daos_size_t got_size = (daos_size_t) bufsize;
+
+    /* Lookup the parent directory first, since it is likely cached */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    if (parent == NULL) {
+        errno = ENOENT;
+        got_size = -1;
+    } else { 
+        /* Lookup the symlink within the parent */
+        dfs_obj_t* sym_obj;
+        int rc = dfs_lookup_rel(mfu_file->dfs, parent, name, O_RDWR, &sym_obj, NULL, NULL);
+        if (sym_obj == NULL) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_lookup_rel %s failed", path);
+            errno = ENOENT;
+            got_size = -1;
+        } else {
+            /* Read the symlink value. This also makes sure it is S_IFLNK */
+            rc = dfs_get_symlink_value(sym_obj, buf, &got_size);
+            if (rc) {
+                errno = rc;
+                got_size = -1;
+            } else {
+                /* got_size includes the NULL terminator, but mfu_file_readlink
+                * expects that it does not */
+                got_size--;
+            }
+
+            /* Release the symlink */
+            dfs_release(sym_obj);
+        }
+    }
+
+    return (ssize_t) got_size;
+
+#else
+    return (ssize_t) 0;
+#endif
+}
+
 /* call readlink, retry a few times on EINTR or EIO */
 ssize_t mfu_readlink(const char* path, char* buf, size_t bufsize)
 {
@@ -649,6 +697,69 @@ retry:
     return rc;
 }
 
+ssize_t mfu_file_readlink(const char* path, char* buf, size_t bufsize, mfu_file_t* mfu_file)
+{
+    int rc;
+
+    if (mfu_file->type == POSIX) {
+        rc = mfu_readlink(path, buf, bufsize);
+    } else if (mfu_file->type == DAOS) {
+        rc = daos_readlink(path, buf, bufsize, mfu_file);
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  path, mfu_file->type);
+    }
+
+    return rc;
+}
+
+/* emulates symlink for a DAOS symlink */
+int daos_symlink(const char* oldpath, const char* newpath, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(newpath, &name, &dir_name);
+    assert(dir_name);
+
+    int rc = 0;
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    if (parent == NULL) {
+        errno = ENOENT;
+        rc = -1;
+    } else {
+        /* open/create the symlink */
+        rc = dfs_open(mfu_file->dfs, parent, name,
+                      S_IFLNK, O_CREAT,
+                      0, 0, oldpath, &(mfu_file->obj));
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_open %s failed (%d %s)",
+                    name, rc, strerror(rc));
+            errno = rc;
+            rc = -1;
+        } else {
+            /* close the symlink */
+            rc = dfs_release(mfu_file->obj);
+            if (rc) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_release %s failed (%d %s)",
+                        newpath, rc, strerror(rc));
+                errno = rc;
+                rc = -1;
+            }
+        }
+    }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
+
+    return rc;
+#else
+    return 0;
+#endif
+}
+
 /* call symlink, retry a few times on EINTR or EIO */
 int mfu_symlink(const char* oldpath, const char* newpath)
 {
@@ -667,6 +778,22 @@ retry:
             }
         }
     }
+    return rc;
+}
+
+int mfu_file_symlink(const char* oldpath, const char* newpath, mfu_file_t* mfu_file)
+{
+    int rc;
+
+    if (mfu_file->type == POSIX) {
+        rc = mfu_symlink(oldpath, newpath);
+    } else if (mfu_file->type == DAOS) {
+        rc = daos_symlink(oldpath, newpath, mfu_file);
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  oldpath, mfu_file->type);
+    }
+
     return rc;
 }
 

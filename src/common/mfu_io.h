@@ -99,12 +99,16 @@ struct dirent* daos_readdir(DIR* dirp, mfu_file_t* mfu_file);
  ****************************/
 
 /* call readlink, retry a few times on EINTR or EIO */
+ssize_t mfu_file_readlink(const char* path, char* buf, size_t bufsize, mfu_file_t* mfu_file);
+ssize_t daos_readlink(const char* path, char* buf, size_t bufsize, mfu_file_t* mfu_file);
 ssize_t mfu_readlink(const char* path, char* buf, size_t bufsize);
 
 /* call hardlink, retry a few times on EINTR or EIO */
 int mfu_hardlink(const char* oldpath, const char* newpath);
 
 /* call symlink, retry a few times on EINTR or EIO */
+int mfu_file_symlink(const char* oldpath, const char* newpath, mfu_file_t* mfu_file);
+int daos_symlink(const char* oldpath, const char* newpath, mfu_file_t* mfu_file);
 int mfu_symlink(const char* oldpath, const char* newpath);
 
 /*****************************
