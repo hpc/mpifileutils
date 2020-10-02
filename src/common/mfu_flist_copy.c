@@ -102,7 +102,9 @@ static mfu_copy_stats_t mfu_copy_stats;
 static mfu_copy_file_cache_t mfu_copy_src_cache;
 static mfu_copy_file_cache_t mfu_copy_dst_cache;
 
-static void mfu_copy_open_file(
+/* open and cache a file.
+ * Returns 0 on success; -1 otherwise */
+static int mfu_copy_open_file(
     const char* file,             /* path to file to be opened */
     int read_flag,                /* set to 1 to open in read only, 0 for write */
     mfu_copy_file_cache_t* cache, /* cache the open file to avoid repetitive open/close of the same file */
@@ -120,7 +122,7 @@ static void mfu_copy_open_file(
         if (strcmp(name, file) == 0 && cache->read == read_flag) {
             /* the file we're trying to open matches name and read/write mode,
              * so just return the cached descriptor */
-            return;
+            return 0;
         } else {
             /* the file we're trying to open is different,
              * close the old file and delete the name */
@@ -145,7 +147,11 @@ static void mfu_copy_open_file(
     }
 
     /* cache the file descriptor */
-    if (mfu_file->fd != -1 && mfu_file->type == POSIX) {
+    if (mfu_file->type == POSIX) {
+        if (mfu_file->fd < 0) {
+            return -1;
+        }
+
         cache->name = MFU_STRDUP(file);
         cache->fd   = mfu_file->fd;
         cache->read = read_flag;
@@ -169,12 +175,18 @@ static void mfu_copy_open_file(
     }
 
 #ifdef DAOS_SUPPORT
-    if (mfu_file->obj != NULL && mfu_file->type == DAOS) {
+    if (mfu_file->type == DAOS) {
+        if (mfu_file->obj == NULL) {
+            return -1;
+        }
+        
         cache->name = MFU_STRDUP(file);
         cache->read = read_flag;
         cache->obj  = mfu_file->obj;
     }
 #endif
+
+    return 0;
 }
 
 /* close a file that opened with mfu_copy_open_file */
@@ -1958,19 +1970,20 @@ static int mfu_copy_file(
     int ret;
 
     /* open the input file */
-    mfu_copy_open_file(src, 1, &mfu_copy_src_cache,
-                       copy_opts, mfu_src_file);
-    if (mfu_src_file->fd < 0 && mfu_src_file->type != DAOS) {
+    ret = mfu_copy_open_file(src, 1, &mfu_copy_src_cache,
+                             copy_opts, mfu_src_file);
+    if (ret) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open input file `%s' (errno=%d %s)",
             src, errno, strerror(errno));
         return -1;
     }
 
     /* open the output file */
-    mfu_copy_open_file(dest, 0, &mfu_copy_dst_cache,
-                       copy_opts, mfu_dst_file);
-    if (mfu_dst_file->fd < 0 && mfu_dst_file->type != DAOS) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to open output file `%s' (errno=%d %s)", dest, errno, strerror(errno));
+    ret = mfu_copy_open_file(dest, 0, &mfu_copy_dst_cache,
+                             copy_opts, mfu_dst_file);
+    if (ret) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to open output file `%s' (errno=%d %s)",
+                dest, errno, strerror(errno));
         return -1;
     }
 
@@ -2711,16 +2724,14 @@ static int mfu_fill_file(
     mfu_copy_opts_t* copy_opts,
     mfu_file_t* mfu_file)
 {
-    int ret;
-
     /* open the file */
-    mfu_copy_open_file(dest, 0, &mfu_copy_dst_cache, copy_opts, mfu_file);
-    int out_fd = mfu_file->fd; 
-    if (out_fd < 0) {
+    int ret = mfu_copy_open_file(dest, 0, &mfu_copy_dst_cache, copy_opts, mfu_file);
+    if (ret) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open output file `%s' (errno=%d %s)",
             dest, errno, strerror(errno));
         return -1;
     }
+    int out_fd = mfu_file->fd;
 
     /* seek to offset in file */
     if (mfu_lseek(dest, out_fd, offset, SEEK_SET) == (off_t)-1) {
