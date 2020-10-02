@@ -2128,6 +2128,9 @@ static int mfu_copy_files(
         }
     }
 
+    /* free the list of success/fail for each chunk */
+    mfu_free(&vals);
+
     /* free copy flags */
     mfu_free(&results);
 
