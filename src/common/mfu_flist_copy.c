@@ -324,14 +324,16 @@ static int mfu_copy_xattrs(
 
             /* set attribute on destination object */
             if(got_val) {
-                errno = 0;
-                int setrc = lsetxattr(dest_path, name, val, (size_t) val_size, 0);
-                if(setrc != 0) {
-                    /* failed to set attribute */
-                    MFU_LOG(MFU_LOG_ERR, "Failed to set value for name=%s on `%s' llistxattr() (errno=%d %s)",
-                        name, dest_path, errno, strerror(errno)
-                       );
-                    rc = -1;
+                if (strncmp(name, "system.posix_acl", 16)) {
+                    errno = 0;
+                    int setrc = lsetxattr(dest_path, name, val, (size_t) val_size, 0);
+                    if(setrc != 0) {
+                        /* failed to set attribute */
+                        MFU_LOG(MFU_LOG_ERR, "Failed to set value for name=%s on `%s' llistxattr() (errno=%d %s)",
+                            name, dest_path, errno, strerror(errno)
+                           );
+                        rc = -1;
+                    }
                 }
             }
 
