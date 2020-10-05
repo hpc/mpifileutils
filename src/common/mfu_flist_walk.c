@@ -265,7 +265,8 @@ static void walk_getdents_create(CIRCLE_handle* handle)
         mfu_file_t* mfu_file = *CURRENT_PFILE;
         int status = mfu_file_lstat(path, &st, mfu_file);
         if (status != 0) {
-            /* TODO: print error */
+            MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
+                    path, errno, strerror(errno));
             return;
         }
 
@@ -317,16 +318,12 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
             st.st_mode |= S_IXUSR;
             mfu_file_chmod(dir, st.st_mode, mfu_file);
             dirp = mfu_file_opendir(dir, mfu_file);
-            if (dirp == NULL) {
-                if (errno == EACCES) {
-                    MFU_LOG(MFU_LOG_ERR, "Failed to open directory with opendir: `%s' (errno=%d %s)", dir, errno, strerror(errno));
-                }
-            }
         }
     }
 
     if (! dirp) {
-        /* TODO: print error */
+        MFU_LOG(MFU_LOG_ERR, "Failed to open directory with opendir: '%s' (errno=%d %s)",
+                dir, errno, strerror(errno));
     }
     else {
         /* Read all directory entries */
@@ -381,7 +378,8 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
                             }
                         }
                         else {
-                            /* error */
+                            MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
+                                    newpath, errno, strerror(errno));
                         }
                     }
 
@@ -420,7 +418,8 @@ static void walk_readdir_create(CIRCLE_handle* handle)
         mfu_file_t* mfu_file = *CURRENT_PFILE;
         int status = mfu_file_lstat(path, &st, mfu_file);
         if (status != 0) {
-            /* TODO: print error */
+            MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
+                    path, errno, strerror(errno));
             return;
         }
 
@@ -461,7 +460,8 @@ static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
     DIR* dirp = mfu_file_opendir(dir, mfu_file);
 
     if (! dirp) {
-        /* TODO: print error */
+        MFU_LOG(MFU_LOG_ERR, "Failed to open directory with opendir: '%s' (errno=%d %s)",
+                dir, errno, strerror(errno));
     }
     else {
         while (1) {
