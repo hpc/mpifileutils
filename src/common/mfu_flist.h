@@ -223,7 +223,9 @@ void mfu_flist_stat(
     mfu_flist input_flist,     /* IN  - input flist to source items */
     mfu_flist flist,           /* OUT - output flist to copy items into */
     mfu_flist_skip_fn skip_fn, /* IN  - pointer to skip function */
-    void *skip_args            /* IN  - arguments to be passed to skip function */
+    void *skip_args,           /* IN  - arguments to be passed to skip function */
+    int dereference,           /* IN  - whether to dereference symbolic links */
+    mfu_file_t* mfu_file       /* IN  - I/O filesystem functions to use */
 );
 
 /****************************************

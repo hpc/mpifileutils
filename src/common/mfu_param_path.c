@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include "mfu.h"
 #include "mpi.h"
 
@@ -6,6 +8,9 @@
 #include <string.h>
 #include <stdarg.h>
 #include <errno.h>
+
+#include <fcntl.h>
+#include <unistd.h>
 
 /* initialize fields in param */
 static void mfu_param_path_init(mfu_param_path* param)
@@ -399,7 +404,9 @@ char* mfu_param_path_copy_dest(const char* name, int numpaths,
 /* check that source and destination paths are valid */
 void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths, 
         const mfu_param_path* destpath, mfu_file_t* mfu_src_file,
-        mfu_file_t* mfu_dst_file, int* flag_valid,
+        mfu_file_t* mfu_dst_file,
+        int no_dereference,
+        int* flag_valid,
         int* flag_copy_into_dir)
 {
     /* initialize output params */
@@ -434,10 +441,17 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
         int num_readable = 0;
         for(i = 0; i < num; i++) {
             const char* path = paths[i].path;
-            if(mfu_file_access(path, R_OK, mfu_src_file) == 0) {
-                num_readable++;
+            int access_rc;
+            if (no_dereference) {
+                /* Don't dereference symlinks in the access call */
+                access_rc = mfu_file_faccessat(AT_FDCWD, path, R_OK, AT_SYMLINK_NOFOLLOW, mfu_src_file);
+            } else {
+                /* Do dereference symlinks in the access call */
+                access_rc = mfu_file_access(path, R_OK, mfu_src_file);
             }
-            else {
+            if (access_rc == 0) {
+                num_readable++;
+            } else {
                 /* found a source path that we can't read, not fatal,
                  * but print an error to notify user */
                 const char* orig = paths[i].orig;

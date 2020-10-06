@@ -223,6 +223,7 @@ static int mfu_copy_xattrs(
     mfu_flist flist,
     uint64_t idx,
     const char* dest_path,
+    mfu_copy_opts_t* copy_opts,
     mfu_file_t* mfu_src_file,
     mfu_file_t* mfu_dst_file)
 {
@@ -244,7 +245,13 @@ static int mfu_copy_xattrs(
     /* get current estimate for list size */
     while(! got_list) {
         errno = 0;
-        list_size = mfu_file_llistxattr(src_path, list, list_bufsize, mfu_src_file);
+        if (copy_opts->dereference) {
+            /* listxattr of dereferenced symbolic link */
+            list_size = mfu_file_listxattr(src_path, list, list_bufsize, mfu_src_file);
+        } else {
+            /* llistxattr of the symbolic link itself */
+            list_size = mfu_file_llistxattr(src_path, list, list_bufsize, mfu_src_file);
+        }
 
         if(list_size < 0) {
             if(errno == ERANGE) {
@@ -296,7 +303,13 @@ static int mfu_copy_xattrs(
 
             while(! got_val) {
                 errno = 0;
-                val_size = mfu_file_lgetxattr(src_path, name, val, val_bufsize, mfu_src_file);
+                if (copy_opts->dereference) {
+                    /* getxattr of dereferenced symbolic links */
+                    val_size = mfu_file_getxattr(src_path, name, val, val_bufsize, mfu_src_file);
+                } else {
+                    /* lgetxattr of symbolic the link itself */
+                    val_size = mfu_file_lgetxattr(src_path, name, val, val_bufsize, mfu_src_file);
+                }
 
                 if(val_size < 0) {
                     if(errno == ERANGE) {
@@ -308,14 +321,14 @@ static int mfu_copy_xattrs(
                     else if(errno == ENOATTR) {
                         /* source object no longer has this attribute,
                          * maybe deleted out from under us, ignore but print warning */
-                        MFU_LOG(MFU_LOG_WARN, "Attribute does not exist for name=%s on `%s' llistxattr() (errno=%d %s)",
+                        MFU_LOG(MFU_LOG_WARN, "Attribute does not exist for name=%s on `%s' lgetxattr() (errno=%d %s)",
                             name, src_path, errno, strerror(errno)
                            );
                         break;
                     }
                     else {
                         /* this is a real error */
-                        MFU_LOG(MFU_LOG_ERR, "Failed to get value for name=%s on `%s' llistxattr() (errno=%d %s)",
+                        MFU_LOG(MFU_LOG_ERR, "Failed to get value for name=%s on `%s' lgetxattr() (errno=%d %s)",
                             name, src_path, errno, strerror(errno)
                            );
                         rc = -1;
@@ -339,10 +352,11 @@ static int mfu_copy_xattrs(
             /* set attribute on destination object */
             if(got_val) {
                 errno = 0;
+                /* lsetxattr of symbolic link itself. No need to dereference here */
                 int setrc = mfu_file_lsetxattr(dest_path, name, val, (size_t) val_size, 0, mfu_dst_file);
                 if(setrc != 0) {
                     /* failed to set attribute */
-                    MFU_LOG(MFU_LOG_ERR, "Failed to set value for name=%s on `%s' llistxattr() (errno=%d %s)",
+                    MFU_LOG(MFU_LOG_ERR, "Failed to set value for name=%s on `%s' lsetxattr() (errno=%d %s)",
                         name, dest_path, errno, strerror(errno)
                        );
                     rc = -1;
@@ -939,7 +953,7 @@ static int mfu_create_directory(
 
     /* copy extended attributes on directory */
     if (copy_opts->preserve) {
-        int tmp_rc = mfu_copy_xattrs(list, idx, dest_path, mfu_src_file, mfu_dst_file);
+        int tmp_rc = mfu_copy_xattrs(list, idx, dest_path, copy_opts, mfu_src_file, mfu_dst_file);
         if (tmp_rc < 0) {
             rc = -1;
         }
@@ -1130,7 +1144,7 @@ static int mfu_create_link(
 
     /* set permissions on link */
     if (copy_opts->preserve) {
-        int xattr_rc = mfu_copy_xattrs(list, idx, dest_path, mfu_src_file, mfu_dst_file);
+        int xattr_rc = mfu_copy_xattrs(list, idx, dest_path, copy_opts, mfu_src_file, mfu_dst_file);
         if (xattr_rc < 0) {
             rc = -1;
         }
@@ -1203,7 +1217,7 @@ static int mfu_create_file(
      * writing data because some attributes tell file system how to
      * stripe data, e.g., Lustre */
     if (copy_opts->preserve) {
-        int tmp_rc = mfu_copy_xattrs(list, idx, dest_path, mfu_src_file, mfu_dst_file);
+        int tmp_rc = mfu_copy_xattrs(list, idx, dest_path, copy_opts, mfu_src_file, mfu_dst_file);
         if (tmp_rc < 0) {
             rc = -1;
         }
@@ -3224,6 +3238,13 @@ mfu_copy_opts_t* mfu_copy_opts_new(void)
 
     /* By default, don't bother to preserve all attributes. */
     opts->preserve = false;
+
+    /* By default, don't dereference source symbolic links. 
+     * This is not a perfect opposite of no_dereference */
+    opts->dereference = 0;
+
+    /* By default, dereference source symbolic links in the access check */
+    opts->no_dereference = 0;
 
     /* By default, don't use O_DIRECT. */
     opts->direct = false;

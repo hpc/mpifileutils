@@ -91,32 +91,37 @@ void mfu_param_path_check_copy(
     const mfu_param_path* destpath, /* IN  - dest param path */
     mfu_file_t* mfu_src_file,       /* IN  - mfu_file for source that specifies which I/O calls to make */
     mfu_file_t* mfu_dst_file,       /* IN  - mfu_file for destination that specifies which I/O calls to make */
+    int no_dereference,             /* IN  - if true, don't dereference source symbolic links */
     int* flag_valid,                /* OUT - flag indicating whether combination of source and dest param paths are valid (1) or not (0) */
     int* flag_copy_into_dir         /* OUT - flag indicating whether source items should be copied into destination directory (1) or not (0) */
 );
 
 /* options passed to walk that effect how the walk is executed */
 typedef struct {
-    int    dir_perms;          /* flag option to update dir perms during walk */
-    int    remove;             /* flag option to remove files during walk */
-    int    use_stat;           /* flag option on whether or not to stat files during walk */
+    int dir_perms;      /* flag option to update dir perms during walk */
+    int remove;         /* flag option to remove files during walk */
+    int use_stat;       /* flag option on whether or not to stat files during walk */
+    int dereference;    /* flag option to dereference symbolic links */
 } mfu_walk_opts_t;
 
 /* options passed to mfu_ */
 typedef struct {
-    int    copy_into_dir; /* flag indicating whether copying into existing dir */
-    int    do_sync;       /* flag option to sync src dir with dest dir */ 
-    char*  dest_path;     /* prefex of destination directory */
-    char*  input_file;    /* file name of input list */
-    bool   preserve;      /* whether to preserve timestamps, ownership, permissions, etc. */
-    bool   direct;        /* whether to use O_DIRECT */
-    bool   sparse;        /* whether to create sparse files */
-    size_t chunk_size;    /* size to chunk files by */
-    size_t block_size;    /* block size to read/write to file system */
-    char*  block_buf1;    /* buffer to read / write data */
-    char*  block_buf2;    /* another buffer to read / write data */
-    int    grouplock_id;  /* Lustre grouplock ID */
-    uint64_t batch_files; /* max batch size to copy files, 0 implies no limit */
+    int    copy_into_dir;  /* flag indicating whether copying into existing dir */
+    int    do_sync;        /* flag option to sync src dir with dest dir */ 
+    char*  dest_path;      /* prefex of destination directory */
+    char*  input_file;     /* file name of input list */
+    bool   preserve;       /* whether to preserve timestamps, ownership, permissions, etc. */
+    int    dereference;    /* if true, dereference symbolic links in the source.
+                            * this is not a perfect opposite of no_dereference */
+    int    no_dereference; /* if true, don't dereference source symbolic links */
+    bool   direct;         /* whether to use O_DIRECT */
+    bool   sparse;         /* whether to create sparse files */
+    size_t chunk_size;     /* size to chunk files by */
+    size_t block_size;     /* block size to read/write to file system */
+    char*  block_buf1;     /* buffer to read / write data */
+    char*  block_buf2;     /* another buffer to read / write data */
+    int    grouplock_id;   /* Lustre grouplock ID */
+    uint64_t batch_files;  /* max batch size to copy files, 0 implies no limit */
 } mfu_copy_opts_t;
 
 /* Given a source item name, determine which source path this item

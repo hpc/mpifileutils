@@ -138,7 +138,7 @@ int daos_connect(
                 goto bcast;
             }
 
-            daos_pool_info_t pool_info;
+            daos_pool_info_t pool_info = {0};
             rc = daos_pool_connect(pool_uuid, NULL, svcl, DAOS_PC_RW,
                     poh, &pool_info, NULL);
             if (rc != 0) {
@@ -151,7 +151,7 @@ int daos_connect(
 
         /* Try to open the container 
          * If NOEXIST we create it */
-        daos_cont_info_t co_info;
+        daos_cont_info_t co_info = {0};
         rc = daos_cont_open(*poh, cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
         if (rc != 0) {
             if (!create_cont) {
