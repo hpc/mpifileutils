@@ -61,8 +61,11 @@ mfu_walk_opts_t* mfu_walk_opts_new(void)
     /* Remove files in walk by default */
     opts->remove = 0;
 
-    /* Don't stat files in walk by default */
+    /* Do stat files in walk by default */
     opts->use_stat = 1;
+
+    /* Don't dereference symbolic links by default */
+    opts->dereference = 0;
 
     return opts;
 }

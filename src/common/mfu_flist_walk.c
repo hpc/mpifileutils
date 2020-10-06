@@ -50,6 +50,7 @@ static const char** CURRENT_DIRS;
 static flist_t* CURRENT_LIST;
 static int SET_DIR_PERMS;
 static int REMOVE_FILES;
+static int DEREFERENCE;
 static mfu_file_t** CURRENT_PFILE;
 
 /****************************************
@@ -518,9 +519,17 @@ static void walk_stat_process(CIRCLE_handle* handle)
 
     /* stat item */
     struct stat st;
-    int status = mfu_file_lstat(path, &st, mfu_file);
+    int status;
+    if (DEREFERENCE) {
+        /* if symlink, stat the symlink value */
+        status = mfu_file_stat(path, &st, mfu_file);
+    } else {
+        /* if symlink, stat the symlink itself */
+        status = mfu_file_lstat(path, &st, mfu_file);
+    }
     if (status != 0) {
-        /* print error */
+        MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
+                path, errno, strerror(errno));
         return;
     }
 
@@ -585,6 +594,12 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
     REMOVE_FILES  = 0;
     if (walk_opts->remove) {
         REMOVE_FILES = 1;
+    }
+
+    /* if dereference is set to 1 then set global variable */
+    DEREFERENCE = 0;
+    if (walk_opts->dereference) {
+        DEREFERENCE = 1;
     }
 
     /* convert handle to flist_t */
@@ -728,7 +743,9 @@ void mfu_flist_stat(
   mfu_flist input_flist,
   mfu_flist flist,
   mfu_flist_skip_fn skip_fn,
-  void *skip_args)
+  void *skip_args,
+  int dereference,
+  mfu_file_t* mfu_file)
 {
     flist_t* file_list = (flist_t*)flist;
 
@@ -748,7 +765,6 @@ void mfu_flist_stat(
     /* step through each item in input list and stat it */
     uint64_t idx;
     uint64_t size = mfu_flist_size(input_flist);
-    mfu_file_t* mfu_file = *CURRENT_PFILE;
     for (idx = 0; idx < size; idx++) {
         /* get name of item */
         const char* name = mfu_flist_file_get_name(input_flist, idx);
@@ -760,11 +776,34 @@ void mfu_flist_stat(
             continue;
         }
 
+        /* If the dereference flag is passed in, try to dereference all paths.
+         * Otherwise, if we have stat info for the mode, and the path is
+         * not a link, then try to dereference it.
+         * This accounts for dwalk --dereference, because a link might be
+         * stored as a file, meaning that it should be dereferenced */
+        bool do_dereference = false;
+        if (dereference) {
+            do_dereference = true;
+        } else {
+            mode_t mode = mfu_flist_file_get_mode(input_flist, idx);
+            if (mode && !S_ISLNK(mode)) {
+                do_dereference = true;
+            }
+        }
+        
         /* stat the item */
         struct stat st;
-        int status = mfu_file_lstat(name, &st, mfu_file);
+        int status;
+        if (do_dereference) {
+            /* dereference symbolic link */
+            status = mfu_file_stat(name, &st, mfu_file);
+        } else {
+            /* don't dereference symbolic links */
+            status = mfu_file_lstat(name, &st, mfu_file);
+        }
         if (status != 0) {
-            MFU_LOG(MFU_LOG_ERR, "mfu_lstat() failed: `%s' rc=%d (errno=%d %s)", name, status, errno, strerror(errno));
+            MFU_LOG(MFU_LOG_ERR, "mfu_lstat() failed: '%s' rc=%d (errno=%d %s)",
+                    name, status, errno, strerror(errno));
             continue;
         }
 

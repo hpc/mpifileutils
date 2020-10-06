@@ -253,7 +253,7 @@ int main (int argc, char* argv[])
 
     /* create a third list by stat'ing each link to get timestamps and group info */
     mfu_flist linklist = mfu_flist_new();
-    mfu_flist_stat(linklist_prestat, linklist, NULL, NULL);
+    mfu_flist_stat(linklist_prestat, linklist, NULL, NULL, 0, mfu_file);
     mfu_flist_free(&linklist_prestat);
 
     /* initiate progress messages */

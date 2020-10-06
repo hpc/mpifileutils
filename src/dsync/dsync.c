@@ -54,6 +54,8 @@ static void print_usage(void)
     printf("      --chunksize <SIZE>  - minimum work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
     printf("  -c, --contents          - read and compare file contents rather than compare size and mtime\n");
     printf("  -D, --delete            - delete extraneous files from target\n");
+    printf("  -L, --dereference       - copy original files instead of links\n");
+    printf("      --no-dereference    - don't follow links in source\n"); 
     printf("  -s, --direct            - open files with O_DIRECT\n");
     printf("      --link-dest <DIR>   - hardlink to files in DIR when unchanged\n");
     printf("  -S, --sparse            - create sparse files when possible\n");
@@ -1291,7 +1293,8 @@ static int dsync_sync_files(
 
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
-    mfu_param_path_check_copy(1, src_path, dest_path, mfu_src_file, mfu_dst_file, &valid, &copy_into_dir);
+    mfu_param_path_check_copy(1, src_path, dest_path, mfu_src_file, mfu_dst_file,
+                              copy_opts->no_dereference, &valid, &copy_into_dir);
 
     /* record copy_into_dir flag result from check_copy into
      * mfu copy options structure */
@@ -2848,21 +2851,23 @@ int main(int argc, char **argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"dryrun",        0, 0, 'n'},
-        {"batch-files",   1, 0, 'b'},
-        {"blocksize",     1, 0, 'B'},
-        {"chunksize",     1, 0, 'k'},
-        {"contents",      0, 0, 'c'},
-        {"delete",        0, 0, 'D'},
-        {"direct",        0, 0, 's'},
-        {"output",        1, 0, 'o'}, // undocumented
-        {"debug",         0, 0, 'd'}, // undocumented
-        {"link-dest",     1, 0, 'l'},
-        {"sparse",        0, 0, 'S'},
-        {"progress",      1, 0, 'P'},
-        {"verbose",       0, 0, 'v'},
-        {"quiet",         0, 0, 'q'},
-        {"help",          0, 0, 'h'},
+        {"dryrun",         0, 0, 'n'},
+        {"batch-files",    1, 0, 'b'},
+        {"blocksize",      1, 0, 'B'},
+        {"chunksize",      1, 0, 'k'},
+        {"contents",       0, 0, 'c'},
+        {"delete",         0, 0, 'D'},
+        {"dereference",    0, 0, 'L'},
+        {"no-dereference", 0, 0, 'x'},
+        {"direct",         0, 0, 's'},
+        {"output",         1, 0, 'o'}, // undocumented
+        {"debug",          0, 0, 'd'}, // undocumented
+        {"link-dest",      1, 0, 'l'},
+        {"sparse",         0, 0, 'S'},
+        {"progress",       1, 0, 'P'},
+        {"verbose",        0, 0, 'v'},
+        {"quiet",          0, 0, 'q'},
+        {"help",           0, 0, 'h'},
         {0, 0, 0, 0}
     };
     int ret = 0;
@@ -2878,7 +2883,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDso:Svqh",
+            argc, argv, "b:cDso:LSvqh",
             long_options, &option_index
         );
 
@@ -2920,6 +2925,19 @@ int main(int argc, char **argv)
             break;
         case 'D':
             options.delete = 1;
+            break;
+        case 'L':
+            /* turn on dereference.
+             * turn off no_dereference */
+            copy_opts->dereference = 1;
+            walk_opts->dereference = 1;
+            copy_opts->no_dereference = 0;
+        case 'x':
+            /* turn on no_dereference.
+             * turn off dereference */
+            copy_opts->no_dereference = 1;
+            copy_opts->dereference = 0;
+            walk_opts->dereference = 0;
             break;
         case 's':
             copy_opts->direct = true;
@@ -3088,7 +3106,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* walk destinaton path */
+    /* walk destinaton path.
+     * We never dereference the destination */
+    int tmp_dereference = walk_opts->dereference;
+    walk_opts->dereference = 0;
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking destination path");
     }
@@ -3101,6 +3122,9 @@ int main(int argc, char **argv)
         }
         mfu_flist_walk_param_paths(1, linkpath, walk_opts, flist_tmp_link, mfu_dst_file);
     }
+
+    /* reset the dereference flag */
+    walk_opts->dereference = tmp_dereference;
 
     /* store src and dest path strings */
     const char* path_src = srcpath->path;

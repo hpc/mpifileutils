@@ -622,6 +622,7 @@ void print_usage(void)
 #endif
     printf("  -b, --blocksize <SIZE>   - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>   - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
+#ifdef DAOS_SUPPORT
     printf("      --daos-src-pool      - DAOS source pool \n");
     printf("      --daos-dst-pool      - DAOS destination pool \n");
     printf("      --daos-src-cont      - DAOS source container \n");
@@ -629,7 +630,10 @@ void print_usage(void)
     printf("      --daos-src-svcl      - DAOS service level used by source DAOS pool \n");
     printf("      --daos-dst-svcl      - DAOS service level used by destination DAOS pool \n");
     printf("      --daos-prefix        - DAOS prefix for unified namespace path \n");
+#endif
     printf("  -i, --input <file>       - read source list from file\n");
+    printf("  -L, --dereference        - copy original files instead of links\n");
+    printf("      --no-dereference     - don't follow links in source\n");
     printf("  -p, --preserve           - preserve permissions, ownership, timestamps, extended attributes\n");
     printf("  -s, --direct             - open files with O_DIRECT\n");
     printf("  -S, --sparse             - create sparse files when possible\n");
@@ -694,6 +698,8 @@ int main(int argc, char** argv)
         {"daos-prefix"          , required_argument, 0, 'X'},
         {"input"                , required_argument, 0, 'i'},
         {"chunksize"            , required_argument, 0, 'k'},
+        {"dereference"          , no_argument      , 0, 'L'},
+        {"no-dereference"       , no_argument      , 0, 'l'},
         {"preserve"             , no_argument      , 0, 'p'},
         {"synchronous"          , no_argument      , 0, 's'},
         {"direct"               , no_argument      , 0, 's'},
@@ -710,7 +716,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while(1) {
         int c = getopt_long(
-                    argc, argv, "b:d:g:i:k:psSvqh",
+                    argc, argv, "b:d:g:i:k:LpsSvqh",
                     long_options, &option_index
                 );
 
@@ -848,6 +854,20 @@ int main(int argc, char** argv)
                     mfu_copy_opts->chunk_size = bytes;
                 }
                 break;
+            case 'L':
+                /* turn on dereference.
+                 * turn off no_dereference */
+                mfu_copy_opts->dereference = 1;
+                walk_opts->dereference = 1;
+                mfu_copy_opts->no_dereference = 0;
+                break;
+            case 'l':
+                /* turn on no_dereference.
+                 * turn off dereference */
+                mfu_copy_opts->no_dereference = 1;
+                mfu_copy_opts->dereference = 0;
+                walk_opts->dereference = 0;
+                break;
             case 'p':
                 mfu_copy_opts->preserve = true;
                 if(rank == 0) {
@@ -930,6 +950,15 @@ int main(int argc, char** argv)
         MPI_Finalize();
         return 1;
     }
+    
+    /* TODO add support for this */
+    if (inputname && mfu_src_file->type == DAOS) {
+        MFU_LOG(MFU_LOG_ERR, "--input is not supported with DAOS"
+                MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
 #endif
 
     /* paths to walk come after the options */
@@ -973,7 +1002,8 @@ int main(int argc, char** argv)
 
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
-    mfu_param_path_check_copy(numpaths_src, paths, destpath, mfu_src_file, mfu_dst_file, &valid, &copy_into_dir);
+    mfu_param_path_check_copy(numpaths_src, paths, destpath, mfu_src_file, mfu_dst_file,
+                              mfu_copy_opts->no_dereference, &valid, &copy_into_dir);
     mfu_copy_opts->copy_into_dir = copy_into_dir;
 
     /* exit job if we found a problem */
@@ -1004,7 +1034,8 @@ int main(int argc, char** argv)
 
         skip_args.numpaths = numpaths_src;
         skip_args.paths = paths;
-        mfu_flist_stat(input_flist, flist, input_flist_skip, (void *)&skip_args);
+        mfu_flist_stat(input_flist, flist, input_flist_skip, (void *)&skip_args,
+                       walk_opts->dereference, mfu_src_file);
         mfu_flist_free(&input_flist);
     }
 
