@@ -518,10 +518,17 @@ static void walk_stat_process(CIRCLE_handle* handle)
 
     /* stat item */
     struct stat st;
-    int status = mfu_file_lstat(path, &st, mfu_file);
+    int status;
+    if (true) { /* TODO if --dereference*/
+        /* if symlink, stat the symlink value */
+        status = mfu_file_stat(path, &st, mfu_file);
+    } else {
+        /* if symlink, stat the symlink itself */
+        status = mfu_file_lstat(path, &st, mfu_file);
+    }
     if (status != 0) {
-        /* print error */
-        return;
+        MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
+                path, errno, strerror(errno));
     }
 
     /* increment our item count */

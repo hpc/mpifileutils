@@ -419,8 +419,134 @@ retry:
     return rc;
 }
 
-/* stat a DAOS path */
+/* recursively stat a DAOS path, following symlinks to at most 40 levels */
+static int daos_stat_recursive(const char* path, struct stat* buf, mfu_file_t* mfu_file, int level)
+{
+#ifdef DAOS_SUPPORT
+    MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive called: %d", level);
+    if (level >= 40) {
+        errno = ELOOP; /* Too many levels of symbolic links */
+        return -1;
+    }
+
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(path, &name, &dir_name);
+    assert(dir_name);
+
+    int rc = 0;
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    if (parent == NULL) {
+        errno = ENOENT;
+        rc = -1;
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: lookup object");
+        /* Lookup the object */
+        dfs_obj_t* obj;
+        mode_t mode;
+        MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: lookup object start: %s", name);
+        rc = dfs_lookup_rel(mfu_file->dfs, parent, name, O_RDWR, &obj, &mode, NULL);
+        MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: lookup object finished");
+        if (obj == NULL) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_lookup_rel %s failed", path);
+            errno = ENOENT; 
+            rc = -1;
+        } else {
+            MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: checking mode");
+            if (S_ISLNK(mode)) {
+                MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: S_ISLNK");
+                /* get the symlink value */
+                char link_buf[PATH_MAX + 1];
+                daos_size_t got_size = sizeof(buf);
+                rc = dfs_get_symlink_value(obj, link_buf, &got_size);
+                if (rc) {
+                    errno = rc;
+                } else {
+                    /* recursively stat links until we get a non-link */
+                    rc = daos_stat_recursive(link_buf, buf, mfu_file, level+1);
+                    if (rc) {
+                        /* don't print error, since one would have already been printed */
+                        rc = -1;
+                    }
+                }
+            } else {
+                MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: !S_ISLNK");
+                /* not a symlink, just stat the object */
+                rc = dfs_ostat(mfu_file->dfs, obj, buf);
+                if (rc) {
+                    MFU_LOG(MFU_LOG_ERR, "dfs_ostat %s failed (%d %s)",
+                            name, rc, strerror(rc));
+                    errno = rc;
+                    rc = -1;
+                }
+            }
+            
+            /* release the obj */
+            rc = dfs_release(obj);
+            if (rc) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_release %s failed (%d %s)",
+                        path, rc, strerror(rc));
+                errno = rc;
+                rc = -1;
+            }
+        }
+    }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
+
+    return rc;
+#else
+    return 0;
+#endif
+}
+
+/* stat a DAOS path.
+ *Since dfs_stat performs like lstat, this is emulated */
 int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
+{
+    MFU_LOG(MFU_LOG_INFO, "daos_stat called");
+    return daos_stat_recursive(path, buf, mfu_file, 0);
+}
+
+int mfu_stat(const char* path, struct stat* buf) {
+    int rc;
+    int tries = MFU_IO_TRIES;
+retry:
+    errno = 0;
+    rc = stat(path, buf);
+    if (rc != 0) {
+        if (errno == EINTR || errno == EIO) {
+            tries--;
+            if (tries > 0) {
+                /* sleep a bit before consecutive tries */
+                usleep(MFU_IO_USLEEP);
+                goto retry;
+            }
+        }
+    }
+    return rc;
+}
+
+/* calls stat, and retries a few times if we get EIO or EINTR */
+int mfu_file_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_stat(path, buf);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_stat(path, buf, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  path, mfu_file->type);
+    }
+}
+
+/* lstat a DAOS path */
+int daos_lstat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
     char* name     = NULL;
@@ -436,7 +562,8 @@ int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
         errno = ENOENT;
         rc = -1;
     } else {
-        /* Stat the path */
+        /* Stat the path.
+         * dfs_stat interrogates the link itself */
         rc = dfs_stat(mfu_file->dfs, parent, name, buf);
         if (rc) {
             MFU_LOG(MFU_LOG_ERR, "dfs_stat %s failed (%d %s)",
@@ -481,7 +608,7 @@ int mfu_file_lstat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
         int rc = mfu_lstat(path, buf);
         return rc;
     } else if (mfu_file->type == DAOS) {
-        int rc = daos_stat(path, buf, mfu_file);
+        int rc = daos_lstat(path, buf, mfu_file);
         return rc;
     } else {
         MFU_ABORT(-1, "File type not known: %s type=%d",

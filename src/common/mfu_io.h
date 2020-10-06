@@ -71,14 +71,15 @@ int mfu_utimensat(int dirfd, const char *pathname, const struct timespec times[2
 
 /* calls lstat, and retries a few times if we get EIO or EINTR */
 int mfu_file_lstat(const char* path, struct stat* buf, mfu_file_t* mfu_file);
+int mfu_lstat(const char* path, struct stat* buf);
+int daos_lstat(const char* path, struct stat* buf, mfu_file_t* mfu_file);
 
 /* only dcp1 calls mfu_lstat64, is it necessary? */
 int mfu_lstat64(const char* path, struct stat64* buf);
 
-/* posix version of stat */
-int mfu_lstat(const char* path, struct stat* buf);
-
-/* daos version of stat */
+/* calls stat, and retries a few times if we get EIO or EINTR */
+int mfu_file_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file);
+int mfu_stat(const char* path, struct stat* buf);
 int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file);
 
 /* call mknod, retry a few times on EINTR or EIO */
