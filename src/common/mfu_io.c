@@ -333,6 +333,7 @@ retry:
 int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
+    MFU_LOG(MFU_LOG_INFO, "daos_chmod called");
     char* name     = NULL;
     char* dir_name = NULL;
     parse_filename(path, &name, &dir_name);
@@ -419,16 +420,11 @@ retry:
     return rc;
 }
 
-/* recursively stat a DAOS path, following symlinks to at most 40 levels */
-static int daos_stat_recursive(const char* path, struct stat* buf, mfu_file_t* mfu_file, int level)
+/* recursively stat a DAOS path, following symlinks to at most 40 levels.
+ * Since dfs_stat() performs like lstat(), this is emulated. */
+int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
-    MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive called: %d", level);
-    if (level >= 40) {
-        errno = ELOOP; /* Too many levels of symbolic links */
-        return -1;
-    }
-
     char* name     = NULL;
     char* dir_name = NULL;
     parse_filename(path, &name, &dir_name);
@@ -436,64 +432,93 @@ static int daos_stat_recursive(const char* path, struct stat* buf, mfu_file_t* m
 
     int rc = 0;
 
+    int level = 0;
+lookup_loop:
+    MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive level: %d", level);
+    level++;
+    if (level > 40) {
+        errno = ELOOP; /* Too many levels of symbolic links */
+        rc = -1;
+        goto out_free_name;
+    }
+
     /* Lookup the parent directory */
     dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
     if (parent == NULL) {
         errno = ENOENT;
         rc = -1;
-    } else {
-        MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: lookup object");
-        /* Lookup the object */
-        dfs_obj_t* obj;
-        mode_t mode;
-        MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: lookup object start: %s", name);
-        rc = dfs_lookup_rel(mfu_file->dfs, parent, name, O_RDWR, &obj, &mode, NULL);
-        MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: lookup object finished");
-        if (obj == NULL) {
-            MFU_LOG(MFU_LOG_ERR, "dfs_lookup_rel %s failed", path);
-            errno = ENOENT; 
-            rc = -1;
-        } else {
-            MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: checking mode");
-            if (S_ISLNK(mode)) {
-                MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: S_ISLNK");
-                /* get the symlink value */
-                char link_buf[PATH_MAX + 1];
-                daos_size_t got_size = sizeof(buf);
-                rc = dfs_get_symlink_value(obj, link_buf, &got_size);
-                if (rc) {
-                    errno = rc;
-                } else {
-                    /* recursively stat links until we get a non-link */
-                    rc = daos_stat_recursive(link_buf, buf, mfu_file, level+1);
-                    if (rc) {
-                        /* don't print error, since one would have already been printed */
-                        rc = -1;
-                    }
-                }
-            } else {
-                MFU_LOG(MFU_LOG_INFO, "daos_stat_recursive: !S_ISLNK");
-                /* not a symlink, just stat the object */
-                rc = dfs_ostat(mfu_file->dfs, obj, buf);
-                if (rc) {
-                    MFU_LOG(MFU_LOG_ERR, "dfs_ostat %s failed (%d %s)",
-                            name, rc, strerror(rc));
-                    errno = rc;
-                    rc = -1;
-                }
-            }
-            
-            /* release the obj */
-            rc = dfs_release(obj);
-            if (rc) {
-                MFU_LOG(MFU_LOG_ERR, "dfs_release %s failed (%d %s)",
-                        path, rc, strerror(rc));
-                errno = rc;
-                rc = -1;
-            }
-        }
+        goto out_free_name;
     }
 
+    /* Get the parent's mode */
+    mode_t parent_mode;
+    rc = dfs_get_mode(parent, &parent_mode);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_get_mode %s failed", dir_name);
+        errno = rc;
+        rc = -1;
+        goto out_free_name;
+    }
+
+    /* If the parent is a link, put the link value
+     * into dir_name and treat the new dir_name as the parent */
+    if (S_ISLNK(parent_mode)) {
+        char link_buf[PATH_MAX + 1];
+        daos_size_t got_size = (daos_size_t) sizeof(link_buf);
+        rc = dfs_get_symlink_value(parent, link_buf, &got_size);
+        if (rc) {
+            errno = rc;
+            rc = -1;
+            goto out_free_name;
+        }
+        link_buf[got_size-1] = '\0';
+        mfu_free(&dir_name);
+        dir_name = MFU_STRDUP(link_buf);
+        goto lookup_loop;
+    }
+
+    /* Lookup name within the parent, getting the mode */
+    dfs_obj_t* obj;
+    mode_t obj_mode;
+    rc = dfs_lookup_rel(mfu_file->dfs, parent, name, O_RDWR, &obj, &obj_mode, NULL);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_lookup_rel %s/%s failed", dir_name, name);
+        errno = rc;
+        rc = -1;
+        goto out_free_name;
+    }
+
+    /* If the obj itself is also a link, lookup the link */
+    if (S_ISLNK(obj_mode)) {
+        char link_buf[PATH_MAX + 1];
+        daos_size_t got_size = (daos_size_t) sizeof(link_buf);
+        rc = dfs_get_symlink_value(obj, link_buf, &got_size);
+        if (rc) {
+            errno = rc;
+            rc = -1;
+            goto out_free_obj;
+        }
+        link_buf[got_size-1] = '\0';
+        dfs_release(obj);
+        mfu_free(&dir_name);
+        mfu_free(&name);
+        parse_filename(link_buf, &name, &dir_name);
+        goto lookup_loop;
+    }
+
+    /* stat the obj */
+    rc = dfs_ostat(mfu_file->dfs, obj, buf);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_ostat %s/%s failed", dir_name, name);
+        errno = rc;
+        rc = -1;
+        goto out_free_obj;
+    }
+
+
+out_free_obj:
+    dfs_release(obj);
+out_free_name:
     mfu_free(&name);
     mfu_free(&dir_name);
 
@@ -501,14 +526,6 @@ static int daos_stat_recursive(const char* path, struct stat* buf, mfu_file_t* m
 #else
     return 0;
 #endif
-}
-
-/* stat a DAOS path.
- *Since dfs_stat performs like lstat, this is emulated */
-int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
-{
-    MFU_LOG(MFU_LOG_INFO, "daos_stat called");
-    return daos_stat_recursive(path, buf, mfu_file, 0);
 }
 
 int mfu_stat(const char* path, struct stat* buf) {
@@ -549,6 +566,7 @@ int mfu_file_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
 int daos_lstat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
+    MFU_LOG(MFU_LOG_INFO, "daos_lstat called");
     char* name     = NULL;
     char* dir_name = NULL;
     parse_filename(path, &name, &dir_name);
@@ -641,6 +659,7 @@ retry:
 int daos_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
+    MFU_LOG(MFU_LOG_INFO, "daos_mknod called");
     /* Only regular files are supported at this time */
     mode_t dfs_mode = mode | S_IFREG;
     mode_t filetype = dfs_mode & S_IFMT;
@@ -759,6 +778,8 @@ retry:
 ssize_t daos_readlink(const char* path, char* buf, size_t bufsize, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
+    MFU_LOG(MFU_LOG_INFO, "daos_readlink called");
+
     char* name     = NULL;
     char* dir_name = NULL;
     parse_filename(path, &name, &dir_name);
@@ -844,6 +865,7 @@ ssize_t mfu_file_readlink(const char* path, char* buf, size_t bufsize, mfu_file_
 int daos_symlink(const char* oldpath, const char* newpath, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
+    MFU_LOG(MFU_LOG_INFO, "daos_symlink called");
     char* name     = NULL;
     char* dir_name = NULL;
     parse_filename(newpath, &name, &dir_name);
@@ -951,6 +973,8 @@ retry:
 int daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
+    MFU_LOG(MFU_LOG_INFO, "daos_open called");
+
     /* Only regular files are supported at this time */
     mode_t dfs_mode = mode | S_IFREG;
     mode_t filetype = dfs_mode & S_IFMT;
@@ -969,6 +993,7 @@ int daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file)
 
     /* Lookup the parent directory */
     dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    MFU_LOG(MFU_LOG_INFO, "daos_open: after daos_hash_lookup");
     if (parent == NULL) {
         errno = ENOENT;
         rc = -1;
@@ -1361,6 +1386,7 @@ ssize_t mfu_file_pread(const char* file, void* buf, size_t size, off_t offset, m
 ssize_t daos_pread(const char* file, void* buf, size_t size, off_t offset, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
+    MFU_LOG(MFU_LOG_INFO, "daos_pread called");
     /* record address and size of user buffer in io vector */
     d_iov_t iov;
     d_iov_set(&iov, buf, size);
@@ -1370,6 +1396,19 @@ ssize_t daos_pread(const char* file, void* buf, size_t size, off_t offset, mfu_f
     sgl.sg_nr = 1;
     sgl.sg_iovs = &iov;
     sgl.sg_nr_out = 1;
+
+    struct stat stbuf;
+    int rcc = dfs_ostat(mfu_file->dfs, mfu_file->obj, &stbuf);
+    if (rcc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_ostat failed (%d %s)", rcc, strerror(rcc));
+    } else {
+        if (S_ISLNK(stbuf.st_mode)) {
+             MFU_LOG(MFU_LOG_INFO, "S_ISLNK");
+        }
+        if (S_ISREG(stbuf.st_mode)) {
+            MFU_LOG(MFU_LOG_INFO, "S_ISREG");
+        }
+    }
 
     /* execute read operation */
     daos_size_t got_size;
@@ -1582,6 +1621,7 @@ int mfu_file_unlink(const char* file, mfu_file_t* mfu_file)
 int daos_unlink(const char* file, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
+    MFU_LOG(MFU_LOG_INFO, "daos_unlink called");
     char* name     = NULL;
     char* dir_name = NULL;
     parse_filename(file, &name, &dir_name);
@@ -1676,6 +1716,7 @@ void mfu_getcwd(char* buf, size_t size)
 int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
+    MFU_LOG(MFU_LOG_INFO, "daos_mkdir called");
     char* name     = NULL;
     char* dir_name = NULL;
     parse_filename(dir, &name, &dir_name);
@@ -1790,7 +1831,7 @@ DIR* daos_opendir(const char* dir, mfu_file_t* mfu_file)
     int rc = dfs_lookup(mfu_file->dfs, dir, O_RDWR, &dirp->dir, NULL, NULL);
     if (dirp->dir == NULL) {
         MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir);
-        errno = ENOENT;
+        errno = rc;
         free(dirp);
         return NULL;
     }

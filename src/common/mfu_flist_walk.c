@@ -529,6 +529,7 @@ static void walk_stat_process(CIRCLE_handle* handle)
     if (status != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
                 path, errno, strerror(errno));
+        return;
     }
 
     /* increment our item count */
@@ -545,6 +546,7 @@ static void walk_stat_process(CIRCLE_handle* handle)
 
     /* recurse into directory */
     if (S_ISDIR(st.st_mode)) {
+        MFU_LOG(MFU_LOG_INFO, "walk_stat_process: S_ISDIR %s", path);
         /* before more processing check if SET_DIR_PERMS is set,
          * and set usr read and execute bits if need be */
         if (SET_DIR_PERMS) {
