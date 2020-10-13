@@ -59,7 +59,9 @@ int mfu_access(const char* path, int amode);
 int daos_access(const char* path, int amode, mfu_file_t* mfu_file);
 
 /* calls lchown, and retries a few times if we get EIO or EINTR */
+int mfu_file_lchown(const char* path, uid_t owner, gid_t group, mfu_file_t* mfu_file);
 int mfu_lchown(const char* path, uid_t owner, gid_t group);
+int daos_lchown(const char* path, uid_t owner, gid_t group, mfu_file_t* mfu_file);
 
 /* calls chmod, and retries a few times if we get EIO or EINTR */
 int daos_chmod(const char* path, mode_t mode, mfu_file_t* mfu_file);
@@ -67,7 +69,11 @@ int mfu_chmod(const char* path, mode_t mode);
 int mfu_file_chmod(const char* path, mode_t mode, mfu_file_t* mfu_file);
 
 /* calls utimensat, and retries a few times if we get EIO or EINTR */
+int mfu_file_utimensat(int dirfd, const char *pathname, const struct timespec times[2], int flags,
+                       mfu_file_t* mfu_file);
 int mfu_utimensat(int dirfd, const char *pathname, const struct timespec times[2], int flags);
+int daos_utimensat(int dirfd, const char *pathname, const struct timespec times[2], int flags,
+                   mfu_file_t* mfu_file);
 
 /* calls lstat, and retries a few times if we get EIO or EINTR */
 int mfu_file_lstat(const char* path, struct stat* buf, mfu_file_t* mfu_file);
@@ -93,6 +99,23 @@ int mfu_remove(const char* path);
 struct dirent* mfu_file_readdir(DIR* dirp, mfu_file_t* mfu_file);
 struct dirent* mfu_readdir(DIR* dirp);
 struct dirent* daos_readdir(DIR* dirp, mfu_file_t* mfu_file);
+
+/* list xattrs (link interrogation) */
+ssize_t mfu_file_llistxattr(const char* path, char* list, size_t size, mfu_file_t* mfu_file);
+ssize_t mfu_llistxattr(const char* path, char* list, size_t size);
+ssize_t daos_llistxattr(const char* path, char* list, size_t size, mfu_file_t* mfu_file);
+
+/* get xattrs (link interrogation) */
+ssize_t mfu_file_lgetxattr(const char* path, const char* name, void* value, size_t size, mfu_file_t* mfu_file);
+ssize_t mfu_lgetxattr(const char* path, const char* name, void* value, size_t size);
+ssize_t daos_lgetxattr(const char* path, const char* name, void* value, size_t size, mfu_file_t* mfu_file);
+
+/* set xattrs (link interrogation) */
+int mfu_file_lsetxattr(const char* path, const char* name, const void* value, size_t size, int flags,
+                               mfu_file_t* mfu_file);
+int mfu_lsetxattr(const char* path, const char* name, const void* value, size_t size, int flags);
+int daos_lsetxattr(const char* path, const char* name, const void* value, size_t size, int flags,
+                           mfu_file_t* mfu_file);
 
 /*****************************
  * Links

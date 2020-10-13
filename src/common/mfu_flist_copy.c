@@ -222,7 +222,9 @@ static int mfu_copy_close_file(
 static int mfu_copy_xattrs(
     mfu_flist flist,
     uint64_t idx,
-    const char* dest_path)
+    const char* dest_path,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
 {
     /* assume that we'll succeed */
     int rc = 0;
@@ -242,7 +244,7 @@ static int mfu_copy_xattrs(
     /* get current estimate for list size */
     while(! got_list) {
         errno = 0;
-        list_size = llistxattr(src_path, list, list_bufsize);
+        list_size = mfu_file_llistxattr(src_path, list, list_bufsize, mfu_src_file);
 
         if(list_size < 0) {
             if(errno == ERANGE) {
@@ -266,7 +268,7 @@ static int mfu_copy_xattrs(
         }
         else {
             if(list_size > 0 && list_bufsize == 0) {
-                /* called llistxattr with size==0 and got back positive
+                /* called mfu_file_llistxattr with size==0 and got back positive
                  * number indicating size of buffer we need to allocate */
                 list_bufsize = (size_t) list_size;
                 list = (char*) MFU_MALLOC(list_bufsize);
@@ -294,7 +296,7 @@ static int mfu_copy_xattrs(
 
             while(! got_val) {
                 errno = 0;
-                val_size = lgetxattr(src_path, name, val, val_bufsize);
+                val_size = mfu_file_lgetxattr(src_path, name, val, val_bufsize, mfu_src_file);
 
                 if(val_size < 0) {
                     if(errno == ERANGE) {
@@ -322,7 +324,7 @@ static int mfu_copy_xattrs(
                 }
                 else {
                     if(val_size > 0 && val_bufsize == 0) {
-                        /* called lgetxattr with size==0 and got back positive
+                        /* called mfu_file_lgetxattr with size==0 and got back positive
                          * number indicating size of buffer we need to allocate */
                         val_bufsize = (size_t) val_size;
                         val = (void*) MFU_MALLOC(val_bufsize);
@@ -337,7 +339,7 @@ static int mfu_copy_xattrs(
             /* set attribute on destination object */
             if(got_val) {
                 errno = 0;
-                int setrc = lsetxattr(dest_path, name, val, (size_t) val_size, 0);
+                int setrc = mfu_file_lsetxattr(dest_path, name, val, (size_t) val_size, 0, mfu_dst_file);
                 if(setrc != 0) {
                     /* failed to set attribute */
                     MFU_LOG(MFU_LOG_ERR, "Failed to set value for name=%s on `%s' llistxattr() (errno=%d %s)",
@@ -369,7 +371,8 @@ static int mfu_copy_xattrs(
 static int mfu_copy_ownership(
     mfu_flist flist,
     uint64_t idx,
-    const char* dest_path)
+    const char* dest_path,
+    mfu_file_t* mfu_dst_file)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -379,7 +382,7 @@ static int mfu_copy_ownership(
     gid_t gid = (gid_t) mfu_flist_file_get_gid(flist, idx);
 
     /* note that we use lchown to change ownership of link itself, it path happens to be a link */
-    if(mfu_lchown(dest_path, uid, gid) != 0) {
+    if(mfu_file_lchown(dest_path, uid, gid, mfu_dst_file) != 0) {
         /* TODO: are there other EPERM conditions we do want to report? */
 
         /* since the user running dcp may not be the owner of the
@@ -525,7 +528,8 @@ static int mfu_copy_acls(
 static int mfu_copy_timestamps(
     mfu_flist flist,
     uint64_t idx,
-    const char* dest_path)
+    const char* dest_path,
+    mfu_file_t* mfu_dst_file)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -549,7 +553,7 @@ static int mfu_copy_timestamps(
      * assume path is relative to current working directory,
      * if it's not absolute, and set times on link (not target file)
      * if dest_path refers to a link */
-    if(mfu_utimensat(AT_FDCWD, dest_path, times, AT_SYMLINK_NOFOLLOW) != 0) {
+    if(mfu_file_utimensat(AT_FDCWD, dest_path, times, AT_SYMLINK_NOFOLLOW, mfu_dst_file) != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on `%s' utime() (errno=%d %s)",
             dest_path, errno, strerror(errno)
            );
@@ -665,7 +669,7 @@ static int mfu_copy_set_metadata(
             total_count++;
 
             if(copy_opts->preserve) {
-                tmp_rc = mfu_copy_ownership(list, idx, dest);
+                tmp_rc = mfu_copy_ownership(list, idx, dest, mfu_dst_file);
                 if (tmp_rc < 0) {
                     rc = -1;
                 }
@@ -677,7 +681,7 @@ static int mfu_copy_set_metadata(
                 if (tmp_rc < 0) {
                     rc = -1;
                 }
-                tmp_rc = mfu_copy_timestamps(list, idx, dest);
+                tmp_rc = mfu_copy_timestamps(list, idx, dest, mfu_dst_file);
                 if (tmp_rc < 0) {
                     rc = -1;
                 }
@@ -804,7 +808,7 @@ static int mfu_copy_set_metadata_dirs(
             total_count++;
 
             if(copy_opts->preserve) {
-                tmp_rc = mfu_copy_ownership(list, idx, dest);
+                tmp_rc = mfu_copy_ownership(list, idx, dest, mfu_dst_file);
                 if (tmp_rc < 0) {
                     rc = -1;
                 }
@@ -816,7 +820,7 @@ static int mfu_copy_set_metadata_dirs(
                 if (tmp_rc < 0) {
                     rc = -1;
                 }
-                tmp_rc = mfu_copy_timestamps(list, idx, dest);
+                tmp_rc = mfu_copy_timestamps(list, idx, dest, mfu_dst_file);
                 if (tmp_rc < 0) {
                     rc = -1;
                 }
@@ -935,7 +939,7 @@ static int mfu_create_directory(
 
     /* copy extended attributes on directory */
     if (copy_opts->preserve) {
-        int tmp_rc = mfu_copy_xattrs(list, idx, dest_path);
+        int tmp_rc = mfu_copy_xattrs(list, idx, dest_path, mfu_src_file, mfu_dst_file);
         if (tmp_rc < 0) {
             rc = -1;
         }
@@ -1126,7 +1130,7 @@ static int mfu_create_link(
 
     /* set permissions on link */
     if (copy_opts->preserve) {
-        int xattr_rc = mfu_copy_xattrs(list, idx, dest_path);
+        int xattr_rc = mfu_copy_xattrs(list, idx, dest_path, mfu_src_file, mfu_dst_file);
         if (xattr_rc < 0) {
             rc = -1;
         }
@@ -1199,7 +1203,7 @@ static int mfu_create_file(
      * writing data because some attributes tell file system how to
      * stripe data, e.g., Lustre */
     if (copy_opts->preserve) {
-        int tmp_rc = mfu_copy_xattrs(list, idx, dest_path);
+        int tmp_rc = mfu_copy_xattrs(list, idx, dest_path, mfu_src_file, mfu_dst_file);
         if (tmp_rc < 0) {
             rc = -1;
         }
@@ -3151,7 +3155,7 @@ int mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index,
 
     /* update ownership on destination if needed */
     if ((src_uid != dst_uid) || (src_gid != dst_gid)) {
-        tmp_rc = mfu_copy_ownership(src_list, src_index, dest_path);
+        tmp_rc = mfu_copy_ownership(src_list, src_index, dest_path, mfu_file);
         if (tmp_rc < 0) {
             rc = -1;
         }
@@ -3185,7 +3189,7 @@ int mfu_flist_file_sync_meta(mfu_flist src_list, uint64_t src_index,
     if ((src_atime != dst_atime) || (src_atime_nsec != dst_atime_nsec) ||
         (src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec))
     {
-        tmp_rc = mfu_copy_timestamps(src_list, src_index, dest_path);
+        tmp_rc = mfu_copy_timestamps(src_list, src_index, dest_path, mfu_file);
         if (tmp_rc < 0) {
             rc = -1;
         }

@@ -312,6 +312,20 @@ int daos_access(const char* path, int amode, mfu_file_t* mfu_file)
 }
 
 /* calls lchown, and retries a few times if we get EIO or EINTR */
+int mfu_file_lchown(const char* path, uid_t owner, gid_t group, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_lchown(path, owner, group);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_lchown(path, owner, group, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  path, mfu_file->type);
+    }    
+}
+
 int mfu_lchown(const char* path, uid_t owner, gid_t group)
 {
     int rc;
@@ -330,6 +344,17 @@ retry:
         }
     }
     return rc;
+}
+
+int daos_lchown(const char* path, uid_t owner, gid_t group, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    /* At this time, DFS does not support updating the uid or gid.
+     * These are set at the container level, not file level */
+    return 0;
+#else
+    return 0;
+#endif
 }
 
 int daos_chmod(const char *path, mode_t mode, mfu_file_t* mfu_file)
@@ -401,7 +426,22 @@ int mfu_file_chmod(const char* path, mode_t mode, mfu_file_t* mfu_file)
 }
 
 /* calls utimensat, and retries a few times if we get EIO or EINTR */
-int mfu_utimensat(int dirfd, const char *pathname, const struct timespec times[2], int flags)
+int mfu_file_utimensat(int dirfd, const char* pathname, const struct timespec times[2], int flags,
+                       mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_utimensat(dirfd, pathname, times, flags);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_utimensat(dirfd, pathname, times, flags, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  pathname, mfu_file->type);
+    }
+}
+
+int mfu_utimensat(int dirfd, const char* pathname, const struct timespec times[2], int flags)
 {
     int rc;
     int tries = MFU_IO_TRIES;
@@ -419,6 +459,93 @@ retry:
         }
     }
     return rc;
+}
+
+/* Emulates utimensat by calling dfs_osetattr */
+int daos_utimensat(int dirfd, const char* pathname, const struct timespec times[2], int flags,
+                   mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    /* Only current working directory supported at this time */
+    if (dirfd != AT_FDCWD) {
+        errno = ENOTSUP;
+        return -1;
+    }
+
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(pathname, &name, &dir_name);
+    assert(dir_name);
+
+    int rc = 0;
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    if (parent == NULL) {
+        rc = -1;
+    } else {
+        /* Get the mode of the object */
+        mode_t mode;
+        dfs_obj_t* obj;
+        rc = dfs_lookup_rel(mfu_file->dfs, parent, name, O_RDWR, &obj, &mode, NULL);
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_lookup_rel %s failed", pathname);
+            errno = rc;
+            rc = -1;
+        } else {
+            /* Conditionally dereference symlinks */
+            if (S_ISLNK(mode) && !(flags & AT_SYMLINK_NOFOLLOW)) {
+                /* Get the link value */
+                char link_buf[PATH_MAX + 1];
+                daos_size_t got_size = (daos_size_t) sizeof(link_buf);
+                rc = dfs_get_symlink_value(obj, link_buf, &got_size);
+                if (rc) {
+                    errno = rc;
+                    rc = -1;
+                } else {
+                    /* Set obj to the dereferenced symlink value */
+                    link_buf[got_size-1] = '\0';
+                    dfs_release(obj);
+                    rc = dfs_lookup(mfu_file->dfs, link_buf, O_RDWR, &obj, NULL, NULL);
+                    if (rc) {
+                        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", link_buf);
+                        errno = rc;
+                        rc = -1;
+                    }
+                }
+            }
+
+            /* Set the times on the obj */
+            if (rc != -1) {
+                struct stat stbuf;
+                stbuf.st_atim = times[0];
+                stbuf.st_mtim = times[1];
+                rc = dfs_osetattr(mfu_file->dfs, obj, &stbuf, DFS_SET_ATTR_ATIME | DFS_SET_ATTR_MTIME);
+                if (rc) {
+                    MFU_LOG(MFU_LOG_ERR, "dfs_osetattr %s failed", pathname);
+                    errno = rc;
+                    rc = -1;
+                }
+            }
+
+            /* Release the obj */
+            int tmp_rc = dfs_release(obj);
+            if (tmp_rc && (rc != -1)) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_release %s failed (%d %s)",
+                        pathname, rc, strerror(rc));
+                errno = rc;
+                rc = -1;
+            }
+        }
+    }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
+
+    return rc;
+#else
+    return 0;
+#endif
 }
 
 /* stat a DAOS path */
@@ -667,7 +794,13 @@ ssize_t daos_readlink(const char* path, char* buf, size_t bufsize, mfu_file_t* m
             }
 
             /* Release the symlink */
-            dfs_release(sym_obj);
+            rc = dfs_release(sym_obj);
+            if (rc && (got_size != -1)) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_release %s failed (%d %s)",
+                        path, rc, strerror(rc));
+                errno = rc;
+                rc = -1;
+            }
         }
     }
 
@@ -1904,4 +2037,243 @@ struct dirent* mfu_file_readdir(DIR* dirp, mfu_file_t* mfu_file)
         MFU_ABORT(-1, "File type not known, type=%d",
                   mfu_file->type);
     }
+}
+
+/* list xattrs (link interrogation) */
+ssize_t mfu_file_llistxattr(const char* path, char* list, size_t size, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        ssize_t rc = mfu_llistxattr(path, list, size);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        ssize_t rc = daos_llistxattr(path, list, size, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known, type=%d",
+                  mfu_file->type);
+    }
+}
+
+ssize_t mfu_llistxattr(const char* path, char* list, size_t size)
+{
+    ssize_t rc = llistxattr(path, list, size);
+    return rc;
+}
+
+/* DAOS wrapper for dfs_listxattr that adjusts return
+ * codes and errno to be similar to POSIX llistxattr */
+ssize_t daos_llistxattr(const char* path, char* list, size_t size, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(path, &name, &dir_name);
+    assert(dir_name);
+
+    daos_size_t got_size = (daos_size_t) size;
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    if (parent == NULL) {
+        got_size = -1;
+    }
+    else {
+        /* lookup and open name */
+        dfs_obj_t* obj;
+        int rc = dfs_lookup_rel(mfu_file->dfs, parent, name, O_RDWR, &obj, NULL, NULL);
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_lookup_rel %s failed (%d %s)",
+                    path, rc, strerror(rc));
+            errno = rc;
+            got_size = -1;
+        } else {
+            /* list the xattrs */
+            rc = dfs_listxattr(mfu_file->dfs, obj, list, &got_size);
+            if (rc) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_listxattr %s failed (%d %s)",
+                        path, rc, strerror(rc));
+                errno = rc;
+                got_size = -1;
+            } else if (size == 0) {
+                /* we will just return got_size */
+            } else if (size < got_size) {
+                errno = ERANGE;
+                got_size = -1;
+            }
+        }
+
+        /* Release the obj */
+        rc = dfs_release(obj);
+        if (rc && (got_size != -1)) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d %s)",
+                    rc, strerror(rc));
+            errno = rc;
+            got_size = -1;
+        }
+    }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
+
+    return (ssize_t) got_size;
+#else
+    return (ssize_t) 0;
+#endif
+}
+
+/* get xattrs (link interrogation) */
+ssize_t mfu_file_lgetxattr(const char* path, const char* name, void* value, size_t size, mfu_file_t* mfu_file)
+{
+   if (mfu_file->type == POSIX) {
+        ssize_t rc = mfu_lgetxattr(path, name, value, size);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        ssize_t rc = daos_lgetxattr(path, name, value, size, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known, type=%d",
+                  mfu_file->type);
+    } 
+}
+
+ssize_t mfu_lgetxattr(const char* path, const char* name, void* value, size_t size)
+{
+    ssize_t rc = lgetxattr(path, name, value, size);
+    return rc;
+}
+
+ssize_t daos_lgetxattr(const char* path, const char* name, void* value, size_t size, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    char* obj_name = NULL;
+    char* dir_name = NULL;
+    parse_filename(path, &obj_name, &dir_name);
+    assert(dir_name);
+
+    daos_size_t got_size = (daos_size_t) size;
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    if (parent == NULL) {
+        got_size = -1;
+    }
+    else {
+        /* lookup and open obj_name */
+        dfs_obj_t* obj;
+        int rc = dfs_lookup_rel(mfu_file->dfs, parent, obj_name, O_RDWR, &obj, NULL, NULL);
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_lookup_rel %s failed (%d %s)",
+                    path, rc, strerror(rc));
+            errno = rc;
+            got_size = -1;
+        } else {
+            /* get the xattr */
+            rc = dfs_getxattr(mfu_file->dfs, obj, name, value, &got_size);
+            if (rc) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_getxattr %s failed (%d %s)",
+                        path, rc, strerror(rc));
+                errno = rc;
+                got_size = -1;
+            } else if (size == 0) {
+                /* we will just return got_size */
+            } else if (size < got_size) {
+                errno = ERANGE;
+                got_size = -1;
+            }
+        }
+
+        /* Release the obj */
+        rc = dfs_release(obj);
+        if (rc && (got_size != -1)) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d %s)",
+                    rc, strerror(rc));
+            errno = rc;
+            got_size = -1;
+        }
+    }
+
+    mfu_free(&obj_name);
+    mfu_free(&dir_name);
+
+    return (ssize_t) got_size;
+#else
+    return (ssize_t) 0;
+#endif
+}
+
+/* set xattrs (link interrogation) */
+int mfu_file_lsetxattr(const char* path, const char* name, const void* value, size_t size, int flags,
+                       mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_lsetxattr(path, name, value, size, flags);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_lsetxattr(path, name, value, size, flags, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known, type=%d",
+                  mfu_file->type);
+    }
+}
+
+int mfu_lsetxattr(const char* path, const char* name, const void* value, size_t size, int flags)
+{
+    int rc = lsetxattr(path, name, value, size, flags);
+    return rc;
+}
+
+int daos_lsetxattr(const char* path, const char* name, const void* value, size_t size, int flags,
+                   mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    char* obj_name = NULL;
+    char* dir_name = NULL;
+    parse_filename(path, &obj_name, &dir_name);
+    assert(dir_name);
+
+    int rc = 0;
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    if (parent == NULL) {
+        rc = -1;
+    }
+    else {
+        /* lookup and open obj_name */
+        dfs_obj_t* obj;
+        rc = dfs_lookup_rel(mfu_file->dfs, parent, obj_name, O_RDWR, &obj, NULL, NULL);
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_lookup_rel %s failed (%d %s)",
+                    path, rc, strerror(rc));
+            errno = rc;
+            rc = -1;
+        } else {
+            /* set the xattr */
+            rc = dfs_setxattr(mfu_file->dfs, obj, name, value, size, flags);
+            if (rc) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_setxattr %s failed (%d %s)",
+                        path, rc, strerror(rc));
+                errno = rc;
+                rc = -1;
+            }
+        }
+
+        /* Release the obj */
+        int rc_rel = dfs_release(obj);
+        if (rc_rel && (rc != -1)) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d %s)",
+                    rc_rel, strerror(rc_rel));
+            errno = rc_rel;
+            rc = -1;
+        }
+    }
+
+    mfu_free(&obj_name);
+    mfu_free(&dir_name);
+
+    return rc;
+#else
+    return 0;
+#endif
 }
