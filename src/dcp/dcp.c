@@ -14,6 +14,7 @@
 #include <gurt/common.h>
 #include <gurt/hash.h>
 #include <daos.h>
+#include <sys/stat.h>
 #include <daos_fs.h>
 #include <daos_uns.h>
 #endif

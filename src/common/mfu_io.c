@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -1189,7 +1191,7 @@ ssize_t daos_write(const char* file, const void* buf, size_t size, mfu_file_t* m
 #ifdef DAOS_SUPPORT
     /* record address and size of user buffer in io vector */
     d_iov_t iov;
-    d_iov_set(&iov, buf, size);
+    d_iov_set(&iov, (void*) buf, size);
 
     /* define scatter-gather list for dfs_write */
     d_sg_list_t sgl;
@@ -1335,7 +1337,7 @@ ssize_t daos_pwrite(const char* file, const void* buf, size_t size, off_t offset
 #ifdef DAOS_SUPPORT
     /* record address and size of user buffer in io vector */
     d_iov_t iov;
-    d_iov_set(&iov, buf, size);
+    d_iov_set(&iov, (void*) buf, size);
 
     /* define scatter-gather list for dfs_write */
     d_sg_list_t sgl;
