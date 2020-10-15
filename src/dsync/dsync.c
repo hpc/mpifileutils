@@ -2947,7 +2947,6 @@ int main(int argc, char **argv)
             mfu_progress_timeout = atoi(optarg);
             break;
         case 'p':
-            case 'p':
             copy_opts->preserve = true;
             if(rank == 0) {
                 MFU_LOG(MFU_LOG_INFO, "Preserving file attributes.");
