@@ -2075,7 +2075,7 @@ int main(int argc, char **argv)
         {"blocksize", 1, 0, 'B'},
         {"chunksize", 1, 0, 'k'},
         {"direct",    0, 0, 's'},
-        {"progress",  1, 0, 'P'},
+        {"progress",  1, 0, 'R'},
         {"verbose",   0, 0, 'v'},
         {"quiet",     0, 0, 'q'},
         {"lite",      0, 0, 'l'},
@@ -2141,7 +2141,7 @@ int main(int argc, char **argv)
                 MFU_LOG(MFU_LOG_INFO, "Using O_DIRECT");
             }
             break;
-        case 'P':
+        case 'R':
             mfu_progress_timeout = atoi(optarg);
             break;
         case 'v':

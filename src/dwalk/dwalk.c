@@ -375,7 +375,7 @@ int main(int argc, char** argv)
         {"file_histogram", 0, 0, 'f'},
         {"print",          0, 0, 'p'},
         {"dereference",    0, 0, 'L'},
-        {"progress",       1, 0, 'P'},
+        {"progress",       1, 0, 'R'},
         {"verbose",        0, 0, 'v'},
         {"quiet",          0, 0, 'q'},
         {"help",           0, 0, 'h'},
@@ -419,7 +419,7 @@ int main(int argc, char** argv)
             case 'L':
                 walk_opts->dereference = 1;
                 break;
-            case 'P':
+            case 'R':
                 mfu_progress_timeout = atoi(optarg);
                 break;
             case 'v':

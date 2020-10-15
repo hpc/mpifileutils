@@ -633,7 +633,7 @@ void print_usage(void)
 #endif
     printf("  -i, --input <file>       - read source list from file\n");
     printf("  -L, --dereference        - copy original files instead of links\n");
-    printf("      --no-dereference     - don't follow links in source\n");
+    printf("  -P, --no-dereference     - don't follow links in source\n");
     printf("  -p, --preserve           - preserve permissions, ownership, timestamps, extended attributes\n");
     printf("  -s, --direct             - open files with O_DIRECT\n");
     printf("  -S, --sparse             - create sparse files when possible\n");
@@ -699,12 +699,12 @@ int main(int argc, char** argv)
         {"input"                , required_argument, 0, 'i'},
         {"chunksize"            , required_argument, 0, 'k'},
         {"dereference"          , no_argument      , 0, 'L'},
-        {"no-dereference"       , no_argument      , 0, 'l'},
+        {"no-dereference"       , no_argument      , 0, 'P'},
         {"preserve"             , no_argument      , 0, 'p'},
         {"synchronous"          , no_argument      , 0, 's'},
         {"direct"               , no_argument      , 0, 's'},
         {"sparse"               , no_argument      , 0, 'S'},
-        {"progress"             , required_argument, 0, 'P'},
+        {"progress"             , required_argument, 0, 'R'},
         {"verbose"              , no_argument      , 0, 'v'},
         {"quiet"                , no_argument      , 0, 'q'},
         {"help"                 , no_argument      , 0, 'h'},
@@ -716,7 +716,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while(1) {
         int c = getopt_long(
-                    argc, argv, "b:d:g:i:k:LpsSvqh",
+                    argc, argv, "b:d:g:i:k:LPpsSvqh",
                     long_options, &option_index
                 );
 
@@ -861,7 +861,7 @@ int main(int argc, char** argv)
                 walk_opts->dereference = 1;
                 mfu_copy_opts->no_dereference = 0;
                 break;
-            case 'l':
+            case 'P':
                 /* turn on no_dereference.
                  * turn off dereference */
                 mfu_copy_opts->no_dereference = 1;
@@ -886,7 +886,7 @@ int main(int argc, char** argv)
                     MFU_LOG(MFU_LOG_INFO, "Using sparse file");
                 }
                 break;
-            case 'P':
+            case 'R':
                 mfu_progress_timeout = atoi(optarg);
                 break;
             case 'v':

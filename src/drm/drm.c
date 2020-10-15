@@ -100,7 +100,7 @@ int main(int argc, char** argv)
         {"dryrun",      0, 0, 'd'},
         {"aggressive",  0, 0, 'A'},
         {"traceless",   0, 0, 'T'},
-        {"progress",    1, 0, 'P'},
+        {"progress",    1, 0, 'R'},
         {"verbose",     0, 0, 'v'},
         {"quiet",       0, 0, 'q'},
         {"help",        0, 0, 'h'},
@@ -164,7 +164,7 @@ int main(int argc, char** argv)
             case 'T':
                 traceless = 1;
                 break;
-            case 'P':
+            case 'R':
                 mfu_progress_timeout = atoi(optarg);
                 break;
             case 'v':

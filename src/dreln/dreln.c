@@ -89,7 +89,7 @@ int main (int argc, char* argv[])
         {"input",        1, 0, 'i'},
         {"preserve",     0, 0, 'p'},
         {"relative",     0, 0, 'r'},
-        {"progress",     1, 0, 'P'},
+        {"progress",     1, 0, 'R'},
         {"verbose",      0, 0, 'v'},
         {"quiet",        0, 0, 'q'},
         {"help",         0, 0, 'h'},
@@ -118,7 +118,7 @@ int main (int argc, char* argv[])
             case 'r':
                 relative_targets = 1;
                 break;
-            case 'P':
+            case 'R':
                 mfu_progress_timeout = atoi(optarg);
                 break;
             case 'v':

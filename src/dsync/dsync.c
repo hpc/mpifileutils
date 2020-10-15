@@ -55,7 +55,7 @@ static void print_usage(void)
     printf("  -c, --contents          - read and compare file contents rather than compare size and mtime\n");
     printf("  -D, --delete            - delete extraneous files from target\n");
     printf("  -L, --dereference       - copy original files instead of links\n");
-    printf("      --no-dereference    - don't follow links in source\n"); 
+    printf("  -P, --no-dereference    - don't follow links in source\n"); 
     printf("  -s, --direct            - open files with O_DIRECT\n");
     printf("      --link-dest <DIR>   - hardlink to files in DIR when unchanged\n");
     printf("  -S, --sparse            - create sparse files when possible\n");
@@ -2858,13 +2858,13 @@ int main(int argc, char **argv)
         {"contents",       0, 0, 'c'},
         {"delete",         0, 0, 'D'},
         {"dereference",    0, 0, 'L'},
-        {"no-dereference", 0, 0, 'x'},
+        {"no-dereference", 0, 0, 'P'},
         {"direct",         0, 0, 's'},
         {"output",         1, 0, 'o'}, // undocumented
         {"debug",          0, 0, 'd'}, // undocumented
         {"link-dest",      1, 0, 'l'},
         {"sparse",         0, 0, 'S'},
-        {"progress",       1, 0, 'P'},
+        {"progress",       1, 0, 'R'},
         {"verbose",        0, 0, 'v'},
         {"quiet",          0, 0, 'q'},
         {"help",           0, 0, 'h'},
@@ -2883,7 +2883,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDso:LSvqh",
+            argc, argv, "b:cDso:LPSvqh",
             long_options, &option_index
         );
 
@@ -2932,7 +2932,7 @@ int main(int argc, char **argv)
             copy_opts->dereference = 1;
             walk_opts->dereference = 1;
             copy_opts->no_dereference = 0;
-        case 'x':
+        case 'P':
             /* turn on no_dereference.
              * turn off dereference */
             copy_opts->no_dereference = 1;
@@ -2960,7 +2960,7 @@ int main(int argc, char **argv)
         case 'S':
             copy_opts->sparse = 1;
             break;
-        case 'P':
+        case 'R':
             mfu_progress_timeout = atoi(optarg);
             break;
         case 'v':

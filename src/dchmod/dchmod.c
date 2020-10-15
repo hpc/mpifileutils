@@ -87,7 +87,7 @@ int main(int argc, char** argv)
         {"exclude",  1, 0, 'e'},
         {"match",    1, 0, 'a'},
         {"name",     0, 0, 'n'},
-        {"progress", 1, 0, 'P'},
+        {"progress", 1, 0, 'R'},
         {"verbose",  0, 0, 'v'},
         {"quiet",    0, 0, 'q'},
         {"help",     0, 0, 'h'},
@@ -135,7 +135,7 @@ int main(int argc, char** argv)
             case 'n':
                 name = 1;
                 break;
-            case 'P':
+            case 'R':
                 mfu_progress_timeout = atoi(optarg);
                 break;
             case 'v':
