@@ -2860,6 +2860,7 @@ int main(int argc, char **argv)
         {"link-dest",     1, 0, 'l'},
         {"sparse",        0, 0, 'S'},
         {"progress",      1, 0, 'P'},
+        {"preserve",      0, 0, 'p'},
         {"verbose",       0, 0, 'v'},
         {"quiet",         0, 0, 'q'},
         {"help",          0, 0, 'h'},
@@ -2878,7 +2879,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDso:Svqh",
+            argc, argv, "b:cDpso:Svqh",
             long_options, &option_index
         );
 
@@ -2944,6 +2945,13 @@ int main(int argc, char **argv)
             break;
         case 'P':
             mfu_progress_timeout = atoi(optarg);
+            break;
+        case 'p':
+            case 'p':
+            copy_opts->preserve = true;
+            if(rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "Preserving file attributes.");
+            }
             break;
         case 'v':
             options.verbose++;
