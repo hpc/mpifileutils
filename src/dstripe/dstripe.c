@@ -415,7 +415,7 @@ int main(int argc, char* argv[])
         {"size",     1, 0, 's'},
         {"minsize",  1, 0, 'm'},
         {"report",   0, 0, 'r'},
-        {"progress", 1, 0, 'P'},
+        {"progress", 1, 0, 'R'},
         {"verbose",  0, 0, 'v'},
         {"quiet",    0, 0, 'q'},
         {"help",     0, 0, 'h'},
@@ -459,7 +459,7 @@ int main(int argc, char* argv[])
                 /* report striping info */
 		report = 1;
                 break;
-            case 'P':
+            case 'R':
                 mfu_progress_timeout = atoi(optarg);
                 break;
             case 'v':
