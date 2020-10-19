@@ -48,6 +48,17 @@ OPTIONS
 
    Delete extraneous files from destination.
 
+.. option:: -L, --dereference
+
+   Dereference symbolic links and copy the target file or directory
+   that each symbolic link refers to.
+
+.. option:: -P, --no-dereference
+
+   Do not follow symbolic links in source paths. Effectviely allows
+   symbolic links to be copied when the link target is not valid
+   or there is not permission to read the link's target.
+
 .. option:: -s, --direct
 
    Use O_DIRECT to avoid caching file data.
