@@ -70,6 +70,11 @@ OPTIONS
 
    Print files to the screen.
 
+.. option:: -L, --dereference
+
+   Dereference symbolic links and walk the target file or directory
+   that each symbolic link refers to.
+
 .. option:: --progress N
 
    Print progress message to stdout approximately every N seconds.
