@@ -1214,7 +1214,7 @@ static int mfu_create_file(
         int status = mfu_file_lstat(dest_path, &st, mfu_dst_file);
         if (status == 0) {
             /* destination exists, truncate it to 0 bytes */
-            status = mfu_truncate(dest_path, 0);
+            status = mfu_file_truncate(dest_path, 0, mfu_dst_file);
             if (status) {
                 /* when using sparse file optimization, consider this to be an error,
                  * since we will not be overwriting the holes */
@@ -1798,6 +1798,13 @@ static int mfu_copy_file_fiemap(
         goto fail_normal_copy;
     }
 
+#ifdef DAOS_SUPPORT
+    /* Not yet supported */
+    if (mfu_src_file->type == DAOS) {
+        goto fail_normal_copy;
+    }
+#endif
+
     size_t last_ext_start = offset;
     size_t last_ext_len = 0;
 
@@ -1816,30 +1823,38 @@ static int mfu_copy_file_fiemap(
 
     struct stat sb;
     if (fstat(mfu_src_file->fd, &sb) < 0) {
-        goto fail_normal_copy;
+        goto fail_fiemap;
     }
 
     if (ioctl(mfu_src_file->fd, FS_IOC_FIEMAP, fiemap) < 0) {
-        MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src `%s'", src);
-        goto fail_normal_copy;
+        if (errno == ENOTSUP) {
+            /* silently ignore */
+        } else {
+            MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src '%s' (errno=%d %s)",
+                    src, errno, strerror(errno));
+        }
+        goto fail_fiemap;
     }
 
     size_t extents_size = sizeof(struct fiemap_extent) * (fiemap->fm_mapped_extents);
 
-    if ((fiemap = (struct fiemap*)realloc(fiemap,sizeof(struct fiemap) +
-                                  extents_size)) == NULL)
-    {
+    /* reallocate the fiemap.
+     * If realloc returns NULL, the original fiemap is left malloc'ed */
+    struct fiemap* new_fiemap = (struct fiemap*) realloc(fiemap, sizeof(struct fiemap) + extents_size);
+    if (new_fiemap == NULL) {
         MFU_LOG(MFU_LOG_ERR, "Out of memory reallocating fiemap");
-        goto fail_normal_copy;
+        goto fail_fiemap;
     }
+    fiemap = new_fiemap;
 
     memset(fiemap->fm_extents, 0, extents_size);
     fiemap->fm_extent_count   = fiemap->fm_mapped_extents;
     fiemap->fm_mapped_extents = 0;
 
     if (ioctl(mfu_src_file->fd, FS_IOC_FIEMAP, fiemap) < 0) {
-        MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src `%s'", src);
-        goto fail_normal_copy;
+        MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src '%s' (errno=%d %s)",
+                src, errno, strerror(errno));
+        goto fail_fiemap;
     }
 
     uint64_t last_byte = offset + length;
@@ -1866,14 +1881,14 @@ static int mfu_copy_file_fiemap(
     if (mfu_file_lseek(src, mfu_src_file, (off_t)last_ext_start, SEEK_SET) < 0) {
         MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' (errno=%d %s)",
             src, errno, strerror(errno));
-        goto fail;
+        goto fail_fiemap;
     }
 
     /* seek to offset in destination file */
     if (mfu_file_lseek(dest, mfu_dst_file, (off_t)last_ext_start, SEEK_SET) < 0) {
         MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' (errno=%d %s)",
             dest, errno, strerror(errno));
-        goto fail;
+        goto fail_fiemap;
     }
 
     unsigned int i;
@@ -1893,12 +1908,12 @@ static int mfu_copy_file_fiemap(
             if (mfu_file_lseek(src, mfu_src_file, (off_t)ext_start, SEEK_SET) < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Couldn't seek in source path `%s' (errno=%d %s)",
                     src, errno, strerror(errno));
-                goto fail;
+                goto fail_fiemap;
             }
             if (mfu_file_lseek(dest, mfu_dst_file, (off_t)ext_hole_size, SEEK_CUR) < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Couldn't seek in destination path `%s' (errno=%d %s)",
                     dest, errno, strerror(errno));
-                goto fail;
+                goto fail_fiemap;
             }
         }
 
@@ -1915,12 +1930,12 @@ static int mfu_copy_file_fiemap(
             if (num_written < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s' (errno=%d %s)",
                           src, dest, errno, strerror(errno));
-                goto fail;
+                goto fail_fiemap;
             }
             if (num_written != num_read) {
                 MFU_LOG(MFU_LOG_ERR, "Write error when copying from `%s' to `%s'",
                     src, dest);
-                goto fail;
+                goto fail_fiemap;
             }
 
             ext_len -= (size_t)num_written;
@@ -1937,7 +1952,7 @@ static int mfu_copy_file_fiemap(
         if (mfu_file_ftruncate(mfu_dst_file, file_size_offt) < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
                 dest, errno, strerror(errno));
-            goto fail;
+            goto fail_fiemap;
        }
     }
 
@@ -1950,7 +1965,7 @@ static int mfu_copy_file_fiemap(
     free(fiemap);
     return 0;
 
-fail:
+fail_fiemap:
     free(fiemap);
 
 fail_normal_copy:

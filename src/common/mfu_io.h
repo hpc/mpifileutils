@@ -152,7 +152,9 @@ ssize_t daos_pwrite(const char* file, const void* buf, size_t size, off_t offset
 ssize_t mfu_pwrite(const char* file, int fd, const void* buf, size_t size, off_t offset);
 
 /* truncate a file */
+int mfu_file_truncate(const char* file, off_t length, mfu_file_t* mfu_file);
 int mfu_truncate(const char* file, off_t length);
+int daos_truncate(const char* file, off_t length, mfu_file_t* mfu_file);
 
 /* ftruncate a file */
 int mfu_file_ftruncate(mfu_file_t* mfu_file, off_t length);
