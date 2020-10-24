@@ -1360,6 +1360,21 @@ ssize_t daos_pwrite(const char* file, const void* buf, size_t size, off_t offset
 }
 
 /* truncate a file */
+int mfu_file_truncate(const char* file, off_t length, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_truncate(file, length);
+        return rc;
+    } else if (mfu_file->type == DAOS) {
+        int rc = daos_truncate(file, length, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known, type=%d",
+                  mfu_file->type);
+    }
+}
+
+/* truncate a file */
 int mfu_truncate(const char* file, off_t length)
 {
     int rc;
@@ -1380,7 +1395,63 @@ retry:
     return rc;
 }
 
-/* TODO: need to fix this function for dfs */
+int daos_truncate(const char* file, off_t length, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(file, &name, &dir_name);
+    assert(dir_name);
+
+    int rc = 0;
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    if (parent == NULL) {
+        errno = ENOENT;
+        rc = -1;
+    } else {
+        /* open the obj in the parent */
+        dfs_obj_t* obj;
+        rc = dfs_open(mfu_file->dfs, parent, name,
+                      S_IFREG, O_RDWR,
+                      0, 0, NULL, &obj);
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_open %s failed (%d %s)",
+                    name, rc, strerror(rc));
+            errno = rc;
+            rc = -1;
+        } else {
+            /* truncate the obj */
+            daos_off_t offset = (daos_off_t) length;
+            rc = dfs_punch(mfu_file->dfs, obj, offset, DFS_MAX_FSIZE);
+            if (rc) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_punch failed (%d %s)",
+                        rc, strerror(rc));
+                errno = rc;
+                rc = -1;
+            }
+
+            /* close the obj */
+            int tmp_rc = dfs_release(mfu_file->obj);
+            if (!rc && tmp_rc) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_release %s failed (%d %s)",
+                        file, rc, strerror(rc));
+                errno = tmp_rc;
+                rc = -1;
+            }
+        }
+    }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
+
+    return rc;
+#else
+    return 0;
+#endif
+}
+
 int daos_ftruncate(mfu_file_t* mfu_file, off_t length)
 {
 #ifdef DAOS_SUPPORT
