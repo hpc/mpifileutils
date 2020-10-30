@@ -2,7 +2,7 @@
 
 [DAOS](https://github.com/daos-stack/daos) is supported as a backend storage system in dcp. The build instructions for
 enabling DAOS support can be found here:
-[Enable DAOS](https://github.com/hpc/mpifileutils/doc/rst/build.rst).
+[Enable DAOS](https://github.com/hpc/mpifileutils/blob/master/doc/rst/build.rst).
 
 The following are ways that DAOS can be used to move data both across DAOS as well as POSIX
 filesystems:
