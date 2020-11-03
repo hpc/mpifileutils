@@ -516,7 +516,7 @@ static int mfu_copy_acls(
 
          /* free the memory from the buffer */
          mfu_free(&aclbufmem);
-
+    }
 #endif /* GPFS_SUPPORT */
 
     return rc;
