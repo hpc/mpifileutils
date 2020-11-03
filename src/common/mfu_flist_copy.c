@@ -934,7 +934,7 @@ static int mfu_create_directory(
      * creating / striping files in the directory */
 
     /* copy extended attributes on directory */
-    if (copy_opts->preserve) {
+    if (copy_opts->preserve && copy_opts->preserve_xattrs) {
         int tmp_rc = mfu_copy_xattrs(list, idx, dest_path);
         if (tmp_rc < 0) {
             rc = -1;
@@ -1125,7 +1125,7 @@ static int mfu_create_link(
     }
 
     /* set permissions on link */
-    if (copy_opts->preserve) {
+    if (copy_opts->preserve && copy_opts->preserve_xattrs) {
         int xattr_rc = mfu_copy_xattrs(list, idx, dest_path);
         if (xattr_rc < 0) {
             rc = -1;
@@ -1198,7 +1198,7 @@ static int mfu_create_file(
     /* copy extended attributes, important to do this first before
      * writing data because some attributes tell file system how to
      * stripe data, e.g., Lustre */
-    if (copy_opts->preserve) {
+    if (copy_opts->preserve && copy_opts->preserve_xattrs) {
         int tmp_rc = mfu_copy_xattrs(list, idx, dest_path);
         if (tmp_rc < 0) {
             rc = -1;
@@ -3220,6 +3220,7 @@ mfu_copy_opts_t* mfu_copy_opts_new(void)
 
     /* By default, don't bother to preserve all attributes. */
     opts->preserve = false;
+    opts->preserve_xattrs = false;
 
     /* By default, don't use O_DIRECT. */
     opts->direct = false;

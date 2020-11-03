@@ -109,6 +109,7 @@ typedef struct {
     char*  dest_path;     /* prefex of destination directory */
     char*  input_file;    /* file name of input list */
     bool   preserve;      /* whether to preserve timestamps, ownership, permissions, etc. */
+    bool   preserve_xattrs;      /* whether to preserve xattrs. */
     bool   direct;        /* whether to use O_DIRECT */
     bool   sparse;        /* whether to create sparse files */
     size_t chunk_size;    /* size to chunk files by */

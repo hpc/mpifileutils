@@ -633,6 +633,7 @@ void print_usage(void)
     printf("  -s, --direct             - open files with O_DIRECT\n");
     printf("  -S, --sparse             - create sparse files when possible\n");
     printf("      --progress <N>       - print progress every N seconds\n");
+    printf("  -X, --xattrs             - preserve extended attributes\n");
     printf("  -v, --verbose            - verbose output\n");
     printf("  -q, --quiet              - quiet output\n");
     printf("  -h, --help               - print usage\n");
@@ -698,6 +699,7 @@ int main(int argc, char** argv)
         {"direct"               , no_argument      , 0, 's'},
         {"sparse"               , no_argument      , 0, 'S'},
         {"progress"             , required_argument, 0, 'P'},
+        {"xattrs"               , no_argument      , 0, 'X'},
         {"verbose"              , no_argument      , 0, 'v'},
         {"quiet"                , no_argument      , 0, 'q'},
         {"help"                 , no_argument      , 0, 'h'},
@@ -867,6 +869,12 @@ int main(int argc, char** argv)
                 break;
             case 'P':
                 mfu_progress_timeout = atoi(optarg);
+                break;
+            case 'X':
+                mfu_copy_opts->preserve_xattrs = true;
+                if(rank == 0) {
+                    MFU_LOG(MFU_LOG_INFO, "Preserving extended attributes.");
+                }
                 break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;

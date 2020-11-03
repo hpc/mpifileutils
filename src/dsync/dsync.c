@@ -2840,8 +2840,9 @@ int main(int argc, char **argv)
     /* verbose by default */
     mfu_debug_level = MFU_LOG_VERBOSE;
 
-    /* By default, sync option will preserve all attributes. */
+    /* By default, sync option will preserve most attributes. */
     copy_opts->preserve = true;
+    copy_opts->preserve_xattrs = true;
 
     /* flag to check for sync option */
     copy_opts->do_sync = 1;
@@ -2860,6 +2861,7 @@ int main(int argc, char **argv)
         {"link-dest",     1, 0, 'l'},
         {"sparse",        0, 0, 'S'},
         {"progress",      1, 0, 'P'},
+        {"xattrs",        0, 0, 'X'},
         {"verbose",       0, 0, 'v'},
         {"quiet",         0, 0, 'q'},
         {"help",          0, 0, 'h'},
@@ -2944,6 +2946,12 @@ int main(int argc, char **argv)
             break;
         case 'P':
             mfu_progress_timeout = atoi(optarg);
+            break;
+        case 'X':
+            copy_opts->preserve_xattrs = true;
+            if(rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "Preserving extended attributes.");
+            }
             break;
         case 'v':
             options.verbose++;
