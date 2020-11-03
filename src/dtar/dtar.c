@@ -261,7 +261,11 @@ int main(int argc, char** argv)
 
         /* walk path to get stats info on all files */
         mfu_flist flist = mfu_flist_new();
-        mfu_flist_walk_param_paths(num_src_params, src_params, walk_opts, flist);
+        
+        /* create new mfu_file objects */
+        mfu_file_t* mfu_file = mfu_file_new();
+        
+        mfu_flist_walk_param_paths(num_src_params, src_params, walk_opts, flist, mfu_file);
 
         /* create the archive file */
         mfu_flist_archive_create(flist, opts_tarfile, &archive_opts);
@@ -289,6 +293,9 @@ int main(int argc, char** argv)
         /* free paths */
         mfu_param_path_free_all(num_src_params, src_params);
         mfu_param_path_free(&dest_param);
+        
+        /* delete file objects */
+        mfu_file_delete(&mfu_file);
     } else if (opts_extract) {
         char* tarfile = opts_tarfile;
         if (opts_compress) {
