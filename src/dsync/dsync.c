@@ -2842,7 +2842,6 @@ int main(int argc, char **argv)
 
     /* By default, sync option will preserve most attributes. */
     copy_opts->preserve = true;
-    copy_opts->preserve_xattrs = true;
 
     /* flag to check for sync option */
     copy_opts->do_sync = 1;
