@@ -303,7 +303,7 @@ static void print_usage(void)
     printf("Options:\n");
     printf("  -i, --input <file>      - read list from file\n");
     printf("  -o, --output <file>     - write processed list to file in binary format\n");
-    printf("  -t, --text              - use with -o; write processed list to file in ascii format\n");
+    printf("  --text-output <file>    - write processed list to file in ascii format\n");
     printf("  -l, --lite              - walk file system without stat\n");
     printf("  -s, --sort <fields>     - sort output by comma-delimited fields\n");
     printf("  -d, --distribution <field>:<separators> \n                          - print distribution by field\n");
@@ -316,10 +316,102 @@ static void print_usage(void)
     printf("  -h, --help              - print usage\n");
     printf("\n");
     printf("Fields: name,user,group,uid,gid,atime,mtime,ctime,size\n");
+    printf("\n");
+    printf("Filters:\n");
+    printf("  --amin N       - last accessed N minutes ago\n");
+    printf("  --anewer FILE  - last accessed more recently than FILE modified\n");
+    printf("  --atime N      - last accessed N days ago\n");
+    printf("  --cmin N       - status last changed N minutes ago\n");
+    printf("  --cnewer FILE  - status last changed more recently than FILE modified\n");
+    printf("  --ctime N      - status last changed N days ago\n");
+    printf("  --mmin N       - data last modified N minutes ago\n");
+    printf("  --mtime N      - data last modified N days ago\n");
+    printf("\n");
+    printf("  --gid N        - numeric group ID is N\n");
+    printf("  --group NAME   - belongs to group NAME\n");
+    printf("  --uid N        - numeric user ID is N\n");
+    printf("  --user NAME    - owned by user NAME\n");
+    printf("\n");
+    printf("  --size N       - size is N bytes.  Supports attached units like KB, MB, GB\n");
+    printf("  --type C       - of type C: d=dir, f=file, l=symlink\n");
+    printf("\n");
     printf("For more information see https://mpifileutils.readthedocs.io. \n");
     printf("\n");
     fflush(stdout);
     return;
+}
+
+
+/* look up mtimes for specified file,
+ * return secs/nsecs in newly allocated mfu_pred_times struct,
+ * return NULL on error */
+static mfu_pred_times* get_mtimes(const char* file)
+{
+    mfu_param_path param_path;
+    mfu_param_path_set(file, &param_path);
+    if (! param_path.path_stat_valid) {
+        return NULL;
+    }
+    mfu_pred_times* t = (mfu_pred_times*) MFU_MALLOC(sizeof(mfu_pred_times));
+    mfu_stat_get_mtimes(&param_path.path_stat, &t->secs, &t->nsecs);
+    mfu_param_path_free(&param_path);
+    return t;
+}
+
+static int add_type(mfu_pred* p, char t)
+{
+    mode_t* type = (mode_t*) MFU_MALLOC(sizeof(mode_t));
+    switch (t) {
+    case 'b':
+        *type = S_IFBLK;
+        break;
+    case 'c':
+        *type = S_IFCHR;
+        break;
+    case 'd':
+        *type = S_IFDIR;
+        break;
+    case 'f':
+        *type = S_IFREG;
+        break;
+    case 'l':
+        *type = S_IFLNK;
+        break;
+    case 'p':
+        *type = S_IFIFO;
+        break;
+    case 's':
+        *type = S_IFSOCK;
+        break;
+
+    default:
+        /* unsupported type character */
+        mfu_free(&type);
+        return -1;
+        break;
+    }
+
+    /* add check for this type */
+    mfu_pred_add(p, MFU_PRED_TYPE, (void *)type);
+    return 1;
+}
+
+static void pred_commit (mfu_pred* p)
+{
+    int need_print = 1;
+
+    mfu_pred* cur = p;
+    while (cur) {
+//        if (cur->f == MFU_PRED_PRINT || cur->f == MFU_PRED_EXEC) {
+//            need_print = 0;
+//            break;
+//        }
+        cur = cur->next;
+    }
+
+    if (need_print) {
+//        mfu_pred_add(p, MFU_PRED_PRINT, NULL);
+    }
 }
 
 int main(int argc, char** argv)
@@ -338,6 +430,10 @@ int main(int argc, char** argv)
     /* pointer to mfu_walk_opts */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
+    /* capture current time for any time based queries,
+     * to get a consistent value, capture and bcast from rank 0 */
+    mfu_pred_times* now_t = mfu_pred_now();
+
     /* TODO: extend options
      *   - allow user to cache scan result in file
      *   - allow user to load cached scan as input
@@ -349,8 +445,10 @@ int main(int argc, char** argv)
      *   - allow user to sort by different fields
      *   - allow user to group output (sum all bytes, group by user) */
 
+    mfu_pred* pred_head = mfu_pred_new();
     char* inputname      = NULL;
     char* outputname     = NULL;
+    char* textoutputname     = NULL;
     char* sortfields     = NULL;
     char* distribution   = NULL;
 
@@ -368,7 +466,7 @@ int main(int argc, char** argv)
     static struct option long_options[] = {
         {"input",          1, 0, 'i'},
         {"output",         1, 0, 'o'},
-        {"text",           0, 0, 't'},
+        {"text-output",     required_argument, NULL, 'z' },
         {"lite",           0, 0, 'l'},
         {"sort",           1, 0, 's'},
         {"distribution",   1, 0, 'd'},
@@ -379,6 +477,24 @@ int main(int argc, char** argv)
         {"verbose",        0, 0, 'v'},
         {"quiet",          0, 0, 'q'},
         {"help",           0, 0, 'h'},
+
+        { "amin",     required_argument, NULL, 'a' },
+        { "anewer",   required_argument, NULL, 'B' },
+        { "atime",    required_argument, NULL, 'A' },
+        { "cmin",     required_argument, NULL, 'c' },
+        { "cnewer",   required_argument, NULL, 'D' },
+        { "ctime",    required_argument, NULL, 'C' },
+        { "mmin",     required_argument, NULL, 'm' },
+        { "mtime",    required_argument, NULL, 'M' },
+
+        { "gid",      required_argument, NULL, 'g' },
+        { "group",    required_argument, NULL, 'G' },
+        { "uid",      required_argument, NULL, 'u' },
+        { "user",     required_argument, NULL, 'U' },
+
+        { "size",     required_argument, NULL, 'S' },
+        { "type",     required_argument, NULL, 'T' },
+
         {0, 0, 0, 0}
     };
 
@@ -393,12 +509,20 @@ int main(int argc, char** argv)
             break;
         }
 
+        char* buf;
+        mfu_pred_times* t;
+        mfu_pred_times_rel* tr;
+        int ret;
+
         switch (c) {
             case 'i':
                 inputname = MFU_STRDUP(optarg);
                 break;
             case 'o':
                 outputname = MFU_STRDUP(optarg);
+                break;
+            case 'z':
+                textoutputname = MFU_STRDUP(optarg);
                 break;
             case 'l':
                 /* don't stat each file on the walk */
@@ -422,14 +546,96 @@ int main(int argc, char** argv)
             case 'R':
                 mfu_progress_timeout = atoi(optarg);
                 break;
+
+            case 'a':
+                tr = mfu_pred_relative(optarg, now_t);
+       	        mfu_pred_add(pred_head, MFU_PRED_AMIN, (void *)tr);
+                break;
+            case 'm':
+                tr = mfu_pred_relative(optarg, now_t);
+                mfu_pred_add(pred_head, MFU_PRED_MMIN, (void *)tr);
+                break;
+            case 'c':
+                tr = mfu_pred_relative(optarg, now_t);
+                mfu_pred_add(pred_head, MFU_PRED_CMIN, (void *)tr);
+                break;
+
+            case 'A':
+                tr = mfu_pred_relative(optarg, now_t);
+                mfu_pred_add(pred_head, MFU_PRED_ATIME, (void *)tr);
+                break;
+            case 'M':
+                tr = mfu_pred_relative(optarg, now_t);
+                mfu_pred_add(pred_head, MFU_PRED_MTIME, (void *)tr);
+                break;
+            case 'C':
+                tr = mfu_pred_relative(optarg, now_t);
+                mfu_pred_add(pred_head, MFU_PRED_CTIME, (void *)tr);
+                break;
+
+            case 'B':
+                    t = get_mtimes(optarg);
+                    if (t == NULL) {
+                        if (rank == 0) {
+                            printf("%s: can't find file %s\n", argv[0], optarg);
+                        }
+                   exit(1);
+                }
+                mfu_pred_add(pred_head, MFU_PRED_ANEWER, (void *)t);
+                break;
+            case 'D':
+                t = get_mtimes(optarg);
+                if (t == NULL) {
+                    if (rank == 0) {
+                       printf("%s: can't find file %s\n", argv[0], optarg);
+                    }
+                exit(1);
+                }
+                mfu_pred_add(pred_head, MFU_PRED_CNEWER, (void *)t);
+                break;
+
+            case 'g':
+                /* TODO: error check argument */
+                buf = MFU_STRDUP(optarg);
+                mfu_pred_add(pred_head, MFU_PRED_GID, (void *)buf);
+                break;
+        
+            case 'G':
+                buf = MFU_STRDUP(optarg);
+                mfu_pred_add(pred_head, MFU_PRED_GROUP, (void *)buf);
+                break;
+        
+            case 'u':
+                /* TODO: error check argument */
+                buf = MFU_STRDUP(optarg);
+                mfu_pred_add(pred_head, MFU_PRED_UID, (void *)buf);
+                break;
+        
+            case 'U':
+                buf = MFU_STRDUP(optarg);
+                mfu_pred_add(pred_head, MFU_PRED_USER, (void *)buf);
+                break;
+
+            case 'S':
+                buf = MFU_STRDUP(optarg);
+                mfu_pred_add(pred_head, MFU_PRED_SIZE, (void *)buf);
+                break;
+
+            case 'T':
+                ret = add_type(pred_head, *optarg);
+                if (ret != 1) {
+                    if (rank == 0) {
+                    printf("%s: unsupported file type %s\n", argv[0], optarg);
+                    }
+                exit(1);
+                }
+                break;
+        
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
                 break;
             case 'q':
                 mfu_debug_level = 0;
-                break;
-            case 't':
-                text = 1;
                 break;
             case 'h':
                 usage = 1;
@@ -443,6 +649,8 @@ int main(int argc, char** argv)
                 }
         }
     }
+
+    pred_commit(pred_head);
 
     /* check that we got a valid progress value */
     if (mfu_progress_timeout < 0) {
@@ -481,6 +689,14 @@ int main(int argc, char** argv)
         if (inputname == NULL) {
             usage = 1;
         }
+    }
+
+    /* at least one filter was applied which requires stat */
+    if (walk_opts->use_stat == 0 && pred_head->next != NULL) {
+        if (rank == 0) {
+            printf("Filters (atime, mtime, etc.) requires stat\n");
+        }
+        usage = 1;
     }
 
     /* if user is trying to sort, verify the sort fields are valid */
@@ -591,42 +807,52 @@ int main(int argc, char** argv)
 
     /* TODO: filter files */
     //filter_files(&flist);
+    mfu_flist flist2 = mfu_flist_filter_pred(flist, pred_head);
 
     /* sort files */
     if (sortfields != NULL) {
         /* TODO: don't sort unless all_count > 0 */
-        mfu_flist_sort(sortfields, &flist);
+        mfu_flist_sort(sortfields, &flist2);
     }
 
     /* print details for individual files */
     if (print) {
-        mfu_flist_print(flist);
+        mfu_flist_print(flist2);
     }
 
-    /* print summary statistics of flist */
-    mfu_flist_print_summary(flist);
+    /* print summary statistics of flist2 */
+    mfu_flist_print_summary(flist2);
 
     /* print distribution if user specified this option */
     if (distribution != NULL || file_histogram) {
-        print_flist_distribution(file_histogram, &option, &flist, rank);
+        print_flist_distribution(file_histogram, &option, &flist2, rank);
     }
 
     /* write data to cache file */
     if (outputname != NULL) {
-        if (!text) {
-            mfu_flist_write_cache(outputname, flist);
-        } else {
-            mfu_flist_write_text(outputname, flist);
-        }
+        mfu_flist_write_cache(outputname, flist2);
     }
+
+    /* write text version if also requested 
+ *   independent of --output */
+    if (textoutputname != NULL) {
+        mfu_flist_write_text(textoutputname, flist2);
+    }
+
+    /* free off the filtered list */
+    mfu_flist_free(&flist2);
 
     /* free users, groups, and files objects */
     mfu_flist_free(&flist);
+
+    /* free predicate list */
+    mfu_pred_free(&pred_head);
 
     /* free memory allocated for options */
     mfu_free(&distribution);
     mfu_free(&sortfields);
     mfu_free(&outputname);
+    mfu_free(&textoutputname);
     mfu_free(&inputname);
 
     /* free the path parameters */
