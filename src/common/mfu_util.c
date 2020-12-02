@@ -115,7 +115,6 @@ void daos_bcast_handle(
 
 int daos_connect(
   int rank,
-  const char* svc,
   uuid_t pool_uuid,
   uuid_t cont_uuid,
   daos_handle_t* poh,
@@ -130,23 +129,15 @@ int daos_connect(
     /* have rank 0 connect to the pool and container,
      * we'll then broadcast the handle ids from rank 0 to everyone else */
     if (rank == 0) {
-        /* Parse svc and connect to DAOS pool */
+        /* Connect to DAOS pool */
         if (connect_pool) {
-            d_rank_list_t* svcl = daos_rank_list_parse(svc, ":");
-            if (svcl == NULL) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS rank list: '%s'", svc);
-                goto bcast;
-            }
-
             daos_pool_info_t pool_info = {0};
-            rc = daos_pool_connect(pool_uuid, NULL, svcl, DAOS_PC_RW,
+            rc = daos_pool_connect(pool_uuid, NULL, NULL, DAOS_PC_RW,
                     poh, &pool_info, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to connect to pool");
-                d_rank_list_free(svcl);
                 goto bcast;
             }
-            d_rank_list_free(svcl);
         }
 
         /* Try to open the container 
