@@ -394,6 +394,9 @@ const char* mfu_flist_file_get_username(mfu_flist flist, uint64_t index);
 const char* mfu_flist_file_get_groupname(mfu_flist flist, uint64_t index);
 
 /* set properties on specified item in local flist */
+#ifdef DAOS_SUPPORT
+void mfu_flist_file_set_oid(mfu_flist flist, uint64_t index, daos_obj_id_t oid);
+#endif
 void mfu_flist_file_set_name(mfu_flist flist, uint64_t index, const char* name);
 void mfu_flist_file_set_type(mfu_flist flist, uint64_t index, mfu_filetype type);
 void mfu_flist_file_set_detail(mfu_flist flist, uint64_t index, int detail);
@@ -427,7 +430,7 @@ mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args
 
 /* takes a list, spreads it evenly among processes with respect to item count,
  * and then returns the newly created list to the caller */
-mfu_flist mfu_flist_spread(mfu_flist flist);
+mfu_flist mfu_flist_spread(mfu_flist flist, bool* is_posix_copy);
 
 /* sort flist by specified fields, given as common-delimitted list
  * precede field name with '-' character to reverse sort order:

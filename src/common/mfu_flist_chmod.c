@@ -1198,7 +1198,8 @@ void mfu_flist_chmod(
         double start = MPI_Wtime();
 
         /* spread items for this level evenly over all procs */
-        mfu_flist list = mfu_flist_spread(lists[level]);
+        bool is_posix_copy = true;
+        mfu_flist list = mfu_flist_spread(lists[level], &is_posix_copy);
 
         /* do a dchmod on each element in the list for this level & pass it the size */
         uint64_t stats[7] = {0};

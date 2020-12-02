@@ -128,6 +128,13 @@ static size_t list_elem_pack2_size(int detail, uint64_t chars, const elem_t* ele
     else {
         size = 2 * 4 + chars + 1 * 4;
     }
+
+    #ifdef DAOS_SUPPORT
+    /* add space for obj_id_lo and obj_id_hi if 
+     * using DAOS */
+    size += 2 * 8;
+    #endif
+
     return size;
 }
 
@@ -146,8 +153,16 @@ static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_
 
     /* copy in file name */
     char* file = elem->file;
-    strcpy(ptr, file);
+    if (file != NULL) {
+        strcpy(ptr, file);
+    }
     ptr += chars;
+
+#ifdef DAOS_SUPPORT
+    /* copy in values for obj ids */
+    mfu_pack_uint64(&ptr, elem->obj_id_lo);
+    mfu_pack_uint64(&ptr, elem->obj_id_hi);
+#endif
 
     if (detail) {
         /* copy in fields */
@@ -198,6 +213,12 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
 
     elem->detail = (int) detail;
 
+#ifdef DAOS_SUPPORT
+    /* unpack obj ids */
+    mfu_unpack_uint64(&ptr, &elem->obj_id_lo);
+    mfu_unpack_uint64(&ptr, &elem->obj_id_hi);
+#endif
+
     if (detail) {
         /* extract fields */
         mfu_unpack_uint64(&ptr, &elem->mode);
@@ -210,7 +231,6 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
         mfu_unpack_uint64(&ptr, &elem->ctime);
         mfu_unpack_uint64(&ptr, &elem->ctime_nsec);
         mfu_unpack_uint64(&ptr, &elem->size);
-
         /* use mode to set file type */
         elem->type = mfu_flist_mode_to_filetype((mode_t)elem->mode);
     }
@@ -401,6 +421,7 @@ static void list_compute_summary(flist_t* flist)
     flist->min_depth      = 0;
     flist->max_depth      = 0;
     flist->total_files    = 0;
+    flist->total_oids     = 0;
     flist->offset         = 0;
 
     /* get our rank and the size of comm_world */
@@ -433,10 +454,12 @@ static void list_compute_summary(flist_t* flist)
     uint64_t max_name = 0;
     elem_t* current = flist->list_head;
     while (current != NULL) {
-        uint64_t len = (uint64_t)(strlen(current->file) + 1);
-        if (len > max_name) {
-            max_name = len;
-        }
+        if (current->file != NULL) {
+            uint64_t len = (uint64_t)(strlen(current->file) + 1);
+            if (len > max_name) {
+                max_name = len;
+            }
+	}
 
         int depth = current->depth;
         if (depth < min_depth || min_depth == -1) {
@@ -498,6 +521,7 @@ mfu_flist mfu_flist_new()
 
     flist->detail = 0;
     flist->total_files = 0;
+    flist->total_oids = 0;
 
     /* initialize linked list */
     flist->list_count = 0;
@@ -613,6 +637,19 @@ void mfu_flist_array_free(int levels, mfu_flist** outlists)
     /* free the array of lists and set caller's pointer to NULL */
     mfu_free(outlists);
     return;
+}
+
+/* return total number of obj ids across procs,
+ * only for non-posix copies */
+static uint64_t mfu_flist_global_oid_size(mfu_flist bflist)
+{
+#ifdef DAOS_SUPPORT
+    flist_t* flist = (flist_t*) bflist;
+    uint64_t val = flist->total_oids;
+    return val;
+#else
+    return 0;
+#endif
 }
 
 /* return number of files across all procs */
@@ -955,6 +992,19 @@ void mfu_flist_file_set_name(mfu_flist bflist, uint64_t idx, const char* name)
     return;
 }
 
+#ifdef DAOS_SUPPORT
+void mfu_flist_file_set_oid(mfu_flist bflist, uint64_t idx, daos_obj_id_t oid)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->obj_id_lo = oid.lo;
+        elem->obj_id_hi = oid.hi;
+    }
+    return;
+}
+#endif 
+
 void mfu_flist_file_set_type(mfu_flist bflist, uint64_t idx, mfu_filetype type)
 {
     flist_t* flist = (flist_t*) bflist;
@@ -1258,6 +1308,12 @@ uint64_t mfu_flist_file_create(mfu_flist bflist)
     elem->ctime_nsec = 0;
     elem->size       = 0;
 
+    /* for DAOS */
+#ifdef DAOS_SUPPORT
+    elem->obj_id_lo = 0;
+    elem->obj_id_hi = 0;
+#endif
+
     /* append element to tail of linked list */
     mfu_flist_insert_elem(flist, elem);
 
@@ -1448,7 +1504,16 @@ static int map_spread(mfu_flist flist, uint64_t idx, int ranks, const void* args
     uint64_t global_idx = offset + idx;
 
     /* get global size of the list */
-    uint64_t global_size = mfu_flist_global_size(flist);
+    uint64_t global_size;
+
+    /* global size will be total obj ids instead of total files,
+     * if a non-posix copy is being performed */
+    bool* is_posix_copy = (bool*)args;
+    if (*is_posix_copy) {
+        global_size = mfu_flist_global_oid_size(flist);
+    } else {
+        global_size = mfu_flist_global_size(flist);
+    }
 
     /* get whole number of items on each rank */
     uint64_t items_per_rank = global_size / (uint64_t)ranks;
@@ -1479,10 +1544,10 @@ static int map_spread(mfu_flist flist, uint64_t idx, int ranks, const void* args
 
 /* This takes in a list, spreads it out evenly, and then returns the newly created 
  * list to the caller */
-mfu_flist mfu_flist_spread(mfu_flist flist)
+mfu_flist mfu_flist_spread(mfu_flist flist, bool* is_posix_copy)
 {
     /* remap files to evenly distribute items to processes */
-    mfu_flist newlist = mfu_flist_remap(flist, map_spread, NULL);
+    mfu_flist newlist = mfu_flist_remap(flist, map_spread, (bool*)is_posix_copy);
     return newlist;
 }
 

@@ -1,6 +1,12 @@
 #include "mfu.h"
 
 #include <daos.h>
+#include "mfu_flist_internal.h"
+
+#define ENUM_KEY_BUF		32 /* size of each dkey/akey */
+#define ENUM_LARGE_KEY_BUF	(512 * 1024) /* 512k large key */
+#define ENUM_DESC_NR		5 /* number of keys/records returned by enum */
+#define ENUM_DESC_BUF		512 /* all keys/records returned by enum */
 
 enum handleType {
     POOL_HANDLE,
@@ -38,7 +44,8 @@ int daos_setup(
   char** argpaths,
   daos_args_t* da,
   mfu_file_t* mfu_src_file,
-  mfu_file_t* mfu_dst_file
+  mfu_file_t* mfu_dst_file,
+  bool* is_posix_copy
 );
 
 /* Unmount DFS.
@@ -48,5 +55,15 @@ int daos_setup(
 int daos_cleanup(
   daos_args_t* da,
   mfu_file_t* mfu_src_file,
-  mfu_file_t* mfu_dst_file
+  mfu_file_t* mfu_dst_file,
+  bool* is_posix_copy
 );
+
+/* list obj ids for non-dfs copy */
+int daos_obj_list_oids(daos_args_t* da,
+                        daos_epoch_t* epoch,
+                        mfu_flist bflist);
+
+/* copy DAOS data at obj level (non-posix) */
+int daos_obj_copy(daos_args_t* da,
+                  flist_t* flist);
