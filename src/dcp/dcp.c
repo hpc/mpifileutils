@@ -372,21 +372,14 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    /* Early check to avoid extra processing.
-     * Will be further checked below. */
-    if ((argc-optind) < 2) {
-        MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed: "
-                MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
-
     char** argpaths = (&argv[optind]);
+
+    /* var to keep track if this is a posix copy, defaults to true */
+    bool is_posix_copy = true;
 
 #ifdef DAOS_SUPPORT
     /* Set up DAOS arguments, containers, dfs, etc. */
-    rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
+    rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file, &is_posix_copy);
     if (rc != 0) {
         mfu_finalize();
         MPI_Finalize();
@@ -402,6 +395,16 @@ int main(int argc, char** argv)
         return 1;
     }
 #endif
+
+    /* Early check to avoid extra processing.
+     * Will be further checked below. */
+    if ((argc-optind) < 2 && is_posix_copy) {
+        MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed: "
+                MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
 
     /* paths to walk come after the options */
     int numpaths = 0;
@@ -426,7 +429,7 @@ int main(int argc, char** argv)
         numpaths_src = numpaths - 1;
     }
 
-    if (numpaths_src == 0) {
+    if (numpaths_src == 0 && is_posix_copy) {
         if(rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed: "
                     MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
@@ -442,76 +445,120 @@ int main(int argc, char** argv)
     /* last item in the list is the destination path */
     const mfu_param_path* destpath = &paths[numpaths - 1];
 
-    /* Parse the source and destination paths. */
-    int valid, copy_into_dir;
-    mfu_param_path_check_copy(numpaths_src, paths, destpath, mfu_src_file, mfu_dst_file,
-                              mfu_copy_opts->no_dereference, &valid, &copy_into_dir);
-    mfu_copy_opts->copy_into_dir = copy_into_dir;
-
-    /* exit job if we found a problem */
-    if (!valid) {
-        if(rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Invalid src/dest paths provided. Exiting run: "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
-        }
-        mfu_param_path_free_all(numpaths, paths);
-        mfu_free(&paths);
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
-
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
 
-    if (inputname == NULL) {
-        /* if daos is set to SRC then use daos_ functions on walk */
-        mfu_flist_walk_param_paths(numpaths_src, paths, walk_opts, flist, mfu_src_file);
-    } else {
-        struct mfu_flist_skip_args skip_args;
+    /* Parse the source and destination paths. */
+    if (is_posix_copy) {
+        int valid, copy_into_dir;
+        mfu_param_path_check_copy(numpaths_src, paths, destpath, mfu_src_file, mfu_dst_file,
+                                  mfu_copy_opts->no_dereference, &valid, &copy_into_dir);
+        mfu_copy_opts->copy_into_dir = copy_into_dir;
 
-        /* otherwise, read list of files from input, but then stat each one */
-        mfu_flist input_flist = mfu_flist_new();
-        mfu_flist_read_cache(inputname, input_flist);
+        /* exit job if we found a problem */
+        if (!valid) {
+            if(rank == 0) {
+                MFU_LOG(MFU_LOG_ERR, "Invalid src/dest paths provided. Exiting run: "
+                        MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+            }
+            mfu_param_path_free_all(numpaths, paths);
+            mfu_free(&paths);
+            mfu_finalize();
+            MPI_Finalize();
+            return 1;
+        }
 
-        skip_args.numpaths = numpaths_src;
-        skip_args.paths = paths;
-        mfu_flist_stat(input_flist, flist, input_flist_skip, (void *)&skip_args,
-                       walk_opts->dereference, mfu_src_file);
-        mfu_flist_free(&input_flist);
-    }
+        /* perform POSIX copy */
+        if (inputname == NULL) {
+            /* if daos is set to SRC then use daos_ functions on walk */
+            mfu_flist_walk_param_paths(numpaths_src, paths, walk_opts, flist, mfu_src_file);
+        } else {
+            struct mfu_flist_skip_args skip_args;
 
-    /* copy flist into destination */ 
-    rc = mfu_flist_copy(flist, numpaths_src, paths,
+            /* otherwise, read list of files from input, but then stat each one */
+            mfu_flist input_flist = mfu_flist_new();
+            mfu_flist_read_cache(inputname, input_flist);
+
+            skip_args.numpaths = numpaths_src;
+            skip_args.paths = paths;
+            mfu_flist_stat(input_flist, flist, input_flist_skip, (void *)&skip_args,
+                           walk_opts->dereference, mfu_src_file);
+            mfu_flist_free(&input_flist);
+        }
+
+        /* copy flist into destination */ 
+        rc = mfu_flist_copy(flist, numpaths_src, paths,
                             destpath, mfu_copy_opts, mfu_src_file,
                             mfu_dst_file);
-    if (rc < 0) {
-        /* hit some sort of error during copy */
-        rc = 1;
+        if (rc < 0) {
+            /* hit some sort of error during copy */
+            rc = 1;
+        }
+
+        /* free the file list */
+        mfu_flist_free(&flist);
+
+        /* free the path parameters */
+        mfu_param_path_free_all(numpaths, paths);
+
+        /* free memory allocated to hold params */
+        mfu_free(&paths);
+
+        /* free the input file name */
+        mfu_free(&inputname);
+    } 
+#ifdef DAOS_SUPPORT
+    else {
+        /* take a snapshot and walk container to get list of objects,
+         * returns epoch number of snapshot */
+        daos_epoch_t epoch;
+        int tmp_rc = mfu_flist_walk_daos(daos_args, &epoch, flist);
+        if (tmp_rc != 0) {
+            rc = 1;
+        }
+
+        /* all objects are on rank 0 at this point,
+         * evenly spread them among the ranks */
+        mfu_flist newflist = mfu_flist_spread(flist);
+
+        /* perform copy after oids are spread evenly across all ranks */
+        tmp_rc = mfu_flist_copy_daos(daos_args, newflist);
+        if (tmp_rc != 0) {
+            rc = 1;
+        }
+
+        /* Rank 0 prints success if needed */
+        if (rc == 0 && rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Successfully copied to DAOS Destination Container.");
+        }
+
+        /* destroy snapshot after copy */
+        if (rank == 0) {
+            daos_epoch_range_t epr;
+            epr.epr_lo = epoch;
+            epr.epr_hi = epoch;
+            rc = daos_cont_destroy_snap(daos_args->src_coh, epr, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "DAOS destroy snapshot failed: ", MFU_ERRF,
+                        MFU_ERRP(-MFU_ERR_DAOS));
+                rc = 1;
+            }
+        }
+        MPI_Bcast(&rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+	    /* free newflist that was created for non-posix copy */
+	    mfu_flist_free(&newflist);
     }
 
-    /* free the file list */
-    mfu_flist_free(&flist);
-
-    /* free the path parameters */
-    mfu_param_path_free_all(numpaths, paths);
-
-    /* free memory allocated to hold params */
-    mfu_free(&paths);
-
-    /* free the input file name */
-    mfu_free(&inputname);
+    /* Cleanup DAOS-related variables, etc. */
+    daos_cleanup(daos_args, mfu_src_file, mfu_dst_file, &is_posix_copy);
+#endif
 
     /* free the copy options */
     mfu_copy_opts_delete(&mfu_copy_opts);
 
     /* free the copy options */
     mfu_walk_opts_delete(&walk_opts);
-
-#ifdef DAOS_SUPPORT
-    /* Cleanup DAOS-related variables, etc. */
-    daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
-#endif
 
     /* free the mfu_file object */
     mfu_file_delete(&mfu_src_file);
