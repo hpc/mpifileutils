@@ -35,7 +35,7 @@ the pool and container UUID from the path. This feature can only be used if the
 container is created with a path.
 
 ```shell
-$ mpirun -np 3 --daos-dst-svcl 0 -v /tmp/$USER/s /tmp/$USER/conts/p1cont1
+$ mpirun -np 3 -v /tmp/$USER/s /tmp/$USER/conts/p1cont1
 [2020-04-23T17:04:15]   Items: 6
 [2020-04-23T17:04:15]   Directories: 3
 [2020-04-23T17:04:15]   Files: 3
@@ -50,7 +50,7 @@ with a path. The destination is the relative path within the DAOS container, whi
 in this example is the root of the container. 
 
 ```shell
-$ mpirun -np 3 dcp --daos-dst-svcl 0 -v --daos-dst-pool $pool --daos-dst-cont $p1cont1 /tmp/$USER/s /
+$ mpirun -np 3 dcp -v --daos-dst-pool $pool --daos-dst-cont $p1cont1 /tmp/$USER/s /
 [2020-04-23T17:17:51] Items: 6
 [2020-04-23T17:17:51]   Directories: 3
 [2020-04-23T17:17:51]   Files: 3
@@ -62,7 +62,7 @@ Show a copy from one DAOS container to another container that exists in the same
 pool. A DAOS Unified Namespace path is used as the source and the destination.
 
 ```shell
-$ mpirun -np 3 dcp --daos-src-svcl 0 --daos-dst-svcl 0 -v /tmp/$USER/conts/p1cont1 /tmp/$USER/conts/p1cont2
+$ mpirun -np 3 dcp -v /tmp/$USER/conts/p1cont1 /tmp/$USER/conts/p1cont2
 [2020-04-23T17:04:15] Items: 6
 [2020-04-23T17:04:15]   Directories: 3
 [2020-04-23T17:04:15]   Files: 3
@@ -76,7 +76,7 @@ is the relative path within the DAOS container, which in this case is a subset o
 the DAOS container. 
 
 ```shell
-$ mpirun -np 3 dcp --daos-src-svcl 0 --daos-dst-svcl 0 -v --daos-src-pool $pool --daos-src-cont $p1cont1 \
+$ mpirun -np 3 dcp -v --daos-src-pool $pool --daos-src-cont $p1cont1 \
 --daos-dst-pool $pool2 --daos-dst-cont $p2cont2 /s/biggerfile /
 [2020-04-28T00:47:59] Items: 1
 [2020-04-28T00:47:59]   Directories: 0
@@ -90,7 +90,7 @@ This example copies data from a DAOS container to /tmp, where a DAOS
 Unified Namespace path is used as the source. 
 
 ```shell
-$ mpirun -np 3 dcp --daos-src-svcl 0 -v /tmp/$USER/conts/p1cont1 /tmp/$USER/d
+$ mpirun -np 3 dcp -v /tmp/$USER/conts/p1cont1 /tmp/$USER/d
 [2020-04-23T17:17:51] Items: 6
 [2020-04-23T17:17:51]   Directories: 3
 [2020-04-23T17:17:51]   Files: 3

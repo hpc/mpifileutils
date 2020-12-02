@@ -128,7 +128,6 @@ void daos_bcast_handle(
 /* connect to DAOS pool, and then open container */
 int daos_connect(
   int rank,
-  const char* svc,
   uuid_t pool_uuid,
   uuid_t cont_uuid,
   daos_handle_t* poh,

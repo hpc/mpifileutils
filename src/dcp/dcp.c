@@ -36,8 +36,6 @@ typedef struct {
     uuid_t dst_pool_uuid;  /* destination pool UUID */
     uuid_t src_cont_uuid;  /* source container UUID */
     uuid_t dst_cont_uuid;  /* destination container UUID */
-    char* src_svc;         /* source service level */
-    char* dst_svc;         /* destination service level */
     char* dfs_prefix;      /* prefix for UNS */
 } daos_args_t;
 
@@ -51,8 +49,6 @@ static daos_args_t* daos_args_new(void)
     da->dst_poh    = DAOS_HDL_INVAL;
     da->src_coh    = DAOS_HDL_INVAL;
     da->dst_coh    = DAOS_HDL_INVAL;
-    da->src_svc    = NULL;
-    da->dst_svc    = NULL;
     da->dfs_prefix = NULL;
 
     /* initalize value of DAOS UUID's to NULL with uuid_clear */
@@ -69,8 +65,6 @@ static void daos_args_delete(daos_args_t** pda)
 {
     if (pda != NULL) {
         daos_args_t* da = *pda;
-        mfu_free(&da->src_svc);
-        mfu_free(&da->dst_svc);
         mfu_free(&da->dfs_prefix);
         mfu_free(pda);
     }
@@ -86,30 +80,19 @@ static int daos_check_args(
     char* src_path = argpaths[0];
     char* dst_path = argpaths[1];
 
-    /* If only the source or destination svc is
-     * given, default the other */
-    if (da->src_svc != NULL && da->dst_svc == NULL) {
-        da->dst_svc = MFU_STRDUP(da->src_svc);
-    }
-    else if (da->src_svc == NULL && da->dst_svc != NULL) {
-        da->src_svc = MFU_STRDUP(da->dst_svc);
-    }
-
     bool have_src_path  = src_path != NULL;
     bool have_dst_path  = dst_path != NULL;
     bool have_src_pool  = daos_uuid_valid(da->src_pool_uuid);
     bool have_src_cont  = daos_uuid_valid(da->src_cont_uuid);
     bool have_dst_pool  = daos_uuid_valid(da->dst_pool_uuid);
     bool have_dst_cont  = daos_uuid_valid(da->dst_cont_uuid);
-    bool have_src_svc   = da->src_svc != NULL;
-    bool have_dst_svc   = da->dst_svc != NULL;
     bool have_prefix    = da->dfs_prefix != NULL;
 
     /* Determine whether any DAOS arguments are supplied. 
      * If not, then there is nothing to check. */
     *flag_daos_args = 0;
     if (have_src_pool || have_src_cont || have_dst_pool || have_dst_cont
-            || have_src_svc || have_dst_svc || have_prefix) {
+            || have_prefix) {
         *flag_daos_args = 1;
     }
     else {
@@ -141,41 +124,11 @@ static int daos_check_args(
         }
         rc = 1;
     }
-    if (have_src_pool && !have_src_svc) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Source pool requires source svcl");
-        }
-        rc = 1;
-    }
     if (have_dst_cont && !have_dst_pool) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Destination container requires destination pool");
         }
         rc = 1;
-    }
-    if (have_dst_pool && !have_dst_svc) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Destination pool requires destination svcl");
-        }
-        rc = 1;
-    }
-    if (have_prefix && !have_src_svc && !have_dst_svc) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Prefix requires source or destination svcl");
-        }
-        rc = 1;
-    }
-
-    /* Containers are using the same pool uuid.
-     * Make sure they are also using the same svc.
-     * This is unlikely to ever happen but we can print an error just in case. */
-    if (same_pool && have_src_svc && have_dst_svc) {
-        if (strcmp(da->dst_svc, da->src_svc) != 0) {
-            if (rank == 0) {
-                MFU_LOG(MFU_LOG_ERR, "Using same pool uuid with different svcl's");
-            }
-            rc = 1;
-        }
     }
 
     /* Make sure the source and destination are different */
@@ -428,7 +381,7 @@ static int daos_setup(
     /* connect to DAOS source pool if uuid is valid */
     if (!local_daos_error && mfu_src_file->type == DAOS) {
         /* Open pool connection, but do not create container if non-existent */
-        tmp_rc = daos_connect(rank, da->src_svc, da->src_pool_uuid,
+        tmp_rc = daos_connect(rank, da->src_pool_uuid,
                 da->src_cont_uuid, &da->src_poh, &da->src_coh, true, false);
         if (tmp_rc != 0) {
             /* tmp_rc from daos_connect is collective */
@@ -442,11 +395,11 @@ static int daos_setup(
     if (!local_daos_error && mfu_dst_file->type == DAOS) {
         if (same_pool) {
             /* Don't reconnect to pool, but do create container if non-existent */
-            tmp_rc = daos_connect(rank, da->dst_svc, da->dst_pool_uuid,
+            tmp_rc = daos_connect(rank, da->dst_pool_uuid,
                     da->dst_cont_uuid, &da->src_poh, &da->dst_coh, false, true);
         } else {
             /* Open pool connection, and create container if non-existent */
-            tmp_rc = daos_connect(rank, da->dst_svc, da->dst_pool_uuid,
+            tmp_rc = daos_connect(rank, da->dst_pool_uuid,
                     da->dst_cont_uuid, &da->dst_poh, &da->dst_coh, true, true);
         }
         if (tmp_rc != 0) {
@@ -627,8 +580,6 @@ void print_usage(void)
     printf("      --daos-dst-pool      - DAOS destination pool \n");
     printf("      --daos-src-cont      - DAOS source container \n");
     printf("      --daos-dst-cont      - DAOS destination container \n");
-    printf("      --daos-src-svcl      - DAOS service level used by source DAOS pool \n");
-    printf("      --daos-dst-svcl      - DAOS service level used by destination DAOS pool \n");
     printf("      --daos-prefix        - DAOS prefix for unified namespace path \n");
 #endif
     printf("  -i, --input <file>       - read source list from file\n");
@@ -693,8 +644,6 @@ int main(int argc, char** argv)
         {"daos-dst-pool"        , required_argument, 0, 'D'},
         {"daos-src-cont"        , required_argument, 0, 'y'},
         {"daos-dst-cont"        , required_argument, 0, 'Y'},
-        {"daos-src-svcl"        , required_argument, 0, 'z'},
-        {"daos-dst-svcl"        , required_argument, 0, 'Z'},
         {"daos-prefix"          , required_argument, 0, 'X'},
         {"input"                , required_argument, 0, 'i'},
         {"chunksize"            , required_argument, 0, 'k'},
@@ -826,12 +775,6 @@ int main(int argc, char** argv)
                     usage = 1;
                 }
                 mfu_dst_file->type = DAOS;
-                break;
-            case 'z':
-                daos_args->src_svc = MFU_STRDUP(optarg);
-                break;
-            case 'Z':
-                daos_args->dst_svc = MFU_STRDUP(optarg);
                 break;
             case 'X':
                 daos_args->dfs_prefix = MFU_STRDUP(optarg);

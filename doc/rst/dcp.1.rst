@@ -48,14 +48,6 @@ OPTIONS
 
    Specify the DAOS destination container to be used.
 
-.. option:: --daos-src-svcl SVC
-
-   Specify the DAOS source replication level to be used.
-
-.. option:: --daos-dst-svcl SVC
-
-   Specify the DAOS destination replication level to be used.
-
 .. option:: --daos-prefix PREFIX
 
    Specify the DAOS prefix to be used. This is only necessary
