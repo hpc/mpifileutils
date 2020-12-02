@@ -128,6 +128,13 @@ static size_t list_elem_pack2_size(int detail, uint64_t chars, const elem_t* ele
     else {
         size = 2 * 4 + chars + 1 * 4;
     }
+
+    #ifdef DAOS_SUPPORT
+    /* add space for obj_id_lo and obj_id_hi if 
+     * using DAOS */
+    size += 2 * 8;
+    #endif
+
     return size;
 }
 
@@ -146,8 +153,16 @@ static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_
 
     /* copy in file name */
     char* file = elem->file;
-    strcpy(ptr, file);
+    if (file != NULL) {
+        strcpy(ptr, file);
+    }
     ptr += chars;
+
+#ifdef DAOS_SUPPORT
+    /* copy in values for obj ids */
+    mfu_pack_uint64(&ptr, elem->obj_id_lo);
+    mfu_pack_uint64(&ptr, elem->obj_id_hi);
+#endif
 
     if (detail) {
         /* copy in fields */
@@ -198,6 +213,12 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
 
     elem->detail = (int) detail;
 
+#ifdef DAOS_SUPPORT
+    /* unpack obj ids */
+    mfu_unpack_uint64(&ptr, &elem->obj_id_lo);
+    mfu_unpack_uint64(&ptr, &elem->obj_id_hi);
+#endif
+
     if (detail) {
         /* extract fields */
         mfu_unpack_uint64(&ptr, &elem->mode);
@@ -210,7 +231,6 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
         mfu_unpack_uint64(&ptr, &elem->ctime);
         mfu_unpack_uint64(&ptr, &elem->ctime_nsec);
         mfu_unpack_uint64(&ptr, &elem->size);
-
         /* use mode to set file type */
         elem->type = mfu_flist_mode_to_filetype((mode_t)elem->mode);
     }
@@ -433,10 +453,12 @@ static void list_compute_summary(flist_t* flist)
     uint64_t max_name = 0;
     elem_t* current = flist->list_head;
     while (current != NULL) {
-        uint64_t len = (uint64_t)(strlen(current->file) + 1);
-        if (len > max_name) {
-            max_name = len;
-        }
+        if (current->file != NULL) {
+            uint64_t len = (uint64_t)(strlen(current->file) + 1);
+            if (len > max_name) {
+                max_name = len;
+            }
+	}
 
         int depth = current->depth;
         if (depth < min_depth || min_depth == -1) {
@@ -615,7 +637,7 @@ void mfu_flist_array_free(int levels, mfu_flist** outlists)
     return;
 }
 
-/* return number of files across all procs */
+/* return number of items across all procs */
 uint64_t mfu_flist_global_size(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
@@ -955,6 +977,19 @@ void mfu_flist_file_set_name(mfu_flist bflist, uint64_t idx, const char* name)
     return;
 }
 
+#ifdef DAOS_SUPPORT
+void mfu_flist_file_set_oid(mfu_flist bflist, uint64_t idx, daos_obj_id_t oid)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->obj_id_lo = oid.lo;
+        elem->obj_id_hi = oid.hi;
+    }
+    return;
+}
+#endif 
+
 void mfu_flist_file_set_type(mfu_flist bflist, uint64_t idx, mfu_filetype type)
 {
     flist_t* flist = (flist_t*) bflist;
@@ -1257,6 +1292,12 @@ uint64_t mfu_flist_file_create(mfu_flist bflist)
     elem->ctime      = 0;
     elem->ctime_nsec = 0;
     elem->size       = 0;
+
+    /* for DAOS */
+#ifdef DAOS_SUPPORT
+    elem->obj_id_lo = 0;
+    elem->obj_id_hi = 0;
+#endif
 
     /* append element to tail of linked list */
     mfu_flist_insert_elem(flist, elem);

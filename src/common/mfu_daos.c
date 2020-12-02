@@ -28,7 +28,8 @@ static int daos_check_args(
     int rank,
     char** argpaths,
     daos_args_t* da,
-    int* flag_daos_args)
+    int* flag_daos_args,
+    bool* is_posix_copy)
 {
     char* src_path = argpaths[0];
     char* dst_path = argpaths[1];
@@ -40,6 +41,12 @@ static int daos_check_args(
     bool have_dst_pool  = daos_uuid_valid(da->dst_pool_uuid);
     bool have_dst_cont  = daos_uuid_valid(da->dst_cont_uuid);
     bool have_prefix    = da->dfs_prefix != NULL;
+
+    /* var to determine if this is a non-dfs copy */
+    if (!have_src_path && (have_src_pool && have_dst_pool) &&
+  	(have_src_cont && have_dst_cont)) {
+        *is_posix_copy = false;
+    }
 
     /* Determine whether any DAOS arguments are supplied. 
      * If not, then there is nothing to check. */
@@ -468,11 +475,12 @@ void daos_args_delete(daos_args_t** pda)
 }
 
 int daos_setup(
-  int rank,
-  char** argpaths,
-  daos_args_t* da,
-  mfu_file_t* mfu_src_file,
-  mfu_file_t* mfu_dst_file)
+    int rank,
+    char** argpaths,
+    daos_args_t* da,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file,
+    bool* is_posix_copy)
 {
     int tmp_rc;
 
@@ -484,7 +492,7 @@ int daos_setup(
 
     /* Make sure we have the required DAOS arguments (if any).
      * Safe to return here, since all processes have the same values. */
-    tmp_rc = daos_check_args(rank, argpaths, da, &flag_daos_args);
+    tmp_rc = daos_check_args(rank, argpaths, da, &flag_daos_args, is_posix_copy);
     if (tmp_rc != 0) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
@@ -517,7 +525,7 @@ int daos_setup(
 
     /* Re-check the required DAOS arguments (if any) */
     if (!local_daos_error) {
-        tmp_rc = daos_check_args(rank, argpaths, da, &flag_daos_args);
+        tmp_rc = daos_check_args(rank, argpaths, da, &flag_daos_args, is_posix_copy);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
                     MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
@@ -571,7 +579,7 @@ int daos_setup(
         }
     }
 
-    if (!local_daos_error && mfu_src_file->type == DAOS) {
+    if (!local_daos_error && mfu_src_file->type == DAOS && *is_posix_copy) {
         /* DFS is mounted for the source container */
         tmp_rc = daos_mount(mfu_src_file, &da->src_poh, &da->src_coh);
         if (tmp_rc != 0) {
@@ -579,7 +587,7 @@ int daos_setup(
         }
     }
 
-    if (!local_daos_error && mfu_dst_file->type == DAOS) {
+    if (!local_daos_error && mfu_dst_file->type == DAOS && *is_posix_copy) {
         /* DFS is mounted for the destination container */
         if (same_pool) {
             tmp_rc = daos_mount(mfu_dst_file, &da->src_poh, &da->dst_coh);
@@ -602,9 +610,10 @@ int daos_setup(
 }
 
 int daos_cleanup(
-  daos_args_t* da,
-  mfu_file_t* mfu_src_file,
-  mfu_file_t* mfu_dst_file)
+    daos_args_t* da,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file,
+    bool* is_posix_copy)
 {
     /* assume success until failure */
     int rc = 0;
@@ -615,13 +624,14 @@ int daos_cleanup(
             && uuid_compare(da->src_pool_uuid, da->dst_pool_uuid) == 0) {
         same_pool = true;
     }
-
     if (mfu_src_file->type == DAOS) {
-        tmp_rc = daos_umount(mfu_src_file);
-        MPI_Barrier(MPI_COMM_WORLD);
-        if (tmp_rc != 0) {
-            rc = 1;
-        }
+        if (*is_posix_copy) {
+            tmp_rc = daos_umount(mfu_src_file);
+            MPI_Barrier(MPI_COMM_WORLD);
+            if (tmp_rc != 0) {
+                rc = 1;
+            }
+	}
 
         /* Close the container */
         tmp_rc = daos_cont_close(da->src_coh, NULL);
@@ -631,13 +641,14 @@ int daos_cleanup(
             rc = 1;
         }
     }
-
     if (mfu_dst_file->type == DAOS) {
-        tmp_rc = daos_umount(mfu_dst_file);
-        MPI_Barrier(MPI_COMM_WORLD);
-        if (tmp_rc != 0) {
-            rc = 1;
-        }
+        if (*is_posix_copy) {
+            tmp_rc = daos_umount(mfu_dst_file);
+            MPI_Barrier(MPI_COMM_WORLD);
+            if (tmp_rc != 0) {
+                rc = 1;
+            }
+	}
 
         /* Close the container */
         tmp_rc = daos_cont_close(da->dst_coh, NULL);
@@ -674,6 +685,402 @@ int daos_cleanup(
 
     /* Free DAOS args */
     daos_args_delete(&da);
+
+    return rc;
+}
+
+static int daos_copy_recx_single(daos_key_t *dkey,
+                            daos_handle_t *src_oh,
+                            daos_handle_t *dst_oh,
+                            daos_iod_t *iod)
+{
+    /* if iod_type is single value just fetch iod size from source
+     * and update in destination object */
+    int buf_len = (int)(*iod).iod_size;
+    char buf[buf_len];
+    d_sg_list_t sgl;
+    d_iov_t iov;
+    int rc;
+
+    /* set sgl values */
+    sgl.sg_nr     = 1;
+    sgl.sg_nr_out = 0;
+    sgl.sg_iovs   = &iov;
+    d_iov_set(&iov, buf, buf_len);
+    rc = daos_obj_fetch(*src_oh, DAOS_TX_NONE, 0, dkey, 1, iod, &sgl, NULL, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS object fetch returned with errors: ", MFU_ERRF,
+	        MFU_ERRP(-MFU_ERR_DAOS));
+        return 1;
+    }
+    rc = daos_obj_update(*dst_oh, DAOS_TX_NONE, 0, dkey, 1, iod, &sgl, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS object update returned with errors: ", MFU_ERRF,
+	        MFU_ERRP(-MFU_ERR_DAOS));
+        return 1;
+    }
+    return rc;
+}
+
+static int daos_copy_recx_array(daos_key_t *dkey,
+                           daos_key_t *akey,
+                           daos_handle_t *src_oh,
+                           daos_handle_t *dst_oh,
+                           daos_iod_t *iod)
+{
+    daos_anchor_t recx_anchor = {0}; 
+    int rc;
+    int i;
+    while (!daos_anchor_is_eof(&recx_anchor)) {
+        daos_epoch_range_t	eprs[5];
+        daos_recx_t		recxs[5];
+        daos_size_t		size;
+
+        /* list all recx for this dkey/akey */
+        uint32_t number = 5;
+        rc = daos_obj_list_recx(*src_oh, DAOS_TX_NONE, dkey, akey,
+	                        &size, &number, recxs, eprs,
+				&recx_anchor, true, NULL);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "DAOS daos_obj_list_recx returned with errors: ", MFU_ERRF,
+	            MFU_ERRP(-MFU_ERR_DAOS));
+            return 1;
+        }
+
+        /* if no recx is returned for this dkey/akey move on */
+        if (number == 0) 
+            continue;
+
+        for (i = 0; i < number; i++) {
+            uint64_t    buf_len = recxs[i].rx_nr;
+            char        buf[buf_len];
+            d_sg_list_t sgl;
+            d_iov_t     iov;
+
+            /* set iod values */
+            (*iod).iod_type  = DAOS_IOD_ARRAY;
+            (*iod).iod_size  = 1;
+            (*iod).iod_nr    = 1;
+            (*iod).iod_recxs = &recxs[i];
+
+            /* set sgl values */
+            sgl.sg_nr     = 1;
+            sgl.sg_nr_out = 0;
+            sgl.sg_iovs   = &iov;
+
+            /* fetch recx values from source */
+            d_iov_set(&iov, buf, buf_len);	
+            rc = daos_obj_fetch(*src_oh, DAOS_TX_NONE, 0, dkey, 1, iod,
+                                &sgl, NULL, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "DAOS object fetch returned with errors: ", MFU_ERRF,
+	                MFU_ERRP(-MFU_ERR_DAOS));
+                return 1;
+            }
+
+            /* update fetched recx values and place in destination object */
+            rc = daos_obj_update(*dst_oh, DAOS_TX_NONE, 0, dkey, 1, iod,
+                                 &sgl, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "DAOS object update returned with errors: ", MFU_ERRF,
+	                MFU_ERRP(-MFU_ERR_DAOS));
+                return 1;
+            }
+	
+        }
+    }
+    return rc;
+}
+
+static int daos_copy_list_keys(daos_handle_t *src_oh,
+                          daos_handle_t *dst_oh)
+{
+    /* loop to enumerate dkeys */
+    daos_anchor_t dkey_anchor = {0}; 
+    int rc;
+    while (!daos_anchor_is_eof(&dkey_anchor)) {
+        d_sg_list_t     dkey_sgl;
+        d_iov_t         dkey_iov;
+        daos_key_desc_t dkey_kds[ENUM_DESC_NR]       = {0};
+        uint32_t        dkey_number                  = ENUM_DESC_NR;
+        char            dkey_enum_buf[ENUM_DESC_BUF] = {0};
+        char            dkey[ENUM_KEY_BUF]           = {0};
+
+        dkey_sgl.sg_nr     = 1;
+        dkey_sgl.sg_nr_out = 0;
+        dkey_sgl.sg_iovs   = &dkey_iov;
+
+        d_iov_set(&dkey_iov, dkey_enum_buf, ENUM_DESC_BUF);
+
+        /* get dkeys */
+        rc = daos_obj_list_dkey(*src_oh, DAOS_TX_NONE, &dkey_number, dkey_kds,
+                                &dkey_sgl, &dkey_anchor, NULL);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "DAOS daos_obj_list_dkey returned with errors: ", MFU_ERRF,
+	            MFU_ERRP(-MFU_ERR_DAOS));
+            return 1;
+        }
+
+        /* if no dkeys were returned move on */
+        if (dkey_number == 0)
+            continue;
+
+        char* dkey_ptr;
+        int   i;
+
+        /* parse out individual dkeys based on key length and numver of dkeys returned */
+        for (dkey_ptr = dkey_enum_buf, i = 0; i < dkey_number; i++) {
+
+            /* Print enumerated dkeys */
+            daos_key_t diov;
+            snprintf(dkey, dkey_kds[i].kd_key_len + 1, "%s", dkey_ptr);
+            d_iov_set(&diov, (void*)dkey, dkey_kds[i].kd_key_len);
+            dkey_ptr += dkey_kds[i].kd_key_len;
+
+            /* loop to enumerate akeys */
+            daos_anchor_t akey_anchor = {0}; 
+            while (!daos_anchor_is_eof(&akey_anchor)) {
+                d_sg_list_t     akey_sgl;
+                d_iov_t         akey_iov;
+                daos_key_desc_t akey_kds[ENUM_DESC_NR]       = {0};
+                uint32_t        akey_number                  = ENUM_DESC_NR;
+                char            akey_enum_buf[ENUM_DESC_BUF] = {0};
+                char            akey[ENUM_KEY_BUF]           = {0};
+
+                akey_sgl.sg_nr     = 1;
+                akey_sgl.sg_nr_out = 0;
+                akey_sgl.sg_iovs   = &akey_iov;
+
+                d_iov_set(&akey_iov, akey_enum_buf, ENUM_DESC_BUF);
+
+                /* get akeys */
+                rc = daos_obj_list_akey(*src_oh, DAOS_TX_NONE, &diov, &akey_number, akey_kds,
+                                        &akey_sgl, &akey_anchor, NULL);
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "DAOS daos_obj_list_akey returned with errors: ", MFU_ERRF,
+	                    MFU_ERRP(-MFU_ERR_DAOS));
+                    return 1;
+                }
+
+                /* if no akeys returned move on */
+                if (akey_number == 0)
+                    continue;
+
+                int j;
+                char* akey_ptr;
+
+                /* parse out individual akeys based on key length and numver of dkeys returned */
+                for (akey_ptr = akey_enum_buf, j = 0; j < akey_number; j++) {
+                    daos_key_t aiov;
+                    daos_iod_t iod;
+                    daos_recx_t recx;
+                    snprintf(akey, akey_kds[j].kd_key_len + 1, "%s", akey_ptr);
+                    d_iov_set(&aiov, (void*)akey, akey_kds[j].kd_key_len);
+
+                    /* set iod values */
+                    iod.iod_nr    = 1;
+                    iod.iod_type  = DAOS_IOD_SINGLE;
+                    iod.iod_size  = DAOS_REC_ANY;
+                    iod.iod_recxs = NULL;
+
+                    d_iov_set(&iod.iod_name, (void*)akey, strlen(akey));
+
+                    /* Do a fetch (with NULL sgl) of single value type, and if that
+                     * returns iod_size == 0, then a single value does not exist. */
+                    rc = daos_obj_fetch(*src_oh, DAOS_TX_NONE, 0, &diov, 1, &iod, NULL, NULL, NULL);
+                    if (rc != 0) {
+                        MFU_LOG(MFU_LOG_ERR, "DAOS daos_obj_fetch returned with errors: ", MFU_ERRF,
+	                        MFU_ERRP(-MFU_ERR_DAOS));
+                        return 1;
+                    }
+
+                    /* if iod_size == 0 then this is a DAOS_IOD_ARRAY type */
+                    if ((int)iod.iod_size == 0) {
+                        rc = daos_copy_recx_array(&diov, &aiov, src_oh, dst_oh, &iod);
+                        if (rc != 0) {
+                            MFU_LOG(MFU_LOG_ERR, "DAOS daos_copy_recx_array returned with errors: ", MFU_ERRF,
+	                            MFU_ERRP(-MFU_ERR_DAOS));
+                            return 1;
+                        }
+                    } else {
+                        rc = daos_copy_recx_single(&diov, src_oh, dst_oh, &iod);
+                        if (rc != 0) {
+                            MFU_LOG(MFU_LOG_ERR, "DAOS daos_copy_recx_single returned with errors: ", MFU_ERRF,
+	                            MFU_ERRP(-MFU_ERR_DAOS));
+                            return 1;
+                        }
+                    }
+
+                    /* advance to next akey returned */	
+                    akey_ptr += akey_kds[j].kd_key_len;
+                }
+            }
+        }
+    }
+    return rc;
+}
+
+static int daos_obj_copy(
+    daos_args_t* da,
+    mfu_flist bflist)
+{
+    int rc = 0;
+
+    flist_t* flist = (flist_t*) bflist;
+
+    uint64_t i;
+    const elem_t* p = flist->list_head;
+    for (i = 0; i < flist->list_count; i++) {
+        /* open DAOS object based on oid[i] to get obj handle */
+        daos_handle_t oh;
+        daos_obj_id_t oid;
+        oid.lo = p->obj_id_lo;	
+        oid.hi = p->obj_id_hi;	
+        rc = daos_obj_open(da->src_coh, oid, 0, &oh, NULL);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "DAOS object open returned with errors: ", MFU_ERRF,
+	            MFU_ERRP(-MFU_ERR_DAOS));
+	    return 1;
+        }
+
+        /* open handle of object in dst container */
+        daos_handle_t dst_oh;
+        rc = daos_obj_open(da->dst_coh, oid, 0, &dst_oh, NULL);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "DAOS object open returned with errors: ", MFU_ERRF,
+	            MFU_ERRP(-MFU_ERR_DAOS));
+            /* make sure to close the source if opening dst fails */
+            daos_obj_close(oh, NULL);
+	    return 1;
+        }
+        rc = daos_copy_list_keys(&oh, &dst_oh);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "DAOS copy list keys returned with errors: ", MFU_ERRF,
+                    MFU_ERRP(-MFU_ERR_DAOS));
+            /* cleanup object handles on failure */
+            daos_obj_close(oh, NULL);
+            daos_obj_close(dst_oh, NULL);
+	    return 1;
+        }
+
+        /* close source and destination object */
+        daos_obj_close(oh, NULL);
+        daos_obj_close(dst_oh, NULL);
+        p = p->next;
+    }
+
+    return rc;
+}
+
+static int daos_obj_list_oids(daos_args_t* da, daos_epoch_t* epoch, mfu_flist bflist) {
+    /* List objects in src container to be copied to 
+     * destination container */
+    static const int     OID_ARR_SIZE = 50;
+    daos_obj_id_t        oids[OID_ARR_SIZE];
+    daos_anchor_t        anchor;
+    uint32_t             oids_nr;
+    daos_handle_t        toh;
+    uint32_t             oids_total = 0;
+    int                  rc = 0;
+
+    /* create snapshot to pass to object iterator table */
+    rc = daos_cont_create_snap_opt(da->src_coh, epoch, NULL,
+    				   DAOS_SNAP_OPT_CR | DAOS_SNAP_OPT_OIT,
+				   NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS failed to create snapshot: ", MFU_ERRF,
+                MFU_ERRP(-MFU_ERR_DAOS));
+        return 1;
+    }
+
+    /* open object iterator table */
+    rc = daos_oit_open(da->src_coh, *epoch, &toh, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS failed to open oit: ", MFU_ERRF,
+                MFU_ERRP(-MFU_ERR_DAOS));
+        return 1;
+    }
+    memset(&anchor, 0, sizeof(anchor));
+    flist_t* flist = (flist_t*) bflist;
+
+    /* list and store all object ids in flist for this epoch */
+    while (1) {
+        oids_nr = OID_ARR_SIZE;
+        rc = daos_oit_list(toh, oids, &oids_nr, &anchor, NULL);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "DAOS daos_oit_list returned with errors: ", MFU_ERRF,
+	            MFU_ERRP(-MFU_ERR_DAOS));
+            daos_oit_close(toh, NULL);
+            return 1;
+        }
+	int i;
+	/* create element in flist for each obj id retrived */
+ 	for (i = 0; i < oids_nr; i++) {
+            uint64_t idx = mfu_flist_file_create(bflist);
+            mfu_flist_file_set_oid(bflist, idx, oids[i]);
+	}
+	oids_total = oids_nr + oids_total;
+ 	if (daos_anchor_is_eof(&anchor)) {
+ 		break;
+ 	}
+    }
+
+    /* close object iterator */
+    rc = daos_oit_close(toh, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS failed to close oit: ", MFU_ERRF,
+                MFU_ERRP(-MFU_ERR_DAOS));
+    }
+    return rc;
+}
+
+int mfu_flist_walk_daos(
+    daos_args_t* da,
+    daos_epoch_t* epoch,
+    mfu_flist flist)
+{
+    /* assume we'll succeed */
+    int rc = 0;
+
+    /* get our rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* have rank 0 do the work of listing the objects */
+    if (rank == 0) {
+        rc = daos_obj_list_oids(da, epoch, flist);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "DAOS failed to list oids: ",
+                MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
+        }
+    }
+
+    /* summarize list since we added items to it */
+    mfu_flist_summarize(flist);
+
+    /* broadcast return code from rank 0 so everyone knows whether walk succeeded */
+    MPI_Bcast(&rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    return rc;
+}
+
+int mfu_flist_copy_daos(
+    daos_args_t* da,
+    mfu_flist flist)
+{
+    /* copy object ids listed in flist to destination in daos args */
+    int rc = daos_obj_copy(da, flist);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS object copy failed: ",
+            MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
+    }
+
+    /* wait until all procs are done copying,
+     * and determine whether everyone succeeded */
+    if (! mfu_alltrue(rc == 0, MPI_COMM_WORLD)) {
+        /* someone failed, so return failure on all ranks */
+        rc = 1;
+    }
 
     return rc;
 }
