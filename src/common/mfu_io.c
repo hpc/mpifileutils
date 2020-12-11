@@ -596,8 +596,8 @@ int daos_utimensat(int dirfd, const char* pathname, const struct timespec times[
     } else {
         /* Lookup the object */
         dfs_obj_t* obj;
-	int lookup_flags = O_RDWR;
-	if (flags & AT_SYMLINK_NOFOLLOW) {
+        int lookup_flags = O_RDWR;
+        if (flags & AT_SYMLINK_NOFOLLOW) {
             lookup_flags |= O_NOFOLLOW;
         }
         rc = dfs_lookup_rel(mfu_file->dfs, parent, name, lookup_flags, &obj, NULL, NULL);
@@ -2087,12 +2087,12 @@ DIR* daos_opendir(const char* dir, mfu_file_t* mfu_file)
             if (rc) {
                 MFU_LOG(MFU_LOG_ERR, "dfs_lookup_rel %s/%s failed", dir_name, name);
                 errno = rc;
-    	        goto err_dirp;
+                goto err_dirp;
             } else {
                 if (!S_ISDIR(mode)) {
                     errno = ENOTDIR;
                     goto err_dirp;
-    	        }
+                }
             }
         }
     }
@@ -2214,7 +2214,7 @@ struct dirent* daos_readdir(DIR* _dirp, mfu_file_t* mfu_file)
     while (!daos_anchor_is_eof(&dirp->anchor)) {
         rc = dfs_readdir(mfu_file->dfs, dirp->dir,
                          &dirp->anchor, &dirp->num_ents,
-	                 dirp->ents);
+                         dirp->ents);
         if (rc) {
             MFU_LOG(MFU_LOG_ERR, "dfs_readdir failed (%d %s)", rc, strerror(rc));
             dirp->num_ents = 0;
@@ -2222,9 +2222,9 @@ struct dirent* daos_readdir(DIR* _dirp, mfu_file_t* mfu_file)
             return NULL;
         }
         if (dirp->num_ents == 0) {
-	    continue;
+            continue;
         }
-	goto ret;
+        goto ret;
     }
     assert(daos_anchor_is_eof(&dirp->anchor));
     return NULL;
