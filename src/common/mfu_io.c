@@ -410,6 +410,15 @@ int daos_faccessat(int dirfd, const char* path, int amode, int flags, mfu_file_t
                     rc = -1;
                 }
             }
+
+            /* Release the obj */
+            int tmp_rc = dfs_release(obj);
+            if (tmp_rc && (rc != -1)) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_release %s failed (%d %s)",
+                        name, tmp_rc, strerror(tmp_rc));
+                errno = tmp_rc;
+                rc = -1;
+            }
         }
     }
 
@@ -623,8 +632,8 @@ int daos_utimensat(int dirfd, const char* pathname, const struct timespec times[
             int tmp_rc = dfs_release(obj);
             if (tmp_rc && (rc != -1)) {
                 MFU_LOG(MFU_LOG_ERR, "dfs_release %s failed (%d %s)",
-                        pathname, rc, strerror(rc));
-                errno = rc;
+                        pathname, tmp_rc, strerror(tmp_rc));
+                errno = tmp_rc;
                 rc = -1;
             }
         }
@@ -1765,9 +1774,9 @@ int daos_truncate(const char* file, off_t length, mfu_file_t* mfu_file)
 
             /* close the obj */
             int tmp_rc = dfs_release(mfu_file->obj);
-            if (!rc && tmp_rc) {
+            if (tmp_rc && (rc != -1)) {
                 MFU_LOG(MFU_LOG_ERR, "dfs_release %s failed (%d %s)",
-                        file, rc, strerror(rc));
+                        file, tmp_rc, strerror(tmp_rc));
                 errno = tmp_rc;
                 rc = -1;
             }
@@ -2085,12 +2094,17 @@ DIR* daos_opendir(const char* dir, mfu_file_t* mfu_file)
             int rc = dfs_lookup_rel(mfu_file->dfs, parent, name, O_RDWR, &dirp->dir,
                                    &mode, NULL);
             if (rc) {
-                MFU_LOG(MFU_LOG_ERR, "dfs_lookup_rel %s/%s failed", dir_name, name);
+                MFU_LOG(MFU_LOG_ERR, "dfs_lookup_rel %s failed", dir);
                 errno = rc;
                 goto err_dirp;
             } else {
                 if (!S_ISDIR(mode)) {
                     errno = ENOTDIR;
+                    rc = dfs_release(dirp->dir);
+                    if (rc) {
+                        MFU_LOG(MFU_LOG_ERR, "dfs_release %s failed (%d %s)",
+                                dir, rc, strerror(rc));
+                    }
                     goto err_dirp;
                 }
             }
@@ -2334,15 +2348,16 @@ ssize_t daos_llistxattr(const char* path, char* list, size_t size, mfu_file_t* m
                 errno = ERANGE;
                 got_size = -1;
             }
-        }
 
-        /* Release the obj */
-        rc = dfs_release(obj);
-        if (rc && (got_size != -1)) {
-            MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d %s)",
-                    rc, strerror(rc));
-            errno = rc;
-            got_size = -1;
+            /* Release the obj.
+             * Don't log the error if we already have a different error. */
+            rc = dfs_release(obj);
+            if (rc && (got_size != -1)) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d %s)",
+                        rc, strerror(rc));
+                errno = rc;
+                got_size = -1;
+            }
         }
     }
 
@@ -2497,15 +2512,15 @@ ssize_t daos_lgetxattr(const char* path, const char* name, void* value, size_t s
                 errno = ERANGE;
                 got_size = -1;
             }
-        }
 
-        /* Release the obj */
-        rc = dfs_release(obj);
-        if (rc && (got_size != -1)) {
-            MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d %s)",
-                    rc, strerror(rc));
-            errno = rc;
-            got_size = -1;
+            /* Release the obj */
+            rc = dfs_release(obj);
+            if (rc && (got_size != -1)) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d %s)",
+                        rc, strerror(rc));
+                errno = rc;
+                got_size = -1;
+            }
         }
     }
 
@@ -2655,15 +2670,15 @@ int daos_lsetxattr(const char* path, const char* name, const void* value, size_t
                 errno = rc;
                 rc = -1;
             }
-        }
 
-        /* Release the obj */
-        int rc_rel = dfs_release(obj);
-        if (rc_rel && (rc != -1)) {
-            MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d %s)",
-                    rc_rel, strerror(rc_rel));
-            errno = rc_rel;
-            rc = -1;
+            /* Release the obj */
+            int rc_rel = dfs_release(obj);
+            if (rc_rel && (rc != -1)) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_release failed (%d %s)",
+                        rc_rel, strerror(rc_rel));
+                errno = rc_rel;
+                rc = -1;
+            }
         }
     }
 
