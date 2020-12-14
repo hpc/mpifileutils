@@ -239,7 +239,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
                     }
                 }
                 else {
-                    MFU_LOG(MFU_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu", len, sizeof(newpath));
+                    MFU_LOG(MFU_LOG_ERR, "Path name is too long, %lu chars exceeds limit %lu: '%s/%s'", len, sizeof(newpath), dir, name);
                 }
             }
 
@@ -395,7 +395,7 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
                 else {
                     /* TODO: print error in correct format */
                     /* name is too long */
-                    MFU_LOG(MFU_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu", len, sizeof(newpath));
+                    MFU_LOG(MFU_LOG_ERR, "Path name is too long, %lu chars exceeds limit %lu: '%s/%s'", len, sizeof(newpath), dir, name);
                 }
             }
         }
@@ -488,7 +488,7 @@ static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
                 }
                 else {
                     /* name is too long */
-                    MFU_LOG(MFU_LOG_ERR, "Path name is too long: %lu chars exceeds limit %lu, (%s/%s)", len, sizeof(newpath), dir, name);
+                    MFU_LOG(MFU_LOG_ERR, "Path name is too long, %lu chars exceeds limit %lu: '%s/%s'", len, sizeof(newpath), dir, name);
                 }
             }
         }
