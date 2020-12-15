@@ -365,6 +365,9 @@ int mfu_flist_have_detail(mfu_flist flist);
 /* set flist deatils flag */
 void mfu_flist_set_detail(mfu_flist flist, int detail);
 
+/* given a mode_t from stat, return the corresponding MFU filetype */
+mfu_filetype mfu_flist_mode_to_filetype(mode_t mode);
+
 /****************************************
  * Functions to get/set properties of individual list elements
  ****************************************/

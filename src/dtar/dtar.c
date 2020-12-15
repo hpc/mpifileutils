@@ -14,11 +14,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <mpi.h>
-#include <libcircle.h>
-#include <archive.h>
-#include <archive_entry.h>
 #include <string.h>
 #include <getopt.h>
+
+#include "archive.h"
 
 #include "mfu.h"
 #include "mfu_flist_archive.h"
@@ -95,14 +94,8 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    if (size > 1) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "dtar currently only works with one MPI rank.");
-        }
-        mfu_finalize();
-        MPI_Finalize();
-        return 0;
-    }
+    /* pointer to mfu_file src object */
+    mfu_file_t* mfu_src_file = mfu_file_new();
 
     /* pointer to mfu_walk_opts */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
@@ -224,6 +217,9 @@ int main(int argc, char** argv)
     archive_opts.flags |= ARCHIVE_EXTRACT_ACL;
     archive_opts.flags |= ARCHIVE_EXTRACT_FFLAGS;
 
+    /* turn on no overwrite so that directories we create are deleted and then replaced */
+    //archive_opts.flags |= ARCHIVE_EXTRACT_NO_OVERWRITE;
+
     if (opts_preserve) {
         archive_opts.flags |= ARCHIVE_EXTRACT_XATTR;
         archive_opts.preserve = 1;
@@ -241,6 +237,12 @@ int main(int argc, char** argv)
     /* adjust pointers to start of paths */
     int numpaths = argc - optind;
     const char** pathlist = (const char**) &argv[optind];
+
+    /* standardize current working dir */
+    mfu_param_path cwd_param;
+    char cwd[PATH_MAX];
+    mfu_getcwd(cwd, PATH_MAX);
+    mfu_param_path_set(cwd, &cwd_param);
 
     if (opts_create) {
         /* allocate space to record info for each source */
@@ -261,10 +263,14 @@ int main(int argc, char** argv)
 
         /* walk path to get stats info on all files */
         mfu_flist flist = mfu_flist_new();
-        mfu_flist_walk_param_paths(num_src_params, src_params, walk_opts, flist);
+        mfu_flist_walk_param_paths(num_src_params, src_params, walk_opts, flist, mfu_src_file);
+
+        /* sort items alphabetically, so they are placed in the archive with parent directories
+         * coming before their children */
+        mfu_flist_sort("name", &flist);
 
         /* create the archive file */
-        mfu_flist_archive_create(flist, opts_tarfile, &archive_opts);
+        mfu_flist_archive_create(flist, opts_tarfile, numpaths, src_params, &cwd_param, &archive_opts);
 
         /* compress archive file */
         if (opts_compress) {
@@ -289,6 +295,7 @@ int main(int argc, char** argv)
         /* free paths */
         mfu_param_path_free_all(num_src_params, src_params);
         mfu_param_path_free(&dest_param);
+        mfu_param_path_free(&cwd_param);
     } else if (opts_extract) {
         char* tarfile = opts_tarfile;
         if (opts_compress) {
@@ -310,7 +317,7 @@ int main(int argc, char** argv)
             remove(fname);
             tarfile = fname_out;
         }
-        mfu_flist_archive_extract(tarfile, opts_verbose, archive_opts.flags);
+        mfu_flist_archive_extract(tarfile, opts_verbose, archive_opts.flags, &cwd_param);
     } else {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Neither creation or extraction is specified");
@@ -320,6 +327,9 @@ int main(int argc, char** argv)
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);
+
+    /* free the mfu_file object */
+    mfu_file_delete(&mfu_src_file);
 
     /* free context */
     mfu_free(&opts_tarfile);
