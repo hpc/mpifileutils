@@ -1723,6 +1723,9 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    /* pointer to mfu_file src object */
+    mfu_file_t* mfu_src_file = mfu_file_new();
+
     /* pointer to mfu_walk_opts */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
@@ -1856,7 +1859,7 @@ int main(int argc, char** argv)
      * input file */
     if (walk) {
         /* walk list of input paths */
-        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_src_file);
     }
     else {
         /* read list from file */
@@ -2063,6 +2066,9 @@ int main(int argc, char** argv)
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);
+
+    /* free the mfu_file object */
+    mfu_file_delete(&mfu_src_file);
 
     /* free users, groups, and files objects */
     mfu_flist_free(&flist);
