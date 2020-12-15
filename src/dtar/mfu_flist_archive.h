@@ -8,6 +8,17 @@ typedef struct {
 
 void mfu_param_path_check_archive(int numparams, mfu_param_path* srcparams, mfu_param_path destparam, int* valid);
 
-void mfu_flist_archive_create(mfu_flist flist, const char* archivefile, mfu_archive_options_t* opts);
+void mfu_flist_archive_create(
+    mfu_flist flist,
+    const char* archivefile,
+    int numpaths,
+    const mfu_param_path* paths,
+    const mfu_param_path* cwdpath,
+    mfu_archive_options_t* opts
+);
 
-void mfu_flist_archive_extract(const char* filename, bool verbose, int flags);
+void mfu_flist_archive_extract(
+    const char* filename,
+    bool verbose, int flags,
+    const mfu_param_path* cwdpath
+);

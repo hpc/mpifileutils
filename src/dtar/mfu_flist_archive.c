@@ -89,22 +89,77 @@ static void DTAR_exit(int code)
     exit(code);
 }
 
-static void DTAR_write_header(struct archive* ar, uint64_t idx, uint64_t offset)
+/* given an item name, determine which source path this item
+ * is contained within, extract directory components from source
+ * path to this item and then prepend destination prefix. */
+char* mfu_param_path_relative(
+    const char* name,
+    const mfu_param_path* cwdpath)
+{
+#if 0
+    /* identify which source directory this came from */
+    int i;
+    int idx = -1;
+    for (i = 0; i < numpaths; i++) {
+        /* get path for step */
+        const char* path = paths[i].path;
+
+        /* get length of source path */
+        size_t len = strlen(path);
+
+        /* see if name is a child of path */
+        if (strncmp(path, name, len) == 0) {
+            idx = i;
+            break;
+        }
+    }
+
+    /* this will happen if the named item is not a child of any
+     * source paths */
+    if (idx == -1) {
+        return NULL;
+    }
+#endif
+
+    /* create path of item */
+    mfu_path* item = mfu_path_from_str(name);
+
+    /* get current working directory */
+    mfu_path* cwd = mfu_path_from_str(cwdpath->path);
+
+    /* get relative path from current working dir to item */
+    mfu_path* rel = mfu_path_relative(cwd, item);
+
+    /* convert to a NUL-terminated string */
+    char* dest = mfu_path_strdup(rel);
+
+    /* free our temporary paths */
+    mfu_path_delete(&rel);
+    mfu_path_delete(&cwd);
+    mfu_path_delete(&item);
+
+    return dest;
+}
+
+static size_t compute_header_size(mfu_flist flist, uint64_t idx, const mfu_param_path* cwdpath)
 {
     /* allocate and entry for this item */
     struct archive_entry* entry = archive_entry_new();
 
     /* get file name for this item */
-    /* fill up entry, FIXME: the uglyness of removing leading slash */
-    const char* fname = mfu_flist_file_get_name(DTAR_flist, idx);
-    archive_entry_copy_pathname(entry, &fname[1]);
+    const char* fname = mfu_flist_file_get_name(flist, idx);
+
+    /* compute relative path to item from current working dir */
+    const char* relname = mfu_param_path_relative(fname, cwdpath);
+    archive_entry_copy_pathname(entry, relname);
+    mfu_free(&relname);
 
     if (DTAR_user_opts.preserve) {
         struct archive* source = archive_read_disk_new();
         archive_read_disk_set_standard_lookup(source);
         int fd = open(fname, O_RDONLY);
         if (archive_read_disk_entry_from_file(source, entry, fd, NULL) != ARCHIVE_OK) {
-            MFU_LOG(MFU_LOG_ERR, "archive_read_disk_entry_from_file(): %s", archive_error_string(ar));
+            MFU_LOG(MFU_LOG_ERR, "archive_read_disk_entry_from_file(): %s", archive_error_string(source));
         }
         archive_read_free(source);
         close(fd);
@@ -115,11 +170,83 @@ static void DTAR_write_header(struct archive* ar, uint64_t idx, uint64_t offset)
         archive_entry_copy_stat(entry, &stbuf);
 
         /* set user name of owner */
-        const char* uname = mfu_flist_file_get_username(DTAR_flist, idx);
+        const char* uname = mfu_flist_file_get_username(flist, idx);
         archive_entry_set_uname(entry, uname);
 
         /* set group name */
-        const char* gname = mfu_flist_file_get_groupname(DTAR_flist, idx);
+        const char* gname = mfu_flist_file_get_groupname(flist, idx);
+        archive_entry_set_gname(entry, gname);
+    }
+
+    /* write entry info to archive */
+    struct archive* dest = archive_write_new();
+    archive_write_set_format_pax(dest);
+
+    /* don't buffer data, write everything directly to output (file or memory) */
+    archive_write_set_bytes_per_block(dest, 0);
+
+    size_t bufsize = 1024*1024;
+    void* buf = MFU_MALLOC(bufsize);
+    size_t used = 0;
+    if (archive_write_open_memory(dest, buf, bufsize, &used) != ARCHIVE_OK) {
+        MFU_LOG(MFU_LOG_ERR, "archive_write_open_memory(): %s", archive_error_string(dest));
+    }
+
+    /* write header for this item */
+    if (archive_write_header(dest, entry) != ARCHIVE_OK) {
+        MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s", archive_error_string(dest));
+    }
+
+    archive_entry_free(entry);
+
+    /* at this point, used tells us the size of the header for this item */
+
+    /* mark the archive as failed, so that we skip trying to write bytes
+     * that would correspond to file data when we call free, this way we
+     * still free data structures that was allocated */
+    archive_write_fail(dest);
+    archive_write_free(dest);
+
+    mfu_free(&buf);
+
+    /* return size of header for this entry */
+    return used;
+}
+
+static void DTAR_write_header(mfu_flist flist, uint64_t idx, uint64_t offset, const mfu_param_path* cwdpath)
+{
+    /* allocate and entry for this item */
+    struct archive_entry* entry = archive_entry_new();
+
+    /* get file name for this item */
+    const char* fname = mfu_flist_file_get_name(flist, idx);
+
+    /* compute relative path to item from current working dir */
+    const char* relname = mfu_param_path_relative(fname, cwdpath);
+    archive_entry_copy_pathname(entry, relname);
+    mfu_free(&relname);
+
+    if (DTAR_user_opts.preserve) {
+        struct archive* source = archive_read_disk_new();
+        archive_read_disk_set_standard_lookup(source);
+        int fd = open(fname, O_RDONLY);
+        if (archive_read_disk_entry_from_file(source, entry, fd, NULL) != ARCHIVE_OK) {
+            MFU_LOG(MFU_LOG_ERR, "archive_read_disk_entry_from_file(): %s", archive_error_string(source));
+        }
+        archive_read_free(source);
+        close(fd);
+    } else {
+        /* TODO: read stat info from mfu_flist */
+        struct stat stbuf;
+        mfu_lstat(fname, &stbuf);
+        archive_entry_copy_stat(entry, &stbuf);
+
+        /* set user name of owner */
+        const char* uname = mfu_flist_file_get_username(flist, idx);
+        archive_entry_set_uname(entry, uname);
+
+        /* set group name */
+        const char* gname = mfu_flist_file_get_groupname(flist, idx);
         archive_entry_set_gname(entry, gname);
     }
 
@@ -134,8 +261,11 @@ static void DTAR_write_header(struct archive* ar, uint64_t idx, uint64_t offset)
     struct archive* dest = archive_write_new();
     archive_write_set_format_pax(dest);
 
+    /* don't buffer data, write everything directly to output (file or memory) */
+    archive_write_set_bytes_per_block(dest, 0);
+
     if (archive_write_open_fd(dest, DTAR_writer.fd_tar) != ARCHIVE_OK) {
-        MFU_LOG(MFU_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(ar));
+        MFU_LOG(MFU_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(dest));
     }
 
     /* seek to offset in tar archive for this file */
@@ -143,11 +273,18 @@ static void DTAR_write_header(struct archive* ar, uint64_t idx, uint64_t offset)
 
     /* write header for this item */
     if (archive_write_header(dest, entry) != ARCHIVE_OK) {
-        MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s", archive_error_string(ar));
+        MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s", archive_error_string(dest));
     }
 
     archive_entry_free(entry);
+
+    /* mark the archive as failed, so that we skip trying to write bytes
+     * that would correspond to file data when we call free, this way we
+     * still free data structures that was allocated */
+    archive_write_fail(dest);
     archive_write_free(dest);
+
+    return;
 }
 
 static char* DTAR_encode_operation(DTAR_operation_code_t code, const char* operand,
@@ -245,7 +382,7 @@ static void DTAR_enqueue_copy(CIRCLE_handle* handle)
 static void DTAR_perform_copy(CIRCLE_handle* handle)
 {
     char opstr[CIRCLE_MAX_STRING_LEN];
-    char iobuf[FD_BLOCK_SIZE];
+    char iobuf[MFU_BLOCK_SIZE];
 
     int out_fd = DTAR_writer.fd_tar;
 
@@ -281,7 +418,7 @@ static void DTAR_perform_copy(CIRCLE_handle* handle)
     if (op->chunk_index == last_chunk) {
         int padding = 512 - (int) (op->file_size % 512);
         if (padding > 0 && padding != 512) {
-            char* buff = (char*) calloc(padding, sizeof(char));
+            char buff[512] = {0};
             write(out_fd, buff, padding);
         }
     }
@@ -364,7 +501,13 @@ bcast:
     }
 }
 
-static void mfu_flist_archive_create_libcircle(mfu_flist flist, const char* archivefile, mfu_archive_options_t* opts)
+static void mfu_flist_archive_create_libcircle(
+    mfu_flist flist,
+    const char* archivefile,
+    int numpaths,
+    const mfu_param_path* paths,
+    const mfu_param_path* cwdpath,
+    mfu_archive_options_t* opts)
 {
     DTAR_flist = flist;
     DTAR_user_opts = *opts;
@@ -407,28 +550,35 @@ static void mfu_flist_archive_create_libcircle(mfu_flist flist, const char* arch
         mfu_filetype type = mfu_flist_file_get_type(DTAR_flist, idx);
         if (type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
             /* directories and symlinks only need the header */
-            fsizes[idx] = DTAR_HDR_LENGTH;
+            uint64_t header_size = compute_header_size(DTAR_flist, idx, cwdpath);
+            fsizes[idx] = header_size;
         } else if (type == MFU_TYPE_FILE) {
+            uint64_t header_size = compute_header_size(DTAR_flist, idx, cwdpath);
+
             /* regular file requires a header, plus file content,
              * and things are packed into blocks of 512 bytes */
             uint64_t fsize = mfu_flist_file_get_size(DTAR_flist, idx);
 
-            /* determine whether file size is integer multiple of 512 bytes */
-            uint64_t rem = fsize % 512;
-            if (rem == 0) {
-                /* file content is multiple of 512 bytes, so perfect fit */
-                fsizes[idx] = fsize + DTAR_HDR_LENGTH;
-            } else {
-                /* TODO: check and explain this math */
-                fsizes[idx] = (fsize / 512 + 4) * 512;
+            /* round file size up to nearest integer number of 512 bytes */
+            uint64_t fsize_padded = fsize / 512;
+            fsize_padded *= 512;
+            if (fsize_padded < fsize) {
+                fsize_padded += 512;
             }
 
+            /* entry size is the haeder plus the file data with padding */
+            uint64_t entry_size = header_size + fsize_padded;
+            fsizes[idx] += entry_size;
         }
 
         /* increment our local offset for this item */
         DTAR_offsets[idx] = offset;
         offset += fsizes[idx];
     }
+
+    /* compute total archive size */
+    uint64_t archive_size = 0;
+    MPI_Allreduce(&offset, &archive_size, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* execute scan to figure our global base offset in the archive file */
     uint64_t global_offset = 0;
@@ -440,22 +590,11 @@ static void mfu_flist_archive_create_libcircle(mfu_flist flist, const char* arch
         DTAR_offsets[idx] += global_offset;
     }
 
-    /* create an archive */
-    struct archive* ar = archive_write_new();
-
-    archive_write_set_format_pax(ar);
-
-    int r = archive_write_open_fd(ar, DTAR_writer.fd_tar);
-    if (r != ARCHIVE_OK) {
-        MFU_LOG(MFU_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(ar));
-        DTAR_abort(EXIT_FAILURE);
-    }
-
     /* write headers for our files */
     for (idx = 0; idx < DTAR_count; idx++) {
         mfu_filetype type = mfu_flist_file_get_type(DTAR_flist, idx);
         if (type == MFU_TYPE_FILE || type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
-            DTAR_write_header(ar, idx, DTAR_offsets[idx]);
+            DTAR_write_header(DTAR_flist, idx, DTAR_offsets[idx], cwdpath);
         }
     }
 
@@ -472,9 +611,15 @@ static void mfu_flist_archive_create_libcircle(mfu_flist flist, const char* arch
     CIRCLE_begin();
     CIRCLE_finalize();
 
-    /* compute total bytes copied */
-    uint64_t archive_size = 0;
-    MPI_Allreduce(&offset, &archive_size, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    /* rank 0 ends archive by writing two 512-byte blocks of NUL (tar format) */
+    if (DTAR_rank == 0) {
+        mfu_lseek(DTAR_writer.name, DTAR_writer.fd_tar, archive_size, SEEK_SET);
+
+        char buf[1024] = {0};
+        mfu_write(DTAR_writer.name, DTAR_writer.fd_tar, buf, sizeof(buf));
+    }
+
+    /* compute total archive size */
     DTAR_statistics.total_size = archive_size;
 
     DTAR_statistics.wtime_ended = MPI_Wtime();
@@ -514,13 +659,18 @@ static void mfu_flist_archive_create_libcircle(mfu_flist flist, const char* arch
     mfu_free(&DTAR_offsets);
 
     /* close archive file */
-    archive_write_free(ar);
     mfu_close(DTAR_writer.name, DTAR_writer.fd_tar);
 }
 
-void mfu_flist_archive_create(mfu_flist flist, const char* archivefile, mfu_archive_options_t* opts)
+void mfu_flist_archive_create(
+    mfu_flist flist,
+    const char* archivefile,
+    int numpaths,
+    const mfu_param_path* paths,
+    const mfu_param_path* cwdpath,
+    mfu_archive_options_t* opts)
 {
-    mfu_flist_archive_create_libcircle(flist, archivefile, opts);
+    mfu_flist_archive_create_libcircle(flist, archivefile, numpaths, paths, cwdpath, opts);
 }
 
 static void errmsg(const char* m)
@@ -556,11 +706,202 @@ static int copy_data(struct archive* ar, struct archive* aw)
     return 0;
 }
 
-void mfu_flist_archive_extract(const char* filename, bool verbose, int flags)
+static uint64_t count_entries(const char* filename, int flags)
 {
     int r;
 
-    /* TODO: this needs to be parallelized */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    uint64_t count = 0;
+    if (rank == 0) {
+        /* initiate archive object for reading */
+        struct archive* a = archive_read_new();
+
+        /* we want all the format supports */
+        archive_read_support_filter_bzip2(a);
+        archive_read_support_filter_gzip(a);
+        archive_read_support_filter_compress(a);
+        archive_read_support_format_tar(a);
+
+        if (filename != NULL && strcmp(filename, "-") == 0) {
+            filename = NULL;
+        }
+    
+        /* blocksize set to 1024K */
+        if ((r = archive_read_open_filename(a, filename, 10240))) {
+            errmsg(archive_error_string(a));
+            exit(r);
+        }
+    
+        for (;;) {
+            struct archive_entry* entry;
+            r = archive_read_next_header(a, &entry);
+            if (r == ARCHIVE_EOF) {
+                break;
+            }
+            if (r != ARCHIVE_OK) {
+                errmsg(archive_error_string(a));
+                exit(r);
+            }
+            count++;
+        }
+
+        archive_read_close(a);
+        archive_read_free(a);
+    }
+   
+    MPI_Bcast(&count, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+
+    return count; 
+}
+
+static void create_directories(
+    const char* filename,
+    int flags,
+    const mfu_param_path* cwdpath,
+    uint64_t entries,
+    uint64_t entry_start,
+    uint64_t entry_count)
+{
+    int r;
+
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* initiate archive object for reading */
+    struct archive* a = archive_read_new();
+
+    /* we want all the format supports */
+    archive_read_support_filter_bzip2(a);
+    archive_read_support_filter_gzip(a);
+    archive_read_support_filter_compress(a);
+    archive_read_support_format_tar(a);
+
+    if (filename != NULL && strcmp(filename, "-") == 0) {
+        filename = NULL;
+    }
+
+    /* blocksize set to 1024K */
+    if ((r = archive_read_open_filename(a, filename, 10240))) {
+        errmsg(archive_error_string(a));
+        exit(r);
+    }
+
+    /* get current working directory */
+    mfu_path* cwd = mfu_path_from_str(cwdpath->path);
+
+    mfu_flist flist = mfu_flist_new();
+    mfu_flist_set_detail(flist, 1);
+
+    uint64_t count = 0;
+    while (entry_start + entry_count > count) {
+        struct archive_entry* entry;
+        r = archive_read_next_header(a, &entry);
+        if (r == ARCHIVE_EOF) {
+            break;
+        }
+        if (r != ARCHIVE_OK) {
+            errmsg(archive_error_string(a));
+            exit(r);
+        }
+
+        if (entry_start <= count) {
+            mode_t mode = archive_entry_mode(entry);
+            mfu_filetype type = mfu_flist_mode_to_filetype(mode);
+            if (type == MFU_TYPE_DIR) {
+                uint64_t idx = mfu_flist_file_create(flist);
+
+                const char* name = archive_entry_pathname(entry);
+                mfu_path* path = mfu_path_from_str(name);
+                mfu_path_prepend(path, cwd);
+                mfu_path_reduce(path);
+                const char* name2 = mfu_path_strdup(path);
+                mfu_flist_file_set_name(flist, idx, name2);
+                mfu_free(&name2);
+                mfu_path_delete(&path);
+
+                mode_t mode = archive_entry_mode(entry);
+                mfu_filetype type = mfu_flist_mode_to_filetype(mode);
+                mfu_flist_file_set_type(flist, idx, type);
+
+                mfu_flist_file_set_mode(flist, idx, mode);
+
+                uint64_t uid = archive_entry_uid(entry);
+                mfu_flist_file_set_uid(flist, idx, uid);
+
+                uint64_t gid = archive_entry_gid(entry);
+                mfu_flist_file_set_gid(flist, idx, gid);
+
+                uint64_t atime = archive_entry_atime(entry);
+                mfu_flist_file_set_atime(flist, idx, atime);
+
+                uint64_t atime_nsec = archive_entry_atime_nsec(entry);
+                mfu_flist_file_set_atime_nsec(flist, idx, atime_nsec);
+
+                uint64_t mtime = archive_entry_mtime(entry);
+                mfu_flist_file_set_mtime(flist, idx, mtime);
+
+                uint64_t mtime_nsec = archive_entry_mtime_nsec(entry);
+                mfu_flist_file_set_mtime_nsec(flist, idx, mtime_nsec);
+
+                uint64_t ctime = archive_entry_ctime(entry);
+                mfu_flist_file_set_ctime(flist, idx, ctime);
+
+                uint64_t ctime_nsec = archive_entry_ctime_nsec(entry);
+                mfu_flist_file_set_ctime_nsec(flist, idx, ctime_nsec);
+
+                uint64_t size = archive_entry_size(entry);
+                mfu_flist_file_set_size(flist, idx, size);
+            }
+        }
+
+        count++;
+    }
+    mfu_flist_summarize(flist);
+    mfu_flist_mkdir(flist);
+    mfu_flist_free(&flist);
+
+    mfu_path_delete(&cwd);
+
+    archive_read_close(a);
+    archive_read_free(a);
+}
+
+void mfu_flist_archive_extract(
+    const char* filename,
+    bool verbose,
+    int flags,
+    const mfu_param_path* cwdpath)
+{
+    int r;
+
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* get number of entries in archive */
+    uint64_t entries = count_entries(filename, flags);
+
+    uint64_t entries_per_rank = entries / ranks;
+    uint64_t entries_remainder = entries - entries_per_rank * ranks;
+
+    uint64_t entry_start;
+    uint64_t entry_count;
+    if (rank < entries_remainder) {
+        entry_count = entries_per_rank + 1;
+        entry_start = rank * entry_count;
+    } else {
+        entry_count = entries_per_rank;
+        entry_start = entries_remainder * (entry_count + 1) + (rank - entries_remainder) * entry_count;
+    }
+
+    /* Create all directories in advance to avoid races between a process trying to create
+     * a child item and another process responsible for the parent directory.
+     * The libarchive code does not remove existing directories,
+     * even in normal mode with overwrite. */
+    create_directories(filename, flags, cwdpath, entries, entry_start, entry_count);
 
     /* initiate archive object for reading */
     struct archive* a = archive_read_new();
@@ -587,8 +928,15 @@ void mfu_flist_archive_extract(const char* filename, bool verbose, int flags)
         exit(r);
     }
 
-    struct archive_entry* entry;
-    for (;;) {
+    /* get current working directory */
+    mfu_path* cwd = mfu_path_from_str(cwdpath->path);
+
+    mfu_flist flist = mfu_flist_new();
+    mfu_flist_set_detail(flist, 1);
+
+    uint64_t count = 0;
+    while (entry_start + entry_count > count) {
+        struct archive_entry* entry;
         r = archive_read_next_header(a, &entry);
         if (r == ARCHIVE_EOF) {
             break;
@@ -598,26 +946,92 @@ void mfu_flist_archive_extract(const char* filename, bool verbose, int flags)
             exit(r);
         }
 
-        if (verbose) {
-            msg("x ");
+        if (entry_start <= count) {
+            if (verbose) {
+                msg("x ");
+            }
+
+            if (verbose) {
+                msg(archive_entry_pathname(entry));
+            }
+
+            uint64_t idx = mfu_flist_file_create(flist);
+
+            const char* name = archive_entry_pathname(entry);
+            mfu_path* path = mfu_path_from_str(name);
+            mfu_path_prepend(path, cwd);
+            mfu_path_reduce(path);
+            const char* name2 = mfu_path_strdup(path);
+            mfu_flist_file_set_name(flist, idx, name2);
+            mfu_free(&name2);
+            mfu_path_delete(&path);
+
+            mode_t mode = archive_entry_mode(entry);
+
+            mfu_filetype type = mfu_flist_mode_to_filetype(mode);
+            mfu_flist_file_set_type(flist, idx, type);
+
+            mfu_flist_file_set_mode(flist, idx, mode);
+
+            uint64_t uid = archive_entry_uid(entry);
+            mfu_flist_file_set_uid(flist, idx, uid);
+
+            uint64_t gid = archive_entry_gid(entry);
+            mfu_flist_file_set_gid(flist, idx, gid);
+
+            uint64_t atime = archive_entry_atime(entry);
+            mfu_flist_file_set_atime(flist, idx, atime);
+
+            uint64_t atime_nsec = archive_entry_atime_nsec(entry);
+            mfu_flist_file_set_atime_nsec(flist, idx, atime_nsec);
+
+            uint64_t mtime = archive_entry_mtime(entry);
+            mfu_flist_file_set_mtime(flist, idx, mtime);
+
+            uint64_t mtime_nsec = archive_entry_mtime_nsec(entry);
+            mfu_flist_file_set_mtime_nsec(flist, idx, mtime_nsec);
+
+            uint64_t ctime = archive_entry_ctime(entry);
+            mfu_flist_file_set_ctime(flist, idx, ctime);
+
+            uint64_t ctime_nsec = archive_entry_ctime_nsec(entry);
+            mfu_flist_file_set_ctime_nsec(flist, idx, ctime_nsec);
+
+            if (type == MFU_TYPE_FILE) {
+                uint64_t size = archive_entry_size(entry);
+                mfu_flist_file_set_size(flist, idx, size);
+            }
+
+            r = archive_write_header(ext, entry);
+            if (r != ARCHIVE_OK) {
+                errmsg(archive_error_string(a));
+            } else {
+                copy_data(a, ext);
+            }
+
+            if (verbose) {
+                msg("\n");
+            }
         }
 
-        if (verbose) {
-            msg(archive_entry_pathname(entry));
-        }
-
-        r = archive_write_header(ext, entry);
-        if (r != ARCHIVE_OK) {
-            errmsg(archive_error_string(a));
-        } else {
-            copy_data(a, ext);
-        }
-
-        if (verbose) {
-            msg("\n");
-        }
+        count++;
     }
+    mfu_flist_summarize(flist);
+    mfu_flist_free(&flist);
+
+    mfu_path_delete(&cwd);
+
+    /* Ensure all ranks have created all items before we close the write archive.
+     * libarchive will update timestamps on directories when closing out,
+     * so we want to ensure all child items exist at this point. */
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    archive_write_free(ext);
 
     archive_read_close(a);
     archive_read_free(a);
+
+    /* TODO: if a directory already exists, libarchive does not currently update
+     * its timestamps when closing the write archive,
+     * update timestamps on directories */
 }
