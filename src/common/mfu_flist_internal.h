@@ -115,9 +115,6 @@ void mfu_flist_insert_elem(flist_t* flist, elem_t* elem);
 /* insert a file given its mode and optional stat data */
 void mfu_flist_insert_stat(flist_t* flist, const char* fpath, mode_t mode, const struct stat* sb);
 
-/* given a mode_t from stat, return the corresponding MFU filetype */
-mfu_filetype mfu_flist_mode_to_filetype(mode_t mode);
-
 /* given path, return level within directory tree,
  * counts '/' characters assuming path is standardized
  * and absolute */
