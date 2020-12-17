@@ -132,8 +132,13 @@ int daos_connect(
         /* Connect to DAOS pool */
         if (connect_pool) {
             daos_pool_info_t pool_info = {0};
+#if DAOS_API_VERSION_MAJOR < 1
             rc = daos_pool_connect(pool_uuid, NULL, NULL, DAOS_PC_RW,
                     poh, &pool_info, NULL);
+#else
+            rc = daos_pool_connect(pool_uuid, NULL, DAOS_PC_RW,
+                    poh, &pool_info, NULL);
+#endif
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to connect to pool");
                 goto bcast;
