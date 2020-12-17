@@ -152,11 +152,11 @@ static int print_flist_distribution(int file_histogram,
          for (int i = 0; i <= separators; i++) {
              printf("%s", "[ ");
              if (i == 0) {
-                 printf("%7.3lf %2s", 0.000, "B");
+                 printf("%7.3lf %3s", 0.000, "B");
              } else {
                  mfu_format_bytes((uint64_t)option->separators[i - 1],
                                   &size_tmp, &size_units);
-                 printf("%7.3lf %2s", size_tmp, size_units);
+                 printf("%7.3lf %3s", size_tmp, size_units);
              }
 
              printf("%s", " - ");
@@ -167,7 +167,7 @@ static int print_flist_distribution(int file_histogram,
                 number = disttotal[i];
                 mfu_format_bytes((uint64_t)option->separators[i],
                                  &size_tmp, &size_units);
-                printf("%7.3lf %2s ) %"PRIu64"\n", size_tmp,
+                printf("%7.3lf %3s ) %"PRIu64"\n", size_tmp,
                        size_units, number);
              } else {
                 if (i == separators) {
@@ -177,7 +177,7 @@ static int print_flist_distribution(int file_histogram,
                     number = disttotal[i];
                     mfu_format_bytes((uint64_t)option->separators[i],
                               &size_tmp, &size_units);
-                    printf("%7.3lf %2s ) %"PRIu64"\n", size_tmp, size_units, number);
+                    printf("%7.3lf %3s ) %"PRIu64"\n", size_tmp, size_units, number);
                 }
              }
          }

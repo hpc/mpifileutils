@@ -1576,7 +1576,7 @@ static void print_file(mfu_flist flist, uint64_t idx)
         const char* size_units;
         mfu_format_bytes(size, &size_tmp, &size_units);
 
-        printf("%s %s %s %7.3f %2s %s %s\n",
+        printf("%s %s %s %7.3f %3s %s %s\n",
                mode_format, username, groupname,
                size_tmp, size_units, modify_s, file
               );
