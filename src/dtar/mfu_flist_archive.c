@@ -248,6 +248,20 @@ static size_t compute_header_size(mfu_flist flist, uint64_t idx, const mfu_param
         /* set group name */
         const char* gname = mfu_flist_file_get_groupname(flist, idx);
         archive_entry_set_gname(entry, gname);
+
+        /* if entry is a symlink, copy its target */
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+        if (type == MFU_TYPE_LINK) {
+            char target[PATH_MAX + 1];
+            ssize_t readlink_rc = mfu_readlink(fname, target, sizeof(target) - 1);
+            if(readlink_rc != -1) {
+                archive_entry_copy_symlink(entry, target);
+            } else {
+                MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() (errno=%d %s)",
+                    fname, errno, strerror(errno)
+                );
+            }
+        }
     }
 
     /* write entry info to archive */
@@ -320,6 +334,20 @@ static void DTAR_write_header(mfu_flist flist, uint64_t idx, uint64_t offset, co
         /* set group name */
         const char* gname = mfu_flist_file_get_groupname(flist, idx);
         archive_entry_set_gname(entry, gname);
+
+        /* if entry is a symlink, copy its target */
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+        if (type == MFU_TYPE_LINK) {
+            char target[PATH_MAX + 1];
+            ssize_t readlink_rc = mfu_readlink(fname, target, sizeof(target) - 1);
+            if(readlink_rc != -1) {
+                archive_entry_copy_symlink(entry, target);
+            } else {
+                MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() (errno=%d %s)",
+                    fname, errno, strerror(errno)
+                );
+            }
+        }
     }
 
     /* TODO: Seems to be a bug here potentially leading to corrupted
