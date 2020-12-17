@@ -41,12 +41,11 @@ typedef struct {
 
 static int     opts_create    = 0;
 static int     opts_compress  = 0;
-static int     opts_verbose   = 0;
 static int     opts_debug     = 0;
 static int     opts_extract   = 0;
 static int     opts_preserve  = 0;
 static char*   opts_tarfile   = NULL;
-static size_t  opts_chunksize = 1024 * 1024;
+static size_t  opts_chunksize = MFU_BLOCK_SIZE;
 static int     opts_blocksize = 9;
 static ssize_t opts_memory    = -1;
 
@@ -70,15 +69,16 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("  -c, --create            - create archive\n");
-    printf("  -j, --compress          - compress archive\n");
+//    printf("  -j, --compress          - compress archive\n");
     printf("  -x, --extract           - extract archive\n");
-    printf("  -p, --preserve          - preserve attributes\n");
+//    printf("  -p, --preserve          - preserve attributes\n");
     printf("  -s, --chunksize <bytes> - chunk size (bytes)\n");
     printf("  -f, --file <filename>   - target output file\n");
     printf("  -b, --blocksize <size>  - block size (1-9)\n");
     printf("  -m, --memory <bytes>    - memory limit (bytes)\n");
-    printf("  -v, --verbose           - verbose output\n");
-    printf("  -y, --debug             - debug output\n");
+    printf("      --progress <N>      - print progress every N seconds\n");
+//    printf("  -v, --verbose           - verbose output\n");
+    printf("  -q, --quiet             - quiet output\n");
     printf("  -h, --help              - print usage\n");
     printf("\n");
     fflush(stdout);
@@ -100,6 +100,9 @@ int main(int argc, char** argv)
     /* pointer to mfu_walk_opts */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
+    /* verbose by default */
+    mfu_debug_level = MFU_LOG_VERBOSE;
+
     int option_index = 0;
     static struct option long_options[] = {
         {"create",    0, 0, 'c'},
@@ -110,8 +113,9 @@ int main(int argc, char** argv)
         {"file",      1, 0, 'f'},
         {"blocksize", 1, 0, 'b'},
         {"memory",    1, 0, 'm'},
+        {"progress",  1, 0, 'R'},
         {"verbose",   0, 0, 'v'},
-        {"debug",     0, 0, 'y'},
+        {"debug",     0, 0, 'q'},
         {"help",      0, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -155,11 +159,14 @@ int main(int argc, char** argv)
                 mfu_abtoull(optarg, &bytes);
                 opts_memory = (ssize_t) bytes;
                 break;
-            case 'v':
-                opts_verbose = 1;
+            case 'R':
+                mfu_progress_timeout = atoi(optarg);
                 break;
-            case 'd':
-                opts_debug = 1;
+            case 'q':
+                mfu_debug_level = MFU_LOG_NONE;
+                /* since process won't be printed in quiet anyway,
+                 * disable the algorithm to save some overhead */
+                mfu_progress_timeout = 0;
                 break;
             case 'h':
                 usage = 1;
@@ -175,6 +182,14 @@ int main(int argc, char** argv)
         }
     }
 
+    /* check that we got a valid progress value */
+    if (mfu_progress_timeout < 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Seconds in --progress must be non-negative: %d invalid", mfu_progress_timeout);
+        }
+        usage = 1;
+    }
+
     /* print usage if we need to */
     if (usage) {
         if (rank == 0) {
@@ -185,27 +200,25 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    if (opts_debug) {
-        mfu_debug_level = MFU_LOG_DBG;
-    } else if (opts_verbose) {
-        mfu_debug_level = MFU_LOG_INFO;
-    } else {
-        mfu_debug_level = MFU_LOG_ERR;
-    }
-
-    if (!opts_create && !opts_extract && rank == 0) {
-        MFU_LOG(MFU_LOG_ERR, "One of extract(x) or create(c) need to be specified");
+    if (!opts_create && !opts_extract) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "One of extract(x) or create(c) need to be specified");
+        }
         DTAR_exit(EXIT_FAILURE);
     }
 
-    if (opts_create && opts_extract && rank == 0) {
-        MFU_LOG(MFU_LOG_ERR, "Only one of extraction(x) or create(c) can be specified");
+    if (opts_create && opts_extract) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Only one of extraction(x) or create(c) can be specified");
+        }
         DTAR_exit(EXIT_FAILURE);
     }
 
     /* when creating a tarbll, we require a file name */
     if (opts_create && opts_tarfile == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "Must specify a file name(-f)");
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Must specify a file name(-f)");
+        }
         DTAR_exit(EXIT_FAILURE);
     }
 
@@ -229,10 +242,6 @@ int main(int argc, char** argv)
     }
 
     archive_opts.chunk_size = opts_chunksize;
-
-    if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Chunk size = %" PRIu64, archive_opts.chunk_size);
-    }
 
     /* adjust pointers to start of paths */
     int numpaths = argc - optind;
@@ -265,6 +274,11 @@ int main(int argc, char** argv)
         mfu_flist flist = mfu_flist_new();
         mfu_flist_walk_param_paths(num_src_params, src_params, walk_opts, flist, mfu_src_file);
 
+        /* spread elements evenly among ranks */
+        mfu_flist flist2 = mfu_flist_spread(flist);
+        mfu_flist_free(&flist);
+        flist = flist2;
+
         /* sort items alphabetically, so they are placed in the archive with parent directories
          * coming before their children */
         mfu_flist_sort("name", &flist);
@@ -281,7 +295,7 @@ int main(int argc, char** argv)
             strncpy(fname, opts_tarfile, 50);
             if ((stat(strcat(fname, ".bz2"), &st) == 0)) {
                 if (rank == 0) {
-                    printf("Output file already exists\n");
+                    MFU_LOG(MFU_LOG_INFO, "Output file already exists: '%s'", fname);
                 }
                 exit(0);
             }
@@ -305,11 +319,10 @@ int main(int argc, char** argv)
             strncpy(fname_out, opts_tarfile, 50);
             size_t len = strlen(fname_out);
             fname_out[len - 4] = '\0';
-            printf("The file name is:%s %s %d", fname, fname_out, (int)len);
             struct stat st;
             if ((stat(fname_out, &st) == 0)) {
                 if (rank == 0) {
-                    printf("Output file already exists\n");
+                    MFU_LOG(MFU_LOG_ERR, "Output file already exists '%s'", fname_out);
                 }
                 exit(0);
             }
@@ -317,12 +330,12 @@ int main(int argc, char** argv)
             remove(fname);
             tarfile = fname_out;
         }
-        mfu_flist_archive_extract(tarfile, opts_verbose, archive_opts.flags, &cwd_param);
+        mfu_flist_archive_extract(tarfile, archive_opts.flags, &cwd_param, &archive_opts);
     } else {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Neither creation or extraction is specified");
-            DTAR_exit(EXIT_FAILURE);
         }
+        DTAR_exit(EXIT_FAILURE);
     }
 
     /* free the walk options */
