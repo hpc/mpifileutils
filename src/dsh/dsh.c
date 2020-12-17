@@ -516,10 +516,8 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
         /* print header info */
         char* origpath_str = mfu_path_strdup(origpath);
         printf("--------------------------\n");
-        //printf("    Bytes %*s Path\n", digits, "Items");
-        //printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) allsum_count, origpath_str);
-        printf("    Bytes    Items Path\n");
-        printf("%6.2f %2s %6.2f %1s %s\n", agg_size_tmp, agg_size_units, allsum_tmp, allsum_units, origpath_str);
+        printf("     Bytes    Items Path\n");
+        printf("%6.2f %3s %6.2f %1s %s\n", agg_size_tmp, agg_size_units, allsum_tmp, allsum_units, origpath_str);
         printf("--------------------------\n");
         mfu_free(&origpath_str);
 
@@ -543,8 +541,7 @@ static void print_sums(mfu_path* origpath, uint64_t count, uint64_t allmax, uint
             const char* count_units;
             mfu_format_count(count, &count_tmp, &count_units);
     
-            //printf("%6.2f %2s %*llu %s\n", agg_size_tmp, agg_size_units, digits, (unsigned long long) count, name);
-            printf("%6.2f %2s %6.2f %1s %s\n", agg_size_tmp, agg_size_units, count_tmp, count_units, name);
+            printf("%6.2f %3s %6.2f %1s %s\n", agg_size_tmp, agg_size_units, count_tmp, count_units, name);
         }
         printf("\n(printed top %llu of a total of %llu lines)\n", (unsigned long long)print_count, 
                 (unsigned long long)allcount);

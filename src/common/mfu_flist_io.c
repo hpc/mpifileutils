@@ -1640,7 +1640,7 @@ static size_t print_file_text(mfu_flist flist, uint64_t idx, char* buffer, size_
         const char* size_units;
         mfu_format_bytes(size, &size_tmp, &size_units);
 
-        numbytes = snprintf(buffer, bufsize, "%s %s %s %7.3f %2s %s %s\n",
+        numbytes = snprintf(buffer, bufsize, "%s %s %s %7.3f %3s %s %s\n",
             mode_format, username, groupname,
             size_tmp, size_units, modify_s, file
         );

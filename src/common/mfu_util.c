@@ -257,7 +257,7 @@ static void mfu_format_1000(
 
 /* given a number of items, return value converted to returned units */
 #define NUM_UNITS_COUNT (7)
-static const char* units_count[] = {"", "k", "m", "g", "t", "p", "e"};
+static const char* units_count[] = {"", "k", "M", "G", "T", "P", "E"};
 void mfu_format_count(uint64_t count, double* val, const char** units)
 {
     double count_d = (double) count;
@@ -299,7 +299,7 @@ static void mfu_format_1024(
 
 /* given a number of bytes, return value converted to returned units */
 #define NUM_UNITS_BYTES (7)
-static const char* units_bytes[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB"};
+static const char* units_bytes[] = {"B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"};
 void mfu_format_bytes(uint64_t bytes, double* val, const char** units)
 {
     double bytes_d = (double) bytes;
@@ -308,7 +308,7 @@ void mfu_format_bytes(uint64_t bytes, double* val, const char** units)
 }
 
 #define NUM_UNITS_BW (7)
-static const char* units_bw[] = {"B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s", "EB/s"};
+static const char* units_bw[] = {"B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s", "EiB/s"};
 void mfu_format_bw(double bw, double* val, const char** units)
 {
     mfu_format_1024(bw, units_bw, NUM_UNITS_BW, val, units);
