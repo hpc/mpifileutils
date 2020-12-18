@@ -732,6 +732,47 @@ static int read_entry_index(
     return rc; 
 }
 
+static void mfu_set_stripes(
+    const char* file,    /* path of file to be striped */
+    const char* cwd,     /* current working dir to prepend to file if not absolute */
+    size_t stripe_bytes, /* width of a single stripe in bytes */
+    int stripe_count)    /* number of stripes, -1 for all */
+{
+    /* get our rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* if file is on lustre, set striping parameters */
+    if (rank == 0) {
+        /* get absoluate path to file */
+        mfu_path* dirpath = mfu_path_from_str(file);
+        if (! mfu_path_is_absolute(dirpath)) {
+            mfu_path_prepend_str(dirpath, cwd);
+        }
+        mfu_path_reduce(dirpath);
+
+        /* get full path of item */
+        const char* name = mfu_path_strdup(dirpath);
+
+        /* get parent directory of item */
+        mfu_path_dirname(dirpath);
+        const char* dir = mfu_path_strdup(dirpath);
+
+        /* if path is in lustre, configure the stripe parameters */
+        if (mfu_is_lustre(dir)) {
+            mfu_stripe_set(name, stripe_bytes, stripe_count);
+        }
+
+        mfu_free(&name);
+        mfu_free(&dir);
+        mfu_path_delete(&dirpath);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    return;
+}
+
 static int mfu_flist_archive_create_libcircle(
     mfu_flist flist,
     const char* filename,
@@ -764,6 +805,9 @@ static int mfu_flist_archive_create_libcircle(
     /* start overall timer */
     time(&(DTAR_statistics.time_started));
     DTAR_statistics.wtime_started = MPI_Wtime();
+
+    /* if archive file will be on lustre, set max striping since this should be big */
+    mfu_set_stripes(filename, cwdpath->path, DTAR_user_opts.chunk_size, -1);
 
     /* create the archive file */
     DTAR_writer.name = filename;
