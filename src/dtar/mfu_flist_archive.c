@@ -806,6 +806,10 @@ static int mfu_flist_archive_create_libcircle(
     time(&(DTAR_statistics.time_started));
     DTAR_statistics.wtime_started = MPI_Wtime();
 
+    /* sort items alphabetically, so they are placed in the archive with parent directories
+     * coming before their children */
+    mfu_flist_sort("name", &flist);
+
     /* if archive file will be on lustre, set max striping since this should be big */
     mfu_set_stripes(filename, cwdpath->path, DTAR_user_opts.chunk_size, -1);
 

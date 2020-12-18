@@ -279,13 +279,10 @@ int main(int argc, char** argv)
         mfu_flist_free(&flist);
         flist = flist2;
 
-        /* sort items alphabetically, so they are placed in the archive with parent directories
-         * coming before their children */
-        mfu_flist_sort("name", &flist);
-
         /* create the archive file */
         mfu_flist_archive_create(flist, opts_tarfile, numpaths, src_params, &cwd_param, &archive_opts);
 
+#if 0
         /* compress archive file */
         if (opts_compress) {
             struct stat st;
@@ -299,9 +296,10 @@ int main(int argc, char** argv)
                 }
                 exit(0);
             }
-            //dbz2_compress(opts_blocksize, opts_tarfile, opts_memory);
+            dbz2_compress(opts_blocksize, opts_tarfile, opts_memory);
             remove(fname1);
         }
+#endif
 
         /* free the file list */
         mfu_flist_free(&flist);
@@ -312,6 +310,7 @@ int main(int argc, char** argv)
         mfu_param_path_free(&cwd_param);
     } else if (opts_extract) {
         char* tarfile = opts_tarfile;
+#if 0
         if (opts_compress) {
             char fname[50];
             char fname_out[50];
@@ -330,6 +329,7 @@ int main(int argc, char** argv)
             remove(fname);
             tarfile = fname_out;
         }
+#endif
         mfu_flist_archive_extract(tarfile, archive_opts.flags, &cwd_param, &archive_opts);
     } else {
         if (rank == 0) {
