@@ -40,6 +40,8 @@ typedef struct {
     const char* name;
     int fd_tar;
     int flags;
+    void* buf;
+    size_t bufsize;
 } DTAR_writer_t;
 
 typedef struct {
@@ -213,8 +215,19 @@ char* mfu_param_path_relative(
     return dest;
 }
 
-static size_t compute_header_size(mfu_flist flist, uint64_t idx, const mfu_param_path* cwdpath)
+/* given an entry in the flist, construct and encode its tar header
+ * in the provided buffer, return number of bytes consumed in outsize */
+static int encode_header(
+    mfu_flist flist,               /* list of items */
+    uint64_t idx,                  /* index of list item to be encoded */
+    const mfu_param_path* cwdpath, /* current working dir to compute relative path to item */
+    void* buf,                     /* buffer in which to store encoded header */
+    size_t bufsize,                /* size of input buffer */
+    size_t* outsize)               /* number of bytes consumed to encode header */
 {
+    /* assume we'll succeed */
+    int rc = MFU_SUCCESS;
+
     /* allocate and entry for this item */
     struct archive_entry* entry = archive_entry_new();
 
@@ -231,7 +244,9 @@ static size_t compute_header_size(mfu_flist flist, uint64_t idx, const mfu_param
         archive_read_disk_set_standard_lookup(source);
         int fd = mfu_open(fname, O_RDONLY);
         if (archive_read_disk_entry_from_file(source, entry, fd, NULL) != ARCHIVE_OK) {
-            MFU_LOG(MFU_LOG_ERR, "archive_read_disk_entry_from_file(): %s", archive_error_string(source));
+            MFU_LOG(MFU_LOG_ERR, "archive_read_disk_entry_from_file(): %s",
+                archive_error_string(source));
+            rc = MFU_FAILURE;
         }
         archive_read_free(source);
         mfu_close(fname, fd);
@@ -262,13 +277,13 @@ static size_t compute_header_size(mfu_flist flist, uint64_t idx, const mfu_param
                     archive_entry_copy_symlink(entry, target);
                 } else {
                     MFU_LOG(MFU_LOG_ERR, "Link target of `%s' exceeds buffer size %llu",
-                        fname, bufsize
-                    );
+                        fname, bufsize);
+                    rc = MFU_FAILURE;
                 }
             } else {
                 MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() (errno=%d %s)",
-                    fname, errno, strerror(errno)
-                );
+                    fname, errno, strerror(errno));
+                rc = MFU_FAILURE;
             }
         }
     }
@@ -280,93 +295,24 @@ static size_t compute_header_size(mfu_flist flist, uint64_t idx, const mfu_param
     /* don't buffer data, write everything directly to output (file or memory) */
     archive_write_set_bytes_per_block(dest, 0);
 
-    size_t bufsize = 1024*1024;
-    void* buf = MFU_MALLOC(bufsize);
+    /* encode entry into user's buffer */
     size_t used = 0;
     if (archive_write_open_memory(dest, buf, bufsize, &used) != ARCHIVE_OK) {
-        MFU_LOG(MFU_LOG_ERR, "archive_write_open_memory(): %s", archive_error_string(dest));
+        MFU_LOG(MFU_LOG_ERR, "archive_write_open_memory(): %s",
+            archive_error_string(dest));
+        rc = MFU_FAILURE;
     }
 
     /* write header for this item */
     if (archive_write_header(dest, entry) != ARCHIVE_OK) {
-        MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s", archive_error_string(dest));
+        MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s",
+            archive_error_string(dest));
+        rc = MFU_FAILURE;
     }
 
     archive_entry_free(entry);
 
     /* at this point, used tells us the size of the header for this item */
-
-    /* mark the archive as failed, so that we skip trying to write bytes
-     * that would correspond to file data when we call free, this way we
-     * still free data structures that was allocated */
-    archive_write_fail(dest);
-    archive_write_free(dest);
-
-    mfu_free(&buf);
-
-    /* return size of header for this entry */
-    return used;
-}
-
-static void DTAR_write_header(mfu_flist flist, uint64_t idx, uint64_t offset, const mfu_param_path* cwdpath)
-{
-    /* allocate and entry for this item */
-    struct archive_entry* entry = archive_entry_new();
-
-    /* get file name for this item */
-    const char* fname = mfu_flist_file_get_name(flist, idx);
-
-    /* compute relative path to item from current working dir */
-    const char* relname = mfu_param_path_relative(fname, cwdpath);
-    archive_entry_copy_pathname(entry, relname);
-    mfu_free(&relname);
-
-    if (DTAR_user_opts.preserve) {
-        struct archive* source = archive_read_disk_new();
-        archive_read_disk_set_standard_lookup(source);
-        int fd = mfu_open(fname, O_RDONLY);
-        if (archive_read_disk_entry_from_file(source, entry, fd, NULL) != ARCHIVE_OK) {
-            MFU_LOG(MFU_LOG_ERR, "archive_read_disk_entry_from_file(): %s", archive_error_string(source));
-        }
-        archive_read_free(source);
-        mfu_close(fname, fd);
-    } else {
-        /* TODO: read stat info from mfu_flist */
-        struct stat stbuf;
-        mfu_lstat(fname, &stbuf);
-        archive_entry_copy_stat(entry, &stbuf);
-
-        /* set user name of owner */
-        const char* uname = mfu_flist_file_get_username(flist, idx);
-        archive_entry_set_uname(entry, uname);
-
-        /* set group name */
-        const char* gname = mfu_flist_file_get_groupname(flist, idx);
-        archive_entry_set_gname(entry, gname);
-
-        /* if entry is a symlink, copy its target */
-        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
-        if (type == MFU_TYPE_LINK) {
-            char target[PATH_MAX + 1];
-            size_t bufsize = sizeof(target) - 1;
-            ssize_t readlink_rc = mfu_readlink(fname, target, bufsize);
-            if(readlink_rc != -1) {
-                if (readlink_rc < (ssize_t)bufsize) {
-                    /* null terminate the link */
-                    target[readlink_rc] = '\0';
-                    archive_entry_copy_symlink(entry, target);
-                } else {
-                    MFU_LOG(MFU_LOG_ERR, "Link target of `%s' exceeds buffer size %llu",
-                        fname, bufsize
-                    );
-                }
-            } else {
-                MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() (errno=%d %s)",
-                    fname, errno, strerror(errno)
-                );
-            }
-        }
-    }
 
     /* TODO: Seems to be a bug here potentially leading to corrupted
      * archive files.  archive_write_free also writes two blocks of
@@ -375,69 +321,33 @@ static void DTAR_write_header(mfu_flist flist, uint64_t idx, uint64_t offset, co
      * rank may write its NULL blocks over top of the actual data
      * written by another rank */
 
-#if 0
-    /* write entry info to archive */
-    struct archive* dest = archive_write_new();
-    archive_write_set_format_pax(dest);
-
-    /* don't buffer data, write everything directly to output (file or memory) */
-    archive_write_set_bytes_per_block(dest, 0);
-
-    if (archive_write_open_fd(dest, DTAR_writer.fd_tar) != ARCHIVE_OK) {
-        MFU_LOG(MFU_LOG_ERR, "archive_write_open_fd(): %s", archive_error_string(dest));
-    }
-
-    /* seek to offset in tar archive for this file */
-    mfu_lseek(DTAR_writer.name, DTAR_writer.fd_tar, offset, SEEK_SET);
-
-    /* write header for this item */
-    if (archive_write_header(dest, entry) != ARCHIVE_OK) {
-        MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s", archive_error_string(dest));
-    }
-
-    archive_entry_free(entry);
-
-    /* mark the archive as failed, so that we skip trying to write bytes
-     * that would correspond to file data when we call free, this way we
-     * still free data structures that was allocated */
-    archive_write_fail(dest);
-    archive_write_free(dest);
-#endif
-
-    /* write entry info to archive */
-    struct archive* dest = archive_write_new();
-    archive_write_set_format_pax(dest);
-
-    /* don't buffer data, write everything directly to output (file or memory) */
-    archive_write_set_bytes_per_block(dest, 0);
-
-    size_t bufsize = 1024*1024;
-    void* buf = MFU_MALLOC(bufsize);
-    size_t used = 0;
-    if (archive_write_open_memory(dest, buf, bufsize, &used) != ARCHIVE_OK) {
-        MFU_LOG(MFU_LOG_ERR, "archive_write_open_memory(): %s", archive_error_string(dest));
-    }
-
-    /* write header for this item */
-    if (archive_write_header(dest, entry) != ARCHIVE_OK) {
-        MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s", archive_error_string(dest));
-    }
-
-    archive_entry_free(entry);
-
-    /* at this point, used tells us the size of the header for this item */
-
     /* mark the archive as failed, so that we skip trying to write bytes
      * that would correspond to file data when we call free, this way we
      * still free data structures that was allocated */
     archive_write_fail(dest);
     archive_write_free(dest);
 
+    /* output size of header */
+    *outsize = used;
+
+    /* return size of header for this entry */
+    return rc;
+}
+
+static void DTAR_write_header(
+    mfu_flist flist,
+    uint64_t idx,
+    const mfu_param_path* cwdpath,
+    uint64_t offset)
+{
+    /* encode header for this entry in our buffer */
+    size_t header_size;
+    encode_header(flist, idx, cwdpath,
+        DTAR_writer.buf, DTAR_writer.bufsize, &header_size);
+
     /* seek to offset in tar archive for this file */
     mfu_lseek(DTAR_writer.name, DTAR_writer.fd_tar, offset, SEEK_SET);
-    mfu_write(DTAR_writer.name, DTAR_writer.fd_tar, buf, used);
-
-    mfu_free(&buf);
+    mfu_write(DTAR_writer.name, DTAR_writer.fd_tar, DTAR_writer.buf, header_size);
 
     return;
 }
@@ -860,6 +770,13 @@ static int mfu_flist_archive_create_libcircle(
     DTAR_writer.flags = O_WRONLY | O_CREAT | O_CLOEXEC | O_LARGEFILE;
     DTAR_writer.fd_tar = mfu_open(filename, DTAR_writer.flags, 0664);
 
+    /* Allocate a buffer to encode tar headers.
+     * The entire header must fit in this buffer.
+     * Typical entries will have no problems, but we may exhaust
+     * space for entries that have very long ACLs or XATTRs. */
+    DTAR_writer.bufsize = 128 * 1024 * 1024;
+    DTAR_writer.buf = MFU_MALLOC(DTAR_writer.bufsize);
+
     /* get number of items in our portion of the list */
     DTAR_count = mfu_flist_size(DTAR_flist);
 
@@ -885,13 +802,17 @@ static int mfu_flist_archive_create_libcircle(
         mfu_filetype type = mfu_flist_file_get_type(DTAR_flist, idx);
         if (type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
             /* directories and symlinks only need the header */
-            uint64_t header_size = compute_header_size(DTAR_flist, idx, cwdpath);
+            uint64_t header_size;
+            encode_header(DTAR_flist, idx, cwdpath,
+                DTAR_writer.buf, DTAR_writer.bufsize, &header_size);
             DTAR_header_sizes[idx] = header_size;
             fsizes[idx] = header_size;
         } else if (type == MFU_TYPE_FILE) {
             /* regular file requires a header, plus file content,
              * and things are packed into blocks of 512 bytes */
-            uint64_t header_size = compute_header_size(DTAR_flist, idx, cwdpath);
+            uint64_t header_size;
+            encode_header(DTAR_flist, idx, cwdpath,
+                DTAR_writer.buf, DTAR_writer.bufsize, &header_size);
             DTAR_header_sizes[idx] = header_size;
 
             /* get file size of this item */
@@ -967,7 +888,7 @@ static int mfu_flist_archive_create_libcircle(
     for (idx = 0; idx < DTAR_count; idx++) {
         mfu_filetype type = mfu_flist_file_get_type(DTAR_flist, idx);
         if (type == MFU_TYPE_FILE || type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
-            DTAR_write_header(DTAR_flist, idx, DTAR_offsets[idx], cwdpath);
+            DTAR_write_header(DTAR_flist, idx, cwdpath, DTAR_offsets[idx]);
         }
     }
 
@@ -1059,6 +980,7 @@ static int mfu_flist_archive_create_libcircle(
     }
 
     /* clean up */
+    mfu_free(&DTAR_writer.buf);
     mfu_free(&DTAR_iobuf);
     mfu_free(&fsizes);
     mfu_free(&DTAR_offsets);
