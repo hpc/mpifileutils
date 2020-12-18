@@ -17,12 +17,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <sys/vfs.h>
+
 #ifndef ULLONG_MAX
 #define ULLONG_MAX (__LONG_LONG_MAX__ * 2UL + 1UL)
 #endif
 
 #ifdef LUSTRE_SUPPORT
 #include <lustre/lustreapi.h>
+#include <lustre/lustre_user.h>
 #endif
 
 int mfu_initialized = 0;
@@ -1050,6 +1053,29 @@ void mfu_stripe_set(const char *path, uint64_t stripe_size, int stripe_count)
     MPI_Abort(MPI_COMM_WORLD, 1);
 #endif
 #endif
+}
+
+/* given a path, return true if on Lustre, false otherwise */
+bool mfu_is_lustre(const char* path)
+{
+    bool is_lustre = false;
+
+#ifdef LUSTRE_SUPPORT
+    /* call statfs on the path and check the file system magic value */
+    struct statfs buf;
+    int rc = statfs(path, &buf);
+    if (rc == 0) {
+        if (buf.f_type == LL_SUPER_MAGIC) {
+            is_lustre = true;
+        }
+    } else {
+        MFU_LOG(MFU_LOG_ERR, "Failed to statfs path: `%s' (errno=%d %s)",
+            path, errno, strerror(errno)
+        );
+    }
+#endif /* LUSTRE_SUPPORT */
+
+    return is_lustre;
 }
 
 /* executes a logical AND operation on flag on all procs on comm,

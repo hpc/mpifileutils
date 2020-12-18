@@ -254,6 +254,9 @@ int mfu_stripe_get(const char *path, uint64_t *stripe_size, uint64_t *stripe_cou
 /* create a striped lustre file at the path provided with the specified stripe size and count */
 void mfu_stripe_set(const char *path, uint64_t stripe_size, int stripe_count);
 
+/* return true if path is on lustre, false otherwise */
+bool mfu_is_lustre(const char* path);
+
 /* executes a logical AND operation on flag on all procs on comm,
  * returns 1 if all true and 0 otherwise */
 bool mfu_alltrue(bool flag, MPI_Comm comm);
