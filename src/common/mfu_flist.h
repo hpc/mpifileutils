@@ -506,6 +506,9 @@ void mfu_flist_mkdir(mfu_flist flist);
 /* create inodes for all regular files in flist, assumes directories exist */
 void mfu_flist_mknod(mfu_flist flist);
 
+/* apply metadata updates to items in list */
+void mfu_flist_metadata_apply(mfu_flist flist);
+
 /* unlink all items in flist,
  * if traceless=1, restore timestamps on parent directories after unlinking children */
 void mfu_flist_unlink(mfu_flist flist, bool traceless);

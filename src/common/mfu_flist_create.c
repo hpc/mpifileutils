@@ -222,3 +222,163 @@ void mfu_flist_mknod(mfu_flist flist)
 
     return;
 }
+
+/* progress message to print while setting file metadata */
+static void metaapply_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+    /* compute average delete rate */
+    double rate = 0.0;
+    if (secs > 0) {
+        rate = (double)vals[0] / secs;
+    }
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %f secs (%f items/sec) ...",
+            vals[0], secs, rate);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %f secs (%f items/sec) done",
+            vals[0], secs, rate);
+    }
+}
+
+static int mfu_set_timestamps(
+    mfu_flist flist,
+    uint64_t idx)
+{
+    /* assume we'll succeed */
+    int rc = 0;
+
+    /* get atime seconds and nsecs */
+    uint64_t atime      = mfu_flist_file_get_atime(flist, idx);
+    uint64_t atime_nsec = mfu_flist_file_get_atime_nsec(flist, idx);
+
+    /* get mtime seconds and nsecs */
+    uint64_t mtime      = mfu_flist_file_get_mtime(flist, idx);
+    uint64_t mtime_nsec = mfu_flist_file_get_mtime_nsec(flist, idx);
+
+    /* fill in time structures */
+    struct timespec times[2];
+    times[0].tv_sec  = (time_t) atime;
+    times[0].tv_nsec = (long)   atime_nsec;
+    times[1].tv_sec  = (time_t) mtime;
+    times[1].tv_nsec = (long)   mtime_nsec;
+
+    /* set times with nanosecond precision using utimensat,
+     * assume path is relative to current working directory,
+     * if it's not absolute, and set times on link (not target file)
+     * if dest_path refers to a link */
+    const char* name = mfu_flist_file_get_name(flist, idx);
+    if(mfu_utimensat(AT_FDCWD, name, times, AT_SYMLINK_NOFOLLOW) != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on `%s' utime() (errno=%d %s)",
+            name, errno, strerror(errno)
+        );
+        rc = -1;
+    }
+
+    return rc;
+}
+
+/* apply metadata to items in flist
+ * work from deepest level to shallowest level in case we're
+ * doing things like disabling access on directories */
+void mfu_flist_metadata_apply(mfu_flist flist)
+{
+    int rc = 0;
+
+    /* determine whether we should print status messages */
+    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
+
+    /* get current rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* indicate to user what phase we're in */
+    if (verbose && rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Setting ownership, permissions, and timestmaps.");
+    }
+
+    /* start timer for entie operation */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_start = MPI_Wtime();
+    uint64_t total_count = 0;
+
+    /* start progress messages while setting metadata */
+    mfu_progress* meta_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, metaapply_progress_fn);
+
+    /* split items in file list into sublists depending on their
+     * directory depth */
+    int levels, minlevel;
+    mfu_flist* lists;
+    mfu_flist_array_by_depth(flist, &levels, &minlevel, &lists);
+
+    /* work from shallowest level to deepest level */
+    int level;
+    for (level = levels - 1; level >= 0; level--) {
+        /* get list of items for this level */
+        mfu_flist list = lists[level];
+
+        /* create each directory we have at this level */
+        uint64_t idx;
+        uint64_t size = mfu_flist_size(list);
+        for (idx = 0; idx < size; idx++) {
+#if 0
+            tmp_rc = mfu_set_ownership(list, idx);
+            if (tmp_rc < 0) {
+                rc = -1;
+            }
+            tmp_rc = mfu_set_permissions(list, idx);
+            if (tmp_rc < 0) {
+                rc = -1;
+            }
+            tmp_rc = mfu_copy_acls(list, idx, dest);
+            if (tmp_rc < 0) {
+                rc = -1;
+            }
+#endif
+            int tmp_rc = mfu_set_timestamps(list, idx);
+            if (tmp_rc < 0) {
+                rc = -1;
+            }
+
+            /* update our running total */
+            total_count++;
+
+            /* update number of items we have completed for progress messages */
+            mfu_progress_update(&total_count, meta_prog);
+        }
+
+        /* wait for all procs to finish before we start
+         * creating directories at next level */
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+
+    /* free our lists of levels */
+    mfu_flist_array_free(levels, &lists);
+
+    /* finalize progress messages */
+    mfu_progress_complete(&total_count, &meta_prog);
+
+    /* stop timer and report total count */
+    MPI_Barrier(MPI_COMM_WORLD);
+    double total_end = MPI_Wtime();
+
+    /* print timing statistics */
+    if (verbose) {
+        uint64_t sum;
+        MPI_Allreduce(&total_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+        double rate = 0.0;
+        double secs = total_end - total_start;
+        if (secs > 0.0) {
+          rate = (double)sum / secs;
+        }
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Updated %lu items in %f seconds (%f items/sec)",
+              (unsigned long)sum, secs, rate
+            );
+        }
+    }
+
+    return;
+}
+
+
