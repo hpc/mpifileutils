@@ -253,9 +253,18 @@ static size_t compute_header_size(mfu_flist flist, uint64_t idx, const mfu_param
         mfu_filetype type = mfu_flist_file_get_type(flist, idx);
         if (type == MFU_TYPE_LINK) {
             char target[PATH_MAX + 1];
-            ssize_t readlink_rc = mfu_readlink(fname, target, sizeof(target) - 1);
+            size_t bufsize = sizeof(target) - 1;
+            ssize_t readlink_rc = mfu_readlink(fname, target, bufsize);
             if(readlink_rc != -1) {
-                archive_entry_copy_symlink(entry, target);
+                if (readlink_rc < (ssize_t)bufsize) {
+                    /* null terminate the link */
+                    target[readlink_rc] = '\0';
+                    archive_entry_copy_symlink(entry, target);
+                } else {
+                    MFU_LOG(MFU_LOG_ERR, "Link target of `%s' exceeds buffer size %llu",
+                        fname, bufsize
+                    );
+                }
             } else {
                 MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() (errno=%d %s)",
                     fname, errno, strerror(errno)
@@ -339,9 +348,18 @@ static void DTAR_write_header(mfu_flist flist, uint64_t idx, uint64_t offset, co
         mfu_filetype type = mfu_flist_file_get_type(flist, idx);
         if (type == MFU_TYPE_LINK) {
             char target[PATH_MAX + 1];
-            ssize_t readlink_rc = mfu_readlink(fname, target, sizeof(target) - 1);
+            size_t bufsize = sizeof(target) - 1;
+            ssize_t readlink_rc = mfu_readlink(fname, target, bufsize);
             if(readlink_rc != -1) {
-                archive_entry_copy_symlink(entry, target);
+                if (readlink_rc < (ssize_t)bufsize) {
+                    /* null terminate the link */
+                    target[readlink_rc] = '\0';
+                    archive_entry_copy_symlink(entry, target);
+                } else {
+                    MFU_LOG(MFU_LOG_ERR, "Link target of `%s' exceeds buffer size %llu",
+                        fname, bufsize
+                    );
+                }
             } else {
                 MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() (errno=%d %s)",
                     fname, errno, strerror(errno)
@@ -1889,6 +1907,25 @@ int mfu_flist_archive_extract(
     } else {
         extract_files(filename, flags, entries, entry_start, entry_count, flist, opts);
     }
+
+    /* create list of just the directories */
+    mfu_flist flist_dirs = mfu_flist_subset(flist);
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(flist);
+    for (idx = 0; idx < size; idx++) {
+        /* if item is a directory, copy it to the directory list */
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+        if (type == MFU_TYPE_DIR) {
+            mfu_flist_file_copy(flist, idx, flist_dirs);
+        }
+    }
+    mfu_flist_summarize(flist_dirs);
+
+    /* set timestamps on the directories */
+    mfu_flist_metadata_apply(flist_dirs);
+
+    /* free the list of directories */
+    mfu_flist_free(&flist_dirs);
 
     mfu_flist_free(&flist);
 
