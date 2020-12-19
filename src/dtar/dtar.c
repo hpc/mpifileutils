@@ -17,20 +17,10 @@
 #include <string.h>
 #include <getopt.h>
 
-#include "archive.h"
-
 #include "mfu.h"
 #include "mfu_flist_archive.h"
 
 /* common structures */
-
-typedef struct {
-    size_t  chunk_size;
-    size_t  block_size;
-    char*   dest_path;
-    bool    preserve;
-    int     flags;
-} mfu_flist_archive_options_t;
 
 /* The opts_blocksize option is optional and is used to specify
  * a blocksize for compression.
@@ -74,8 +64,8 @@ static void print_usage(void)
 //    printf("  -p, --preserve          - preserve attributes\n");
     printf("  -s, --chunksize <bytes> - chunk size (bytes)\n");
     printf("  -f, --file <filename>   - target output file\n");
-    printf("  -b, --blocksize <size>  - block size (1-9)\n");
-    printf("  -m, --memory <bytes>    - memory limit (bytes)\n");
+//    printf("  -b, --blocksize <size>  - block size (1-9)\n");
+//    printf("  -m, --memory <bytes>    - memory limit (bytes)\n");
     printf("      --progress <N>      - print progress every N seconds\n");
 //    printf("  -v, --verbose           - verbose output\n");
     printf("  -q, --quiet             - quiet output\n");
@@ -90,9 +80,8 @@ int main(int argc, char** argv)
     MPI_Init(&argc, &argv);
     mfu_init();
 
-    int rank, size;
+    int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     /* pointer to mfu_file src object */
     mfu_file_t* mfu_src_file = mfu_file_new();
@@ -100,19 +89,22 @@ int main(int argc, char** argv)
     /* pointer to mfu_walk_opts */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
+    /* allocate options to configure archive operation */
+    mfu_archive_opts_t* archive_opts = mfu_archive_opts_new();
+
     /* verbose by default */
     mfu_debug_level = MFU_LOG_VERBOSE;
 
     int option_index = 0;
     static struct option long_options[] = {
         {"create",    0, 0, 'c'},
-        {"compress",  0, 0, 'j'},
+        //{"compress",  0, 0, 'j'},
         {"extract",   0, 0, 'x'},
         {"preserve",  0, 0, 'p'},
         {"chunksize", 1, 0, 's'},
         {"file",      1, 0, 'f'},
-        {"blocksize", 1, 0, 'b'},
-        {"memory",    1, 0, 'm'},
+        //{"blocksize", 1, 0, 'b'},
+        //{"memory",    1, 0, 'm'},
         {"progress",  1, 0, 'R'},
         {"verbose",   0, 0, 'v'},
         {"debug",     0, 0, 'q'},
@@ -123,7 +115,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "cjxps:f:b:m:vyh",
+                    argc, argv, "cxps:f:vyh",
                     long_options, &option_index
                 );
 
@@ -222,26 +214,14 @@ int main(int argc, char** argv)
         DTAR_exit(EXIT_FAILURE);
     }
 
-    /* done by default */
-    mfu_archive_options_t archive_opts;
-    archive_opts.flags  = ARCHIVE_EXTRACT_TIME;
-    archive_opts.flags |= ARCHIVE_EXTRACT_OWNER;
-    archive_opts.flags |= ARCHIVE_EXTRACT_PERM;
-    archive_opts.flags |= ARCHIVE_EXTRACT_ACL;
-    archive_opts.flags |= ARCHIVE_EXTRACT_FFLAGS;
-
-    /* turn on no overwrite so that directories we create are deleted and then replaced */
-    //archive_opts.flags |= ARCHIVE_EXTRACT_NO_OVERWRITE;
-
     if (opts_preserve) {
-        archive_opts.flags |= ARCHIVE_EXTRACT_XATTR;
-        archive_opts.preserve = 1;
+        archive_opts->preserve = true;
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Creating archive with extended attributes");
         }
     }
 
-    archive_opts.chunk_size = opts_chunksize;
+    archive_opts->chunk_size = opts_chunksize;
 
     /* adjust pointers to start of paths */
     int numpaths = argc - optind;
@@ -255,32 +235,36 @@ int main(int argc, char** argv)
 
     if (opts_create) {
         /* allocate space to record info for each source */
-        int num_src_params = numpaths;
-        size_t src_params_bytes = ((size_t) num_src_params) * sizeof(mfu_param_path);
-        mfu_param_path* src_params = (mfu_param_path*) MFU_MALLOC(src_params_bytes);
+        mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC(numpaths * sizeof(mfu_param_path));
 
         /* process each source path */
-        mfu_param_path_set_all(numpaths, pathlist, src_params);
+        mfu_param_path_set_all(numpaths, pathlist, paths);
 
         /* standardize destination path */
-        mfu_param_path dest_param;
-        mfu_param_path_set(opts_tarfile, &dest_param);
+        mfu_param_path destpath;
+        mfu_param_path_set(opts_tarfile, &destpath);
 
         /* check that source and destination are okay */
         int valid;
-        mfu_param_path_check_archive(num_src_params, src_params, dest_param, &valid);
+        mfu_param_path_check_archive(numpaths, paths, destpath, archive_opts, &valid);
 
         /* walk path to get stats info on all files */
         mfu_flist flist = mfu_flist_new();
-        mfu_flist_walk_param_paths(num_src_params, src_params, walk_opts, flist, mfu_src_file);
+        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_src_file);
 
         /* spread elements evenly among ranks */
         mfu_flist flist2 = mfu_flist_spread(flist);
         mfu_flist_free(&flist);
         flist = flist2;
 
+        /* TODO: move this to archive_create, can't yet because it modifies the current flist,
+         * so that later references will sefault */
+        /* sort items alphabetically, so they are placed in the archive with parent directories
+         * coming before their children */
+        mfu_flist_sort("name", &flist);
+
         /* create the archive file */
-        mfu_flist_archive_create(flist, opts_tarfile, numpaths, src_params, &cwd_param, &archive_opts);
+        mfu_flist_archive_create(flist, opts_tarfile, numpaths, paths, &cwd_param, archive_opts);
 
 #if 0
         /* compress archive file */
@@ -305,9 +289,8 @@ int main(int argc, char** argv)
         mfu_flist_free(&flist);
 
         /* free paths */
-        mfu_param_path_free_all(num_src_params, src_params);
-        mfu_param_path_free(&dest_param);
-        mfu_param_path_free(&cwd_param);
+        mfu_param_path_free_all(numpaths, paths);
+        mfu_param_path_free(&destpath);
     } else if (opts_extract) {
         char* tarfile = opts_tarfile;
 #if 0
@@ -330,13 +313,19 @@ int main(int argc, char** argv)
             tarfile = fname_out;
         }
 #endif
-        mfu_flist_archive_extract(tarfile, archive_opts.flags, &cwd_param, &archive_opts);
+        mfu_flist_archive_extract(tarfile, &cwd_param, archive_opts);
     } else {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Neither creation or extraction is specified");
         }
         DTAR_exit(EXIT_FAILURE);
     }
+
+    /* free the current working directory param path */
+    mfu_param_path_free(&cwd_param);
+
+    /* free the archive options */
+    mfu_archive_opts_delete(&archive_opts);
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);
