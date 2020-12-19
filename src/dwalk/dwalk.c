@@ -595,7 +595,9 @@ int main(int argc, char** argv)
     /* sort files */
     if (sortfields != NULL) {
         /* TODO: don't sort unless all_count > 0 */
-        mfu_flist_sort(sortfields, &flist);
+        mfu_flist flist2 = mfu_flist_sort(sortfields, flist);
+        mfu_free(&flist);
+        flist = flist2;
     }
 
     /* print details for individual files */

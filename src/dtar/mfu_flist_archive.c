@@ -752,7 +752,7 @@ static void mfu_set_stripes(
 }
 
 static int mfu_flist_archive_create_libcircle(
-    mfu_flist flist,
+    mfu_flist inflist,
     const char* filename,
     int numpaths,
     const mfu_param_path* paths,
@@ -767,7 +767,7 @@ static int mfu_flist_archive_create_libcircle(
     }
 
     /* print summary of item and byte count of items to be archived */
-    mfu_flist_print_summary(flist);
+    mfu_flist_print_summary(inflist);
 
     /* start overall timer */
     time_t time_started;
@@ -776,7 +776,7 @@ static int mfu_flist_archive_create_libcircle(
 
     /* sort items alphabetically, so they are placed in the archive with parent directories
      * coming before their children */
-    //mfu_flist_sort("name", &flist);
+    mfu_flist flist = mfu_flist_sort("name", inflist);
 
     /* copy handles to objects into globals for libcircle operations */
     DTAR_flist = flist;
@@ -964,6 +964,9 @@ static int mfu_flist_archive_create_libcircle(
 
     /* wait for all ranks to finish */
     MPI_Barrier(MPI_COMM_WORLD);
+
+    /* free sorted list */
+    mfu_free(&flist);
 
     /* stop overall time */
     time_t time_ended;
