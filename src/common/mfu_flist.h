@@ -436,11 +436,12 @@ mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args
 mfu_flist mfu_flist_spread(mfu_flist flist);
 
 /* sort flist by specified fields, given as common-delimitted list
+ * returns a newly allocated sorted list
  * precede field name with '-' character to reverse sort order:
  *   name,user,group,uid,gid,atime,mtime,ctime,size
  * For example to sort by size in descending order, followed by name
  *   char fields[] = "size,-name"; */
-int mfu_flist_sort(const char* fields, mfu_flist* flist);
+mfu_flist mfu_flist_sort(const char* fields, mfu_flist flist);
 
 /****************************************
  * Functions to create / remove data on file system based on input list

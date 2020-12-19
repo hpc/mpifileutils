@@ -44,11 +44,8 @@ static int my_strcmp_rev(const void* a, const void* b)
     return strcmp((const char*)b, (const char*)a);
 }
 
-static int sort_files_readdir(const char* sortfields, mfu_flist* pflist)
+static mfu_flist sort_files_readdir(const char* sortfields, mfu_flist flist)
 {
-    /* get list from caller */
-    mfu_flist flist = *pflist;
-
     uint64_t incount = mfu_flist_size(flist);
     uint64_t chars   = mfu_flist_file_max_name(flist);
 
@@ -56,7 +53,7 @@ static int sort_files_readdir(const char* sortfields, mfu_flist* pflist)
      * we end up with chars==0 in that case, and we can't create
      * a valid comparison op for 0-length strings */
     if (chars == 0) {
-        return MFU_SUCCESS;
+        return MFU_FLIST_NULL;
     }
 
     /* create a new list as subset of original list */
@@ -235,18 +232,12 @@ static int sort_files_readdir(const char* sortfields, mfu_flist* pflist)
     /* free the satellite type */
     MPI_Type_free(&dt_sat);
 
-    /* return new list and free old one */
-    *pflist = flist2;
-    mfu_flist_free(&flist);
-
-    return MFU_SUCCESS;
+    /* return new list */
+    return flist2;
 }
 
-static int sort_files_stat(const char* sortfields, mfu_flist* pflist)
+static mfu_flist sort_files_stat(const char* sortfields, mfu_flist flist)
 {
-    /* get list from caller */
-    mfu_flist flist = *pflist;
-
     uint64_t incount     = mfu_flist_size(flist);
     uint64_t chars       = mfu_flist_file_max_name(flist);
     uint64_t chars_user  = mfu_flist_user_max_name(flist);
@@ -256,7 +247,7 @@ static int sort_files_stat(const char* sortfields, mfu_flist* pflist)
      * we end up with chars==0 in that case, and we can't create
      * a valid comparison op for 0-length strings */
     if (chars == 0 || chars_user == 0 || chars_group == 0) {
-        return MFU_SUCCESS;
+        return MFU_FLIST_NULL;
     }
 
     /* create a new list as subset of original list */
@@ -586,11 +577,8 @@ static int sort_files_stat(const char* sortfields, mfu_flist* pflist)
     /* free the satellite type */
     MPI_Type_free(&dt_sat);
 
-    /* return new list and free old one */
-    *pflist = flist2;
-    mfu_flist_free(&flist);
-
-    return MFU_SUCCESS;
+    /* return new list */
+    return flist2;
 }
 
 /* sort flist by specified fields, given as common-delimitted list
@@ -598,25 +586,22 @@ static int sort_files_stat(const char* sortfields, mfu_flist* pflist)
  *   name,user,group,uid,gid,atime,mtime,ctime,size
  * For example to sort by size in descending order, followed by name
  *   char fields[] = "size,-name"; */
-int mfu_flist_sort(const char* sortfields, mfu_flist* pflist)
+mfu_flist mfu_flist_sort(const char* sortfields, mfu_flist flist)
 {
-    if (sortfields == NULL || pflist == NULL) {
-        return MFU_FAILURE;
+    if (sortfields == NULL) {
+        return MFU_FLIST_NULL;
     }
-
-    /* get pointer to list */
-    mfu_flist flist = *pflist;
 
     /* start timer */
     double start_sort = MPI_Wtime();
 
     /* sort list */
-    int rc;
+    mfu_flist flist2 = MFU_FLIST_NULL;
     if (mfu_flist_have_detail(flist)) {
-        rc = sort_files_stat(sortfields, pflist);
+        flist2 = sort_files_stat(sortfields, flist);
     }
     else {
-        rc = sort_files_readdir(sortfields, pflist);
+        flist2 = sort_files_readdir(sortfields, flist);
     }
 
     /* end timer */
@@ -631,12 +616,12 @@ int mfu_flist_sort(const char* sortfields, mfu_flist* pflist)
             rate = ((double)all_count) / secs;
         }
         MFU_LOG(MFU_LOG_INFO, "Sorted %lu items in %f seconds (%f items/sec)",
-               all_count, secs, rate
-              );
+            all_count, secs, rate
+        );
     }
 
     /* wait for summary to be printed */
     MPI_Barrier(MPI_COMM_WORLD);
 
-    return rc;
+    return flist2;
 }

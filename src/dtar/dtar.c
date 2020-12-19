@@ -257,12 +257,6 @@ int main(int argc, char** argv)
         mfu_flist_free(&flist);
         flist = flist2;
 
-        /* TODO: move this to archive_create, can't yet because it modifies the current flist,
-         * so that later references will sefault */
-        /* sort items alphabetically, so they are placed in the archive with parent directories
-         * coming before their children */
-        mfu_flist_sort("name", &flist);
-
         /* create the archive file */
         mfu_flist_archive_create(flist, opts_tarfile, numpaths, paths, &cwd_param, archive_opts);
 
