@@ -28,7 +28,6 @@
 #include <getopt.h>
 
 #include "mfu.h"
-#include "mfu_flist_archive.h"
 
 /* operation types */
 typedef enum {
