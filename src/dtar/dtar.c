@@ -32,6 +32,13 @@ static void DTAR_exit(int code)
     exit(code);
 }
 
+/* TODO: add options
+ *   --index-skip -- avoid trying to index and extract entries the hard way (round robin)
+ *   --index-nowrite -- do not save index after indexing
+ *   --index-ignore -- pretend index file does not exist
+ *   --index-only -- write index without extracting
+ */
+
 static void print_usage(void)
 {
     printf("\n");
