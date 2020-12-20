@@ -19,25 +19,6 @@
 
 #include "mfu.h"
 
-/* common structures */
-
-/* The opts_blocksize option is optional and is used to specify
- * a blocksize for compression.
- * The opts_memory option is optional and is used to specify
- * memory limit for compression for each process in compression.
- * The opts_compress option is used to specify whether
- * compression/decompression should be used */
-
-static int     opts_create    = 0;
-static int     opts_compress  = 0;
-static int     opts_debug     = 0;
-static int     opts_extract   = 0;
-static int     opts_preserve  = 0;
-static char*   opts_tarfile   = NULL;
-static size_t  opts_chunksize = MFU_BLOCK_SIZE;
-static int     opts_blocksize = 9;
-static ssize_t opts_memory    = -1;
-
 static void DTAR_abort(int code)
 {
     MPI_Abort(MPI_COMM_WORLD, code);
@@ -61,14 +42,15 @@ static void print_usage(void)
 //    printf("  -j, --compress          - compress archive\n");
     printf("  -x, --extract           - extract archive\n");
 //    printf("  -p, --preserve          - preserve attributes\n");
-    printf("  -s, --chunksize <bytes> - chunk size (bytes)\n");
+    printf("  -b, --blocksize <SIZE>  - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
+    printf("  -k, --chunksize <SIZE>  - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
     printf("  -f, --file <filename>   - target output file\n");
-//    printf("  -b, --blocksize <size>  - block size (1-9)\n");
 //    printf("  -m, --memory <bytes>    - memory limit (bytes)\n");
     printf("      --progress <N>      - print progress every N seconds\n");
 //    printf("  -v, --verbose           - verbose output\n");
     printf("  -q, --quiet             - quiet output\n");
     printf("  -h, --help              - print usage\n");
+    printf("For more information see https://mpifileutils.readthedocs.io.\n");
     printf("\n");
     fflush(stdout);
     return;
@@ -94,27 +76,35 @@ int main(int argc, char** argv)
     /* verbose by default */
     mfu_debug_level = MFU_LOG_VERBOSE;
 
+    int     opts_create   = 0;
+    int     opts_extract  = 0;
+    int     opts_compress = 0;
+    char*   opts_tarfile  = NULL;
+    ssize_t opts_memory   = -1;
+
     int option_index = 0;
     static struct option long_options[] = {
         {"create",    0, 0, 'c'},
         //{"compress",  0, 0, 'j'},
         {"extract",   0, 0, 'x'},
         {"preserve",  0, 0, 'p'},
-        {"chunksize", 1, 0, 's'},
+        {"blocksize", 1, 0, 'b'},
+        {"chunksize", 1, 0, 'k'},
         {"file",      1, 0, 'f'},
-        //{"blocksize", 1, 0, 'b'},
         //{"memory",    1, 0, 'm'},
         {"progress",  1, 0, 'R'},
         {"verbose",   0, 0, 'v'},
-        {"debug",     0, 0, 'q'},
+        {"quiet",     0, 0, 'q'},
         {"help",      0, 0, 'h'},
         {0, 0, 0, 0}
     };
 
+    /* Parse options */
+    unsigned long long bytes = 0;
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "cxps:f:vyh",
+                    argc, argv, "cxpb:k:f:vyh",
                     long_options, &option_index
                 );
 
@@ -134,17 +124,32 @@ int main(int argc, char** argv)
                 opts_extract = 1;
                 break;
             case 'p':
-                opts_preserve = 1;
+                archive_opts->preserve = true;
                 break;
-            case 's':
-                mfu_abtoull(optarg, &bytes);
-                opts_chunksize = (size_t) bytes;
+            case 'b':
+                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
+                    if (rank == 0) {
+                        MFU_LOG(MFU_LOG_ERR,
+                                "Failed to parse block size: '%s'", optarg);
+                    }
+                    usage = 1;
+                } else {
+                    archive_opts->block_size = (size_t) bytes;
+                }
+                break;
+            case 'k':
+                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
+                    if (rank == 0) {
+                        MFU_LOG(MFU_LOG_ERR,
+                                "Failed to parse chunk size: '%s'", optarg);
+                    }
+                    usage = 1;
+                } else {
+                    archive_opts->chunk_size = (size_t) bytes;
+                }
                 break;
             case 'f':
                 opts_tarfile = MFU_STRDUP(optarg);
-                break;
-            case 'b':
-                opts_blocksize = atoi(optarg);
                 break;
             case 'm':
                 mfu_abtoull(optarg, &bytes);
@@ -193,7 +198,7 @@ int main(int argc, char** argv)
 
     if (!opts_create && !opts_extract) {
         if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "One of extract(x) or create(c) need to be specified");
+            MFU_LOG(MFU_LOG_ERR, "One of extract(x) or create(c) needs to be specified");
         }
         DTAR_exit(EXIT_FAILURE);
     }
@@ -213,14 +218,11 @@ int main(int argc, char** argv)
         DTAR_exit(EXIT_FAILURE);
     }
 
-    if (opts_preserve) {
-        archive_opts->preserve = true;
+    if (archive_opts->preserve) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Creating archive with extended attributes");
         }
     }
-
-    archive_opts->chunk_size = opts_chunksize;
 
     /* adjust pointers to start of paths */
     int numpaths = argc - optind;
