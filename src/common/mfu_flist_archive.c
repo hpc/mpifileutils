@@ -1645,7 +1645,7 @@ static int extract_flist_offsets(
     return rc;
 }
 
-static void extract_flist(
+static int extract_flist(
     const char* filename,
     int flags,
     const mfu_param_path* cwdpath,
@@ -1655,6 +1655,9 @@ static void extract_flist(
     mfu_flist flist)
 {
     int r;
+
+    /* assume we'll succeed */
+    int rc = MFU_SUCCESS;
 
     /* prepare list for metadata details */
     mfu_flist_set_detail(flist, 1);
@@ -1690,8 +1693,8 @@ static void extract_flist(
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     uint64_t count = 0;
-    //while (entry_start + entry_count > count) {
-    //while (count < entries) {
+    //while (entry_start + entry_count > count)
+    //while (count < entries)
     while (1) {
         struct archive_entry* entry;
         r = archive_read_next_header(a, &entry);
@@ -1703,7 +1706,7 @@ static void extract_flist(
             exit(r);
         }
 
-        //if (entry_start <= count) {
+        //if (entry_start <= count)
         if (count % ranks == mfu_rank) {
             insert_entry_into_flist(entry, flist, cwd);
         }
@@ -1718,7 +1721,12 @@ static void extract_flist(
     archive_read_close(a);
     archive_read_free(a);
 
-    return;
+    /* figure out whether anyone failed */
+    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+        rc = MFU_FAILURE;
+    }
+
+    return rc;
 }
 
 /* progress message to print while setting file metadata */
@@ -1937,6 +1945,11 @@ static int extract_files_offsets(
      * update timestamps on directories */
     MPI_Barrier(MPI_COMM_WORLD);
 
+    /* figure out whether anyone failed */
+    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+        rc = MFU_FAILURE;
+    }
+
     return rc;
 }
 
@@ -2015,8 +2028,8 @@ static int extract_files(
     /* iterate over all entry from the start of the file,
      * looking to find the range of items it is responsible for */
     uint64_t count = 0;
-    //while (entry_start + entry_count > count) {
-    //while (count < entries) {
+    //while (entry_start + entry_count > count)
+    //while (count < entries)
     while (1) {
         /* read the next entry from the archive */
         struct archive_entry* entry;
@@ -2036,7 +2049,7 @@ static int extract_files(
         }
 
         /* write item out to disk if this is one of our assigned items */
-        //if (entry_start <= count) {
+        //if (entry_start <= count)
         if (count % ranks == mfu_rank) {
             /* create item on disk */
             r = archive_write_header(ext, entry);
@@ -2103,6 +2116,11 @@ static int extract_files(
      * its timestamps when closing the write archive,
      * update timestamps on directories */
     MPI_Barrier(MPI_COMM_WORLD);
+
+    /* figure out whether anyone failed */
+    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+        rc = MFU_FAILURE;
+    }
 
     return rc;
 }
@@ -2217,9 +2235,18 @@ int mfu_flist_archive_extract(
     /* extract metadata for items in archive and construct flist */
     mfu_flist flist = mfu_flist_new();
     if (have_offsets) {
-        extract_flist_offsets(filename, flags, cwdpath, entries, entry_start, entry_count, offsets, flist);
+        ret = extract_flist_offsets(filename, flags, cwdpath, entries, entry_start, entry_count, offsets, flist);
     } else {
-        extract_flist(filename, flags, cwdpath, entries, entry_start, entry_count, flist);
+        ret = extract_flist(filename, flags, cwdpath, entries, entry_start, entry_count, flist);
+    }
+    if (ret != MFU_SUCCESS) {
+        /* fatal error if we failed to build the flist */
+        if (mfu_rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to extract metadata");
+        }
+        mfu_flist_free(&flist);
+        mfu_free(&offsets);
+        return MFU_FAILURE;
     }
 
     /* sum up bytes and items in list for tracking progress */
@@ -2246,9 +2273,16 @@ int mfu_flist_archive_extract(
 
     /* extract files from archive */
     if (have_offsets) {
-        extract_files_offsets(filename, flags, entries, entry_start, entry_count, offsets, flist, opts);
+        ret = extract_files_offsets(filename, flags, entries, entry_start, entry_count, offsets, flist, opts);
     } else {
-        extract_files(filename, flags, entries, entry_start, entry_count, flist, opts);
+        ret = extract_files(filename, flags, entries, entry_start, entry_count, flist, opts);
+    }
+    if (ret != MFU_SUCCESS) {
+        /* set return code if we failed to extract items */
+        if (mfu_rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to extract all items");
+        }
+        rc = MFU_FAILURE;
     }
 
     /* create list of just the directories */
