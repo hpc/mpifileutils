@@ -584,6 +584,52 @@ void mfu_file_chunk_list_lor(
     int* results                /* OUT - array of output, storing logical OR across all chunks for each item in flist */
 );
 
+/****************************************
+ * Functions to read/write list to file or print to screen
+ ****************************************/
+
+typedef struct {
+    char*   dest_path;
+    bool    preserve;
+    int     flags;
+    size_t  chunk_size;
+    size_t  block_size;
+} mfu_archive_opts_t;
+
+/* return a newly allocated archive_opts structure, set default values on its fields */
+mfu_archive_opts_t* mfu_archive_opts_new(void);
+
+/* free archive opts structure allocated with mfu_archive_opts_new */
+void mfu_archive_opts_delete(mfu_archive_opts_t** popts);
+
+/* check that source paths exist and that parent directory for destination
+ * is writable, sets dest_path field in opts, must be called before calling
+ * mfu_flist_archive_create */
+void mfu_param_path_check_archive(
+    int numparams,             /* number of parameter paths in srcparams list */
+    mfu_param_path* srcparams, /* list of source paths to be included in archived */
+    mfu_param_path destparam,  /* parameter path for archive name */
+    mfu_archive_opts_t* opts,  /* archive options, call set dest_path field */
+    int* valid                 /* valid = 1 if all paths check out, 0 otherwise */
+);
+
+/* write items in file list to tar archive */
+int mfu_flist_archive_create(
+    mfu_flist flist,               /* list of items to be written to archive */
+    const char* filename,          /* name of target archive file */
+    int numpaths,                  /* number of source paths */
+    const mfu_param_path* paths,   /* list of source paths */
+    const mfu_param_path* cwdpath, /* current working directory used to construct relative path to each item in flist */
+    mfu_archive_opts_t* opts       /* options to configure archive operation */
+);
+
+/* extract named archive file to disk into the given current working directory */
+int mfu_flist_archive_extract(
+    const char* filename,          /* name of archive file to be extracted */
+    const mfu_param_path* cwdpath, /* current working dir used to construct absolute path of each item */
+    mfu_archive_opts_t* opts       /* options to configure archive extraction operation */
+);
+
 #endif /* MFU_FLIST_H */
 
 /* enable C++ codes to include this header directly */

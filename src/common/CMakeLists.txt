@@ -33,6 +33,7 @@ LIST(APPEND libmfu_srcs
   mfu_compress_bz2_libcircle.c
   mfu_decompress_bz2_libcircle.c
   mfu_flist.c
+  mfu_flist_archive.c
   mfu_flist_chunk.c
   mfu_flist_copy.c
   mfu_flist_io.c
