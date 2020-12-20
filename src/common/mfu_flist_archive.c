@@ -55,8 +55,12 @@ DTAR_writer_t DTAR_writer;
 mfu_flist DTAR_flist;
 uint64_t* DTAR_offsets        = NULL; /* byte offset into archive for each entry in our list */
 uint64_t* DTAR_header_sizes   = NULL; /* byte size of header for each entry in our list */
-static void* DTAR_iobuf       = NULL; /* temporary buffer for reading/writing files */
 mfu_archive_opts_t* DTAR_opts = NULL; /* pointer to archive options */
+
+static void*  DTAR_buf     = NULL; /* temporary buffer for reading/writing files */
+static size_t DTAR_bufsize = 0;    /* size of I/O buffer */
+
+static int DTAR_err = 0; /* whether a process encounters an error while executing libcircle ops */
 
 static void DTAR_abort(int code)
 {
@@ -89,6 +93,7 @@ static uint64_t reduce_buf[2];
 uint64_t DTAR_total_items = 0;
 uint64_t DTAR_total_bytes = 0;
 
+/* MPI_Wtime when operation was started and number of bytes written */
 static double   reduce_start;
 static uint64_t reduce_bytes;
 
@@ -301,7 +306,7 @@ static int encode_header(
 }
 
 /* write header for specified item in flist to archive file */
-static void DTAR_write_header(
+static int DTAR_write_header(
     mfu_flist flist,               /* flist holding item for which to write header */
     uint64_t idx,                  /* index of item in flist */
     const mfu_param_path* cwdpath, /* current working dir, store relative path to item from cwd */
@@ -309,15 +314,36 @@ static void DTAR_write_header(
 {
     /* encode header for this entry in our buffer */
     size_t header_size;
-    encode_header(flist, idx, cwdpath,
+    int encode_rc = encode_header(flist, idx, cwdpath,
         DTAR_writer.buf, DTAR_writer.bufsize, &header_size
     );
+    if (encode_rc != MFU_SUCCESS) {
+        const char* name = mfu_flist_file_get_name(flist, idx);
+        MFU_LOG(MFU_LOG_ERR, "Failed to encode header for `%s'",
+            name);
+        DTAR_err = 1;
+        return MFU_FAILURE;
+    }
 
     /* seek to offset in tar archive for this file */
-    mfu_lseek(DTAR_writer.name, DTAR_writer.fd, offset, SEEK_SET);
-    mfu_write(DTAR_writer.name, DTAR_writer.fd, DTAR_writer.buf, header_size);
+    off_t lseek_rc = mfu_lseek(DTAR_writer.name, DTAR_writer.fd, offset, SEEK_SET);
+    if (lseek_rc == (off_t)-1) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to seek to offset %llu in archive file '%s' errno=%d %s",
+            offset, DTAR_writer.name, errno, strerror(errno));
+        DTAR_err = 1;
+        return MFU_FAILURE;
+    }
 
-    return;
+    /* write header to archive for this entry */
+    ssize_t write_rc = mfu_write(DTAR_writer.name, DTAR_writer.fd, DTAR_writer.buf, header_size);
+    if (write_rc != header_size) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to write header at offset %llu in archive file '%s' errno=%d %s",
+            offset, DTAR_writer.name, errno, strerror(errno));
+        DTAR_err = 1;
+        return MFU_FAILURE;
+    }
+
+    return MFU_SUCCESS;
 }
 
 static char* DTAR_encode_operation(
@@ -385,85 +411,158 @@ static DTAR_operation_t* DTAR_decode_operation(char* op)
 
 static void DTAR_enqueue_copy(CIRCLE_handle* handle)
 {
+    /* insert copy operations for all chunks of each regular file
+     * in our portion of the list */
     uint64_t listsize = mfu_flist_size(DTAR_flist);
     for (uint64_t idx = 0; idx < listsize; idx++) {
         /* add copy work only for files */
         mfu_filetype type = mfu_flist_file_get_type(DTAR_flist, idx);
-        if (type == MFU_TYPE_FILE) {
-            /* get name and size of file */
-            const char* name = mfu_flist_file_get_name(DTAR_flist, idx);
-            uint64_t size = mfu_flist_file_get_size(DTAR_flist, idx);
+        if (type != MFU_TYPE_FILE) {
+            continue;
+        }
 
-            /* compute offset for first byte of file content */
-            uint64_t dataoffset = DTAR_offsets[idx] + DTAR_header_sizes[idx];
+        /* got a regular file, get name and its size */
+        const char* name = mfu_flist_file_get_name(DTAR_flist, idx);
+        uint64_t size = mfu_flist_file_get_size(DTAR_flist, idx);
 
-            /* compute number of chunks */
-            uint64_t num_chunks = size / DTAR_opts->chunk_size;
-            for (uint64_t chunk_idx = 0; chunk_idx < num_chunks; chunk_idx++) {
-                char* newop = DTAR_encode_operation(
-                                  COPY_DATA, name, size, chunk_idx, dataoffset);
-                handle->enqueue(newop);
-                mfu_free(&newop);
-            }
+        /* compute offset for first byte of file content */
+        uint64_t dataoffset = DTAR_offsets[idx] + DTAR_header_sizes[idx];
 
-            /* create copy work for possibly last item */
-            if (num_chunks * DTAR_opts->chunk_size < size || num_chunks == 0) {
-                char* newop = DTAR_encode_operation(
-                                  COPY_DATA, name, size, num_chunks, dataoffset);
-                handle->enqueue(newop);
-                mfu_free(&newop);
-            }
+        /* compute number of chunks based on file size */
+        uint64_t bytes = DTAR_opts->block_size;
+        uint64_t num_chunks = size / bytes;
+
+        /* insert a work item for each chunk */
+        for (uint64_t chunk_idx = 0; chunk_idx < num_chunks; chunk_idx++) {
+            char* newop = DTAR_encode_operation(
+                COPY_DATA, name, size, chunk_idx, dataoffset);
+            handle->enqueue(newop);
+            mfu_free(&newop);
+        }
+
+        /* create copy work for possibly last item */
+        if (num_chunks * bytes < size || num_chunks == 0) {
+            char* newop = DTAR_encode_operation(
+                COPY_DATA, name, size, num_chunks, dataoffset);
+            handle->enqueue(newop);
+            mfu_free(&newop);
         }
     }
 }
 
 static void DTAR_perform_copy(CIRCLE_handle* handle)
 {
+    /* TODO: on error, should we call circle_abort to bail out? */
+
+    /* dequeue and decode work item from libcircle */
     char opstr[CIRCLE_MAX_STRING_LEN];
     handle->dequeue(opstr);
     DTAR_operation_t* op = DTAR_decode_operation(opstr);
 
+    /* open input file for reading */
     const char* in_name = op->operand;
     int in_fd = mfu_open(in_name, O_RDONLY);
+    if (in_fd < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to open source file '%s' errno=%d %s",
+            in_name, errno, strerror(errno));
+        DTAR_err = 1;
+    }
 
+    /* get name and opened file descriptor to archive file */
     const char* out_name = DTAR_writer.name;
     int out_fd = DTAR_writer.fd;
 
+    /* file are sliced up in units of chunk_size bytes */
     uint64_t chunk_size = DTAR_opts->chunk_size;
 
-    uint64_t in_offset  = chunk_size * op->chunk_index;
+    /* seek to proper offset in input file */
+    uint64_t in_offset = chunk_size * op->chunk_index;
+    off_t lseek_rc = mfu_lseek(in_name, in_fd, in_offset, SEEK_SET);
+    if (lseek_rc == (off_t)-1) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to seek in source file '%s' errno=%d %s",
+            in_name, errno, strerror(errno));
+        DTAR_err = 1;
+    }
+
+    /* seek to position within archive file to write this data */
     uint64_t out_offset = op->offset + in_offset;
+    lseek_rc = mfu_lseek(out_name, out_fd, out_offset, SEEK_SET);
+    if (lseek_rc == (off_t)-1) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to seek in destination file '%s' errno=%d %s",
+            out_name, errno, strerror(errno));
+        DTAR_err = 1;
+    }
 
-    mfu_lseek(in_name, in_fd, in_offset, SEEK_SET);
-    mfu_lseek(out_name, out_fd, out_offset, SEEK_SET);
-
-    ssize_t total_bytes_written = 0;
+    /* read data from input and write to archive */
+    uint64_t total_bytes_written = 0;
     while (total_bytes_written < chunk_size) {
-        ssize_t num_of_bytes_read = mfu_read(in_name, in_fd, DTAR_iobuf, chunk_size);
-        if (! num_of_bytes_read) {
+        /* compute number of bytes to read in this attempt */
+        size_t num_to_read = DTAR_bufsize;
+        uint64_t remainder = chunk_size - total_bytes_written;
+        if (remainder < (uint64_t) num_to_read) {
+            num_to_read = (size_t) remainder;
+        }
+
+        /* read data from the source file */
+        ssize_t num_of_bytes_read = mfu_read(in_name, in_fd, DTAR_buf, num_to_read);
+        if (num_of_bytes_read == 0) {
+            /* hit end of file */
             break;
         }
-        ssize_t num_of_bytes_written = mfu_write(out_name, out_fd, DTAR_iobuf, num_of_bytes_read);
+        if (num_of_bytes_read == -1) {
+            /* some form of read error */
+            MFU_LOG(MFU_LOG_ERR, "Could not read '%s' errno=%d %s",
+                in_name, errno, strerror(errno));
+            DTAR_err = 1;
+        }
+
+        /* read some bytes, write out what we read */
+        ssize_t num_of_bytes_written = mfu_write(out_name, out_fd, DTAR_buf, num_of_bytes_read);
+        if (num_of_bytes_written == -1) {
+            /* some form of write error */
+            MFU_LOG(MFU_LOG_ERR, "Failed to write to '%s' errno=%d %s",
+                out_name, errno, strerror(errno));
+            DTAR_err = 1;
+        }
+
+        /* increment the number of bytes we've written so far */
         total_bytes_written += num_of_bytes_written;
     }
 
     /* add bytes written into our reduce counter */
     reduce_bytes += total_bytes_written;
 
+    /* compute index of last chunk in the file */
     uint64_t num_chunks = op->file_size / chunk_size;
     uint64_t rem = op->file_size - chunk_size * num_chunks;
     uint64_t last_chunk = (rem) ? num_chunks : num_chunks - 1;
 
-    /* handle last chunk */
+    /* if we're responsible for the end of the file, write NUL
+     * to pad archive out to an integral multiple of 512 bytes */
     if (op->chunk_index == last_chunk) {
+        /* we've got the last chunk, compute padding bytes */
         int padding = 512 - (int) (op->file_size % 512);
         if (padding > 0 && padding != 512) {
+            /* need to pad, write out padding bytes of zero data */
             char buff[512] = {0};
-            mfu_write(out_name, out_fd, buff, padding);
+            ssize_t nwritten = mfu_write(out_name, out_fd, buff, padding);
+            if (nwritten != padding) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to write to '%s' errno=%d %s",
+                    out_name, errno, strerror(errno));
+                DTAR_err = 1;
+            }
         }
     }
 
-    mfu_close(in_name, in_fd);
+    /* close input file */
+    int close_rc = mfu_close(in_name, in_fd);
+    if (close_rc == -1) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to close '%s' errno=%d %s",
+            out_name, errno, strerror(errno));
+        DTAR_err = 1;
+    }
+
+    /* release memory associated with work item */
     mfu_free(&op);
 }
 
@@ -610,7 +709,10 @@ static int write_entry_index(
     /* free name of index file */
     mfu_free(&name);
 
-    return success;
+    if (! success) {
+        return MFU_FAILURE;
+    }
+    return MFU_SUCCESS;
 }
 
 static int read_entry_index(
@@ -781,6 +883,9 @@ static int mfu_flist_archive_create_libcircle(
     DTAR_flist = flist;
     DTAR_opts  = opts;
 
+    /* we'll flip this to 1 if any process hits any error writing the archive */
+    DTAR_err = 0;
+
     /* if archive file will be on lustre, set max striping since this should be big */
     mfu_set_stripes(filename, cwdpath->path, opts->chunk_size, -1);
 
@@ -788,6 +893,11 @@ static int mfu_flist_archive_create_libcircle(
     DTAR_writer.name  = filename;
     DTAR_writer.flags = O_WRONLY | O_CREAT | O_CLOEXEC | O_LARGEFILE;
     DTAR_writer.fd    = mfu_open(filename, DTAR_writer.flags, 0664);
+    if (DTAR_writer.fd < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to open archive '%s' errno=%d %s",
+            DTAR_writer.name, errno, strerror(errno));
+        DTAR_err = 1;
+    }
 
     /* Allocate a buffer to encode tar headers.
      * The entire header must fit in this buffer.
@@ -805,7 +915,8 @@ static int mfu_flist_archive_create_libcircle(
     DTAR_header_sizes = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
 
     /* allocate buffer to read/write data */
-    DTAR_iobuf = MFU_MALLOC(opts->chunk_size);
+    DTAR_bufsize = opts->block_size;
+    DTAR_buf = MFU_MALLOC(DTAR_bufsize);
 
     /* compute local offsets for each item and total
      * bytes we're contributing to the archive */
@@ -908,7 +1019,13 @@ static int mfu_flist_archive_create_libcircle(
         /* we currently only support regular files, directories, and symlinks */
         mfu_filetype type = mfu_flist_file_get_type(flist, idx);
         if (type == MFU_TYPE_FILE || type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
+            /* write header for this item to the archive,
+             * this sets DTAR_err on any error */
             DTAR_write_header(flist, idx, cwdpath, DTAR_offsets[idx]);
+        } else {
+            /* print a warning that we did not archive this item */
+            const char* item_name = mfu_flist_file_get_name(flist, idx);
+            MFU_LOG(MFU_LOG_WARN, "Unsupported type, cannot archive `%s'", item_name);
         }
     }
 
@@ -948,18 +1065,40 @@ static int mfu_flist_archive_create_libcircle(
      * (according to tar file format) */
     if (mfu_rank == 0) {
         /* seek to end of archive */
-        mfu_lseek(DTAR_writer.name, DTAR_writer.fd, archive_size, SEEK_SET);
+        off_t lseek_rc = mfu_lseek(DTAR_writer.name, DTAR_writer.fd, archive_size, SEEK_SET);
+        if (lseek_rc == (off_t)-1) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to seek to %llu in archive '%s' errno=%d %s",
+                archive_size, DTAR_writer.name, errno, strerror(errno));
+            DTAR_err = 1;
+        }
 
         /* write two blocks of 512 bytes of 0 */
         char buf[1024] = {0};
-        mfu_write(DTAR_writer.name, DTAR_writer.fd, buf, sizeof(buf));
+        size_t bufsize = sizeof(buf);
+        ssize_t write_rc = mfu_write(DTAR_writer.name, DTAR_writer.fd, buf, bufsize);
+        if (write_rc != bufsize) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to write to archive '%s' errno=%d %s",
+                DTAR_writer.name, errno, strerror(errno));
+            DTAR_err = 1;
+        }
 
         /* include final NULL blocks in our stats */
-        archive_size += sizeof(buf);
+        archive_size += bufsize;
     }
 
     /* close archive file */
-    mfu_close(DTAR_writer.name, DTAR_writer.fd);
+    int close_rc = mfu_close(DTAR_writer.name, DTAR_writer.fd);
+    if (close_rc == -1) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to close archive '%s' errno=%d %s",
+            DTAR_writer.name, errno, strerror(errno));
+        DTAR_err = 1;
+    }
+
+    /* determine whether everyone succeeded in writing their part */
+    int write_success = mfu_alltrue(DTAR_err == 0, MPI_COMM_WORLD);
+    if (! write_success) {
+        rc = MFU_FAILURE;
+    }
 
     /* wait for all ranks to finish */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -1005,7 +1144,7 @@ static int mfu_flist_archive_create_libcircle(
 
     /* clean up */
     mfu_free(&DTAR_writer.buf);
-    mfu_free(&DTAR_iobuf);
+    mfu_free(&DTAR_buf);
     mfu_free(&fsizes);
     mfu_free(&DTAR_offsets);
     mfu_free(&DTAR_header_sizes);
@@ -1395,7 +1534,7 @@ static int extract_flist_offsets(
     /* prepare list for metadata details */
     mfu_flist_set_detail(flist, 1);
 
-    /* oppen archive file for readhing */
+    /* open archive file for readhing */
     int fd = mfu_open(filename, O_RDONLY);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open archive: '%s' (errno=%d %s)",
@@ -1708,7 +1847,7 @@ static int extract_files_offsets(
         /* we can use a large blocksize for reading,
          * since we'll read headers and data in a contguous
          * region of the file */
-        r = archive_read_open_fd(a, fd, opts->chunk_size);
+        r = archive_read_open_fd(a, fd, opts->block_size);
         if (r != ARCHIVE_OK) {
             MFU_LOG(MFU_LOG_ERR, "opening archive to extract entry %llu at offset %llu %s",
                 idx, offset, archive_error_string(a)
@@ -1861,7 +2000,7 @@ static int extract_files(
     }
 
     //if ((r = archive_read_open_filename(a, filename, MFU_BLOCK_SIZE)))
-    //r = archive_read_open_filename(a, filename, opts->chunk_size);
+    //r = archive_read_open_filename(a, filename, opts->block_size);
     r = archive_read_open_filename(a, filename, 1024 * 1024);
     if (r != ARCHIVE_OK) {
         MFU_LOG(MFU_LOG_ERR, "opening archive '%s' %s",
