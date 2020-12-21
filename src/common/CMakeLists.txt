@@ -18,6 +18,12 @@ LIST(APPEND libmfu_install_headers
   mfu_progress.h
   mfu_util.h
   )
+if(ENABLE_DAOS)
+  LIST(APPEND libmfu_install_headers
+    mfu_daos.h
+    )
+ENDIF(ENABLE_DAOS)
+
 INSTALL(FILES ${libmfu_install_headers} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 # common library
@@ -44,6 +50,11 @@ LIST(APPEND libmfu_srcs
   mfu_util.c
   strmap.c
   )
+if(ENABLE_DAOS)
+  LIST(APPEND libmfu_srcs
+    mfu_daos.c
+    )
+ENDIF(ENABLE_DAOS)
 
 ADD_LIBRARY(mfu_o OBJECT ${libmfu_srcs})
 SET_TARGET_PROPERTIES(mfu_o PROPERTIES C_STANDARD 99)
