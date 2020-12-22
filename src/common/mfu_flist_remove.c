@@ -54,10 +54,10 @@ static void remove_progress_fn(const uint64_t* vals, int count, int complete, in
     }
 
     if (complete < ranks) {
-        MFU_LOG(MFU_LOG_INFO, "Removed %llu items (%.2f%%) in %f secs (%f items/sec) %d secs remaining ...",
+        MFU_LOG(MFU_LOG_INFO, "Removed %llu items (%.2f%%) in %.3lf secs (%.3lf items/sec) %d secs remaining ...",
             vals[0], percent, secs, rate, (int)secs_remaining);
     } else {
-        MFU_LOG(MFU_LOG_INFO, "Removed %llu items (%.2f%%) in %f secs (%f items/sec)",
+        MFU_LOG(MFU_LOG_INFO, "Removed %llu items (%.2f%%) in %.3lf secs (%.3lf items/sec) done",
             vals[0], percent, secs, rate);
     }
 }
@@ -414,7 +414,7 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
  * from the deepest */
 void mfu_flist_unlink(mfu_flist flist, bool traceless)
 {
-    int level;
+    uint64_t idx;
 
     /* wait for all tasks and start timer */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -429,59 +429,48 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
         remove_count_total = all_count;
     }
 
-    /* split files into separate lists by directory depth */
-    int levels, minlevel;
-    mfu_flist* lists;
-    mfu_flist_array_by_depth(flist, &levels, &minlevel, &lists);
-    mfu_flist pstatlist;
-    uint64_t size = mfu_flist_size(flist);
-    char** strings = NULL;
-
-    /* if traceless, dump the stat of each item's pdir */
+    /* With traceless, we attempt to restore timestamps on parent directories
+     * of any items that were deleted.  For that, we first capture the
+     * current timestamps on all parent directories. */
+    mfu_flist pstatlist = MFU_FLIST_NULL;
     if (traceless) {
-        uint64_t idx;
+        /* allocate one string to hold the parent directory of every item */
+        uint64_t size = mfu_flist_size(flist);
+        char** strings = (char**) MFU_MALLOC(size * sizeof(char*));
 
-        strings = (char **) MFU_MALLOC(size * sizeof(char *));
+        /* compute parent directory for each item */
         for (idx = 0; idx < size; idx++) {
-            /* stat the item */
-            struct stat st;
             /* get name of item */
             const char* name = mfu_flist_file_get_name(flist, idx);
-            char *pdir = MFU_STRDUP(name);
 
+            /* stash away parent directory of this item */
+            char* pdir = MFU_STRDUP(name);
             dirname(pdir);
-
-            size_t len = strlen(pdir);
-
-            strings[idx] = (char *) MFU_MALLOC(len + 1);
-
-            strcpy(strings[idx], pdir);
-
-            mfu_free(&pdir);
+            strings[idx] = pdir;
         }
 
-        pstatlist = mfu_flist_new();
-
-        mfu_flist_set_detail(pstatlist, 1);
-
-        /* allocate arrays to hold result from DTCMP_Rankv_strings call to
-        * assign group and rank values to each item */
+        /* since many items may share a common parent directory,
+         * we use dtcmp to select a single copy of each parent */
         uint64_t output_bytes = size * sizeof(uint64_t);
         uint64_t groups;
         uint64_t* group_ids   = (uint64_t*) MFU_MALLOC(output_bytes);
         uint64_t* group_ranks = (uint64_t*) MFU_MALLOC(output_bytes);
         uint64_t* group_rank  = (uint64_t*) MFU_MALLOC(output_bytes);
-
         DTCMP_Rankv_strings((int)size, (const char**)strings, &groups, group_ids, group_ranks,
                            group_rank, DTCMP_FLAG_NONE, MPI_COMM_WORLD);
 
-        for (idx = 0; idx < size; idx++) {
-            if(group_rank[idx] == 0) {
-                /* stat the item */
-                struct stat st;
-                char *pdir = strings[idx];
-                int status = mfu_lstat(pdir, &st);
+        /* create a list to hold stat info of parent directories */
+        pstatlist = mfu_flist_new();
+        mfu_flist_set_detail(pstatlist, 1);
 
+        /* iterate over all items in our list */
+        for (idx = 0; idx < size; idx++) {
+            /* take the rank 0 item of each group as a unique parent */
+            if (group_rank[idx] == 0) {
+                /* stat the parent directory */
+                struct stat st;
+                char* pdir = strings[idx];
+                int status = mfu_lstat(pdir, &st);
                 if (status != 0) {
                     MFU_LOG(MFU_LOG_DBG, "mfu_lstat(%s): %d", pdir, status);
                     continue;
@@ -492,23 +481,42 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
             }
         }
 
-        for (idx = 0; idx < size; idx++) {
-            mfu_free(&strings[idx]);
-        }
+        /* summarize our list of parent directories */
+        mfu_flist_summarize(pstatlist);
 
-        mfu_free(&strings);
+        /* free off temporary memory */
         mfu_free(&group_rank);
         mfu_free(&group_ranks);
         mfu_free(&group_ids);
-
-        /* compute global summary */
-        mfu_flist_summarize(pstatlist);
+        for (idx = 0; idx < size; idx++) {
+            mfu_free(&strings[idx]);
+        }
+        mfu_free(&strings);
 
         /* To be sure that all procs have executed their stat calls before
-         * moving on to deleting things.
-         */
+         * moving on to deleting things. */
         MPI_Barrier(MPI_COMM_WORLD);
     }
+
+    /* split list into sublists of directories and non-directories */
+    mfu_flist flist_dirs    = mfu_flist_subset(flist);
+    mfu_flist flist_nondirs = mfu_flist_subset(flist);
+    uint64_t size = mfu_flist_size(flist);
+    for (idx = 0; idx < size; idx++) {
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+        if (type == MFU_TYPE_DIR) {
+            mfu_flist_file_copy(flist, idx, flist_dirs);
+        } else {
+            mfu_flist_file_copy(flist, idx, flist_nondirs);
+        }
+    }
+    mfu_flist_summarize(flist_dirs);
+    mfu_flist_summarize(flist_nondirs);
+
+    /* split directories into separate lists by depth */
+    int levels, minlevel;
+    mfu_flist* lists;
+    mfu_flist_array_by_depth(flist_dirs, &levels, &minlevel, &lists);
 
 #if 0
     /* dive from shallow to deep, ensure all directories have write bit set */
@@ -558,78 +566,70 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
     remove_count = 0;
     rmprog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, remove_progress_fn);
 
-    /* now remove files starting from deepest level */
-    for (level = levels - 1; level >= 0; level--) {
-        double start = MPI_Wtime();
+    /* remove all non directory (leaf) items */
+    uint64_t count = 0;
+    remove_spread(flist_nondirs, &count);
 
-        /* get list of items for this level */
+    /* remove directories starting from deepest level */
+    int level;
+    for (level = levels - 1; level >= 0; level--) {
+        /* get list for this level */
         mfu_flist list = lists[level];
 
+        /* remove items at this level */
         uint64_t count = 0;
         //remove_direct(list, &count);
         remove_spread(list, &count);
-//        remove_map(list, &count);
-//        remove_sort(list, &count);
-//        remove_libcircle(list, &count);
-//        TODO: remove sort w/ spread
+        //remove_map(list, &count);
+        //remove_sort(list, &count);
+        //remove_libcircle(list, &count);
+        //TODO: remove sort w/ spread
 
         /* wait for all procs to finish before we start
-         * with files at next level */
+         * with items at next level */
         MPI_Barrier(MPI_COMM_WORLD);
-
-        double end = MPI_Wtime();
-
-        if (mfu_debug_level >= MFU_LOG_VERBOSE) {
-            uint64_t min, max, sum;
-            MPI_Allreduce(&count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-            double rate = 0.0;
-            if (end - start > 0.0) {
-                rate = (double)sum / (end - start);
-            }
-            double time_diff = end - start;
-            if (mfu_rank == 0) {
-                MFU_LOG(MFU_LOG_INFO, "level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f",
-                       (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff
-                      );
-            }
-        }
     }
 
+    /* print final progress message */
     mfu_progress_complete(&remove_count, &rmprog);
 
-    /* if traceless, restore the stat of each item's pdir */
+    /* if using traceless, restore the timestamp of each
+     * parent directory (if it still exists) */
     if (traceless) {
+        /* spread items across ranks to distribute the load */
         mfu_flist newlist = mfu_flist_spread(pstatlist);
-        size = mfu_flist_size(newlist);
-        uint64_t idx;
 
+        /* iterate over each parent directory and set its timestamps */
+        uint64_t size = mfu_flist_size(newlist);
         for (idx = 0; idx < size; idx++) {
+            /* TODO: skip removed dir, if it happens to become a problem */
+
+            /* extract timestamps from stat data in parent list */
             struct timespec times[2];
-            /* get name of item */
-            const char* pdir = mfu_flist_file_get_name(newlist, idx);
-
-            /* TODO: skip removed dir, if it happens to become a problem*/
-
             times[0].tv_sec  = mfu_flist_file_get_atime(newlist, idx);
-            times[1].tv_sec  = mfu_flist_file_get_mtime(newlist, idx);
-
             times[0].tv_nsec = mfu_flist_file_get_atime_nsec(newlist, idx);
+            times[1].tv_sec  = mfu_flist_file_get_mtime(newlist, idx);
             times[1].tv_nsec = mfu_flist_file_get_mtime_nsec(newlist, idx);
 
+            /* restore timestamps */
+            const char* pdir = mfu_flist_file_get_name(newlist, idx);
             if(mfu_utimensat(AT_FDCWD, pdir, times, AT_SYMLINK_NOFOLLOW) != 0) {
                 MFU_LOG(MFU_LOG_DBG,
-                        "Failed to changeback timestamps with utimesat() `%s' (errno=%d %s)",
-                        pdir, errno, strerror(errno));
+                    "Failed to changeback timestamps with utimesat() `%s' (errno=%d %s)",
+                    pdir, errno, strerror(errno)
+                );
             }
         }
 
+        /* free our parent directory lists */
         mfu_flist_free(&newlist);
         mfu_flist_free(&pstatlist);
     }
 
+    /* free sublists of items */
     mfu_flist_array_free(levels, &lists);
+    mfu_flist_free(&flist_dirs);
+    mfu_flist_free(&flist_nondirs);
 
     /* wait for all tasks and stop timer */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -643,9 +643,9 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        MFU_LOG(MFU_LOG_INFO, "Removed %lu items in %f seconds (%f items/sec)",
-               all_count, time_diff, rate
-              );
+        MFU_LOG(MFU_LOG_INFO, "Removed %lu items in %.3lf seconds (%.3lf items/sec)",
+            all_count, time_diff, rate
+        );
     }
 
     /* wait for summary to be printed */
