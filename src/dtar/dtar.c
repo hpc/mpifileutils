@@ -141,7 +141,7 @@ int main(int argc, char** argv)
                     }
                     usage = 1;
                 } else {
-                    archive_opts->block_size = (size_t) bytes;
+                    archive_opts->buf_size = (size_t) bytes;
                 }
                 break;
             case 'k':
@@ -241,6 +241,7 @@ int main(int argc, char** argv)
     mfu_getcwd(cwd, PATH_MAX);
     mfu_param_path_set(cwd, &cwd_param);
 
+    int ret = MFU_SUCCESS;
     if (opts_create) {
         /* allocate space to record info for each source */
         mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC(numpaths * sizeof(mfu_param_path));
@@ -266,7 +267,7 @@ int main(int argc, char** argv)
         flist = flist2;
 
         /* create the archive file */
-        mfu_flist_archive_create(flist, opts_tarfile, numpaths, paths, &cwd_param, archive_opts);
+        ret = mfu_flist_archive_create(flist, opts_tarfile, numpaths, paths, &cwd_param, archive_opts);
 
 #if 0
         /* compress archive file */
@@ -315,7 +316,7 @@ int main(int argc, char** argv)
             tarfile = fname_out;
         }
 #endif
-        mfu_flist_archive_extract(tarfile, &cwd_param, archive_opts);
+        ret = mfu_flist_archive_extract(tarfile, &cwd_param, archive_opts);
     } else {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Neither creation or extraction is specified");
@@ -338,5 +339,8 @@ int main(int argc, char** argv)
     /* free context */
     mfu_free(&opts_tarfile);
 
+    if (ret != MFU_SUCCESS) {
+        DTAR_exit(EXIT_FAILURE);
+    }
     DTAR_exit(EXIT_SUCCESS);
 }

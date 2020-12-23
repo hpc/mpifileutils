@@ -593,7 +593,9 @@ typedef struct {
     bool    preserve;
     int     flags;
     size_t  chunk_size;
-    size_t  block_size;
+    size_t  buf_size;
+    int     create_libcircle;
+    int     extract_libarchive;
 } mfu_archive_opts_t;
 
 /* return a newly allocated archive_opts structure, set default values on its fields */
