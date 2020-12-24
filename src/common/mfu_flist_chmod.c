@@ -57,10 +57,10 @@ static void chmod_progress_fn(const uint64_t* vals, int count, int complete, int
 
     /* print progress message */
     if (complete < ranks) {
-        MFU_LOG(MFU_LOG_INFO, "Processed %llu items (%.2f%%) in %f secs (%f items/sec) %d secs remaining ...",
+        MFU_LOG(MFU_LOG_INFO, "Processed %llu items (%.2f%%) in %.3lf secs (%.3lf items/sec) %d secs remaining ...",
             vals[0], percent, secs, rate, (int)secs_remaining);
     } else {
-        MFU_LOG(MFU_LOG_INFO, "Processed %llu items (%.2f%%) in %f secs (%f items/sec)",
+        MFU_LOG(MFU_LOG_INFO, "Processed %llu items (%.2f%%) in %.3lf secs (%.3lf items/sec)",
             vals[0], percent, secs, rate);
     }
 }
@@ -1259,7 +1259,7 @@ void mfu_flist_chmod(
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        MFU_LOG(MFU_LOG_INFO, "Processed %lu items in %f seconds (%f items/sec) skipped/success/error chown=(%lu/%lu/%lu) chmod=(%lu/%lu/%lu)",
+        MFU_LOG(MFU_LOG_INFO, "Processed %lu items in %.3lf seconds (%.3lf items/sec) skipped/success/error chown=(%lu/%lu/%lu) chmod=(%lu/%lu/%lu)",
                all_count, time_diff, rate,
                (unsigned long)global_stats[CHOWN_SKIPPED], (unsigned long)global_stats[CHOWN_SUCCESS], (unsigned long)global_stats[CHOWN_FAILURE],
                (unsigned long)global_stats[CHMOD_SKIPPED], (unsigned long)global_stats[CHMOD_SUCCESS], (unsigned long)global_stats[CHMOD_FAILURE]);

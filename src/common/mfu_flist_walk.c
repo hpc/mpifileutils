@@ -90,7 +90,7 @@ static void reduce_fini(const void* buf, size_t size)
     }
 
     /* print status to stdout */
-    MFU_LOG(MFU_LOG_INFO, "Walked %llu items in %f secs (%f items/sec) ...", val, secs, rate);
+    MFU_LOG(MFU_LOG_INFO, "Walked %llu items in %.3lf secs (%.3lf items/sec) ...", val, secs, rate);
 }
 
 #ifdef LUSTRE_SUPPORT
@@ -692,7 +692,7 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        MFU_LOG(MFU_LOG_INFO, "Walked %lu items in %f seconds (%f items/sec)",
+        MFU_LOG(MFU_LOG_INFO, "Walked %lu items in %.3lf seconds (%.3lf items/sec)",
                all_count, time_diff, rate
               );
     }

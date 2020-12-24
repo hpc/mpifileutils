@@ -615,7 +615,7 @@ mfu_flist mfu_flist_sort(const char* sortfields, mfu_flist flist)
         if (secs > 0.0) {
             rate = ((double)all_count) / secs;
         }
-        MFU_LOG(MFU_LOG_INFO, "Sorted %lu items in %f seconds (%f items/sec)",
+        MFU_LOG(MFU_LOG_INFO, "Sorted %lu items in %.3lf seconds (%.3lf items/sec)",
             all_count, secs, rate
         );
     }
