@@ -1793,7 +1793,7 @@ int mfu_flist_archive_create(
     if (value != NULL) {
         if (strcmp(value, "LIBCIRCLE") == 0) {
             if (mfu_rank == 0) {
-                MFU_LOG(MFU_LOG_INFO, "%s: selecting LIBCIRCLE", varname);
+                MFU_LOG(MFU_LOG_INFO, "%s: LIBCIRCLE", varname);
             }
             opts->create_libcircle = 1;
         } else if (strcmp(value, "CHUNK") == 0) {
@@ -3220,6 +3220,23 @@ int mfu_flist_archive_extract(
     /* turn on no overwrite so that directories we create are deleted and then replaced */
     //archive_opts.flags |= ARCHIVE_EXTRACT_NO_OVERWRITE;
 
+    /* configure behavior when creating items (overwrite, lustre striping, etc) */
+    mfu_create_opts_t* create_opts = mfu_create_opts_new();
+
+    /* overwrite any existing files by default */
+    create_opts->overwrite = true;
+
+    /* Set timestamps and permission bits on extracted items by default.
+     * We don't set uid/gid, since the tarball may have encoded uid/gid
+     * from another user. */
+    create_opts->set_timestamps = true;
+    create_opts->set_permissions = true;
+
+    /* TODO: set these based on either auto-detection that CWD is lustre
+     * or directives from user */
+    //create_opts->lustre_stripe = true;
+    //create_opts->lustre_stripe_minsize = 1024ULL * 1024ULL * 1024ULL;
+
     /* start overall timer */
     time_t time_started;
     time(&time_started);
@@ -3285,6 +3302,7 @@ int mfu_flist_archive_extract(
         if (mfu_rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to extract metadata");
         }
+        mfu_create_opts_delete(&create_opts);
         mfu_flist_free(&flist);
         mfu_free(&data_offsets);
         mfu_free(&offsets);
@@ -3307,7 +3325,7 @@ int mfu_flist_archive_extract(
     if (mfu_rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Creating directories");
     }
-    mfu_flist_mkdir(flist);
+    mfu_flist_mkdir(flist, create_opts);
 
     /* extract files from archive */
     if (have_offsets) {
@@ -3328,7 +3346,7 @@ int mfu_flist_archive_extract(
             if (mfu_rank == 0) {
                 MFU_LOG(MFU_LOG_INFO, "Creating files");
             }
-            mfu_flist_mknod(flist);
+            mfu_flist_mknod(flist, create_opts);
 
             /* extract file data from archive */
             ret = extract_files_offsets_chunk(filename, flags, entries, entry_start, entry_count, data_offsets, flist, opts);
@@ -3345,7 +3363,7 @@ int mfu_flist_archive_extract(
             if (mfu_rank == 0) {
                 MFU_LOG(MFU_LOG_INFO, "Updating timestamps and permissions");
             }
-            mfu_flist_metadata_apply(flist);
+            mfu_flist_metadata_apply(flist, create_opts);
         }
     } else {
         /* If we don't have offsets, have each process read the archive from the start.
@@ -3387,7 +3405,7 @@ int mfu_flist_archive_extract(
 
         /* set timestamps on the directories, do this after writing all items
          * since creating items in a directory will have changed its timestamp */
-        mfu_flist_metadata_apply(flist_dirs);
+        mfu_flist_metadata_apply(flist_dirs, create_opts);
 
         /* free the list of directories */
         mfu_flist_free(&flist_dirs);
@@ -3398,6 +3416,9 @@ int mfu_flist_archive_extract(
     if (have_offsets && !have_index) {
         write_entry_index(filename, entry_count, &offsets[entry_start]);
     }
+
+    /* free options structure needed for create calls */
+    mfu_create_opts_delete(&create_opts);
 
     /* we can now free our file list */
     mfu_flist_free(&flist);

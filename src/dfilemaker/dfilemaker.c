@@ -880,9 +880,11 @@ int main(int narg, char** arg)
     //--------------------------------
     //  create directories and files
     //---------------------------------
-    mfu_flist_mkdir(mybflist);
-    mfu_flist_mknod(mybflist);
+    mfu_create_opts_t* create_opts = mfu_create_opts_new();
+    mfu_flist_mkdir(mybflist, create_opts);
+    mfu_flist_mknod(mybflist, create_opts);
     write_files(mybflist);
+    mfu_create_opts_delete(&create_opts);
 
     //------------------------------------
     //  reset statistics at this point

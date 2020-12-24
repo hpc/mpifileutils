@@ -147,10 +147,13 @@ int main(int argc, char* argv[])
   /* create new mfu_file objects */
   mfu_file_t* mfu_file = mfu_file_new();
 
-  mfu_flist_mkdir(flist);
-  mfu_flist_mknod(flist);
+  mfu_create_opts_t* create_opts = mfu_create_opts_new();
+  mfu_flist_mkdir(flist, create_opts);
+  mfu_flist_mknod(flist, create_opts);
   mfu_flist_fill(flist, mfu_copy_opts, mfu_file);
   //mfu_flist_setmeta()
+
+  mfu_create_opts_delete(&create_opts);
 
   mfu_flist_free(&flist);
 
