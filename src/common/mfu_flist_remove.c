@@ -136,7 +136,7 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
     }
 
     /* report the number of items we deleted */
-    *rmcount = size;
+    *rmcount += size;
     return;
 }
 
@@ -301,7 +301,6 @@ static void remove_sort(mfu_flist list, uint64_t* rmcount)
     return;
 }
 
-#if 0
 /*****************************
  * Remove items using libcircle for dynamic load balancing
  ****************************/
@@ -393,7 +392,6 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
 
     return;
 }
-#endif
 
 /* TODO: sort w/ spread and synchronization */
 /* allreduce to get total count of items */
@@ -409,12 +407,92 @@ static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
  * Driver functions
  ****************************/
 
+typedef enum mfu_remove_algos_t {
+  DIRECT = 0,
+  SPREAD,
+  MAP,
+  SORT,
+  LIBCIRCLE
+} mfu_remove_algos;
+
+static mfu_remove_algos select_algo(void)
+{
+    /* default to SPREAD */
+    mfu_remove_algos algo = SPREAD;
+
+    /* allow override algorithm choice via environment variable */
+    char varname[] = "MFU_FLIST_UNLINK";
+    const char* value = getenv(varname);
+    if (value != NULL) {
+        if (strcmp(value, "DIRECT") == 0) {
+            if (mfu_rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "%s: DIRECT", varname);
+            }
+            algo = DIRECT;
+        } else if (strcmp(value, "SPREAD") == 0) {
+            if (mfu_rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "%s: SPREAD", varname);
+            }
+            algo = SPREAD;
+        } else if (strcmp(value, "MAP") == 0) {
+            if (mfu_rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "%s: MAP", varname);
+            }
+            algo = MAP;
+        } else if (strcmp(value, "SORT") == 0) {
+            if (mfu_rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "%s: SORT", varname);
+            }
+            algo = SORT;
+        } else if (strcmp(value, "LIBCIRCLE") == 0) {
+            if (mfu_rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "%s: LIBCIRCLE", varname);
+            }
+            algo = LIBCIRCLE;
+        } else {
+            if (mfu_rank == 0) {
+                MFU_LOG(MFU_LOG_ERR, "%s: Unknown value: %s", varname, value);
+            }
+        }
+    }
+
+    return algo;
+}
+
+static void remove_by_algo(mfu_remove_algos algo, mfu_flist flist, uint64_t* count)
+{
+    switch (algo) {
+    case DIRECT:
+        remove_direct(flist, count);
+        break;
+    case SPREAD:
+        remove_spread(flist, count);
+        break;
+    case MAP:
+        remove_map(flist, count);
+        break;
+    case SORT:
+        remove_sort(flist, count);
+        break;
+    case LIBCIRCLE:
+        remove_libcircle(flist, count);
+        break;
+    }
+
+    //TODO: remove sort w/ spread
+
+    return;
+}
+
 /* removes list of items, sets write bits on directories from
  * top-to-bottom, then removes items one level at a time starting
  * from the deepest */
 void mfu_flist_unlink(mfu_flist flist, bool traceless)
 {
     uint64_t idx;
+
+    /* allow override algorithm choice via environment variable */
+    mfu_remove_algos algo = select_algo();;
 
     /* wait for all tasks and start timer */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -568,7 +646,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
 
     /* remove all non directory (leaf) items */
     uint64_t count = 0;
-    remove_spread(flist_nondirs, &count);
+    remove_by_algo(algo, flist_nondirs, &count);
 
     /* remove directories starting from deepest level */
     int level;
@@ -578,12 +656,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
 
         /* remove items at this level */
         uint64_t count = 0;
-        //remove_direct(list, &count);
-        remove_spread(list, &count);
-        //remove_map(list, &count);
-        //remove_sort(list, &count);
-        //remove_libcircle(list, &count);
-        //TODO: remove sort w/ spread
+        remove_by_algo(algo, list, &count);
 
         /* wait for all procs to finish before we start
          * with items at next level */
