@@ -501,14 +501,41 @@ mfu_walk_opts_t* mfu_walk_opts_new(void);
 /* free object allocated in mfu_walk_opts_new */
 void mfu_walk_opts_delete(mfu_walk_opts_t** opts);
 
+/* options to configure creation of directories and files */
+typedef struct {
+    bool overwrite;       /* whether to replace unlink existing items (non-directories) */
+    bool set_owner;       /* whether to copy uid/gid from flist to item */
+    bool set_timestamps;  /* whether to copy timestamps from flist to item */
+    bool set_permissions; /* whether to copy permission bits from flist to item */
+    bool lustre_stripe;   /* whether to apply lustre striping parameters */
+    uint64_t lustre_stripe_minsize; /* min file size in bytes for which to stripe file */
+    uint64_t lustre_stripe_width;   /* size of a single stripe in bytes */
+    uint64_t lustre_stripe_count;   /* number of stripes */
+} mfu_create_opts_t;
+
+/* return a newly allocated create opts structure */
+mfu_create_opts_t* mfu_create_opts_new(void);
+
+/* free create options allocated from mfu_create_opts_new */
+void mfu_create_opts_delete(mfu_create_opts_t** popts);
+
 /* create all directories in flist */
-void mfu_flist_mkdir(mfu_flist flist);
+void mfu_flist_mkdir(
+    mfu_flist flist,
+    mfu_create_opts_t* opts
+);
 
 /* create inodes for all regular files in flist, assumes directories exist */
-void mfu_flist_mknod(mfu_flist flist);
+void mfu_flist_mknod(
+    mfu_flist flist,
+    mfu_create_opts_t* opts
+);
 
 /* apply metadata updates to items in list */
-void mfu_flist_metadata_apply(mfu_flist flist);
+void mfu_flist_metadata_apply(
+    mfu_flist flist,
+    mfu_create_opts_t* opts
+);
 
 /* unlink all items in flist,
  * if traceless=1, restore timestamps on parent directories after unlinking children */

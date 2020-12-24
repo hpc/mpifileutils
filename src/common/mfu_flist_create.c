@@ -10,20 +10,23 @@ static int create_directory(mfu_flist list, uint64_t idx)
     const char* name = mfu_flist_file_get_name(list, idx);
 
     /* get permissions */
-    mode_t mode = (mode_t) mfu_flist_file_get_mode(list, idx);
+    //mode_t mode = (mode_t) mfu_flist_file_get_mode(list, idx);
+    mode_t mode = DCOPY_DEF_PERMS_DIR;
 
     /* create the destination directory */
-    MFU_LOG(MFU_LOG_DBG, "Creating directory `%s'", name);
     int rc = mfu_mkdir(name, mode);
     if (rc < 0) {
         if (errno == EEXIST) {
+#if 0
             MFU_LOG(MFU_LOG_WARN,
-                    "Original directory exists, skip the creation: `%s' (errno=%d %s)",
-                    name, errno, strerror(errno)
+                "Original directory exists, skipping create: `%s' (errno=%d %s)",
+                name, errno, strerror(errno)
             );
+#endif
+            return 0;
         } else {
             MFU_LOG(MFU_LOG_ERR, "Create `%s' mkdir() failed (errno=%d %s)",
-                    name, errno, strerror(errno)
+                name, errno, strerror(errno)
             );
             return -1;
         }
@@ -36,7 +39,7 @@ static int create_directory(mfu_flist list, uint64_t idx)
 /* create directories, we work from shallowest level to the deepest
  * with a barrier in between levels, so that we don't try to create
  * a child directory until the parent exists */
-void mfu_flist_mkdir(mfu_flist flist)
+void mfu_flist_mkdir(mfu_flist flist, mfu_create_opts_t* opts)
 {
     int rc = 0;
 
@@ -118,32 +121,81 @@ void mfu_flist_mkdir(mfu_flist flist)
     return;
 }
 
-static int create_file(mfu_flist list, uint64_t idx)
+static int create_file(mfu_flist list, uint64_t idx, mfu_create_opts_t* opts)
 {
     /* get source name */
     const char* name = mfu_flist_file_get_name(list, idx);
 
     /* get permissions */
-    mode_t mode = (mode_t) mfu_flist_file_get_mode(list, idx);
+    //mode_t mode = (mode_t) mfu_flist_file_get_mode(list, idx);
+    mode_t mode = DCOPY_DEF_PERMS_FILE;
+
+    /* apply lustre striping to item if user requested it */
+    if (opts->lustre_stripe) {
+        /* can only stripe regular files (this true?) */
+        mfu_filetype type = mfu_flist_file_get_type(list, idx);
+        if (type == MFU_TYPE_FILE) {
+            /* got a regular file, check its size */
+            uint64_t filesize = mfu_flist_file_get_size(list, idx);
+            if (filesize >= opts->lustre_stripe_minsize) {
+                /* If we are overwriting files, preemptively delete any existing entry.
+                 * Once a file exists, its striping parameters can't be changed. */
+                if (opts->overwrite) {
+                    mfu_unlink(name);
+                }
+
+                /* file size is big enough, let's stripe */
+                uint64_t stripe_width = opts->lustre_stripe_width;
+                int stripe_count = (int) opts->lustre_stripe_count;
+                mfu_stripe_set(name, stripe_width, stripe_count);
+            }
+        }
+
+        return 0;
+    }
 
     /* create file with mknod
-    * for regular files, dev argument is supposed to be ignored,
-    * see makedev() to create valid dev */
+     * for regular files, dev argument is supposed to be ignored,
+     * see makedev() to create valid dev */
     dev_t dev;
     memset(&dev, 0, sizeof(dev_t));
     int mknod_rc = mfu_mknod(name, mode | S_IFREG, dev);
-
     if (mknod_rc < 0) {
         if (errno == EEXIST) {
-            MFU_LOG(MFU_LOG_WARN,
-                    "Original file exists, skip the creation: `%s' (errno=%d %s)",
+            /* failed to create because something already exists at this path,
+             * try to delete it */
+            if (opts->overwrite) {
+                /* user selected over write, so try to delete the item */
+                int unlink_rc = mfu_unlink(name);
+                if (unlink_rc == 0) {
+                    /* delete succeeded, try to create it agai */
+                    mknod_rc = mfu_mknod(name, mode | S_IFREG, dev);
+                    if (mknod_rc < 0) {
+                        MFU_LOG(MFU_LOG_WARN,
+                            "Failed to create: `%s' (errno=%d %s)",
+                            name, errno, strerror(errno)
+                        );
+                        return -1;
+                    }
+                } else {
+                    /* failed to delete existing item */
+                    MFU_LOG(MFU_LOG_WARN,
+                        "Original file exists and failed to delete: `%s' (errno=%d %s)",
+                        name, errno, strerror(errno)
+                    );
+                    return -1;
+                }
+            } else {
+                /* failed to delete existing item */
+                MFU_LOG(MFU_LOG_ERR,
+                    "Original file exists: `%s' (errno=%d %s)",
                     name, errno, strerror(errno)
-            );
-
-            /* TODO: truncate file? */
+                );
+                return -1;
+            }
         } else {
             MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() failed (errno=%d %s)",
-                    name, errno, strerror(errno)
+                name, errno, strerror(errno)
             );
             return -1;
         }
@@ -155,7 +207,7 @@ static int create_file(mfu_flist list, uint64_t idx)
 }
 
 /* create inodes for all regular files in flist, assumes directories exist */
-void mfu_flist_mknod(mfu_flist flist)
+void mfu_flist_mknod(mfu_flist flist, mfu_create_opts_t* opts)
 {
     int rc = 0;
 
@@ -188,7 +240,7 @@ void mfu_flist_mknod(mfu_flist flist)
         /* process files and links */
         if (type == MFU_TYPE_FILE) {
             /* TODO: skip file if it's not readable */
-            create_file(flist, idx);
+            create_file(flist, idx, opts);
             count++;
         } else if (type == MFU_TYPE_LINK) {
             //create_link(flist, idx);
@@ -233,12 +285,67 @@ static void metaapply_progress_fn(const uint64_t* vals, int count, int complete,
     }
 
     if (complete < ranks) {
-        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %f secs (%f items/sec) ...",
+        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %.3lf secs (%.3lf items/sec) ...",
             vals[0], secs, rate);
     } else {
-        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %f secs (%f items/sec) done",
+        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %.3lf secs (%.3lf items/sec) done",
             vals[0], secs, rate);
     }
+}
+
+static int mfu_set_ownership(
+    mfu_flist flist,
+    uint64_t idx)
+{
+    /* assume we'll succeed */
+    int rc = 0;
+
+    /* get user id and group id of file */
+    uid_t uid = (uid_t) mfu_flist_file_get_uid(flist, idx);
+    gid_t gid = (gid_t) mfu_flist_file_get_gid(flist, idx);
+
+    /* note that we use lchown to change ownership of link itself, it path happens to be a link */
+    const char* name = mfu_flist_file_get_name(flist, idx);
+    if(mfu_lchown(name, uid, gid) != 0) {
+        /* TODO: are there other EPERM conditions we do want to report? */
+
+        /* since the user running dcp may not be the owner of the
+         * file, we could hit an EPERM error here, and the file
+         * will be left with the effective uid and gid of the dcp
+         * process, don't bother reporting an error for that case */
+        if (errno != EPERM) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to change ownership on `%s' lchown() (errno=%d %s)",
+                name, errno, strerror(errno)
+            );
+        }
+        rc = -1;
+    }
+
+    return rc;
+}
+
+/* TODO: condionally set setuid and setgid bits? */
+static int mfu_set_permissions(
+    mfu_flist flist,
+    uint64_t idx)
+{
+    /* assume we'll succeed */
+    int rc = 0;
+
+    /* get mode and type */
+    mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+    mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
+
+    /* change mode */
+    if(type != MFU_TYPE_LINK) {
+        const char* name = mfu_flist_file_get_name(flist, idx);
+        if(mfu_chmod(name, mode) != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on `%s' chmod() (errno=%d %s)",
+                name, errno, strerror(errno));
+            rc = -1;
+        }
+    }
+    return rc;
 }
 
 static int mfu_set_timestamps(
@@ -281,7 +388,7 @@ static int mfu_set_timestamps(
 /* apply metadata to items in flist
  * work from deepest level to shallowest level in case we're
  * doing things like disabling access on directories */
-void mfu_flist_metadata_apply(mfu_flist flist)
+void mfu_flist_metadata_apply(mfu_flist flist, mfu_create_opts_t* opts)
 {
     int rc = 0;
 
@@ -321,23 +428,31 @@ void mfu_flist_metadata_apply(mfu_flist flist)
         uint64_t idx;
         uint64_t size = mfu_flist_size(list);
         for (idx = 0; idx < size; idx++) {
+            if (opts->set_owner) {
+                int tmp_rc = mfu_set_ownership(list, idx);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
+            }
+
+            if (opts->set_permissions) {
+                int tmp_rc = mfu_set_permissions(list, idx);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
+            }
+
 #if 0
-            tmp_rc = mfu_set_ownership(list, idx);
-            if (tmp_rc < 0) {
-                rc = -1;
-            }
-            tmp_rc = mfu_set_permissions(list, idx);
-            if (tmp_rc < 0) {
-                rc = -1;
-            }
             tmp_rc = mfu_copy_acls(list, idx, dest);
             if (tmp_rc < 0) {
                 rc = -1;
             }
 #endif
-            int tmp_rc = mfu_set_timestamps(list, idx);
-            if (tmp_rc < 0) {
-                rc = -1;
+            if (opts->set_timestamps) {
+                int tmp_rc = mfu_set_timestamps(list, idx);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
             }
 
             /* update our running total */
@@ -372,7 +487,7 @@ void mfu_flist_metadata_apply(mfu_flist flist)
           rate = (double)sum / secs;
         }
         if (rank == 0) {
-            MFU_LOG(MFU_LOG_INFO, "Updated %lu items in %f seconds (%f items/sec)",
+            MFU_LOG(MFU_LOG_INFO, "Updated %lu items in %.3lf seconds (%.3lf items/sec)",
               (unsigned long)sum, secs, rate
             );
         }
@@ -381,4 +496,50 @@ void mfu_flist_metadata_apply(mfu_flist flist)
     return;
 }
 
+/* return a newly allocated create_opts structure, set default values on its fields,
+ * this is used when creating directories and files as well as updating metadata like
+ * timestamps after creating items */
+mfu_create_opts_t* mfu_create_opts_new(void)
+{
+    mfu_create_opts_t* opts = (mfu_create_opts_t*) MFU_MALLOC(sizeof(mfu_create_opts_t));
 
+    /* whether to delete existing items (non-directories) */
+    opts->overwrite = NULL;
+
+    /* whether to set uid */
+    opts->set_owner = false;
+
+    /* whether to set atime/mtime */
+    opts->set_timestamps = false;
+
+    /* whether to set permission bits */
+    opts->set_permissions = false;
+
+    /* whether to apply lustre striping */
+    opts->lustre_stripe = false;
+
+    /* if applying lustre striping parameteres, only consider files greater than minsize bytes */
+    opts->lustre_stripe_minsize = 0;
+
+    /* if applying lustre striping parameteres, size of stripe width in bytes */
+    opts->lustre_stripe_width = 1024 * 1024;
+
+    /* if applying lustre striping parameteres, number of stripes to use */
+    opts->lustre_stripe_count = -1;
+
+    return opts;
+}
+
+void mfu_create_opts_delete(mfu_create_opts_t** popts)
+{
+  if (popts != NULL) {
+    mfu_create_opts_t* opts = *popts;
+
+    /* free fields allocated on opts */
+    if (opts != NULL) {
+      //mfu_free(&opts->dest_path);
+    }
+
+    mfu_free(popts);
+  }
+}
