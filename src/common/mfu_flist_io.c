@@ -1173,7 +1173,7 @@ void mfu_flist_read_cache(
         if (time_diff > 0.0) {
             rate = ((double)all_count) / time_diff;
         }
-        MFU_LOG(MFU_LOG_INFO, "Read %lu files in %f seconds (%f files/sec)",
+        MFU_LOG(MFU_LOG_INFO, "Read %lu files in %.3lf seconds (%.3lf files/sec)",
                all_count, time_diff, rate
               );
     }
@@ -1580,7 +1580,7 @@ void mfu_flist_write_cache(
         if (secs > 0.0) {
             rate = ((double)all_count) / secs;
         }
-        MFU_LOG(MFU_LOG_INFO, "Wrote %lu files in %f seconds (%f files/sec)",
+        MFU_LOG(MFU_LOG_INFO, "Wrote %lu files in %.3lf seconds (%.3lf files/sec)",
             all_count, secs, rate
         );
     }
@@ -1821,7 +1821,7 @@ void mfu_flist_write_text(
         if (secs > 0.0) {
             rate = ((double)all_count) / secs;
         }
-        MFU_LOG(MFU_LOG_INFO, "Wrote %lu files in %f seconds (%f files/sec)",
+        MFU_LOG(MFU_LOG_INFO, "Wrote %lu files in %.3lf seconds (%.3lf files/sec)",
             all_count, secs, rate
         );
     }

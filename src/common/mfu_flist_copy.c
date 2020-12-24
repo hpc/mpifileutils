@@ -604,10 +604,10 @@ static void meta_progress_fn(const uint64_t* vals, int count, int complete, int 
 #endif
 
     if (complete < ranks) {
-        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %f secs (%f items/sec) ...",
+        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %.3lf secs (%.3lf items/sec) ...",
             vals[0], secs, rate);
     } else {
-        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %f secs (%f items/sec) done",
+        MFU_LOG(MFU_LOG_INFO, "Updated %llu items in %.3lf secs (%.3lf items/sec) done",
             vals[0], secs, rate);
     }
 }
@@ -739,7 +739,7 @@ static int mfu_copy_set_metadata(
           rate = (double)sum / secs;
         }
         if (rank == 0) {
-            MFU_LOG(MFU_LOG_INFO, "Updated %lu items in %f seconds (%f items/sec)",
+            MFU_LOG(MFU_LOG_INFO, "Updated %lu items in %.3lf seconds (%.3lf items/sec)",
               (unsigned long)sum, secs, rate
             );
         }
@@ -872,7 +872,7 @@ static int mfu_copy_set_metadata_dirs(
           rate = (double)sum / secs;
         }
         if (rank == 0) {
-            MFU_LOG(MFU_LOG_INFO, "Updated %lu items in %f seconds (%f items/sec)",
+            MFU_LOG(MFU_LOG_INFO, "Updated %lu items in %.3lf seconds (%.3lf items/sec)",
               (unsigned long)sum, secs, rate
             );
         }
@@ -1075,7 +1075,7 @@ static int mfu_create_directories(
           rate = (double)sum / secs;
         }
         if (rank == 0) {
-            MFU_LOG(MFU_LOG_INFO, "Created %lu directories in %f seconds (%f items/sec)",
+            MFU_LOG(MFU_LOG_INFO, "Created %lu directories in %.3lf seconds (%.3lf items/sec)",
               (unsigned long)sum, secs, rate
             );
         }
@@ -1329,10 +1329,10 @@ static void create_progress_fn(const uint64_t* vals, int count, int complete, in
 #endif
 
     if (complete < ranks) {
-        MFU_LOG(MFU_LOG_INFO, "Created %llu items in %f secs (%f items/sec) ...",
+        MFU_LOG(MFU_LOG_INFO, "Created %llu items in %.3lf secs (%.3lf items/sec) ...",
             vals[0], secs, rate);
     } else {
-        MFU_LOG(MFU_LOG_INFO, "Created %llu items in %f secs (%f items/sec) done",
+        MFU_LOG(MFU_LOG_INFO, "Created %llu items in %.3lf secs (%.3lf items/sec) done",
             vals[0], secs, rate);
     }
 }
@@ -1456,7 +1456,7 @@ static int mfu_create_files(
           rate = (double)sum / secs;
         }
         if (rank == 0) {
-            MFU_LOG(MFU_LOG_INFO, "Created %lu items in %f seconds (%f items/sec)",
+            MFU_LOG(MFU_LOG_INFO, "Created %lu items in %.3lf seconds (%.3lf items/sec)",
               (unsigned long)sum, secs, rate
             );
         }
@@ -1570,7 +1570,7 @@ static int mfu_create_hardlinks(
           rate = (double)sum / secs;
         }
         if (rank == 0) {
-            MFU_LOG(MFU_LOG_INFO, "Linked %lu items in %f seconds (%f items/sec)",
+            MFU_LOG(MFU_LOG_INFO, "Linked %lu items in %.3lf seconds (%.3lf items/sec)",
               (unsigned long)sum, secs, rate
             );
         }
@@ -2216,7 +2216,7 @@ static int mfu_copy_files(
             MFU_LOG(MFU_LOG_INFO, "Copy data: %.3lf %s (%lu bytes)",
               agg_size_tmp, agg_size_units, sum
             );
-            MFU_LOG(MFU_LOG_INFO, "Copy rate: %.3lf %s (%lu bytes in %f seconds)",
+            MFU_LOG(MFU_LOG_INFO, "Copy rate: %.3lf %s (%lu bytes in %.3lf seconds)",
               agg_rate_tmp, agg_rate_units, sum, secs
             );
         }
@@ -2242,7 +2242,7 @@ static void mfu_sync_all(const char* msg)
     double end = MPI_Wtime();
 
     if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Sync completed in %f seconds.", (end - start));
+        MFU_LOG(MFU_LOG_INFO, "Sync completed in %.3lf seconds.", (end - start));
     }
 }
 
@@ -2998,7 +2998,7 @@ int mfu_flist_fill(mfu_flist list, mfu_copy_opts_t* copy_opts, mfu_file_t* mfu_f
             MFU_LOG(MFU_LOG_INFO, "Write data: %.3lf %s (%lu bytes)",
               agg_size_tmp, agg_size_units, sum
             );
-            MFU_LOG(MFU_LOG_INFO, "Write rate: %.3lf %s (%lu bytes in %f seconds)",
+            MFU_LOG(MFU_LOG_INFO, "Write rate: %.3lf %s (%lu bytes in %.3lf seconds)",
               agg_rate_tmp, agg_rate_units, sum, secs
             );
         }
