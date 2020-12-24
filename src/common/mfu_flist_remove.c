@@ -157,6 +157,26 @@ static void remove_spread(mfu_flist flist, uint64_t* rmcount)
 }
 
 /*****************************
+ * Distribute items evenly across processes, sort, then remove
+ ****************************/
+
+/* for given depth, evenly spread the files among processes for
+ * improved load balancing and sort items by path name to help
+ * cluster items in the same directory to the same process */
+static void remove_spread_sort(mfu_flist flist, uint64_t* rmcount)
+{
+    /* evenly spread flist among processes,
+     * sort by path name, execute direct delete, and free temp list */
+    mfu_flist spread = mfu_flist_spread(flist);
+    mfu_flist sorted = mfu_flist_sort("name", spread);
+
+    remove_direct(sorted, rmcount);
+
+    mfu_flist_free(&sorted);
+    mfu_flist_free(&spread);
+    return;
+}
+/*****************************
  * Map all items in same parent directory to a single rank
  ****************************/
 
@@ -472,14 +492,13 @@ static void remove_by_algo(mfu_remove_algos algo, mfu_flist flist, uint64_t* cou
         remove_map(flist, count);
         break;
     case SORT:
-        remove_sort(flist, count);
+        //remove_sort(flist, count);
+        remove_spread_sort(flist, count);
         break;
     case LIBCIRCLE:
         remove_libcircle(flist, count);
         break;
     }
-
-    //TODO: remove sort w/ spread
 
     return;
 }
