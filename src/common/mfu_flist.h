@@ -617,6 +617,9 @@ void mfu_file_chunk_list_lor(
 
 typedef struct {
     char*   dest_path;
+    bool    preserve_owner;
+    bool    preserve_times;
+    bool    preserve_permissions;
     bool    preserve;
     int     flags;
     size_t  chunk_size;
