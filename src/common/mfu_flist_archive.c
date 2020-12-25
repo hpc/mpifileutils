@@ -52,7 +52,6 @@ typedef struct {
 typedef struct {
     const char* name;      /* file name of archive */
     int fd;                /* file descriptor of archive file */
-    int flags;             /* flags used to open archive file */
     void* header_buf;      /* memory buffer in which to encode entry headers */
     size_t header_bufsize; /* size of memory buffer in bytes */
     void* io_buf;          /* memory buffer to read/write files */
@@ -60,13 +59,12 @@ typedef struct {
 } DTAR_writer_t;
 
 DTAR_writer_t DTAR_writer; /* state of open archive file and I/O buffer */
-mfu_flist DTAR_flist;      /* source flist of set of items being copied into archive */
-uint64_t* DTAR_offsets        = NULL; /* byte offset into archive for each entry in our list */
-uint64_t* DTAR_header_sizes   = NULL; /* byte size of header for each entry in our list */
-uint64_t* DTAR_data_offsets   = NULL; /* byte offset within archive file for start of data of each entry */
-int* DTAR_rank_disps          = NULL; /* given a rank, get offset into data offsets array for its files */
-mfu_archive_opts_t* DTAR_opts = NULL; /* pointer to archive options */
+
+mfu_flist DTAR_flist;                    /* source flist of set of items being copied into archive */
 mfu_file_chunk* DTAR_data_chunks = NULL; /* linked list of chunks from mfu_file_chunk_list_alloc */
+int* DTAR_rank_disps             = NULL; /* given a rank, get offset into data offsets array for its files */
+uint64_t* DTAR_data_offsets      = NULL; /* byte offset within archive file for start of data of each entry */
+mfu_archive_opts_t* DTAR_opts    = NULL; /* pointer to archive options */
 
 static int DTAR_err = 0; /* whether a process encounters an error while executing libcircle ops */
 
@@ -524,6 +522,10 @@ static DTAR_operation_t* DTAR_decode_operation(char* op)
     return ret;
 }
 
+#if 0
+uint64_t* DTAR_offsets        = NULL; /* byte offset into archive for each entry in our list */
+uint64_t* DTAR_header_sizes   = NULL; /* byte size of header for each entry in our list */
+
 /* iterate over all items in our flist and add libcircle work
  * items to copy chunks for any regular files */
 static void DTAR_enqueue_copy(CIRCLE_handle* handle)
@@ -567,6 +569,55 @@ static void DTAR_enqueue_copy(CIRCLE_handle* handle)
             handle->enqueue(newop);
             mfu_free(&newop);
         }
+    }
+}
+#endif
+
+/* iterate over all items in our flist and add libcircle work
+ * items to copy chunks for any regular files */
+static void DTAR_enqueue_copy_chunk(CIRCLE_handle* handle)
+{
+    uint64_t chunk_size = DTAR_opts->chunk_size;
+
+    /* iterate over items and copy data for each one */
+    mfu_file_chunk* p = DTAR_data_chunks;
+    while (p != NULL) {
+        /* compute global index of item */
+        int owner_rank = p->rank_of_owner;
+        uint64_t global_idx = DTAR_rank_disps[owner_rank] + p->index_of_owner;
+        uint64_t doffset = DTAR_data_offsets[global_idx];
+
+        /* get name of the file */
+        const char* name = p->name;
+
+        /* get file size */
+        uint64_t size = p->file_size;
+
+        /* compute start and ending chunk id */
+        uint64_t chunk_size = DTAR_opts->chunk_size;
+        uint64_t start_idx = p->offset / chunk_size;
+        uint64_t end_idx   = (p->offset + p->length) / chunk_size;
+
+        /* iterate over chunks */
+        uint64_t chunk_idx;
+        for (chunk_idx = start_idx; chunk_idx < end_idx; chunk_idx++) {
+            char* newop = DTAR_encode_operation(
+                COPY_DATA, name, size, chunk_idx, doffset);
+            handle->enqueue(newop);
+            mfu_free(&newop);
+        }
+
+        /* tack on a last chunk if there is a remainder */
+        uint64_t end_offset = p->offset + p->length;
+        if (end_idx * chunk_size < end_offset) {
+            char* newop = DTAR_encode_operation(
+                COPY_DATA, name, size, end_idx, doffset);
+            handle->enqueue(newop);
+            mfu_free(&newop);
+        }
+
+        /* advance to next file segment in our list */
+        p = p->next;
     }
 }
 
@@ -1222,85 +1273,32 @@ static void mfu_set_stripes(
     return;
 }
 
-/* write items in given flist to specified archive file
- * using libcircle to distribute the task of copying file data */
-static int mfu_flist_archive_create_libcircle(
-    mfu_flist inflist,             /* file list to be archived */
-    const char* filename,          /* name of archive file */
-    int numpaths,                  /* number of source paths used to generate file list */
-    const mfu_param_path* paths,   /* list of source paths used to generate file list */
+static int compute_entry_sizes(
+    mfu_flist flist,
     const mfu_param_path* cwdpath, /* current working directory used to compute relative path to each item */
-    mfu_archive_opts_t* opts)      /* options to configure archive operation */
+    mfu_archive_opts_t* opts,      /* options to configure archive operation */
+    void* buf,
+    size_t bufsize,
+    uint64_t* out_bytes,
+    uint64_t* out_data_bytes,
+    uint64_t* header_sizes,
+    uint64_t* entry_sizes,
+    uint64_t* offsets)
 {
-    /* assume we'll succeed */
     int rc = MFU_SUCCESS;
 
-    /* print note about what we're doing and the amount of files/data to be moved */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Writing archive to %s", filename);
-    }
-
-    /* print summary of item and byte count of items to be archived */
-    mfu_flist_print_summary(inflist);
-
-    /* start overall timer */
-    time_t time_started;
-    time(&time_started);
-    double wtime_started = MPI_Wtime();
-
-    /* sort items alphabetically, so they are placed in the archive with parent directories
-     * coming before their children */
-    mfu_flist flist = mfu_flist_sort("name", inflist);
-
-    /* copy handles to objects into global variables used in libcircle callback functions */
-    DTAR_flist = flist;
-    DTAR_opts  = opts;
-
-    /* we flip this to 1 if any process hits any error writing the archive */
-    DTAR_err = 0;
-
-    /* if archive file will be on lustre, set max striping since this should be big */
-    mfu_set_stripes(filename, cwdpath->path, opts->chunk_size, -1);
-
-    /* create the archive file */
-    DTAR_writer.name  = filename;
-    DTAR_writer.flags = O_WRONLY | O_CREAT | O_CLOEXEC | O_LARGEFILE;
-    DTAR_writer.fd    = mfu_open(filename, DTAR_writer.flags, 0664);
-    if (DTAR_writer.fd < 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to open archive '%s' errno=%d %s",
-            DTAR_writer.name, errno, strerror(errno));
-        DTAR_err = 1;
-    }
-
-    /* Allocate a buffer to encode tar headers.
-     * The entire header must fit in this buffer.
-     * Typical entries will have no problems, but we may exhaust
-     * space for entries that have very long ACLs or XATTRs. */
-    DTAR_writer.header_bufsize = 128 * 1024 * 1024;
-    DTAR_writer.header_buf = MFU_MALLOC(DTAR_writer.header_bufsize);
-
-    /* allocate buffer to read/write data */
-    DTAR_writer.io_bufsize = opts->buf_size;
-    DTAR_writer.io_buf = MFU_MALLOC(DTAR_writer.io_bufsize);
-
-    /* get number of items in our portion of the list */
-    uint64_t listsize = mfu_flist_size(flist);
-
-    /* allocate memory for file sizes, offsets, and header sizes
-     * for each of our items */
-    uint64_t* fsizes  = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
-    DTAR_offsets      = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
-    DTAR_header_sizes = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
-
-    /* compute local offsets for each item and total
-     * bytes we're contributing to the archive */
-    uint64_t idx;
+    /* total bytes required to pack our part of the list */
     uint64_t bytes = 0;
+
+    /* number of data bytes (including padding) for our part of the list */
     uint64_t data_bytes = 0;
-    for (idx = 0; idx < listsize; idx++) {
+
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(flist);
+    for (idx = 0; idx < size; idx++) {
         /* assume the item takes no space */
-        DTAR_header_sizes[idx] = 0;
-        fsizes[idx] = 0;
+        header_sizes[idx] = 0;
+        entry_sizes[idx]  = 0;
 
         /* identify item type to compute its size in the archive */
         mfu_filetype type = mfu_flist_file_get_type(flist, idx);
@@ -1308,16 +1306,16 @@ static int mfu_flist_archive_create_libcircle(
             /* directories and symlinks only need the header */
             uint64_t header_size;
             encode_header(flist, idx, cwdpath,
-                DTAR_writer.header_buf, DTAR_writer.header_bufsize, opts, &header_size);
-            DTAR_header_sizes[idx] = header_size;
-            fsizes[idx] = header_size;
+                buf, bufsize, opts, &header_size);
+            header_sizes[idx] = header_size;
+            entry_sizes[idx]  = header_size;
         } else if (type == MFU_TYPE_FILE) {
             /* regular file requires a header, plus file content,
              * and things are packed into blocks of 512 bytes */
             uint64_t header_size;
             encode_header(flist, idx, cwdpath,
-                DTAR_writer.header_buf, DTAR_writer.header_bufsize, opts, &header_size);
-            DTAR_header_sizes[idx] = header_size;
+                buf, bufsize, opts, &header_size);
+            header_sizes[idx] = header_size;
 
             /* get file size of this item */
             uint64_t fsize = mfu_flist_file_get_size(flist, idx);
@@ -1331,7 +1329,7 @@ static int mfu_flist_archive_create_libcircle(
 
             /* entry size is the haeder plus the file data with padding */
             uint64_t entry_size = header_size + fsize_padded;
-            fsizes[idx] = entry_size;
+            entry_sizes[idx] = entry_size;
 
             /* increment our total data bytes */
             data_bytes += fsize_padded;
@@ -1340,193 +1338,12 @@ static int mfu_flist_archive_create_libcircle(
         }
 
         /* increment our local offset for this item */
-        DTAR_offsets[idx] = bytes;
-        bytes += fsizes[idx];
+        offsets[idx] = bytes;
+        bytes += entry_sizes[idx];
     }
 
-    /* get total number of items and get total data byte count (plus padding) */
-    DTAR_total_items = mfu_flist_global_size(flist);
-    MPI_Allreduce(&data_bytes, &DTAR_total_bytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-    /* compute total archive size */
-    uint64_t archive_size = 0;
-    MPI_Allreduce(&bytes, &archive_size, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-    /* execute scan to figure our global offset in the archive file */
-    uint64_t global_offset = 0;
-    MPI_Scan(&bytes, &global_offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    global_offset -= bytes;
-
-    /* update offsets for each of our file to their global offset */
-    for (idx = 0; idx < listsize; idx++) {
-        DTAR_offsets[idx] += global_offset;
-    }
-
-    /* record global offsets in index */
-    write_entry_index(filename, listsize, DTAR_offsets);
-
-    /* print message to user that we're starting */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Truncating archive");
-    }
-
-    /* truncate file to correct size to overwrite existing file
-     * and to preallocate space on the file system */
-    if (mfu_rank == 0) {
-        /* truncate to 0 to delete any existing file contents */
-        mfu_ftruncate(DTAR_writer.fd, 0);
-
-        /* truncate to proper size and preallocate space,
-         * archive size represents the space to hold all entries,
-         * then add on final two 512-blocks that mark the end of the archive */
-        off_t final_size = archive_size + 2 * 512;
-        mfu_ftruncate(DTAR_writer.fd, final_size);
-        posix_fallocate(DTAR_writer.fd, 0, final_size);
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    /* print message to user that we're starting */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Writing entry headers");
-    }
-
-    /* write headers for our files */
-    for (idx = 0; idx < listsize; idx++) {
-        /* we currently only support regular files, directories, and symlinks */
-        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
-        if (type == MFU_TYPE_FILE || type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
-            /* write header for this item to the archive,
-             * this sets DTAR_err on any error */
-            write_header(flist, idx, cwdpath,
-                DTAR_writer.header_buf, DTAR_writer.header_bufsize, opts,
-                DTAR_writer.name, DTAR_writer.fd, DTAR_offsets[idx]);
-        } else {
-            /* print a warning that we did not archive this item */
-            const char* item_name = mfu_flist_file_get_name(flist, idx);
-            MFU_LOG(MFU_LOG_WARN, "Unsupported type, cannot archive `%s'", item_name);
-        }
-    }
-
-    /* print message to user that we're starting */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Copying file data");
-    }
-
-    /* initialize file cache for opening source files */
-    mfu_archive_src_cache.name = NULL;
-
-    /* prepare libcircle */
-    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL | CIRCLE_TERM_TREE);
-    CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
-    CIRCLE_enable_logging(loglevel);
-
-    /* register callbacks */
-    CIRCLE_cb_create(&DTAR_enqueue_copy);
-    CIRCLE_cb_process(&DTAR_perform_copy);
-
-    /* prepare callbacks and initialize variables for reductions */
-    reduce_start = MPI_Wtime();
-    reduce_bytes = 0;
-    reduce_opstr = "Tarred";
-    CIRCLE_cb_reduce_init(&reduce_init);
-    CIRCLE_cb_reduce_op(&reduce_exec);
-    CIRCLE_cb_reduce_fini(&reduce_fini);
-
-    /* set libcircle reduction period */
-    int reduce_secs = 0;
-    if (mfu_progress_timeout > 0) {
-        reduce_secs = mfu_progress_timeout;
-    }
-    CIRCLE_set_reduce_period(reduce_secs);
-
-    /* run the libcircle job to copy data into archive file */
-    CIRCLE_begin();
-    CIRCLE_finalize();
-
-    /* done writing, close any source file that is still open */
-    mfu_archive_close_file(&mfu_archive_src_cache);
-
-    /* rank 0 finalizes the archive by writing two 512-byte blocks of NUL
-     * (according to tar file format) */
-    if (mfu_rank == 0) {
-        /* write two blocks of 512 bytes of 0 at end of archive */
-        char buf[1024] = {0};
-        size_t bufsize = sizeof(buf);
-        ssize_t pwrite_rc = mfu_pwrite(DTAR_writer.name, DTAR_writer.fd, buf, bufsize, archive_size);
-        if (pwrite_rc != bufsize) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to write to archive '%s' at offset %llu errno=%d %s",
-                DTAR_writer.name, archive_size, errno, strerror(errno));
-            DTAR_err = 1;
-        }
-
-        /* include final NULL blocks in our stats */
-        archive_size += bufsize;
-    }
-
-    /* TODO: sync archive? */
-
-    /* close archive file */
-    int close_rc = mfu_close(DTAR_writer.name, DTAR_writer.fd);
-    if (close_rc == -1) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to close archive '%s' errno=%d %s",
-            DTAR_writer.name, errno, strerror(errno));
-        DTAR_err = 1;
-    }
-
-    /* determine whether everyone succeeded in writing their part */
-    int write_success = mfu_alltrue(DTAR_err == 0, MPI_COMM_WORLD);
-    if (! write_success) {
-        rc = MFU_FAILURE;
-    }
-
-    /* wait for all ranks to finish */
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    /* free sorted list */
-    mfu_free(&flist);
-
-    /* stop overall time */
-    time_t time_ended;
-    time(&time_ended);
-    double wtime_ended = MPI_Wtime();
-
-    /* print stats */
-    double secs = wtime_ended - wtime_started;
-    if (mfu_rank == 0) {
-        char starttime_str[256];
-        struct tm* localstart = localtime(&time_started);
-        strftime(starttime_str, 256, "%b-%d-%Y, %H:%M:%S", localstart);
-
-        char endtime_str[256];
-        struct tm* localend = localtime(&time_ended);
-        strftime(endtime_str, 256, "%b-%d-%Y, %H:%M:%S", localend);
-
-        /* convert size to units */
-        double size_tmp;
-        const char* size_units;
-        mfu_format_bytes(archive_size, &size_tmp, &size_units);
-
-        /* convert bandwidth to unit */
-        double agg_rate_tmp;
-        double agg_rate = (double)archive_size / secs;
-        const char* agg_rate_units;
-        mfu_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
-
-        MFU_LOG(MFU_LOG_INFO, "Started:   %s", starttime_str);
-        MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
-        MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", secs);
-        MFU_LOG(MFU_LOG_INFO, "Archive size: %.3lf %s", size_tmp, size_units);
-        MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
-                "(%.3" PRIu64 " bytes in %.3lf seconds)", \
-                agg_rate_tmp, agg_rate_units, archive_size, secs);
-    }
-
-    /* clean up */
-    mfu_free(&DTAR_writer.header_buf);
-    mfu_free(&DTAR_writer.io_buf);
-    mfu_free(&fsizes);
-    mfu_free(&DTAR_offsets);
-    mfu_free(&DTAR_header_sizes);
+    *out_bytes      = bytes;
+    *out_data_bytes = data_bytes;
 
     return rc;
 }
@@ -1575,212 +1392,106 @@ static void create_progress_fn(const uint64_t* vals, int count, int complete, in
     }
 }
 
-static int mfu_flist_archive_create_chunk(
-    mfu_flist inflist,
+static int mfu_flist_archive_create_copy_libcircle(
+    mfu_flist flist,
     const char* filename,
-    int numpaths,
-    const mfu_param_path* paths,
-    const mfu_param_path* cwdpath,
+    int fd,
+    void* header_buf,
+    size_t header_bufsize,
+    void* buf,
+    size_t bufsize,
+    int* rank_disps,
+    uint64_t* data_offsets,
     mfu_archive_opts_t* opts)
 {
     int rc = MFU_SUCCESS;
 
-    /* print note about what we're doing and the amount of files/data to be moved */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Writing archive to %s", filename);
-    }
+    /* split the regular files listed in flist into chunks and distribute
+     * those chunks evenly across processes as a linked list */
+    mfu_file_chunk* data_chunks = mfu_file_chunk_list_alloc(flist, opts->chunk_size);
 
-    /* print summary of item and byte count of items to be archived */
-    mfu_flist_print_summary(inflist);
+    /* copy handles to objects into global variables used in libcircle callback functions */
+    DTAR_flist = flist;
+    DTAR_opts  = opts;
 
-    /* start overall timer */
-    time_t time_started;
-    time(&time_started);
-    double wtime_started = MPI_Wtime();
-
-    /* sort items alphabetically, so they are placed in the archive with parent directories
-     * coming before their children */
-    mfu_flist flist = mfu_flist_sort("name", inflist);
-
-    /* we'll flip this to 1 if any process hits any error writing the archive */
-    DTAR_err = 0;
-
-    /* if archive file will be on lustre, set max striping since this should be big */
-    mfu_set_stripes(filename, cwdpath->path, opts->chunk_size, -1);
-
-    /* create the archive file */
-    int flags = O_WRONLY | O_CREAT | O_CLOEXEC | O_LARGEFILE;
-    int fd    = mfu_open(filename, flags, 0664);
-    if (fd < 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to open archive '%s' errno=%d %s",
-            filename, errno, strerror(errno));
-        DTAR_err = 1;
-    }
-
-//    int lock_rc = llapi_group_lock(fd, 23);
+    DTAR_writer.name = filename;
+    DTAR_writer.fd   = fd;
 
     /* Allocate a buffer to encode tar headers.
      * The entire header must fit in this buffer.
      * Typical entries will have no problems, but we may exhaust
      * space for entries that have very long ACLs or XATTRs. */
-    size_t header_bufsize = 128 * 1024 * 1024;
-    void* header_buf = MFU_MALLOC(header_bufsize);
-
-    /* get number of items in our portion of the list */
-    uint64_t listsize = mfu_flist_size(flist);
-
-    /* allocate memory for file sizes and offsets */
-    uint64_t* header_sizes = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
-    uint64_t* entry_sizes  = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
-    uint64_t* offsets      = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
-    uint64_t* data_offsets = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
+    DTAR_writer.header_bufsize = header_bufsize;
+    DTAR_writer.header_buf = header_buf;
 
     /* allocate buffer to read/write data */
-    size_t bufsize = opts->buf_size;
-    void* buf = MFU_MALLOC(bufsize);
+    DTAR_writer.io_bufsize = bufsize;
+    DTAR_writer.io_buf = buf;
 
-    /* compute local offsets for each item and total
-     * bytes we're contributing to the archive */
-    uint64_t idx;
-    uint64_t offset = 0;
-    uint64_t data_bytes = 0;
-    for (idx = 0; idx < listsize; idx++) {
-        /* assume the item takes no space */
-        header_sizes[idx] = 0;
-        entry_sizes[idx]  = 0;
+    /* get total number of items and get total data byte count (plus padding) */
+    DTAR_total_items = mfu_flist_global_size(flist);
 
-        /* identify item type to compute its size in the archive */
-        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
-        if (type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
-            /* directories and symlinks only need the header */
-            uint64_t header_size;
-            encode_header(flist, idx, cwdpath,
-                header_buf, header_bufsize, opts, &header_size);
-            header_sizes[idx] = header_size;
-            entry_sizes[idx]  = header_size;
-        } else if (type == MFU_TYPE_FILE) {
-            /* regular file requires a header, plus file content,
-             * and things are packed into blocks of 512 bytes */
-            uint64_t header_size;
-            encode_header(flist, idx, cwdpath,
-                header_buf, header_bufsize, opts, &header_size);
-            header_sizes[idx] = header_size;
+    /* save list to global variable for enqueue */
+    DTAR_rank_disps   = rank_disps;
+    DTAR_data_chunks  = data_chunks;
+    DTAR_data_offsets = data_offsets;
 
-            /* get file size of this item */
-            uint64_t fsize = mfu_flist_file_get_size(flist, idx);
+    /* initialize file cache for opening source files */
+    mfu_archive_src_cache.name = NULL;
 
-            /* round file size up to nearest integer number of 512 bytes */
-            uint64_t fsize_padded = fsize / 512;
-            fsize_padded *= 512;
-            if (fsize_padded < fsize) {
-                fsize_padded += 512;
-            }
+    /* prepare libcircle */
+    CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL | CIRCLE_TERM_TREE);
+    CIRCLE_loglevel loglevel = CIRCLE_LOG_WARN;
+    CIRCLE_enable_logging(loglevel);
 
-            /* entry size is the haeder plus the file data with padding */
-            uint64_t entry_size = header_size + fsize_padded;
-            entry_sizes[idx] = entry_size;
+    /* register callbacks */
+    CIRCLE_cb_create(&DTAR_enqueue_copy_chunk);
+    CIRCLE_cb_process(&DTAR_perform_copy);
 
-            /* increment our total data bytes */
-            data_bytes += fsize_padded;
-        }
+    /* prepare callbacks and initialize variables for reductions */
+    reduce_start = MPI_Wtime();
+    reduce_bytes = 0;
+    reduce_opstr = "Tarred";
+    CIRCLE_cb_reduce_init(&reduce_init);
+    CIRCLE_cb_reduce_op(&reduce_exec);
+    CIRCLE_cb_reduce_fini(&reduce_fini);
 
-        /* increment our local offset for this item */
-        offsets[idx] = offset;
-        offset += entry_sizes[idx];
+    /* set libcircle reduction period */
+    int reduce_secs = 0;
+    if (mfu_progress_timeout > 0) {
+        reduce_secs = mfu_progress_timeout;
     }
+    CIRCLE_set_reduce_period(reduce_secs);
 
-    /* store total item and data byte count */
-    uint64_t total_items = mfu_flist_global_size(flist);
-    MPI_Allreduce(&data_bytes, &DTAR_total_bytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    /* run the libcircle job to copy data into archive file */
+    CIRCLE_begin();
+    CIRCLE_finalize();
 
-    /* compute total archive size */
-    uint64_t archive_size = 0;
-    MPI_Allreduce(&offset, &archive_size, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    /* done writing, close any source file that is still open */
+    mfu_archive_close_file(&mfu_archive_src_cache);
 
-    /* execute scan to figure our global base offset in the archive file */
-    uint64_t global_offset = 0;
-    MPI_Scan(&offset, &global_offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    global_offset -= offset;
+    /* free our chunk list */
+    mfu_file_chunk_list_free(&data_chunks);
 
-    /* update offsets for each of our file to their global offset */
-    for (idx = 0; idx < listsize; idx++) {
-        offsets[idx] += global_offset;
-        data_offsets[idx] = offsets[idx] + header_sizes[idx];
-    }
+    return rc;
+}
 
-    /* record global offsets in index */
-    write_entry_index(filename, listsize, offsets);
+static int mfu_flist_archive_create_copy_chunk(
+    mfu_flist flist,
+    const char* filename,
+    int fd,
+    void* header_buf,
+    size_t header_bufsize,
+    void* buf,
+    size_t bufsize,
+    int* rank_disps,
+    uint64_t* data_offsets,
+    mfu_archive_opts_t* opts)
+{
+    int rc = MFU_SUCCESS;
 
-    /* print message to user that we're starting */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Truncating archive");
-    }
-
-    /* truncate file to correct size to overwrite existing file
-     * and to preallocate space on the file system */
-    if (mfu_rank == 0) {
-        /* truncate to 0 to delete any existing file contents */
-        mfu_ftruncate(fd, 0);
-
-        /* truncate to proper size and preallocate space,
-         * archive size represents the space to hold all entries,
-         * then add on final two 512-blocks that mark the end of the archive */
-        off_t final_size = archive_size + 2 * 512;
-        mfu_ftruncate(fd, final_size);
-        posix_fallocate(fd, 0, final_size);
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    /* print message to user that we're starting */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Writing entry headers");
-    }
-
-    /* write headers for our files */
-    for (idx = 0; idx < listsize; idx++) {
-        /* we currently only support regular files, directories, and symlinks */
-        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
-        if (type == MFU_TYPE_FILE || type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
-            /* write header for this item to the archive,
-             * this sets DTAR_err on any error */
-            write_header(flist, idx, cwdpath,
-                header_buf, header_bufsize, opts,
-                filename, fd, offsets[idx]);
-        } else {
-            /* print a warning that we did not archive this item */
-            const char* item_name = mfu_flist_file_get_name(flist, idx);
-            MFU_LOG(MFU_LOG_WARN, "Unsupported type, cannot archive `%s'", item_name);
-        }
-    }
-
-    /* print message to user that we're starting */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Copying file data");
-    }
-
-    int ranks;
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-    /* get number of items on each process */
-    int* rank_counts = (int*) MFU_MALLOC(ranks * sizeof(int));
-    int listsize_int = (int) listsize;
-    MPI_Allgather(&listsize_int, 1, MPI_INT, rank_counts, 1, MPI_INT, MPI_COMM_WORLD);
-
-    /* get list of item offsets across ranks,
-     * this will be used to compute global index of item
-     * given a owner rank and list index of the item on its owner rank */
-    int* rank_disps = (int*) MFU_MALLOC(ranks * sizeof(int));
-    int item_offset = (int) mfu_flist_global_offset(flist);
-    MPI_Allgather(&item_offset, 1, MPI_INT, rank_disps, 1, MPI_INT, MPI_COMM_WORLD);
-
-    /* get byte offset in archive for start of data for every item */
-    uint64_t* all_offsets = (uint64_t*) MFU_MALLOC(total_items * sizeof(uint64_t));
-    MPI_Allgatherv(
-        data_offsets, listsize_int, MPI_UINT64_T,
-        all_offsets, rank_counts, rank_disps, MPI_UINT64_T,
-        MPI_COMM_WORLD);
-
-    /* chunk flist */
+    /* split the regular files listed in flist into chunks and distribute
+     * those chunks evenly across processes as a linked list */
     mfu_file_chunk* data_chunks = mfu_file_chunk_list_alloc(flist, opts->chunk_size);
 
     /* initialize counters to track number of bytes and items extracted */
@@ -1795,7 +1506,7 @@ static int mfu_flist_archive_create_chunk(
         /* compute global index of item */
         int owner_rank = p->rank_of_owner;
         uint64_t global_idx = rank_disps[owner_rank] + p->index_of_owner;
-        uint64_t data_offset = all_offsets[global_idx];
+        uint64_t data_offset = data_offsets[global_idx];
 
         /* open the source file for reading */
         const char* in_name = p->name;
@@ -1860,8 +1571,241 @@ static int mfu_flist_archive_create_chunk(
     /* finalize progress messages */
     mfu_progress_complete(reduce_buf, &create_prog);
 
-    /* free chunk list */
+    /* free our chunk list */
     mfu_file_chunk_list_free(&data_chunks);
+
+    return rc;
+}
+
+typedef enum {
+    CREATE_DEFAULT,  /* attempt to dynamically choose best option */
+    CREATE_CHUNK,    /* direct write of data, chunk list */
+    CREATE_LIBCIRCLE /* direct write of data, chunk list to init libcircle */
+} mfu_flist_archive_create_algo;
+
+static mfu_flist_archive_create_algo select_create_algo(void)
+{
+    mfu_flist_archive_create_algo algo = CREATE_DEFAULT;
+
+    /* see if the user is trying to request a specific create algorithm */
+    const char varname[] = "MFU_FLIST_ARCHIVE_CREATE";
+    const char* value = getenv(varname);
+    if (value == NULL) {
+        return algo;
+    }
+
+    /* user is trying to request a specific algorithm */
+    if (strcmp(value, "DEFAULT") == 0) {
+        algo = CREATE_DEFAULT;
+    } else if (strcmp(value, "CHUNK") == 0) {
+        algo = CREATE_CHUNK;
+    } else if (strcmp(value, "LIBCIRCLE") == 0) {
+        algo = CREATE_LIBCIRCLE;
+    } else {
+        /* value does not match any known algorithm name,
+         * print an error and fall back to default */
+        if (mfu_rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "%s: unknown value %s", varname, value);
+        }
+        value = "DEFAULT";
+        algo = CREATE_DEFAULT;
+    }
+
+    /* is user tried to select something, echo it back to confirm */
+    if (mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "%s: %s", varname, value);
+    }
+
+    return algo;
+}
+
+int mfu_flist_archive_create(
+    mfu_flist inflist,
+    const char* filename,
+    int numpaths,
+    const mfu_param_path* paths,
+    const mfu_param_path* cwdpath,
+    mfu_archive_opts_t* opts)
+{
+    /* assume we'll succeed */
+    int rc = MFU_SUCCESS;
+
+    /* allow override algorithm choice via environment variable */
+    mfu_flist_archive_create_algo algo = select_create_algo();
+    if (algo == CREATE_LIBCIRCLE) {
+        opts->create_libcircle = 1;
+    } else {
+        opts->create_libcircle = 0;
+    }
+
+    /* print note about what we're doing and the amount of files/data to be moved */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Writing archive to %s", filename);
+    }
+
+    /* print summary of item and byte count of items to be archived */
+    mfu_flist_print_summary(inflist);
+
+    /* start overall timer */
+    time_t time_started;
+    time(&time_started);
+    double wtime_started = MPI_Wtime();
+
+    /* sort items alphabetically, so they are placed in the archive with parent directories
+     * coming before their children */
+    mfu_flist flist = mfu_flist_sort("name", inflist);
+
+    /* we'll flip this to 1 if any process hits any error writing the archive */
+    DTAR_err = 0;
+
+    /* if archive file will be on lustre, set max striping since this should be big */
+    mfu_set_stripes(filename, cwdpath->path, opts->chunk_size, -1);
+
+    /* create the archive file */
+    int flags = O_WRONLY | O_CREAT | O_CLOEXEC | O_LARGEFILE;
+    int fd    = mfu_open(filename, flags, 0664);
+    if (fd < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to open archive '%s' errno=%d %s",
+            filename, errno, strerror(errno));
+        DTAR_err = 1;
+    }
+
+//    int lock_rc = llapi_group_lock(fd, 23);
+
+    /* Allocate a buffer to encode tar headers.
+     * The entire header must fit in this buffer.
+     * Typical entries will have no problems, but we may exhaust
+     * space for entries that have very long ACLs or XATTRs. */
+    size_t header_bufsize = 128 * 1024 * 1024;
+    void* header_buf = MFU_MALLOC(header_bufsize);
+
+    /* get number of items in our portion of the list */
+    uint64_t listsize = mfu_flist_size(flist);
+
+    /* allocate memory for file sizes and offsets */
+    uint64_t* header_sizes  = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
+    uint64_t* entry_sizes   = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
+    uint64_t* entry_offsets = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
+    uint64_t* data_offsets  = (uint64_t*) MFU_MALLOC(listsize * sizeof(uint64_t));
+
+    /* allocate buffer to read/write data */
+    size_t bufsize = opts->buf_size;
+    void* buf = MFU_MALLOC(bufsize);
+
+    /* compute local offsets for each item and total
+     * bytes we're contributing to the archive */
+    uint64_t idx;
+    uint64_t bytes = 0;
+    uint64_t data_bytes = 0;
+    compute_entry_sizes(flist, cwdpath, opts,
+        header_buf, header_bufsize,
+        &bytes, &data_bytes, header_sizes, entry_sizes, entry_offsets);
+
+    /* store total item and data byte count */
+    uint64_t total_items = mfu_flist_global_size(flist);
+    MPI_Allreduce(&data_bytes, &DTAR_total_bytes, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* compute total archive size */
+    uint64_t archive_size = 0;
+    MPI_Allreduce(&bytes, &archive_size, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* execute scan to figure our global base offset in the archive file */
+    uint64_t global_offset = 0;
+    MPI_Scan(&bytes, &global_offset, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    global_offset -= bytes;
+
+    /* update offsets for each of our file to their global offset */
+    for (idx = 0; idx < listsize; idx++) {
+        entry_offsets[idx] += global_offset;
+        data_offsets[idx] = entry_offsets[idx] + header_sizes[idx];
+    }
+
+    /* record global offsets in index */
+    write_entry_index(filename, listsize, entry_offsets);
+
+    /* print message to user that we're starting */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Truncating archive");
+    }
+
+    /* truncate file to correct size to overwrite existing file
+     * and to preallocate space on the file system */
+    if (mfu_rank == 0) {
+        /* truncate to 0 to delete any existing file contents */
+        mfu_ftruncate(fd, 0);
+
+        /* truncate to proper size and preallocate space,
+         * archive size represents the space to hold all entries,
+         * then add on final two 512-blocks that mark the end of the archive */
+        off_t final_size = archive_size + 2 * 512;
+        mfu_ftruncate(fd, final_size);
+        posix_fallocate(fd, 0, final_size);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    /* print message to user that we're starting */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Writing entry headers");
+    }
+
+    /* write headers for our files */
+    for (idx = 0; idx < listsize; idx++) {
+        /* we currently only support regular files, directories, and symlinks */
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+        if (type == MFU_TYPE_FILE || type == MFU_TYPE_DIR || type == MFU_TYPE_LINK) {
+            /* write header for this item to the archive,
+             * this sets DTAR_err on any error */
+            write_header(flist, idx, cwdpath,
+                header_buf, header_bufsize, opts,
+                filename, fd, entry_offsets[idx]);
+        } else {
+            /* print a warning that we did not archive this item */
+            const char* item_name = mfu_flist_file_get_name(flist, idx);
+            MFU_LOG(MFU_LOG_WARN, "Unsupported type, cannot archive `%s'", item_name);
+        }
+    }
+
+    /* print message to user that we're starting */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Copying file data");
+    }
+
+    int ranks;
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* get number of items on each process */
+    int* rank_counts = (int*) MFU_MALLOC(ranks * sizeof(int));
+    int listsize_int = (int) listsize;
+    MPI_Allgather(&listsize_int, 1, MPI_INT, rank_counts, 1, MPI_INT, MPI_COMM_WORLD);
+
+    /* get list of item offsets across ranks,
+     * this will be used to compute global index of item
+     * given a owner rank and list index of the item on its owner rank */
+    int* rank_disps = (int*) MFU_MALLOC(ranks * sizeof(int));
+    int item_offset = (int) mfu_flist_global_offset(flist);
+    MPI_Allgather(&item_offset, 1, MPI_INT, rank_disps, 1, MPI_INT, MPI_COMM_WORLD);
+
+    /* get byte offset in archive for start of data for every item */
+    uint64_t* all_offsets = (uint64_t*) MFU_MALLOC(total_items * sizeof(uint64_t));
+    MPI_Allgatherv(
+        data_offsets, listsize_int, MPI_UINT64_T,
+        all_offsets, rank_counts, rank_disps, MPI_UINT64_T,
+        MPI_COMM_WORLD);
+
+    /* copy data from files into archive */
+    if (opts->create_libcircle) {
+        /* distribute flist into chunk list across procs,
+         * then insert work items into libcircle */
+        mfu_flist_archive_create_copy_libcircle(flist, filename, fd,
+            header_buf, header_bufsize, buf, bufsize,
+            rank_disps, all_offsets, opts);
+    } else {
+        /* this splits the flist into a chunk list,
+         * and each process directly copies its chunks */
+        mfu_flist_archive_create_copy_chunk(flist, filename, fd,
+            header_buf, header_bufsize, buf, bufsize,
+            rank_disps, all_offsets, opts);
+    }
 
     /* rank 0 finalizes the archive by writing two 512-byte blocks of NUL
      * (according to tar file format) */
@@ -1945,48 +1889,10 @@ static int mfu_flist_archive_create_chunk(
     mfu_free(&header_buf);
     mfu_free(&buf);
     mfu_free(&data_offsets);
-    mfu_free(&offsets);
+    mfu_free(&entry_offsets);
     mfu_free(&entry_sizes);
     mfu_free(&header_sizes);
 
-    return rc;
-}
-
-int mfu_flist_archive_create(
-    mfu_flist flist,
-    const char* filename,
-    int numpaths,
-    const mfu_param_path* paths,
-    const mfu_param_path* cwdpath,
-    mfu_archive_opts_t* opts)
-{
-    /* allow override algorithm choice via environment variable */
-    char varname[] = "MFU_FLIST_ARCHIVE_CREATE";
-    const char* value = getenv(varname);
-    if (value != NULL) {
-        if (strcmp(value, "LIBCIRCLE") == 0) {
-            if (mfu_rank == 0) {
-                MFU_LOG(MFU_LOG_INFO, "%s: LIBCIRCLE", varname);
-            }
-            opts->create_libcircle = 1;
-        } else if (strcmp(value, "CHUNK") == 0) {
-            if (mfu_rank == 0) {
-                MFU_LOG(MFU_LOG_INFO, "%s: CHUNK", varname);
-            }
-            opts->create_libcircle = 0;
-        } else {
-            if (mfu_rank == 0) {
-                MFU_LOG(MFU_LOG_ERR, "%s: Unknown value: %s", varname, value);
-            }
-        }
-    }
-
-    int rc;
-    if (opts->create_libcircle) {
-        rc = mfu_flist_archive_create_libcircle(flist, filename, numpaths, paths, cwdpath, opts);
-    } else {
-        rc = mfu_flist_archive_create_chunk(flist, filename, numpaths, paths, cwdpath, opts);
-    }
     return rc;
 }
 
@@ -3535,6 +3441,29 @@ static mfu_flist_archive_extract_algo select_extract_algo(void)
     return algo;
 }
 
+/* return a file list of just the directories */
+static mfu_flist flist_get_dirs(mfu_flist flist)
+{
+    /* create a subset list to copy items into */
+    mfu_flist flist_dirs = mfu_flist_subset(flist);
+
+    /* iterate over items in our list and copy each directory */
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(flist);
+    for (idx = 0; idx < size; idx++) {
+        /* if item is a directory, copy it to the directory list */
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+        if (type == MFU_TYPE_DIR) {
+            mfu_flist_file_copy(flist, idx, flist_dirs);
+        }
+    }
+
+    /* finalize the directory list */
+    mfu_flist_summarize(flist_dirs);
+
+    return flist_dirs;
+}
+
 /* given an archive file name, extract items into cwdpath according to options */
 int mfu_flist_archive_extract(
     const char* filename,          /* name of archive file */
@@ -3774,17 +3703,7 @@ int mfu_flist_archive_extract(
         }
 
         /* create a file list of just the directories */
-        mfu_flist flist_dirs = mfu_flist_subset(flist);
-        uint64_t idx;
-        uint64_t size = mfu_flist_size(flist);
-        for (idx = 0; idx < size; idx++) {
-            /* if item is a directory, copy it to the directory list */
-            mfu_filetype type = mfu_flist_file_get_type(flist, idx);
-            if (type == MFU_TYPE_DIR) {
-                mfu_flist_file_copy(flist, idx, flist_dirs);
-            }
-        }
-        mfu_flist_summarize(flist_dirs);
+        mfu_flist flist_dirs = flist_get_dirs(flist);
 
         /* set timestamps on the directories, do this after writing all items
          * since creating items in a directory will have changed its timestamp */
