@@ -257,6 +257,45 @@ void mfu_flist_increase(mfu_flist* pbflist)
     return;
 }
 
+/* add new element to running list index, allocates additional
+ * capactiy for index if needed */
+static void list_index_append(flist_t* flist, elem_t* elem)
+{
+    /* if we have no capacity for the index,
+     * initialize with a small array */
+    uint64_t cap = flist->list_cap;
+    if (cap == 0) {
+        /* have no index at all, initialize it */
+        uint64_t new_capacity = 32;
+        size_t index_size = new_capacity * sizeof(elem_t*);
+        flist->list_index = (elem_t**) MFU_MALLOC(index_size);
+        flist->list_cap = new_capacity;
+    }
+
+    /* check that our index has space before we add it */
+    uint64_t count = flist->list_count;
+    if (count == cap) {
+        /* we have exhausted the current capacity of the index array,
+         * allocate a new memory region that is double the size */
+        uint64_t new_capacity = cap * 2;
+        size_t index_size = new_capacity * sizeof(elem_t*);
+        elem_t** new_index = (elem_t**) MFU_MALLOC(index_size);
+
+        /* copy over existing list */
+        memcpy(new_index, flist->list_index, count * sizeof(elem_t*));
+
+        /* free the old index memory and assign the new one */
+        mfu_free(&flist->list_index);
+        flist->list_index = new_index;
+        flist->list_cap   = new_capacity;
+    }
+
+    /* append the item to the index */
+    flist->list_index[count - 1] = elem;
+
+    return;
+}
+
 /* append element to tail of linked list */
 void mfu_flist_insert_elem(flist_t* flist, elem_t* elem)
 {
@@ -278,8 +317,8 @@ void mfu_flist_insert_elem(flist_t* flist, elem_t* elem)
     /* increase list count by one */
     flist->list_count++;
 
-    /* delete the index if we have one, it's out of date */
-    mfu_free(&flist->list_index);
+    /* append address of element to our index */
+    list_index_append(flist, elem);
 
     return;
 }
@@ -377,6 +416,7 @@ static void list_delete(flist_t* flist)
 
     /* delete the cached index */
     mfu_free(&flist->list_index);
+    flist->list_cap = 0;
 
     return;
 }
@@ -385,26 +425,8 @@ static void list_delete(flist_t* flist)
  * NULL if index is not in range */
 static elem_t* list_get_elem(flist_t* flist, uint64_t idx)
 {
-    uint64_t max = flist->list_count;
-    
-    /* build index of list elements if we don't already have one */
-    if (flist->list_index == NULL) {
-        /* allocate array to record pointer to each element */
-        size_t index_size = max * sizeof(elem_t*);
-        
-        flist->list_index = (elem_t**) MFU_MALLOC(index_size);
-
-        /* get pointer to each element */
-        uint64_t i = 0;
-        elem_t* current = flist->list_head;
-        while (i < max && current != NULL) {
-            flist->list_index[i] = current;
-            current = current->next;
-            i++;
-        }
-    }
-
     /* return pointer to element if index is within range */
+    uint64_t max = flist->list_count;
     if (idx < max) {
         elem_t* elem = flist->list_index[idx];
         return elem;
@@ -526,6 +548,7 @@ mfu_flist mfu_flist_new()
     flist->list_head  = NULL;
     flist->list_tail  = NULL;
     flist->list_index = NULL;
+    flist->list_cap   = 0;
 
     /* initialize user and group structures */
     mfu_flist_usrgrp_init(flist);
