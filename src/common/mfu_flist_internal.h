@@ -73,6 +73,7 @@ typedef struct flist {
     elem_t*  list_head;  /* points to item at head of list */
     elem_t*  list_tail;  /* points to item at tail of list */
     elem_t** list_index; /* an array with pointers to each item in list */
+    uint64_t list_cap;   /* current capacity of list_index */
 
     /* buffers of users, groups, and files */
     buf_t users;
