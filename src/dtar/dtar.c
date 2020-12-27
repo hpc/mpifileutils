@@ -49,6 +49,7 @@ static void print_usage(void)
 //    printf("  -j, --compress          - compress archive\n");
     printf("  -x, --extract           - extract archive\n");
 //    printf("  -p, --preserve          - preserve attributes\n");
+//    printf("  -s, --fsync             - sync file data to disk on close\n");
     printf("  -b, --blocksize <SIZE>  - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>  - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
     printf("  -f, --file <filename>   - target output file\n");
@@ -95,6 +96,7 @@ int main(int argc, char** argv)
         //{"compress",  0, 0, 'j'},
         {"extract",   0, 0, 'x'},
         {"preserve",  0, 0, 'p'},
+        {"fsync",     0, 0, 's'},
         {"blocksize", 1, 0, 'b'},
         {"chunksize", 1, 0, 'k'},
         {"file",      1, 0, 'f'},
@@ -111,7 +113,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "cxpb:k:f:vyh",
+                    argc, argv, "cxpsb:k:f:vyh",
                     long_options, &option_index
                 );
 
@@ -132,6 +134,9 @@ int main(int argc, char** argv)
                 break;
             case 'p':
                 archive_opts->preserve = true;
+                break;
+            case 's':
+                archive_opts->sync_on_close = true;
                 break;
             case 'b':
                 if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
