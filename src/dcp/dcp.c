@@ -390,6 +390,7 @@ int main(int argc, char** argv)
     if (inputname && mfu_src_file->type == DAOS) {
         MFU_LOG(MFU_LOG_ERR, "--input is not supported with DAOS"
                 MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+        daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
         mfu_finalize();
         MPI_Finalize();
         return 1;
@@ -418,9 +419,20 @@ int main(int argc, char** argv)
         /* allocate space for each path */
         paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
-        /* process each path */
+#ifdef DAOS_SUPPORT
+        /* Process the source and dest path individually for DAOS. */
+        if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
+            mfu_param_path_set(argpaths[0], &paths[0], mfu_src_file);
+            mfu_param_path_set(argpaths[1], &paths[1], mfu_dst_file);
+        } else {
+#endif
 
-        mfu_param_path_set_all(numpaths, (const char**)argpaths, paths);
+            /* process each path */
+            mfu_param_path_set_all(numpaths, (const char**)argpaths, paths, mfu_src_file);
+
+#ifdef DAOS_SUPPORT
+        }
+#endif
 
         /* advance to next set of options */
         optind += numpaths;

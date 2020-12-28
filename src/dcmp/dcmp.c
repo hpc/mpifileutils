@@ -2217,12 +2217,16 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* create new mfu_file objects */
+    mfu_file_t* mfu_src_file = mfu_file_new();
+    mfu_file_t* mfu_dst_file = mfu_file_new();
+
     /* allocate space for each path */
     mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
 
     /* process each path */
     const char** argpaths = (const char**)(&argv[optind]);
-    mfu_param_path_set_all(numargs, argpaths, paths);
+    mfu_param_path_set_all(numargs, argpaths, paths, mfu_src_file);
 
     /* advance to next set of options */
     optind += numargs;
@@ -2234,10 +2238,6 @@ int main(int argc, char **argv)
     /* create an empty file list */
     mfu_flist flist1 = mfu_flist_new();
     mfu_flist flist2 = mfu_flist_new();
-
-    /* create new mfu_file objects */
-    mfu_file_t* mfu_src_file = mfu_file_new();
-    mfu_file_t* mfu_dst_file = mfu_file_new();
 
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking source path");

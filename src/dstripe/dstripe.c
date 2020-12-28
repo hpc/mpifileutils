@@ -494,6 +494,9 @@ int main(int argc, char* argv[])
         usage = 1;
     }
 
+    /* create new mfu_file objects */
+    mfu_file_t* mfu_file = mfu_file_new();
+
     /* paths to walk come after the options */
     if (optind < argc) {
         /* determine number of paths specified by user */
@@ -504,7 +507,7 @@ int main(int argc, char* argv[])
 
         /* process each path */
         char** p = &argv[optind];
-        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths);
+        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths, mfu_file);
         optind += numpaths;
     } else {
         usage = 1;
@@ -515,7 +518,7 @@ int main(int argc, char* argv[])
         if (rank == 0) {
             print_usage();
         }
-
+        mfu_file_delete(&mfu_file);
         mfu_finalize();
         MPI_Finalize();
         return 1;
@@ -550,9 +553,6 @@ int main(int argc, char* argv[])
     /* walk list of input paths and stat as we walk */
     mfu_flist flist = mfu_flist_new();
 
-    /* create new mfu_file objects */
-    mfu_file_t* mfu_file = mfu_file_new();
-
     mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_file);
 
     /* filter down our list to files which don't meet our striping requirements */
@@ -570,6 +570,9 @@ int main(int argc, char* argv[])
         mfu_flist_free(&filtered);
         mfu_param_path_free_all(numpaths, paths);
         mfu_free(&paths);
+
+        /* delete file object */
+        mfu_file_delete(&mfu_file);
 
         /* finalize */
         mfu_finalize();
@@ -602,7 +605,7 @@ int main(int argc, char* argv[])
             char temp_path[PATH_MAX];
             strcpy(temp_path, mfu_flist_file_get_name(filtered, idx));
             strcat(temp_path, suffix);
-            if(!mfu_access(temp_path, F_OK)) {
+            if(!mfu_file_access(temp_path, F_OK, mfu_file)) {
                 /* the file already exists */
                 attempt = 1;
                 break;
@@ -673,7 +676,7 @@ int main(int argc, char* argv[])
 
         /* change the mode of the newly restriped file to be the same as the old one */
         mode_t mode = (mode_t) mfu_flist_file_get_mode(filtered, idx);
-        if (mfu_chmod(out_path, mode) != 0) {
+        if (mfu_file_chmod(out_path, mode, mfu_file) != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to chmod file %s (%s)", out_path, strerror(errno));
             MPI_Abort(MPI_COMM_WORLD, 1);
         }

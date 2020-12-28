@@ -629,7 +629,7 @@ static void mfu_param_path_free_list(uint64_t num, mfu_param_path* params)
     return;
 }
 
-void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params)
+void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params, mfu_file_t* mfu_file)
 {
     /* get our rank and number of ranks */
     int rank, ranks;
@@ -685,7 +685,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
             param->path = mfu_path_strdup_abs_reduce_str(path);
 
             /* get stat info for simplified path */
-            if (mfu_lstat(param->path, &param->path_stat) == 0) {
+            if (mfu_file_lstat(param->path, &param->path_stat, mfu_file) == 0) {
                 param->path_stat_valid = 1;
             }
 
@@ -696,12 +696,12 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
 
             /* resolve any symlinks */
             char target[PATH_MAX];
-            if (realpath(path, target) != NULL) {
+            if (mfu_file_realpath(path, target, mfu_file) != NULL) {
                 /* make a copy of resolved name */
                 param->target = MFU_STRDUP(target);
 
                 /* get stat info for resolved path */
-                if (mfu_lstat(param->target, &param->target_stat) == 0) {
+                if (mfu_file_lstat(param->target, &param->target_stat, mfu_file) == 0) {
                     param->target_stat_valid = 1;
                 }
             }
@@ -785,9 +785,9 @@ void mfu_param_path_free_all(uint64_t num, mfu_param_path* params)
 }
 
 /* set fields in param according to path */
-void mfu_param_path_set(const char* path, mfu_param_path* param)
+void mfu_param_path_set(const char* path, mfu_param_path* param, mfu_file_t* mfu_file)
 {
-    mfu_param_path_set_all(1, &path, param);
+    mfu_param_path_set_all(1, &path, param, mfu_file);
     return;
 }
 

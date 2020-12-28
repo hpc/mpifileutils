@@ -394,11 +394,11 @@ int main(int argc, char** argv)
         mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC(numpaths * sizeof(mfu_param_path));
 
         /* process each source path */
-        mfu_param_path_set_all(numpaths, pathlist, paths);
+        mfu_param_path_set_all(numpaths, pathlist, paths, mfu_src_file);
 
         /* standardize destination path */
         mfu_param_path destpath;
-        mfu_param_path_set(opts_tarfile, &destpath);
+        mfu_param_path_set(opts_tarfile, &destpath, mfu_src_file);
 
         /* if we have an existing archive, it is deleted in check_archive so that we don't
          * walk it to be included as an entry of the archive itself in the target archive
@@ -440,7 +440,7 @@ int main(int argc, char** argv)
             char fname1[50];
             strncpy(fname1, opts_tarfile, 50);
             strncpy(fname, opts_tarfile, 50);
-            if ((stat(strcat(fname, ".bz2"), &st) == 0)) {
+            if ((mfu_file_stat(strcat(fname, ".bz2"), &st, mfu_src_file) == 0)) {
                 if (rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Output file already exists: '%s'", fname);
                 }
@@ -469,7 +469,7 @@ int main(int argc, char** argv)
             size_t len = strlen(fname_out);
             fname_out[len - 4] = '\0';
             struct stat st;
-            if ((stat(fname_out, &st) == 0)) {
+            if ((mfu_file_stat(fname_out, &st, mfu_src_file) == 0)) {
                 if (rank == 0) {
                     MFU_LOG(MFU_LOG_ERR, "Output file already exists '%s'", fname_out);
                 }

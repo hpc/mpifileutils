@@ -66,7 +66,7 @@ typedef struct {
 } mfu_file_t;
 
 /* set fields in param according to path */
-void mfu_param_path_set(const char* path, mfu_param_path* param);
+void mfu_param_path_set(const char* path, mfu_param_path* param, mfu_file_t* mfu_file);
 
 /* free memory associated with param */
 void mfu_param_path_free(mfu_param_path* param);
@@ -75,7 +75,7 @@ void mfu_param_path_free(mfu_param_path* param);
  * the number of paths is specified in num,
  * paths is an array of char* of length num pointing to the input paths,
  * params is an array of length num to hold output */
-void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params);
+void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params, mfu_file_t* mfu_file);
 
 /* free resources allocated in call to mfu_param_path_set_all */
 void mfu_param_path_free_all(uint64_t num, mfu_param_path* params);
