@@ -245,7 +245,9 @@ int mfu_compare_contents(
     mfu_copy_opts_t* opts,    /* IN  - options to use in compare/copy */
     uint64_t* bytes_read,     /* OUT - number of bytes read (src + dest) */
     uint64_t* bytes_written,  /* OUT - number of bytes written to dest */
-    mfu_progress* prg         /* IN  - progress message structure */
+    mfu_progress* prg,        /* IN  - progress message structure */
+    mfu_file_t* mfu_src_file, /* IN  - I/O filesystem functions to use for source */
+    mfu_file_t* mfu_dst_file  /* IN  - I/O filesystem functions to use for destination */
 );
 
 /* uses the lustre api to obtain stripe count and stripe size of a file */

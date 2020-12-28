@@ -99,7 +99,9 @@ int daos_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file);
 int mfu_mknod(const char* path, mode_t mode, dev_t dev);
 
 /* call remove, retry a few times on EINTR or EIO */
+int mfu_file_remove(const char* path, mfu_file_t* mfu_file);
 int mfu_remove(const char* path);
+int daos_remove(const char* path, mfu_file_t* mfu_file);
 
 /* read directory entry, retry a few times on ENOENT, EIO, or EINTR */
 struct dirent* mfu_file_readdir(DIR* dirp, mfu_file_t* mfu_file);
@@ -160,7 +162,7 @@ int mfu_symlink(const char* oldpath, const char* newpath);
  ****************************/
 
 /* open file with specified flags and mode, retry open a few times on failure */
-void mfu_file_open(const char* file, int flags, mfu_file_t* mfu_file, ...);
+int mfu_file_open(const char* file, int flags, mfu_file_t* mfu_file, ...);
 int daos_open(const char* file, int flags, mode_t mode, mfu_file_t* mfu_file);
 int mfu_open(const char* file, int flags, ...);
 
@@ -226,7 +228,9 @@ int mfu_mkdir(const char* dir, mode_t mode);
 int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file);
 
 /* remove directory, retry a few times on EINTR or EIO */
+int mfu_file_rmdir(const char* dir, mfu_file_t* mfu_file);
 int mfu_rmdir(const char* dir);
+int daos_rmdir(const char* dir, mfu_file_t* mfu_file);
 
 /* open directory, retry a few times on EINTR or EIO */
 DIR* mfu_file_opendir(const char* dir, mfu_file_t* mfu_file);

@@ -292,7 +292,7 @@ int main(int argc, char** argv)
         mfu_flist_print(srclist);
     } else {
         /* remove files */
-        mfu_flist_unlink(srclist, traceless);
+        mfu_flist_unlink(srclist, traceless, mfu_file);
     }
 
     /* write data to cache file */

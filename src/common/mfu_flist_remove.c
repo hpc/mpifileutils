@@ -64,38 +64,33 @@ static void remove_progress_fn(const uint64_t* vals, int count, int complete, in
 
 /* removes name by calling rmdir, unlink, or remove depending
  * on item type */
-static void remove_type(char type, const char* name)
+static void remove_type(char type, const char* name, mfu_file_t* mfu_file)
 {
-    /* TODO: don't print message if errno == ENOENT (file already gone) */
     if (type == 'd') {
-        int rc = mfu_rmdir(name);
-        if (rc != 0) {
+        int rc = mfu_file_rmdir(name, mfu_file);
+        if (rc != 0 && errno != ENOENT) {
             MFU_LOG(MFU_LOG_ERR, "Failed to rmdir `%s' (errno=%d %s)",
-                      name, errno, strerror(errno)
-                     );
+                    name, errno, strerror(errno));
         }
     }
     else if (type == 'f') {
-        int rc = mfu_unlink(name);
-        if (rc != 0) {
+        int rc = mfu_file_unlink(name, mfu_file);
+        if (rc != 0 && errno != ENOENT) {
             MFU_LOG(MFU_LOG_ERR, "Failed to unlink `%s' (errno=%d %s)",
-                      name, errno, strerror(errno)
-                     );
+                    name, errno, strerror(errno));
         }
     }
     else if (type == 'u') {
-        int rc = remove(name);
-        if (rc != 0) {
+        int rc = mfu_file_remove(name, mfu_file);
+        if (rc != 0 && errno != ENOENT) {
             MFU_LOG(MFU_LOG_ERR, "Failed to remove `%s' (errno=%d %s)",
-                      name, errno, strerror(errno)
-                     );
+                    name, errno, strerror(errno));
         }
     }
     else {
         /* print error */
         MFU_LOG(MFU_LOG_ERR, "Unknown type=%c name=%s",
-                  type, name
-                 );
+                type, name);
     }
 
     return;
@@ -106,7 +101,7 @@ static void remove_type(char type, const char* name)
  ****************************/
 
 /* for given depth, just remove the files we know about */
-static void remove_direct(mfu_flist list, uint64_t* rmcount)
+static void remove_direct(mfu_flist list, uint64_t* rmcount, mfu_file_t* mfu_file)
 {
     /* each process directly removes its elements */
     uint64_t idx;
@@ -120,13 +115,13 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
 
         /* delete item */
         if (type == MFU_TYPE_DIR) {
-            remove_type('d', name);
+            remove_type('d', name, mfu_file);
         }
         else if (type == MFU_TYPE_FILE || type == MFU_TYPE_LINK) {
-            remove_type('f', name);
+            remove_type('f', name, mfu_file);
         }
         else {
-            remove_type('u', name);
+            remove_type('u', name, mfu_file);
         }
 
         /* increment number of items we have deleted
@@ -146,12 +141,12 @@ static void remove_direct(mfu_flist list, uint64_t* rmcount)
 
 /* for given depth, evenly spread the files among processes for
  * improved load balancing */
-static void remove_spread(mfu_flist flist, uint64_t* rmcount)
+static void remove_spread(mfu_flist flist, uint64_t* rmcount, mfu_file_t* mfu_file)
 {
     /* evenly spread flist among processes,
      * execute direct delete, and free temp list */
     mfu_flist newlist = mfu_flist_spread(flist);
-    remove_direct(newlist, rmcount);
+    remove_direct(newlist, rmcount, mfu_file);
     mfu_flist_free(&newlist);
     return;
 }
@@ -163,14 +158,14 @@ static void remove_spread(mfu_flist flist, uint64_t* rmcount)
 /* for given depth, evenly spread the files among processes for
  * improved load balancing and sort items by path name to help
  * cluster items in the same directory to the same process */
-static void remove_spread_sort(mfu_flist flist, uint64_t* rmcount)
+static void remove_spread_sort(mfu_flist flist, uint64_t* rmcount, mfu_file_t* mfu_file)
 {
     /* evenly spread flist among processes,
      * sort by path name, execute direct delete, and free temp list */
     mfu_flist spread = mfu_flist_spread(flist);
     mfu_flist sorted = mfu_flist_sort("name", spread);
 
-    remove_direct(sorted, rmcount);
+    remove_direct(sorted, rmcount, mfu_file);
 
     mfu_flist_free(&sorted);
     mfu_flist_free(&spread);
@@ -203,13 +198,13 @@ static int map_name(mfu_flist flist, uint64_t idx, int ranks, const void* args)
     return rank;
 }
 
-static void remove_map(mfu_flist list, uint64_t* rmcount)
+static void remove_map(mfu_flist list, uint64_t* rmcount, mfu_file_t* mfu_file)
 {
     /* remap files based on parent directory */
     mfu_flist newlist = mfu_flist_remap(list, map_name, NULL);
 
     /* at this point, we can directly remove files in our list */
-    remove_direct(newlist, rmcount);
+    remove_direct(newlist, rmcount, mfu_file);
 
     /* free list of remapped files */
     mfu_flist_free(&newlist);
@@ -225,7 +220,7 @@ static void remove_map(mfu_flist list, uint64_t* rmcount)
 /* for each depth, sort files by filename and then remove, to test
  * whether it matters to limit the number of directories each process
  * has to reference (e.g., locking) */
-static void remove_sort(mfu_flist list, uint64_t* rmcount)
+static void remove_sort(mfu_flist list, uint64_t* rmcount, mfu_file_t* mfu_file)
 {
     /* bail out if total count is 0 */
     uint64_t all_count = mfu_flist_global_size(list);
@@ -298,7 +293,7 @@ static void remove_sort(mfu_flist list, uint64_t* rmcount)
         ptr++;
 
         /* delete item */
-        remove_type(type, name);
+        remove_type(type, name, mfu_file);
         delcount++;
     }
 
@@ -328,6 +323,7 @@ static void remove_sort(mfu_flist list, uint64_t* rmcount)
 /* globals needed for libcircle callback routines */
 static mfu_flist circle_list; /* list of items we're deleting */
 static uint64_t circle_count;   /* number of items local process has removed */
+static mfu_file_t* circle_mfu_file; /* mfu_file for I/O functions */
 
 static void remove_create(CIRCLE_handle* handle)
 {
@@ -375,7 +371,7 @@ static void remove_process(CIRCLE_handle* handle)
 
     char item = path[0];
     char* name = &path[1];
-    remove_type(item, name);
+    remove_type(item, name, circle_mfu_file);
     circle_count++;
 
     return;
@@ -383,11 +379,12 @@ static void remove_process(CIRCLE_handle* handle)
 
 /* insert all items to be removed into libcircle for
  * dynamic load balancing */
-static void remove_libcircle(mfu_flist list, uint64_t* rmcount)
+static void remove_libcircle(mfu_flist list, uint64_t* rmcount, mfu_file_t* mfu_file)
 {
     /* set globals for libcircle callbacks */
     circle_list  = list;
     circle_count = 0;
+    circle_mfu_file = mfu_file;
 
     /* initialize libcircle */
     CIRCLE_init(0, NULL, CIRCLE_SPLIT_EQUAL | CIRCLE_CREATE_GLOBAL | CIRCLE_TERM_TREE);
@@ -479,24 +476,24 @@ static mfu_remove_algos select_algo(void)
     return algo;
 }
 
-static void remove_by_algo(mfu_remove_algos algo, mfu_flist flist, uint64_t* count)
+static void remove_by_algo(mfu_remove_algos algo, mfu_flist flist, uint64_t* count, mfu_file_t* mfu_file)
 {
     switch (algo) {
     case DIRECT:
-        remove_direct(flist, count);
+        remove_direct(flist, count, mfu_file);
         break;
     case SPREAD:
-        remove_spread(flist, count);
+        remove_spread(flist, count, mfu_file);
         break;
     case MAP:
-        remove_map(flist, count);
+        remove_map(flist, count, mfu_file);
         break;
     case SORT:
         //remove_sort(flist, count);
-        remove_spread_sort(flist, count);
+        remove_spread_sort(flist, count, mfu_file);
         break;
     case LIBCIRCLE:
-        remove_libcircle(flist, count);
+        remove_libcircle(flist, count, mfu_file);
         break;
     }
 
@@ -506,12 +503,12 @@ static void remove_by_algo(mfu_remove_algos algo, mfu_flist flist, uint64_t* cou
 /* removes list of items, sets write bits on directories from
  * top-to-bottom, then removes items one level at a time starting
  * from the deepest */
-void mfu_flist_unlink(mfu_flist flist, bool traceless)
+void mfu_flist_unlink(mfu_flist flist, bool traceless, mfu_file_t* mfu_file)
 {
     uint64_t idx;
 
     /* allow override algorithm choice via environment variable */
-    mfu_remove_algos algo = select_algo();;
+    mfu_remove_algos algo = select_algo();
 
     /* wait for all tasks and start timer */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -567,9 +564,10 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
                 /* stat the parent directory */
                 struct stat st;
                 char* pdir = strings[idx];
-                int status = mfu_lstat(pdir, &st);
+                int status = mfu_file_lstat(pdir, &st, mfu_file);
                 if (status != 0) {
-                    MFU_LOG(MFU_LOG_DBG, "mfu_lstat(%s): %d", pdir, status);
+                    MFU_LOG(MFU_LOG_DBG, "mfu_file_lstat() file: '%s' (errno=%d %s)",
+                            pdir, errno, strerror(errno));
                     continue;
                 }
 
@@ -644,7 +642,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
                 /* set the bit if needed */
                 if (set_write_bit) {
                     const char* name = mfu_flist_file_get_name(list, idx);
-                    int rc = chmod(name, S_IRWXU);
+                    int rc = mfu_file_chmod(name, S_IRWXU, mfu_file);
                     if (rc != 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to chmod directory `%s' (errno=%d %s)",
                                   name, errno, strerror(errno)
@@ -665,7 +663,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
 
     /* remove all non directory (leaf) items */
     uint64_t count = 0;
-    remove_by_algo(algo, flist_nondirs, &count);
+    remove_by_algo(algo, flist_nondirs, &count, mfu_file);
 
     /* remove directories starting from deepest level */
     int level;
@@ -675,7 +673,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
 
         /* remove items at this level */
         uint64_t count = 0;
-        remove_by_algo(algo, list, &count);
+        remove_by_algo(algo, list, &count, mfu_file);
 
         /* wait for all procs to finish before we start
          * with items at next level */
@@ -705,9 +703,9 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
 
             /* restore timestamps */
             const char* pdir = mfu_flist_file_get_name(newlist, idx);
-            if(mfu_utimensat(AT_FDCWD, pdir, times, AT_SYMLINK_NOFOLLOW) != 0) {
+            if(mfu_file_utimensat(AT_FDCWD, pdir, times, AT_SYMLINK_NOFOLLOW, mfu_file) != 0) {
                 MFU_LOG(MFU_LOG_DBG,
-                    "Failed to changeback timestamps with utimesat() `%s' (errno=%d %s)",
+                    "Failed to changeback timestamps with mfu_file_utimesat() `%s' (errno=%d %s)",
                     pdir, errno, strerror(errno)
                 );
             }

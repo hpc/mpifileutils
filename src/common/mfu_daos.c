@@ -47,9 +47,14 @@ static int daos_check_args(
     if (have_src_pool || have_src_cont || have_dst_pool || have_dst_cont
             || have_prefix) {
         *flag_daos_args = 1;
-    } else {
+    }
+    if ((have_src_path && (strncmp(src_path, "daos:", 5) == 0)) ||
+            (have_dst_path && (strncmp(dst_path, "daos:", 5) == 0))) {
+        *flag_daos_args = 1;
+    }
+    if (*flag_daos_args == 0) {
         return 0;
-    } 
+    }
     
     /* Determine whether the source and destination
      * use the same pool and container */
@@ -143,7 +148,7 @@ static int daos_parse_path(
         } else {
             strcpy(path, dattr.da_rel_path);
         }
-    } else if (strncmp(path, "daos://", 7) == 0) {
+    } else if (strncmp(path, "daos:", 5) == 0) {
         /* Actual error, since we expect a daos path */
         rc = -1;
     } else {
@@ -246,7 +251,7 @@ static int daos_set_paths(
         if (src_rc == 0) {
             argpaths[0] = da->src_path = strdup(src_path);
         } else if (src_rc == -1) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS source path.");
+            MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS source path: daos://<pool>/<cont>[/<path>]");
             return 1;
         }
     }
@@ -257,7 +262,7 @@ static int daos_set_paths(
         if (dst_rc == 0) {
             argpaths[1] = da->dst_path = strdup(dst_path);
         } else if (dst_rc == -1) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS destination path.");
+            MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS destination path: daos://<pool>/<cont>[/<path>]");
             return 1;
         }
     }
@@ -701,6 +706,16 @@ int daos_setup(
     if (tmp_rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to initialize daos");
         local_daos_error = true;
+    }
+
+    /* Do a preliminary check on the DAOS args */
+    if (!local_daos_error) {
+        tmp_rc = daos_check_args(rank, argpaths, da, &flag_daos_args);
+        if (tmp_rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
+            local_daos_error = true;
+        }
     }
 
     /* Figure out if daos path is the src or dst,

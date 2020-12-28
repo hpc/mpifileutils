@@ -682,16 +682,18 @@ void mfu_stat_set_ctimes (struct stat* sb, uint64_t secs, uint64_t nsecs)
 /* compares contents of two files and optionally overwrite dest with source,
  * returns -1 on error, 0 if equal, 1 if different */
 int mfu_compare_contents(
-    const char* src_name,          /* IN  - path name to souce file */
+    const char* src_name,          /* IN  - path name to source file */
     const char* dst_name,          /* IN  - path name to destination file */
     off_t offset,                  /* IN  - offset with file to start comparison */
     off_t length,                  /* IN  - number of bytes to be compared */
     off_t file_size,               /* IN  - size of file */
     int overwrite,                 /* IN  - whether to replace dest with source contents (1) or not (0) */
-    mfu_copy_opts_t* copy_opts,    /* IN - options for data compare/copy step */
+    mfu_copy_opts_t* copy_opts,    /* IN  - options for data compare/copy step */
     uint64_t* count_bytes_read,    /* OUT - number of bytes read (src + dest) */
     uint64_t* count_bytes_written, /* OUT - number of bytes written to dest */
-    mfu_progress* prg)             /* IN  - progress message structure */
+    mfu_progress* prg,             /* IN  - progress message structure */
+    mfu_file_t* mfu_src_file,      /* IN  - I/O filesystem functions to use for source */
+    mfu_file_t* mfu_dst_file)      /* IN  - I/O filesystem functions to use for destination */
 {
     /* extract values from copy options */
     int direct = copy_opts->direct;
@@ -713,12 +715,12 @@ int mfu_compare_contents(
     }
 
     /* open source file */
-    int src_fd = mfu_open(src_name, src_flags);
-    if (src_fd < 0) {
+    int src_rc = mfu_file_open(src_name, src_flags, mfu_src_file);
+    if (src_rc != 0) {
         /* log error if there is an open failure on the src side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to open `%s' (errno=%d %s)",
-            src_name, errno, strerror(errno));
-       return -1;
+        MFU_LOG(MFU_LOG_ERR, "Failed to open source file `%s' (errno=%d %s)",
+                src_name, errno, strerror(errno));
+        return -1;
     }
 
     /* avoid opening file in write mode if we're only reading,
@@ -732,18 +734,20 @@ int mfu_compare_contents(
     }
 
     /* open destination file */
-    int dst_fd = mfu_open(dst_name, dst_flags);
-    if (dst_fd < 0) {
+    int dst_rc = mfu_file_open(dst_name, dst_flags, mfu_dst_file);
+    if (dst_rc != 0) {
         /* log error if there is an open failure on the dst side */
-        MFU_LOG(MFU_LOG_ERR, "Failed to open `%s' (errno=%d %s)",
-            dst_name, errno, strerror(errno));
-        mfu_close(src_name, src_fd);
+        MFU_LOG(MFU_LOG_ERR, "Failed to open destination file `%s' (errno=%d %s)",
+                dst_name, errno, strerror(errno));
+        mfu_file_close(src_name, mfu_src_file);
         return -1;
     }
 
     /* hint that we'll read from file sequentially */
-    posix_fadvise(src_fd, offset, length, POSIX_FADV_SEQUENTIAL);
-    posix_fadvise(dst_fd, offset, length, POSIX_FADV_SEQUENTIAL);
+    if (mfu_src_file->type != DAOS && mfu_src_file->type != DFS) {
+        posix_fadvise(mfu_src_file->fd, offset, length, POSIX_FADV_SEQUENTIAL);
+        posix_fadvise(mfu_src_file->fd, offset, length, POSIX_FADV_SEQUENTIAL);
+    }
 
     /* assume we'll find that file contents are the same */
     int rc = 0;
@@ -776,7 +780,7 @@ int mfu_compare_contents(
         }
 
         /* read data from source file */
-        ssize_t src_read = mfu_pread(src_name, src_fd, (ssize_t*)src_buf, left_to_read, off);
+        ssize_t src_read = mfu_file_pread(src_name, (ssize_t*)src_buf, left_to_read, off, mfu_src_file);
 
         /* If we're using O_DIRECT, deal with short reads.
          * Retry with same buffer and offset since those must
@@ -787,7 +791,7 @@ int mfu_compare_contents(
                (off + src_read) < file_size) /* not at end of file */
         {
             /* TODO: probably should retry a limited number of times then abort */
-            src_read = mfu_pread(src_name, src_fd, src_buf, left_to_read, off);
+            src_read = mfu_file_pread(src_name, src_buf, left_to_read, off, mfu_src_file);
         }
 
         /* check for read error */
@@ -812,7 +816,7 @@ int mfu_compare_contents(
         *count_bytes_read += (uint64_t) src_read;
 
         /* read data from destination file */
-        ssize_t dst_read = mfu_pread(dst_name, dst_fd, (ssize_t*)dst_buf, left_to_read, off);
+        ssize_t dst_read = mfu_file_pread(dst_name, (ssize_t*)dst_buf, left_to_read, off, mfu_dst_file);
 
         /* If we're using O_DIRECT, deal with short reads.
          * Retry with same buffer and offset since those must
@@ -823,7 +827,7 @@ int mfu_compare_contents(
                (off + dst_read) < file_size) /* not at end of file */
         {
             /* TODO: probably should retry a limited number of times then abort */
-            dst_read = mfu_pread(dst_name, dst_fd, dst_buf, left_to_read, off);
+            dst_read = mfu_file_pread(dst_name, dst_buf, left_to_read, off, mfu_dst_file);
         }
 
         /* check for read error */
@@ -895,7 +899,8 @@ int mfu_compare_contents(
             ssize_t n = 0;
             while (n < bytes_to_write) {
                 /* write data to destination file */
-                ssize_t bytes_written = mfu_pwrite(dst_name, dst_fd, ((char*)src_buf) + n, bytes_to_write - n, off + n);
+                ssize_t bytes_written = mfu_file_pwrite(dst_name, ((char*)src_buf) + n, bytes_to_write - n, off + n,
+                                                   mfu_dst_file);
 
                 /* check for write error */
                 if (bytes_written < 0) {
@@ -938,7 +943,7 @@ int mfu_compare_contents(
             /* Use ftruncate() here rather than truncate(), because grouplock
              * of Lustre would cause block to truncate() since the fd is different
              * from the out_fd. */
-            if (mfu_ftruncate(dst_fd, file_size_offt) < 0) {
+            if (mfu_file_ftruncate(mfu_dst_file, file_size_offt) < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: %s (errno=%d %s)",
                     dst_name, errno, strerror(errno));
                 rc = -1;
@@ -947,12 +952,12 @@ int mfu_compare_contents(
     }
 
     /* free buffers */
-    mfu_free(&dst_buf);
     mfu_free(&src_buf);
+    mfu_free(&dst_buf);
 
     /* close files */
-    mfu_close(dst_name, dst_fd);
-    mfu_close(src_name, src_fd);
+    mfu_file_close(dst_name, mfu_dst_file);
+    mfu_file_close(src_name, mfu_src_file);
 
     return rc;
 }

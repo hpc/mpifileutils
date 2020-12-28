@@ -602,7 +602,12 @@ int daos_utimensat(int dirfd, const char* pathname, const struct timespec times[
     dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
     if (parent == NULL) {
         rc = -1;
-    } else {
+    } else if (name) {
+        /* TODO DAOS properly handle when name is NULL. I.e. root /
+         * For now, just skip if root, since a proper fix needs to be
+         * done in several functions, and these functions will soon be moved
+         * internal to DAOS anyway, in which case they will be refactored and fixed. */
+
         /* Lookup the object */
         dfs_obj_t* obj;
         int lookup_flags = O_RDWR;
@@ -907,6 +912,20 @@ int mfu_file_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_fil
     }
 }
 
+int mfu_file_remove(const char* path, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_remove(path);
+        return rc;
+    } else if (mfu_file->type == DFS) {
+        int rc = daos_remove(path, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  path, mfu_file->type);
+    }
+}
+
 /* call remove, retry a few times on EINTR or EIO */
 int mfu_remove(const char* path)
 {
@@ -926,6 +945,50 @@ retry:
         }
     }
     return rc;
+}
+
+int daos_remove(const char* path, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(path, &name, &dir_name);
+    assert(dir_name);
+
+    int rc = 0;
+
+    /* Can't delete root */
+    if (name == NULL) {
+        errno = EINVAL;
+        rc = -1;
+        goto out;
+    }
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    if (parent == NULL) {
+        rc = -1;
+        goto out;
+    }
+
+    /* Delete the obj */
+    rc = dfs_remove(mfu_file->dfs, parent, name, false, NULL);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_remove %s failed (%d %s)",
+                name, rc, strerror(rc));
+        errno = rc;
+        rc = -1;
+        goto out;
+    }
+
+out:
+    mfu_free(&name);
+    mfu_free(&dir_name);
+
+    return rc;
+#else
+    return 0;
+#endif
 }
 
 /* calls realpath */
@@ -1288,7 +1351,9 @@ int mfu_open(const char* file, int flags, ...)
     return fd;
 }
 
-void mfu_file_open(const char* file, int flags, mfu_file_t* mfu_file, ...)
+/* Open a file.
+ * Return 0 on success, -1 on error */
+int mfu_file_open(const char* file, int flags, mfu_file_t* mfu_file, ...)
 {
     /* extract the mode (see man 2 open) */
     int mode_set = 0;
@@ -1301,18 +1366,30 @@ void mfu_file_open(const char* file, int flags, mfu_file_t* mfu_file, ...)
         mode_set = 1;
     }
 
+    int rc = 0;
+
     if (mfu_file->type == POSIX) {
         if (mode_set) {
             mfu_file->fd = mfu_open(file, flags, mode);
         } else {
             mfu_file->fd = mfu_open(file, flags);
         }
+        if (mfu_file->fd < 0) {
+            rc = -1;
+        }
     } else if (mfu_file->type == DFS) {
         daos_open(file, flags, mode, mfu_file);
+#ifdef DAOS_SUPPORT
+        if (mfu_file->obj == NULL) {
+            rc = -1;
+        }
+#endif
     } else {
         MFU_ABORT(-1, "File type not known: %s type=%d",
                   file, mfu_file->type);
     }
+
+    return rc;
 }
 
 /* release an open object */
@@ -2059,6 +2136,20 @@ int mfu_file_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file)
     }
 }
 
+int mfu_file_rmdir(const char* dir, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        int rc = mfu_rmdir(dir);
+        return rc;
+    } else if (mfu_file->type == DFS) {
+        int rc = daos_rmdir(dir, mfu_file);
+        return rc;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  dir, mfu_file->type);
+    }
+}
+
 /* remove directory, retry a few times on EINTR or EIO */
 int mfu_rmdir(const char* dir)
 {
@@ -2078,6 +2169,78 @@ retry:
         }
     }
     return rc;
+}
+
+int daos_rmdir(const char* dir, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(dir, &name, &dir_name);
+    assert(dir_name);
+
+    int rc = 0;
+
+    /* Can't delete root */
+    if (name == NULL) {
+        errno = EINVAL;
+        rc = -1;
+        goto out;
+    }
+
+    /* Lookup the parent directory */
+    dfs_obj_t* parent = daos_hash_lookup(dir_name, mfu_file);
+    if (parent == NULL) {
+        rc = -1;
+        goto out;
+    }
+
+    /* Lookup the object */
+    dfs_obj_t* obj;
+    mode_t mode;
+    int lookup_flags = O_RDWR | O_NOFOLLOW;
+    rc = dfs_lookup_rel(mfu_file->dfs, parent, name, lookup_flags, &obj, &mode, NULL);
+    if (rc) {
+        errno = rc;
+        rc = -1;
+        goto out;
+    }
+
+    /* Release the obj */
+    rc = dfs_release(obj);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_release %s failed (%d %s)",
+                dir, rc, strerror(rc));
+        errno = rc;
+        rc = -1;
+        goto out;
+    }
+
+    /* It must be a directory */
+    if (!S_ISDIR(mode)) {
+        errno = ENOTDIR;
+        rc = -1;
+        goto out;
+    }
+
+    /* Delete the dir */
+    rc = dfs_remove(mfu_file->dfs, parent, name, false, NULL);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_remove %s failed (%d %s)",
+                name, rc, strerror(rc));
+        errno = rc;
+        rc = -1;
+        goto out;
+    }
+
+out:
+    mfu_free(&name);
+    mfu_free(&dir_name);
+
+    return rc;
+#else
+    return 0;
+#endif
 }
 
 #define NUM_DIRENTS 24
