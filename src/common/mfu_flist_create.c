@@ -4,6 +4,46 @@
 #include "mfu.h"
 #include "mfu_flist_internal.h"
 
+/* stores total number of directories to be created to print percent progress in reductions */
+static uint64_t mkdir_total_count;
+
+/* progress message to print sum of directories while creating */
+static void mkdir_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+    /* get number of items created so far */
+    uint64_t items = vals[0];
+
+    /* compute item rate */
+    double item_rate = 0.0;
+    if (secs > 0) {
+        item_rate = (double)items / secs;
+    }
+
+    /* compute percentage of items created */
+    double percent = 0.0;
+    if (mkdir_total_count > 0) {
+        percent = (double)items * 100.0 / (double)mkdir_total_count;
+    }
+
+    /* estimate seconds remaining */
+    double secs_remaining = 0.0;
+    if (item_rate > 0.0) {
+        secs_remaining = (double)(mkdir_total_count - items) / item_rate;
+    }
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO,
+            "Created %llu directories (%.0f\%) in %.3lf secs (%.3lf dirs/sec) %.0f secs left ...",
+            items, percent, secs, item_rate, secs_remaining
+        );
+    } else {
+        MFU_LOG(MFU_LOG_INFO,
+            "Created %llu directories (%.0f\%) in %.3lf secs (%.3lf dirs/sec) done",
+            items, percent, secs, item_rate
+        );
+    }
+}
+
 static int create_directory(mfu_flist list, uint64_t idx)
 {
     /* get name of directory */
@@ -50,10 +90,34 @@ void mfu_flist_mkdir(mfu_flist flist, mfu_create_opts_t* opts)
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    /* indicate to user what phase we're in */
-    if (verbose && rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Creating directories.");
+    /* count total number of directories to be created */
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(flist);
+    uint64_t count = 0;
+    for (idx = 0; idx < size; idx++) {
+       /* check whether we have a directory */
+       mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+       if (type == MFU_TYPE_DIR) {
+           count++;
+       }
     }
+
+    /* get total for print percent progress while creating */
+    mkdir_total_count = 0;
+    MPI_Allreduce(&count, &mkdir_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* bail early if there is no work to do */
+    if (mkdir_total_count == 0) {
+        return;
+    }
+
+    /* indicate to user what phase we're in */
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Creating %llu directories", mkdir_total_count);
+    }
+
+    /* start progress messages while setting metadata */
+    mfu_progress* mkdir_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, mkdir_progress_fn);
 
     /* split items in file list into sublists depending on their
      * directory depth */
@@ -63,6 +127,7 @@ void mfu_flist_mkdir(mfu_flist flist, mfu_create_opts_t* opts)
 
     /* work from shallowest level to deepest level */
     int level;
+    uint64_t reduce_count = 0;
     for (level = 0; level < levels; level++) {
         /* time how long this takes */
         double start = MPI_Wtime();
@@ -71,9 +136,8 @@ void mfu_flist_mkdir(mfu_flist flist, mfu_create_opts_t* opts)
         mfu_flist list = lists[level];
 
         /* create each directory we have at this level */
-        uint64_t idx;
-        uint64_t size = mfu_flist_size(list);
-        uint64_t count = 0;
+        size = mfu_flist_size(list);
+        count = 0;
         for (idx = 0; idx < size; idx++) {
             /* check whether we have a directory */
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
@@ -86,7 +150,11 @@ void mfu_flist_mkdir(mfu_flist flist, mfu_create_opts_t* opts)
                 }
 
                 count++;
+                reduce_count++;
             }
+
+            /* update our running count for progress messages */
+            mfu_progress_update(&reduce_count, mkdir_prog);
         }
 
         /* wait for all procs to finish before we start
@@ -115,10 +183,53 @@ void mfu_flist_mkdir(mfu_flist flist, mfu_create_opts_t* opts)
         }
     }
 
+    /* finalize progress messages */
+    mfu_progress_complete(&reduce_count, &mkdir_prog);
+
     /* free our lists of levels */
     mfu_flist_array_free(levels, &lists);
 
     return;
+}
+
+/* stores total number of items to be created to print percent progress in reductions */
+static uint64_t mknod_total_count;
+
+/* progress message to print sum of items while creating */
+static void mknod_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+    /* get number of items created so far */
+    uint64_t items = vals[0];
+
+    /* compute item rate */
+    double item_rate = 0.0;
+    if (secs > 0) {
+        item_rate = (double)items / secs;
+    }
+
+    /* compute percentage of items created */
+    double percent = 0.0;
+    if (mknod_total_count > 0) {
+        percent = (double)items * 100.0 / (double)mknod_total_count;
+    }
+
+    /* estimate seconds remaining */
+    double secs_remaining = 0.0;
+    if (item_rate > 0.0) {
+        secs_remaining = (double)(mknod_total_count - items) / item_rate;
+    }
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO,
+            "Created %llu items (%.0f\%) in %.3lf secs (%.3lf items/sec) %.0f secs left ...",
+            items, percent, secs, item_rate, secs_remaining
+        );
+    } else {
+        MFU_LOG(MFU_LOG_INFO,
+            "Created %llu items (%.0f\%) in %.3lf secs (%.3lf items/sec) done",
+            items, percent, secs, item_rate
+        );
+    }
 }
 
 static int create_file(mfu_flist list, uint64_t idx, mfu_create_opts_t* opts)
@@ -218,35 +329,58 @@ void mfu_flist_mknod(mfu_flist flist, mfu_create_opts_t* opts)
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    /* first, count number of items to create in the list of the current process */
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(flist);
+    uint64_t count = 0;
+    for (idx = 0; idx < size; idx++) {
+        /* create regular files */
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+        if (type == MFU_TYPE_FILE) {
+            count++;
+        }
+    }
+
+    /* get total for print percent progress while creating */
+    mknod_total_count = 0;
+    MPI_Allreduce(&count, &mknod_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* bail early if there is no work to do */
+    if (mknod_total_count == 0) {
+        return;
+    }
+
     /* wait for all procs before starting timer */
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* indicate to user what phase we're in */
-    if (verbose && rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Creating files.");
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Creating %llu files", mknod_total_count);
     }
 
     /* time how long this takes */
     double start = MPI_Wtime();
 
-    /* iterate over items and set write bit on directories if needed */
-    uint64_t idx;
-    uint64_t size = mfu_flist_size(flist);
-    uint64_t count = 0;
-    for (idx = 0; idx < size; idx++) {
-        /* get type of item */
-        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+    /* start progress messages while setting metadata */
+    mfu_progress* mknod_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, mknod_progress_fn);
 
-        /* process files and links */
+    /* iterate over items and set write bit on directories if needed */
+    count = 0;
+    for (idx = 0; idx < size; idx++) {
+        /* create regular files */
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
         if (type == MFU_TYPE_FILE) {
             /* TODO: skip file if it's not readable */
             create_file(flist, idx, opts);
             count++;
-        } else if (type == MFU_TYPE_LINK) {
-            //create_link(flist, idx);
-            //count++;
         }
+
+        /* update our running count for progress messages */
+        mfu_progress_update(&count, mknod_prog);
     }
+
+    /* finalize progress messages */
+    mfu_progress_complete(&count, &mknod_prog);
 
     /* wait for all procs to finish */
     MPI_Barrier(MPI_COMM_WORLD);
