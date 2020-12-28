@@ -324,23 +324,31 @@ void DCOPY_parse_path_args(char** argv, \
     size_t src_params_bytes = ((size_t) num_src_params) * sizeof(mfu_param_path);
     src_params = (mfu_param_path*) MFU_MALLOC(src_params_bytes);
 
+    /* create new mfu_file objects */
+    mfu_file_t* mfu_src_file = mfu_file_new();
+    mfu_file_t* mfu_dst_file = mfu_file_new();
+
     /* record standardized paths and stat info for each source */
     int opt_index;
     for(opt_index = optind_local; opt_index < last_arg_index; opt_index++) {
         char* path = argv[opt_index];
         int idx = opt_index - optind_local;
-        mfu_param_path_set(path, &src_params[idx]);
+        mfu_param_path_set(path, &src_params[idx], mfu_src_file);
     }
 
     /* standardize destination path */
     const char* dstpath = argv[last_arg_index];
-    mfu_param_path_set(dstpath, &dest_param);
+    mfu_param_path_set(dstpath, &dest_param, mfu_dst_file);
 
     /* copy the destination path to user opts structure */
     DCOPY_user_opts.dest_path = MFU_STRDUP(dest_param.path);
 
     /* check that source and destinations are ok */
     DCOPY_check_paths();
+
+    /* delete file objects */
+    mfu_file_delete(&mfu_src_file);
+    mfu_file_delete(&mfu_dst_file);
 }
 
 /* frees resources allocated in call to parse_path_args() */

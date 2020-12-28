@@ -1246,8 +1246,8 @@ static int mfu_create_file(
             status = 0;
         } else {
             /* had an error stating destination file */
-            MFU_LOG(MFU_LOG_ERR, "mfu_lstat() file: `%s' (errno=%d %s)",
-                      dest_path, errno, strerror(errno));
+            MFU_LOG(MFU_LOG_ERR, "mfu_file_lstat() file: `%s' (errno=%d %s)",
+                    dest_path, errno, strerror(errno));
         }
     }
 

@@ -3030,12 +3030,16 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* create new mfu_file objects */
+    mfu_file_t* mfu_src_file = mfu_file_new();
+    mfu_file_t* mfu_dst_file = mfu_file_new();
+
     /* allocate space for each path */
     mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
 
     /* process each path */
     const char** argpaths = (const char**)(&argv[optind]);
-    mfu_param_path_set_all(numargs, argpaths, paths);
+    mfu_param_path_set_all(numargs, argpaths, paths, mfu_src_file);
 
     /* advance to next set of options */
     optind += numargs;
@@ -3047,10 +3051,6 @@ int main(int argc, char **argv)
     /* create an empty file list */
     mfu_flist flist_tmp_src = mfu_flist_new();
     mfu_flist flist_tmp_dst = mfu_flist_new();
-
-    /* create new mfu_file objects */
-    mfu_file_t* mfu_src_file = mfu_file_new();
-    mfu_file_t* mfu_dst_file = mfu_file_new();
 
     mfu_param_path* linkpath = NULL;
     mfu_flist flist_tmp_link = MFU_FLIST_NULL;     
@@ -3074,7 +3074,7 @@ int main(int argc, char **argv)
         } else {
             /* we can use hardlinks, so set up variables for it */
             linkpath = (mfu_param_path*) MFU_MALLOC(sizeof(mfu_param_path));
-            mfu_param_path_set(options.link_dest, linkpath);
+            mfu_param_path_set(options.link_dest, linkpath, mfu_dst_file);
             flist_tmp_link = mfu_flist_new();
         }
     }

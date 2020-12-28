@@ -147,6 +147,9 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    /* create new mfu_file object */    
+    mfu_file_t* mfu_file = mfu_file_new();
+
     /* stat the input file name */
     int numpaths = 0;
     mfu_param_path* paths = NULL;
@@ -159,7 +162,7 @@ int main(int argc, char** argv)
 
         /* process each path */
         char** p = &argv[optind];
-        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths);
+        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths, mfu_file);
         optind += numpaths;
     }
 
@@ -169,6 +172,7 @@ int main(int argc, char** argv)
             MFU_LOG(MFU_LOG_ERR, "Input file does not exist: `%s'", paths[0].orig);
         }
         mfu_param_path_free_all(numpaths, paths);
+        mfu_file_delete(&mfu_file);
         mfu_finalize();
         MPI_Finalize();
         return 1;
@@ -192,7 +196,7 @@ int main(int argc, char** argv)
     /* delete target file if --force thrown */
     if (opts_force) {
         if (rank == 0) {
-            mfu_unlink(fname_out);
+            mfu_file_unlink(fname_out, mfu_file);
         }
         MPI_Barrier(MPI_COMM_WORLD);
     }
@@ -200,12 +204,13 @@ int main(int argc, char** argv)
     /* If file exists and we are not supposed to overwrite */
     int access_rc;
     if (rank == 0) {
-        access_rc = mfu_access(fname_out, F_OK);
+        access_rc = mfu_file_access(fname_out, F_OK, mfu_file);
     }
     MPI_Bcast(&access_rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
     if ((access_rc == 0) && (! opts_force)) {
         MFU_LOG(MFU_LOG_ERR, "Output file already exisis: `%s'", fname_out);
         mfu_param_path_free_all(numpaths, paths);
+        mfu_file_delete(&mfu_file);
         mfu_finalize();
         MPI_Finalize();
         return 1;
@@ -226,14 +231,14 @@ int main(int argc, char** argv)
          * now delete source file if --keep to thrown */
         if (! opts_keep) {
             if (rank == 0) {
-                mfu_unlink(source_file);
+                mfu_file_unlink(source_file, mfu_file);
             }
             MPI_Barrier(MPI_COMM_WORLD);
         }
     } else {
         /* failed to generate target file, so delete it */
         if (rank == 0) {
-            mfu_unlink(fname_out);
+            mfu_file_unlink(fname_out, mfu_file);
         }
         MPI_Barrier(MPI_COMM_WORLD);
     }
@@ -241,6 +246,9 @@ int main(int argc, char** argv)
     /* free the path parameters */
     mfu_param_path_free_all(numpaths, paths);
     mfu_free(&paths);
+
+    /* free the mfu_file object */
+    mfu_file_delete(&mfu_file);
 
     /* shut down MPI */
     mfu_finalize();

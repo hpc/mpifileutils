@@ -168,6 +168,9 @@ int main(int argc, char** argv)
         usage = 1;
     }
 
+    /* create new mfu_file object */    
+    mfu_file_t* mfu_file = mfu_file_new();
+
     /* paths to walk come after the options */
     int numpaths = 0;
     mfu_param_path* paths = NULL;
@@ -183,7 +186,7 @@ int main(int argc, char** argv)
 
         /* process each path */
         const char** argpaths = (const char**)(&argv[optind]);
-        mfu_param_path_set_all(numpaths, argpaths, paths);
+        mfu_param_path_set_all(numpaths, argpaths, paths, mfu_file);
 
         /* advance to next set of options */
         optind += numpaths;
@@ -221,6 +224,7 @@ int main(int argc, char** argv)
         if (rank == 0) {
             print_usage();
         }
+        mfu_file_delete(&mfu_file);
         mfu_finalize();
         MPI_Finalize();
         return 1;
@@ -228,9 +232,6 @@ int main(int argc, char** argv)
 
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
-
-    /* create new mfu_file object */
-    mfu_file_t* mfu_file = mfu_file_new();
 
     /* flag used to check if permissions need to be
      * set on the walk */

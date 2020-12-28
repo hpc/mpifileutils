@@ -174,6 +174,9 @@ int main (int argc, char* argv[])
     char* newpath = argv[optind + 1];
     optind += 2;
 
+    /* create new mfu_file objects */
+    mfu_file_t* mfu_file = mfu_file_new();
+
     /* determine whether we're walking or reading from an input file */
     int walk = 0;
     int numpaths = 0;
@@ -188,7 +191,7 @@ int main (int argc, char* argv[])
         /* process paths to be walked */
         const char** p = (const char**)(&argv[optind]);
         paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
-        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths);
+        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths, mfu_file);
 
         /* TODO: check that walk paths are valid */
 
@@ -209,6 +212,7 @@ int main (int argc, char* argv[])
         if (rank == 0) {
             print_usage();
         }
+        mfu_file_delete(&mfu_file);
         mfu_finalize();
         MPI_Finalize();
         return 0;
@@ -216,9 +220,6 @@ int main (int argc, char* argv[])
 
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
-
-    /* create new mfu_file objects */
-    mfu_file_t* mfu_file = mfu_file_new();
 
     /* get source file list */
     if (walk) {
@@ -273,7 +274,7 @@ int main (int argc, char* argv[])
 
         /* read link target */
         char path[PATH_MAX + 1];
-        ssize_t readlink_rc = mfu_readlink(name, path, sizeof(path) - 1);
+        ssize_t readlink_rc = mfu_file_readlink(name, path, sizeof(path) - 1, mfu_file);
         if(readlink_rc < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to read link `%s' readlink() (errno=%d %s)",
                 name, errno, strerror(errno)
@@ -296,7 +297,7 @@ int main (int argc, char* argv[])
 
             /* got a link we need to update,
              * delete current link */
-            int unlink_rc = mfu_unlink(name);
+            int unlink_rc = mfu_file_unlink(name, mfu_file);
             if (unlink_rc != 0) {
               MFU_LOG(MFU_LOG_WARN,
                       "Failed to delete link: `%s' (errno=%d %s)",
@@ -334,7 +335,7 @@ int main (int argc, char* argv[])
             }
 
             /* create new link */
-            int symlink_rc = mfu_symlink(target_str, name);
+            int symlink_rc = mfu_file_symlink(target_str, name, mfu_file);
             if (symlink_rc < 0) {
                 if(errno == EEXIST) {
                     MFU_LOG(MFU_LOG_WARN,
@@ -357,7 +358,7 @@ int main (int argc, char* argv[])
             gid_t gid = (gid_t) mfu_flist_file_get_gid(linklist, idx);
 
             /* note that we use lchown to change ownership of link itself, it path happens to be a link */
-            if (mfu_lchown(name, uid, gid) != 0) {
+            if (mfu_file_lchown(name, uid, gid, mfu_file) != 0) {
                 /* TODO: are there other EPERM conditions we do want to report? */
 
                 /* since the user running dcp may not be the owner of the
@@ -391,7 +392,7 @@ int main (int argc, char* argv[])
                  * assume path is relative to current working directory,
                  * if it's not absolute, and set times on link (not target file)
                  * if dest_path refers to a link */
-                if (mfu_utimensat(AT_FDCWD, name, times, AT_SYMLINK_NOFOLLOW) != 0) {
+                if (mfu_file_utimensat(AT_FDCWD, name, times, AT_SYMLINK_NOFOLLOW, mfu_file) != 0) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to change timestamps on `%s' utime() (errno=%d %s)",
                         name, errno, strerror(errno)
                        );

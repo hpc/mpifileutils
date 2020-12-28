@@ -797,14 +797,19 @@ void mfu_flist_stat(
         if (do_dereference) {
             /* dereference symbolic link */
             status = mfu_file_stat(name, &st, mfu_file);
+            if (status != 0) {
+                MFU_LOG(MFU_LOG_ERR, "mfu_file_stat() failed: '%s' rc=%d (errno=%d %s)",
+                        name, status, errno, strerror(errno));
+                continue;
+            }
         } else {
             /* don't dereference symbolic links */
             status = mfu_file_lstat(name, &st, mfu_file);
-        }
-        if (status != 0) {
-            MFU_LOG(MFU_LOG_ERR, "mfu_lstat() failed: '%s' rc=%d (errno=%d %s)",
-                    name, status, errno, strerror(errno));
-            continue;
+            if (status != 0) {
+                MFU_LOG(MFU_LOG_ERR, "mfu_file_lstat() failed: '%s' rc=%d (errno=%d %s)",
+                        name, status, errno, strerror(errno));
+                continue;
+            }
         }
 
         /* insert item into output list */

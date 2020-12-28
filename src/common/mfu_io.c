@@ -928,6 +928,37 @@ retry:
     return rc;
 }
 
+/* calls realpath */
+char* mfu_file_realpath(const char* path, char* resolved_path, mfu_file_t* mfu_file)
+{
+    if (mfu_file->type == POSIX) {
+        char* p = mfu_realpath(path, resolved_path);
+        return p;
+    } else if (mfu_file->type == DAOS) {
+        char* p = daos_realpath(path, resolved_path, mfu_file);
+        return p;
+    } else {
+        MFU_ABORT(-1, "File type not known: %s type=%d",
+                  path, mfu_file->type);
+    }
+}
+
+char* mfu_realpath(const char* path, char* resolved_path)
+{
+    char* p = realpath(path, resolved_path);
+    return p;
+}
+
+char* daos_realpath(const char* path, char* resolved_path, mfu_file_t* mfu_file)
+{
+#ifdef DAOS_SUPPORT
+    /* There is currently not a reasonable way to do this */
+    return NULL;
+#else
+    return NULL;
+#endif
+}
+
 /*****************************
  * Links
  ****************************/

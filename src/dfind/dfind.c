@@ -200,10 +200,10 @@ static void mfu_flist_pred(mfu_flist flist, mfu_pred* p)
 /* look up mtimes for specified file,
  * return secs/nsecs in newly allocated mfu_pred_times struct,
  * return NULL on error */
-static mfu_pred_times* get_mtimes(const char* file)
+static mfu_pred_times* get_mtimes(const char* file, mfu_file_t* mfu_file)
 {
     mfu_param_path param_path;
-    mfu_param_path_set(file, &param_path);
+    mfu_param_path_set(file, &param_path, mfu_file);
     if (! param_path.path_stat_valid) {
         return NULL;
     }
@@ -282,6 +282,9 @@ int main (int argc, char** argv)
 
     /* pointer to mfu_walk_opts */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
+
+    /* create new mfu_file objects */
+    mfu_file_t* mfu_file = mfu_file_new();
 
     /* capture current time for any time based queries,
      * to get a consistent value, capture and bcast from rank 0 */
@@ -470,7 +473,7 @@ int main (int argc, char** argv)
     	    break;
 
     	case 'B':
-            t = get_mtimes(optarg);
+            t = get_mtimes(optarg, mfu_file);
             if (t == NULL) {
                 if (rank == 0) {
     	            printf("%s: can't find file %s\n", argv[0], optarg);
@@ -480,7 +483,7 @@ int main (int argc, char** argv)
     	    mfu_pred_add(pred_head, MFU_PRED_ANEWER, (void *)t);
     	    break;
     	case 'N':
-            t = get_mtimes(optarg);
+            t = get_mtimes(optarg, mfu_file);
             if (t == NULL) {
                 if (rank == 0) {
     	            printf("%s: can't find file %s\n", argv[0], optarg);
@@ -490,7 +493,7 @@ int main (int argc, char** argv)
     	    mfu_pred_add(pred_head, MFU_PRED_MNEWER, (void *)t);
     	    break;
     	case 'D':
-            t = get_mtimes(optarg);
+            t = get_mtimes(optarg, mfu_file);
             if (t == NULL) {
                 if (rank == 0) {
     	            printf("%s: can't find file %s\n", argv[0], optarg);
@@ -556,7 +559,7 @@ int main (int argc, char** argv)
 
         /* process each path */
         char** p = &argv[optind];
-        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths);
+        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths, mfu_file);
         optind += numpaths;
 
         /* don't allow user to specify input file with walk */
@@ -576,6 +579,7 @@ int main (int argc, char** argv)
         if (rank == 0) {
             print_usage();
         }
+        mfu_file_delete(&mfu_file);
         mfu_finalize();
         MPI_Finalize();
         return 0;
@@ -584,9 +588,6 @@ int main (int argc, char** argv)
 
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
-
-    /* create new mfu_file objects */
-    mfu_file_t* mfu_file = mfu_file_new();
 
     if (walk) {
         /* walk list of input paths */

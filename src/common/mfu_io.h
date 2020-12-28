@@ -133,6 +133,11 @@ int mfu_lsetxattr(const char* path, const char* name, const void* value, size_t 
 int daos_lsetxattr(const char* path, const char* name, const void* value, size_t size, int flags,
                            mfu_file_t* mfu_file);
 
+/* calls realpath */
+char* mfu_file_realpath(const char* path, char* resolved_path, mfu_file_t* mfu_file);
+char* mfu_realpath(const char* path, char* resolved_path);
+char* daos_realpath(const char* path, char* resolved_path, mfu_file_t* mfu_file);
+
 /*****************************
  * Links
  ****************************/

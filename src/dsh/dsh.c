@@ -1816,7 +1816,7 @@ int main(int argc, char** argv)
 
         /* process each path */
         const char** argpaths = (const char**)(&argv[optind]);
-        mfu_param_path_set_all(numpaths, argpaths, paths);
+        mfu_param_path_set_all(numpaths, argpaths, paths, mfu_src_file);
 
         /* advance to next set of options */
         optind += numpaths;
@@ -1839,6 +1839,7 @@ int main(int argc, char** argv)
         if (rank == 0) {
             print_usage();
         }
+        mfu_file_delete(&mfu_src_file);
         MPI_Finalize();
         return 0;
     }
