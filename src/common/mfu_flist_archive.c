@@ -2575,9 +2575,11 @@ static int index_entries_distread_linearscan(
             uint64_t bufsize_remaining = bufsize - (uint64_t)(ptr - buf);
             int r = archive_read_open_memory(a, ptr, bufsize_remaining);
             if (r != ARCHIVE_OK) {
-                /* TODO: we may have landed to deep into our region to
-                 * get a full header, so this isn't necessarily an error */
-                MFU_LOG(MFU_LOG_ERR, "%s", archive_error_string(a));
+                /* TODO: We may have landed so deep into our region that
+                 * the header we're trying to is truncated by a boundary,
+                 * so this isn't necessarily an error.  Though it may be
+                 * an error (wrong format or corrupt header).  For now,
+                 * we can't tell so treat it as an error. */
                 rc = MFU_FAILURE;
             }
         } else {
@@ -2738,7 +2740,7 @@ static int index_entries_distread(
 
     /* indicate to user what phase we're in */
     if (mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Indexing archive");
+        MFU_LOG(MFU_LOG_INFO, "Indexing archive with parallel read");
     }
 
     /* open archive file for readhing */
