@@ -41,17 +41,30 @@
 #include "strmap.h"
 #include "list.h"
 
+/* for daos */
+#ifdef DAOS_SUPPORT
+#include "mfu_daos.h"
+#endif
+
 /* Print a usage message */
 static void print_usage(void)
 {
     printf("\n");
     printf("Usage: dsync [options] source target\n");
     printf("\n");
+#ifdef DAOS_SUPPORT
+    printf("DAOS paths can be specified as:\n");
+    printf("       daos://<pool>/<cont>[/<path>] | <UNS path>\n");
+#endif
     printf("Options:\n");
     printf("      --dryrun            - show differences, but do not synchronize files\n");
     printf("  -b  --batch-files <N>   - batch files into groups of N during copy\n");
     printf("      --blocksize <SIZE>  - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
     printf("      --chunksize <SIZE>  - minimum work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
+#ifdef DAOS_SUPPORT
+    printf("      --daos-prefix       - DAOS prefix for unified namespace path \n");
+    printf("      --daos-api          - DAOS API in {DFS, DAOS} (default uses DFS for POSIX containers)\n");
+#endif
     printf("  -c, --contents          - read and compare file contents rather than compare size and mtime\n");
     printf("  -D, --delete            - delete extraneous files from target\n");
     printf("  -L, --dereference       - copy original files instead of links\n");
@@ -694,7 +707,9 @@ static void dsync_strmap_compare_data_link_dest(
     mfu_flist link_same_list,
     mfu_copy_opts_t* copy_opts,
     uint64_t* count_bytes_read,
-    uint64_t* count_bytes_written)
+    uint64_t* count_bytes_written,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -739,7 +754,8 @@ static void dsync_strmap_compare_data_link_dest(
         
         /* compare the contents of the files */
         int compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length, filesize,
-                overwrite, copy_opts, count_bytes_read, count_bytes_written, compare_prog);
+                overwrite, copy_opts, count_bytes_read, count_bytes_written, compare_prog,
+                mfu_src_file, mfu_dst_file);
         if (compare_rc == -1) {
             /* we hit an error while reading */
             rc = -1;
@@ -810,7 +826,9 @@ static int dsync_strmap_compare_data(
     bool use_hardlinks,
     mfu_copy_opts_t* copy_opts,
     uint64_t* count_bytes_read,
-    uint64_t* count_bytes_written)
+    uint64_t* count_bytes_written,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -858,7 +876,8 @@ static int dsync_strmap_compare_data(
         
         /* compare the contents of the files */
         int compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length, filesize,
-                overwrite, copy_opts, count_bytes_read, count_bytes_written, compare_prog);
+                overwrite, copy_opts, count_bytes_read, count_bytes_written, compare_prog,
+                mfu_src_file, mfu_dst_file);
         if (compare_rc == -1) {
             /* we hit an error while reading */
             rc = -1;
@@ -922,7 +941,7 @@ static int dsync_strmap_compare_data(
             dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
             dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_COMMON);
 
-            /* record that detination file matches source */
+            /* record that destination file matches source */
             if (use_hardlinks) {
                 mfu_flist_file_copy(dst_compare_list, i, dst_same_list);
             }
@@ -960,7 +979,8 @@ static void dsync_generate_real_lists(
     mfu_flist link_same_list,   /* list of files in link-dest that are same as in source */
     mfu_flist src_real_cp_list, /* OUT - list of files to actually be copied */
     mfu_flist link_dst_list,    /* OUT - list of files to be hardlinked from destination */
-    mfu_flist dst_remove_list)  /* OUT - add to list of files to be deleted (replaced) from destination */
+    mfu_flist dst_remove_list,  /* OUT - add to list of files to be deleted (replaced) from destination */
+    mfu_file_t* mfu_dst_file)   /* I/O filesystem functions to use for destination */
 {
     uint64_t idx;
 
@@ -1035,9 +1055,9 @@ static void dsync_generate_real_lists(
 
             /* skip if the target is already a link to link_dest */
             struct stat dst_st, link_dst_st;
-            rc = mfu_lstat(dst_name, &dst_st);
+            rc = mfu_file_lstat(dst_name, &dst_st, mfu_dst_file);
             if (!rc) {
-                rc = mfu_lstat(link_dst_name, &link_dst_st);
+                rc = mfu_file_lstat(link_dst_name, &link_dst_st, mfu_dst_file);
                 if (!rc &&
                     dst_st.st_ino == link_dst_st.st_ino &&
                     dst_st.st_dev == link_dst_st.st_dev)
@@ -1085,7 +1105,7 @@ static void dsync_strmap_compare_lite_link_dest(
         uint64_t dst_mtime      = mfu_flist_file_get_mtime(link_compare_list, idx);
         uint64_t dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(link_compare_list, idx);
 
-        /* if size and mtime are the, we assume the file contents are same */
+        /* if size and mtime are the same, we assume the file contents are same */
         if ((src_size == dst_size) &&
             (src_mtime == dst_mtime) && (src_mtime_nsec == dst_mtime_nsec))
         {
@@ -1295,20 +1315,15 @@ static int dsync_sync_files(
     int valid, copy_into_dir;
     mfu_param_path_check_copy(1, src_path, dest_path, mfu_src_file, mfu_dst_file,
                               copy_opts->no_dereference, &valid, &copy_into_dir);
+    if (!valid) {
+        /* TODO we may want to pass a special error to the caller to
+         * "exit" instead of continuing. */
+        return -1;
+    }
 
     /* record copy_into_dir flag result from check_copy into
      * mfu copy options structure */
     copy_opts->copy_into_dir = copy_into_dir;
-
-    /* exit job if we found a problem */
-    if(!valid) {
-        if(rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Exiting run");
-        }
-        mfu_finalize();
-        MPI_Finalize();
-        return 0;
-    }
 
     /* get files that are only in the destination directory */
     if (options.delete) {
@@ -1324,7 +1339,7 @@ static int dsync_sync_files(
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Deleting items from destination");
         }
-        mfu_flist_unlink(dst_remove_list, 0);
+        mfu_flist_unlink(dst_remove_list, 0, mfu_dst_file);
     }
 
     /* summarize the src copy list for files
@@ -1373,7 +1388,9 @@ static int dsync_strmap_compare_link_dest(
     mfu_flist link_list,
     strmap* link_map,
     mfu_flist link_same_list,
-    mfu_copy_opts_t* copy_opts)
+    mfu_copy_opts_t* copy_opts,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -1484,7 +1501,8 @@ static int dsync_strmap_compare_link_dest(
              * file in place if found to be different during comparison */
             dsync_strmap_compare_data_link_dest(src_compare_list,
                 link_compare_list, link_same_list, copy_opts,
-                &total_bytes_read, &total_bytes_written
+                &total_bytes_read, &total_bytes_written,
+                mfu_src_file, mfu_dst_file
             );
         } else {
             /* comparing contents could take a while */
@@ -1753,7 +1771,8 @@ static int dsync_strmap_compare(
             tmp_rc = dsync_strmap_compare_data(src_compare_list, src_map,
                 dst_compare_list, dst_map, src_list, src_cp_list, dst_same_list,
                 dst_remove_list, strlen_prefix, use_hardlinks, copy_opts,
-                &total_bytes_read, &total_bytes_written
+                &total_bytes_read, &total_bytes_written,
+                mfu_src_file, mfu_dst_file
             );
             if (tmp_rc < 0) {
                 rc = -1;
@@ -1783,7 +1802,8 @@ static int dsync_strmap_compare(
         /* compare files in source and link-dest and create list of items
          * that are the same */
         rc = dsync_strmap_compare_link_dest(src_list, src_map,
-            link_list, link_map, link_same_list, copy_opts);
+            link_list, link_map, link_same_list, copy_opts,
+            mfu_src_file, mfu_dst_file);
 
         /* of the items to be copied, some may be actual copies,
          * and some may be hardlinks, we'll break the copy list
@@ -1795,7 +1815,7 @@ static int dsync_strmap_compare(
          * that can be removed and hardlinked */
         dsync_generate_real_lists(strlen_prefix, link_path, dst_list, dst_map,
             src_cp_list, dst_same_list, link_same_list,
-            src_real_cp_list, link_dst_list, dst_remove_list);
+            src_real_cp_list, link_dst_list, dst_remove_list, mfu_dst_file);
     }
 
     /* wait for all procs to finish before stopping timer */
@@ -2773,20 +2793,20 @@ out:
 }
 
 /* link_dest doesn't support dirs cross filesystems */
-static int dsync_validate_link_dest(const char *link_dest, const char *dest)
+static int dsync_validate_link_dest(const char *link_dest, const char *dest, mfu_file_t* mfu_file)
 {
     struct stat dest_st, link_dest_st;
     int rc;
 
     errno = 0;
-    rc = mfu_lstat(dest, &dest_st);
+    rc = mfu_file_lstat(dest, &dest_st, mfu_file);
     if (rc < 0) {
         /* if destpath need to create, check the pdir */
         if (errno == ENOENT) {
             char *dest_path = MFU_STRDUP(dest);
             dirname(dest_path);
 
-            rc = mfu_lstat(dest_path, &dest_st);
+            rc = mfu_file_lstat(dest_path, &dest_st, mfu_file);
             mfu_free(&dest_path);
         }
 
@@ -2795,7 +2815,7 @@ static int dsync_validate_link_dest(const char *link_dest, const char *dest)
         }
     }
 
-    rc = mfu_lstat(link_dest, &link_dest_st);
+    rc = mfu_file_lstat(link_dest, &link_dest_st, mfu_file);
     if (rc < 0) {
         return rc;
     }
@@ -2819,6 +2839,10 @@ int main(int argc, char **argv)
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* pointer to mfu_file src and dest objects */
+    mfu_file_t* mfu_src_file = mfu_file_new();
+    mfu_file_t* mfu_dst_file = mfu_file_new();
 
     /* pointer to mfu_walk_opts */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
@@ -2849,12 +2873,19 @@ int main(int argc, char **argv)
     /* flag to check for sync option */
     copy_opts->do_sync = 1;
 
+#ifdef DAOS_SUPPORT
+    /* DAOS vars */ 
+    daos_args_t* daos_args = daos_args_new();    
+#endif
+
     int option_index = 0;
     static struct option long_options[] = {
         {"dryrun",         0, 0, 'n'},
         {"batch-files",    1, 0, 'b'},
         {"blocksize",      1, 0, 'B'},
         {"chunksize",      1, 0, 'k'},
+        {"daos-prefix",    1, 0, 'X'},
+        {"daos-api",       1, 0, 'x'},
         {"contents",       0, 0, 'c'},
         {"delete",         0, 0, 'D'},
         {"dereference",    0, 0, 'L'},
@@ -2917,6 +2948,17 @@ int main(int argc, char **argv)
                 copy_opts->chunk_size = bytes;
             }
             break;
+#ifdef DAOS_SUPPORT
+        case 'X':
+            daos_args->dfs_prefix = MFU_STRDUP(optarg);
+            break;
+        case 'x':
+            if (daos_parse_api_str(optarg, &daos_args->api) != 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to parse --daos-api");
+                usage = 1;
+            }
+            break;
+#endif
         case 'c':
             options.contents++;
             break;
@@ -3030,16 +3072,52 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* create new mfu_file objects */
-    mfu_file_t* mfu_src_file = mfu_file_new();
-    mfu_file_t* mfu_dst_file = mfu_file_new();
-
     /* allocate space for each path */
     mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
 
+    /* pointer to path arguments */
+    char** argpaths = &argv[optind];
+
+#ifdef DAOS_SUPPORT
+    /* For error handling */
+    bool daos_do_cleanup = false;
+    bool daos_do_exit = false;
+
+    /* Set up DAOS arguments, containers, dfs, etc. */
+    int daos_rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
+    if (daos_rc != 0) {
+        daos_do_exit = true;
+    }
+
+    /* DAOS does not support hard links */
+    if (options.link_dest != NULL &&
+            (mfu_src_file->type == DAOS || mfu_src_file->type == DFS) &&
+            (mfu_dst_file->type == DAOS || mfu_dst_file->type == DFS)) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS does not support hard links.");
+        daos_do_cleanup = true;
+        daos_do_exit = true;
+    }
+
+    /* Not yet supported */
+    if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
+        MFU_LOG(MFU_LOG_ERR, "dysnc only supports DAOS POSIX containers with the DFS API.");
+        daos_do_cleanup = true;
+        daos_do_exit = true;
+    }
+
+    if (daos_do_cleanup) {
+        daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
+    }
+    if (daos_do_exit) {
+        dsync_option_fini();
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
+#endif
+
     /* process each path */
-    const char** argpaths = (const char**)(&argv[optind]);
-    mfu_param_path_set_all(numargs, argpaths, paths, mfu_src_file);
+    mfu_param_path_set_all(numargs, (const char**)argpaths, paths, mfu_src_file);
 
     /* advance to next set of options */
     optind += numargs;
@@ -3059,7 +3137,7 @@ int main(int argc, char **argv)
          * check whether we can given destination and link-dest dirs */
         int validate_rc;
         if (rank == 0) {
-            validate_rc = dsync_validate_link_dest(options.link_dest, destpath->path);
+            validate_rc = dsync_validate_link_dest(options.link_dest, destpath->path, mfu_dst_file);
         }
         MPI_Bcast(&validate_rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -3100,6 +3178,9 @@ int main(int argc, char **argv)
         }
         mfu_param_path_free_all(numargs, paths);
         mfu_free(&paths);
+#ifdef DAOS_SUPPORT
+        daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
+#endif
         dsync_option_fini();
         mfu_finalize();
         MPI_Finalize();
@@ -3199,6 +3280,11 @@ int main(int argc, char **argv)
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);
+
+#ifdef DAOS_SUPPORT
+    /* Cleanup DAOS-related variables, etc. */
+    daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
+#endif
 
     /* delete file objects */
     mfu_file_delete(&mfu_src_file);

@@ -20,18 +20,31 @@
 #include "strmap.h"
 #include "list.h"
 
+/* for daos */
+#ifdef DAOS_SUPPORT
+#include "mfu_daos.h"
+#endif
+
 /* Print a usage message */
 static void print_usage(void)
 {
     printf("\n");
     printf("Usage: dcmp [options] source target\n");
     printf("\n");
+#ifdef DAOS_SUPPORT
+    printf("DAOS paths can be specified as:\n");
+    printf("       daos://<pool>/<cont>[/<path>] | <UNS path>\n");
+#endif
     printf("Options:\n");
     printf("  -o, --output <EXPR:FILE>  - write list of entries matching EXPR to FILE\n");
     printf("  -t, --text                - change output option to write in text format\n");
     printf("  -b, --base                - enable base checks and normal output with --output\n");
     printf("      --blocksize <SIZE>    - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
     printf("      --chunksize <SIZE>    - minimum work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
+#ifdef DAOS_SUPPORT
+    printf("      --daos-prefix         - DAOS prefix for unified namespace path\n");
+    printf("      --daos-api            - DAOS API in {DFS, DAOS} (default uses DFS for POSIX containers)\n");
+#endif
     printf("  -s, --direct              - open files with O_DIRECT\n");
     printf("      --progress <N>        - print progress every N seconds\n");
     printf("  -v, --verbose             - verbose output\n");
@@ -86,7 +99,7 @@ typedef enum _dcmp_state {
       * This file only exist in dest directory.
       * Only valid for DCMPF_EXIST.
       * Not used yet,
-      * becuase we don't want to waste a loop in dcmp_strmap_compare()
+      * because we don't want to waste a loop in dcmp_strmap_compare()
       */
     DCMPS_ONLY_DEST,
 
@@ -150,7 +163,7 @@ struct dcmp_conjunction {
 struct dcmp_disjunction {
     struct list_head linkage;      /* linkage to struct dcmp_output */
     struct list_head conjunctions; /* list of logical conjunction */
-    unsigned count;		   /* logical conjunctions count */
+    unsigned count;                /* logical conjunctions count */
 };
 
 struct dcmp_output {
@@ -164,7 +177,7 @@ struct dcmp_options {
     int verbose;
     int quiet;
     int lite;
-    int format;			   /* output data format, 0 for text, 1 for raw */
+    int format;                    /* output data format, 0 for text, 1 for raw */
     int base;                      /* whether to do base check */
     int debug;                     /* check result after get result */
     int need_compare[DCMPF_MAX];   /* fields that need to be compared  */
@@ -758,7 +771,9 @@ static int dcmp_strmap_compare_data(
     mfu_flist dst_compare_list,
     strmap* dst_map,
     size_t strlen_prefix,
-    mfu_copy_opts_t* copy_opts)
+    mfu_copy_opts_t* copy_opts,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -805,7 +820,7 @@ static int dcmp_strmap_compare_data(
         /* compare the contents of the files */
         int overwrite = 0;
         int compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length, filesize,
-                overwrite, copy_opts, &bytes_read, &bytes_written, prg);
+                overwrite, copy_opts, &bytes_read, &bytes_written, prg, mfu_src_file, mfu_dst_file);
         if (compare_rc == -1) {
             /* we hit an error while reading */
             rc = -1;
@@ -943,7 +958,9 @@ static int dcmp_strmap_compare(
     size_t strlen_prefix,
     mfu_copy_opts_t* copy_opts,
     const mfu_param_path* src_path,
-    const mfu_param_path* dest_path)
+    const mfu_param_path* dest_path,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -1101,7 +1118,7 @@ static int dcmp_strmap_compare(
         cmp_global_size = mfu_flist_global_size(src_compare_list);
         if (cmp_global_size > 0) {
             tmp_rc = dcmp_strmap_compare_data(src_compare_list, src_map, dst_compare_list,
-                    dst_map, strlen_prefix, copy_opts);
+                    dst_map, strlen_prefix, copy_opts, mfu_src_file, mfu_dst_file);
             if (tmp_rc < 0) {
                 /* got a read error, signal that back to caller */
                 rc = -1;
@@ -1204,13 +1221,14 @@ static void dcmp_strmap_check_src(strmap* src_map,
             } else {
                 /* all stats of source and dest are the same */
                 assert(src_state == dst_state);
-                /* all states are either common, differ or skiped */
+                /* all states are either common, differ or skipped */
                 if (dcmp_option_need_compare(field)) {
                     assert(src_state == DCMPS_COMMON || src_state == DCMPS_DIFFER);
                 } else {
                     // XXXX
                     if (src_state != DCMPS_INIT) {
-                        printf("XXX %s wrong state %s\n", dcmp_field_to_string(field, 1), dcmp_state_to_string(src_state, 1));
+                        MFU_LOG(MFU_LOG_ERR, "XXX %s wrong state %s\n",
+                                dcmp_field_to_string(field, 1), dcmp_state_to_string(src_state, 1));
                     }
                     assert(src_state == DCMPS_INIT);
                 }
@@ -1295,7 +1313,7 @@ static void dcmp_strmap_check_dst(strmap* src_map,
                 assert(dst_state == DCMPS_INIT);
             } else {
                 assert(src_state == dst_state);
-                /* all states are either common, differ or skiped */
+                /* all states are either common, differ or skipped */
                 assert(src_state == DCMPS_COMMON ||
                     src_state == DCMPS_DIFFER ||
                     src_state == DCMPS_INIT);
@@ -1307,7 +1325,7 @@ static void dcmp_strmap_check_dst(strmap* src_map,
             } else {
                 /* all stats of source and dest are the same */
                 assert(src_state == dst_state);
-                /* all states are either common, differ or skiped */
+                /* all states are either common, differ or skipped */
                 if (dcmp_option_need_compare(field)) {
                     assert(src_state == DCMPS_COMMON ||
                     src_state == DCMPS_DIFFER);
@@ -2046,6 +2064,10 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
+    /* pointer to mfu_file src and dest objects */
+    mfu_file_t* mfu_src_file = mfu_file_new();
+    mfu_file_t* mfu_dst_file = mfu_file_new();
+
     /* allocate structure to define walk options */
     mfu_walk_opts_t* walk_opts = mfu_walk_opts_new();
 
@@ -2067,20 +2089,27 @@ int main(int argc, char **argv)
     CIRCLE_loglevel CIRCLE_debug = CIRCLE_LOG_WARN;
     mfu_debug_level = MFU_LOG_VERBOSE;
 
+#ifdef DAOS_SUPPORT
+    /* DAOS vars */ 
+    daos_args_t* daos_args = daos_args_new();    
+#endif
+
     int option_index = 0;
     static struct option long_options[] = {
-        {"output",    1, 0, 'o'},
-        {"text",      0, 0, 't'},
-        {"base",      0, 0, 'b'},
-        {"blocksize", 1, 0, 'B'},
-        {"chunksize", 1, 0, 'k'},
-        {"direct",    0, 0, 's'},
-        {"progress",  1, 0, 'R'},
-        {"verbose",   0, 0, 'v'},
-        {"quiet",     0, 0, 'q'},
-        {"lite",      0, 0, 'l'},
-        {"debug",     0, 0, 'd'},
-        {"help",      0, 0, 'h'},
+        {"output",        1, 0, 'o'},
+        {"text",          0, 0, 't'},
+        {"base",          0, 0, 'b'},
+        {"blocksize",     1, 0, 'B'},
+        {"chunksize",     1, 0, 'k'},
+        {"daos-prefix",   1, 0, 'X'},
+        {"daos-api",      1, 0, 'x'},
+        {"direct",        0, 0, 's'},
+        {"progress",      1, 0, 'R'},
+        {"verbose",       0, 0, 'v'},
+        {"quiet",         0, 0, 'q'},
+        {"lite",          0, 0, 'l'},
+        {"debug",         0, 0, 'd'},
+        {"help",          0, 0, 'h'},
         {0, 0, 0, 0}
     };
     int ret = 0;
@@ -2161,6 +2190,17 @@ int main(int argc, char **argv)
         case 'd':
             options.debug++;
             break;
+#ifdef DAOS_SUPPORT
+        case 'X':
+            daos_args->dfs_prefix = MFU_STRDUP(optarg);
+            break;
+        case 'x':
+            if (daos_parse_api_str(optarg, &daos_args->api) != 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to parse --daos-api");
+                usage = 1;
+            }
+            break;
+#endif
         case 'h':
         case '?':
             usage = 1;
@@ -2217,16 +2257,43 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* create new mfu_file objects */
-    mfu_file_t* mfu_src_file = mfu_file_new();
-    mfu_file_t* mfu_dst_file = mfu_file_new();
-
     /* allocate space for each path */
     mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
 
+    /* pointer to path arguments */
+    char** argpaths = (&argv[optind]);
+
+#ifdef DAOS_SUPPORT
+    /* For error handling */
+    bool daos_do_cleanup = false;
+    bool daos_do_exit = false;
+    
+    /* Set up DAOS arguments, containers, dfs, etc. */
+    int daos_rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
+    if (daos_rc != 0) {
+        daos_do_exit = true;
+    }
+
+    /* Not yet supported */
+    if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
+        MFU_LOG(MFU_LOG_ERR, "dcmp only supports DAOS POSIX containers with the DFS API.");
+        daos_do_cleanup = true;
+        daos_do_exit = true;
+    }
+
+    if (daos_do_cleanup) {
+        daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
+    }
+    if (daos_do_exit) {
+        dcmp_option_fini();
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
+#endif
+
     /* process each path */
-    const char** argpaths = (const char**)(&argv[optind]);
-    mfu_param_path_set_all(numargs, argpaths, paths, mfu_src_file);
+    mfu_param_path_set_all(numargs, (const char**)argpaths, paths, mfu_src_file);
 
     /* advance to next set of options */
     optind += numargs;
@@ -2262,7 +2329,8 @@ int main(int argc, char **argv)
     strmap* map2 = dcmp_strmap_creat(flist4, path2);
 
     /* compare files in map1 with those in map2 */
-    int tmp_rc = dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1), copy_opts, srcpath, destpath);
+    int tmp_rc = dcmp_strmap_compare(flist3, map1, flist4, map2, strlen(path1), copy_opts, srcpath, destpath,
+                                     mfu_src_file, mfu_dst_file);
     if (tmp_rc < 0) {
         /* hit a read error on at least one file */
         rc = 1;
@@ -2286,10 +2354,6 @@ int main(int argc, char **argv)
     mfu_flist_free(&flist3);
     mfu_flist_free(&flist4);
 
-    /* delete file objects */
-    mfu_file_delete(&mfu_src_file);
-    mfu_file_delete(&mfu_dst_file);
-
     /* free all param paths */
     mfu_param_path_free_all(numargs, paths);
 
@@ -2303,6 +2367,15 @@ int main(int argc, char **argv)
 
     /* free the walk options */
     mfu_walk_opts_delete(&walk_opts);
+
+#ifdef DAOS_SUPPORT
+    /* Cleanup DAOS-related variables, etc. */
+    daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
+#endif
+
+    /* delete file objects */
+    mfu_file_delete(&mfu_src_file);
+    mfu_file_delete(&mfu_dst_file);
 
     /* shut down */
     mfu_finalize();

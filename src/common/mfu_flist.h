@@ -544,7 +544,7 @@ void mfu_flist_metadata_apply(
 
 /* unlink all items in flist,
  * if traceless=1, restore timestamps on parent directories after unlinking children */
-void mfu_flist_unlink(mfu_flist flist, bool traceless);
+void mfu_flist_unlink(mfu_flist flist, bool traceless, mfu_file_t* mfu_file);
 
 typedef struct {
     uid_t getuid;   /* result from getuid */
