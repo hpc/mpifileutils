@@ -140,7 +140,7 @@ static void print_usage(void)
 //    printf("  -p, --preserve          - preserve attributes\n");
     printf("      --preserve-owner    - preserve owner/group (default effective uid/gid)\n");
     printf("      --preserve-times    - preserve atime/mtime (default current time)\n");
-    printf("      --preserve-perms    - preserve permissions (default applies umask)\n");
+//    printf("      --preserve-perms    - preserve permissions (default applies umask)\n");
     printf("      --fsync             - sync file data to disk on close\n");
     printf("  -b, --blocksize <SIZE>  - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>  - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
@@ -171,6 +171,10 @@ int main(int argc, char** argv)
 
     /* allocate options to configure archive operation */
     mfu_archive_opts_t* archive_opts = mfu_archive_opts_new();
+
+    /* we create files with just read/write bits set for the owner,
+     * be sure to apply permissions after writing all files */
+    archive_opts->preserve_permissions = true;
 
     /* verbose by default */
     mfu_debug_level = MFU_LOG_VERBOSE;
