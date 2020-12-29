@@ -1330,6 +1330,30 @@ uint64_t mfu_flist_file_create(mfu_flist bflist)
     return index;
 }
 
+/* insert an empty element into the list and return its index */
+int mfu_flist_file_create_stat(mfu_flist bflist, const char* path)
+{
+    int rc = MFU_SUCCESS;
+
+    /* convert handle to flist_t */
+    flist_t* flist = (flist_t*) bflist;
+
+    /* stat the item */
+    struct stat st;
+    int stat_rc = mfu_stat(path, &st);
+    if (stat_rc == 0) {
+        /* stat was successful, insert it as an element */
+        mfu_flist_insert_stat(flist, path, st.st_mode, &st);
+    } else {
+        /* failed to stat parent directory */
+        MFU_LOG(MFU_LOG_ERR, "Failed to stat path '%s' errno=%d %s",
+            path, errno, strerror(errno));
+        rc = MFU_FAILURE;
+    }
+
+    return rc;
+}
+
 int mfu_flist_summarize(mfu_flist bflist)
 {
     /* convert handle to flist_t */

@@ -324,6 +324,10 @@ void mfu_flist_increase(mfu_flist* pblist);
 /* create a new empty entry in the file list and return its index */
 uint64_t mfu_flist_file_create(mfu_flist flist);
 
+/* insert a new entry by stat'ing a path and return its index,
+ * returns MFU_SUCCESS on success */
+int mfu_flist_file_create_stat(mfu_flist flist, const char* path);
+
 /****************************************
  * Functions to get/set properties of list
  ****************************************/
