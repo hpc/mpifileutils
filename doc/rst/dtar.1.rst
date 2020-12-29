@@ -39,6 +39,29 @@ OPTIONS
 
    Name of archive file.
 
+.. option:: -C, --chdir DIR
+
+   Change directory to DIR before executing.
+
+.. option:: --preserve-owner
+
+   Apply recorded owner and group to extracted files.
+   Default uses effective uid/gid of the running process.
+
+.. option:: --preserve-times
+
+   Apply recorded atime and mtime to extracted files.
+   Default uses current system times.
+
+.. option:: --preserve-perm
+
+   Apply recorded permissions to extracted files.
+   Default applies umask of the running process.
+
+.. option:: --fsync
+
+   Call fsync before closing files after writing.
+
 .. option:: --blocksize SIZE
 
    Set the I/O buffer to be SIZE bytes.  Units like "MB" and "GB" may
@@ -51,6 +74,14 @@ OPTIONS
    Set chunk to be at minimum SIZE bytes.  Units like "MB" and
    "GB" can immediately follow the number without spaces (eg. 64MB).
    The default chunksize is 1MB.
+
+.. option:: --memory SIZE
+
+   Set the memory limit to be SIZE bytes when reading archive files.
+   For some archives, dtar can distribute the file across processes
+   to store the full archive in memory for faster processing.
+   Units like "MB" and "GB" may immediately follow the number
+   without spaces (eg. 8MB). The default is 1GB.
 
 .. option:: --progress N
 

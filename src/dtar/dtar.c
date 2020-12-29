@@ -32,6 +32,93 @@ static void DTAR_exit(int code)
     exit(code);
 }
 
+/* the user might list several components for each target, in which case
+ * we should have walked the target in each case, but we also need to
+ * include entries for any parent directories on the way to each target */
+static int add_parent_dirs(
+    int num,                        /* number of source paths */
+    const mfu_param_path* srcpaths, /* list of source param path objects */
+    const mfu_param_path* cwdpath,  /* param path of current working dir */
+    mfu_flist flist)                /* list in which to insert items for parent dirs */
+{
+    int rc = MFU_SUCCESS;
+
+    /* get our rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* have rank 0 add check for and add any parent directories */
+    if (rank == 0) {
+        /* create a path object from the current working dir param path */
+        mfu_path* cwd = mfu_path_from_str(cwdpath->path);
+
+        /* for each source path, check whether any path components fall
+         * between the cwdpath and the srcpath */
+        int i;
+        for (i = 0; i < num; i++) {
+            /* create a path object for this source path */
+            const char* s = srcpaths[i].path;
+            mfu_path* src = mfu_path_from_str(s);
+
+            /* enforce that all source items are children
+             * of the current working dir */
+            mfu_path_result pathcmp = mfu_path_cmp(src, cwd);
+            if (pathcmp == MFU_PATH_SRC_CHILD || pathcmp == MFU_PATH_EQUAL) {
+                /* source path is a child or the same as the cwd path,
+                 * compute number of components from cwd to src */
+                int src_components = mfu_path_components(src);
+                int cwd_components = mfu_path_components(cwd);
+                int components = src_components - cwd_components;
+
+                /* step from src back to cwd and add each parent
+                 * directory as a list item */
+                int j;
+                for (j = 0; j < components - 1; j++) {
+                    /* get dirname to back up a level */
+                    mfu_path_dirname(src);
+
+                    /* get path to this parent directory */
+                    const char* parent = mfu_path_strdup(src);
+
+                    /* stat the parent and insert into list */
+                    int insert_rc = mfu_flist_file_create_stat(flist, parent);
+                    if (insert_rc != MFU_SUCCESS) {
+                        /* failed to stat parent directory */
+                        MFU_LOG(MFU_LOG_ERR, "Failed to insert path '%s' errno=%d %s",
+                            parent, errno, strerror(errno));
+                        rc = MFU_FAILURE;
+                    }
+
+                    /* done with the parent string */
+                    mfu_free(&parent);
+                }
+            } else {
+                /* source path is not a child of cwd,
+                 * let's bail with an error for now */
+                MFU_LOG(MFU_LOG_ERR, "Source path '%s' is not contained in '%s'",
+                    srcpaths[i].orig, cwdpath->path);
+                rc = MFU_FAILURE;
+            }
+
+            /* free off source path object */
+            mfu_path_delete(&src);
+        }
+
+        /* free off path object for cwd */
+        mfu_path_delete(&cwd);
+    }
+
+    /* summarize the list again, since we may have added new elements */
+    mfu_flist_summarize(flist);
+
+    /* check that everyone succeeded */
+    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+        rc = MFU_FAILURE;
+    }
+
+    return rc;
+}
+
 /* TODO: add options
  *   --index-skip -- avoid trying to index and extract entries the hard way (round robin)
  *   --index-nowrite -- do not save index after indexing
@@ -46,14 +133,18 @@ static void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("  -c, --create            - create archive\n");
-//    printf("  -j, --compress          - compress archive\n");
     printf("  -x, --extract           - extract archive\n");
+    printf("  -f, --file <FILE>       - specify archive file\n");
+    printf("  -C, --chdir <DIR>       - change directory to DIR before executing\n");
+//    printf("  -j, --compress          - compress archive\n");
 //    printf("  -p, --preserve          - preserve attributes\n");
-//    printf("  -s, --fsync             - sync file data to disk on close\n");
+    printf("      --preserve-owner    - preserve owner/group (default effective uid/gid)\n");
+    printf("      --preserve-times    - preserve atime/mtime (default current time)\n");
+    printf("      --preserve-perms    - preserve permissions (default applies umask)\n");
+    printf("      --fsync             - sync file data to disk on close\n");
     printf("  -b, --blocksize <SIZE>  - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>  - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
-    printf("  -f, --file <filename>   - target output file\n");
-//    printf("  -m, --memory <bytes>    - memory limit (bytes)\n");
+    printf("      --memory <SIZE>     - memory limit per task in bytes for parallel read (default 1GB)\n");
     printf("      --progress <N>      - print progress every N seconds\n");
 //    printf("  -v, --verbose           - verbose output\n");
     printf("  -q, --quiet             - quiet output\n");
@@ -88,19 +179,23 @@ int main(int argc, char** argv)
     int     opts_extract  = 0;
     int     opts_compress = 0;
     char*   opts_tarfile  = NULL;
-    ssize_t opts_memory   = -1;
+    char*   opts_chdir    = NULL;
 
     int option_index = 0;
     static struct option long_options[] = {
         {"create",    0, 0, 'c'},
-        //{"compress",  0, 0, 'j'},
         {"extract",   0, 0, 'x'},
+        //{"compress",  0, 0, 'j'},
+        {"file",      1, 0, 'f'},
+        {"chdir",     1, 0, 'C'},
         {"preserve",  0, 0, 'p'},
+        {"preserve-owner", 0, 0, 'O'},
+        {"preserve-times", 0, 0, 'T'},
+        {"preserve-perm",  0, 0, 'P'},
         {"fsync",     0, 0, 's'},
         {"blocksize", 1, 0, 'b'},
         {"chunksize", 1, 0, 'k'},
-        {"file",      1, 0, 'f'},
-        //{"memory",    1, 0, 'm'},
+        {"memory",    1, 0, 'm'},
         {"progress",  1, 0, 'R'},
         {"verbose",   0, 0, 'v'},
         {"quiet",     0, 0, 'q'},
@@ -113,7 +208,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "cxpsb:k:f:vyh",
+                    argc, argv, "cxf:C:pb:k:vqh",
                     long_options, &option_index
                 );
 
@@ -126,14 +221,29 @@ int main(int argc, char** argv)
             case 'c':
                 opts_create = 1;
                 break;
-            case 'j':
-                opts_compress = 1;
-                break;
             case 'x':
                 opts_extract = 1;
                 break;
+            case 'f':
+                opts_tarfile = MFU_STRDUP(optarg);
+                break;
+            case 'C':
+                opts_chdir = MFU_STRDUP(optarg);
+                break;
+            case 'j':
+                opts_compress = 1;
+                break;
             case 'p':
                 archive_opts->preserve = true;
+                break;
+            case 'O':
+                archive_opts->preserve_owner = true;
+                break;
+            case 'T':
+                archive_opts->preserve_times = true;
+                break;
+            case 'P':
+                archive_opts->preserve_permissions = true;
                 break;
             case 's':
                 archive_opts->sync_on_close = true;
@@ -160,12 +270,16 @@ int main(int argc, char** argv)
                     archive_opts->chunk_size = (size_t) bytes;
                 }
                 break;
-            case 'f':
-                opts_tarfile = MFU_STRDUP(optarg);
-                break;
             case 'm':
-                mfu_abtoull(optarg, &bytes);
-                opts_memory = (ssize_t) bytes;
+                if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
+                    if (rank == 0) {
+                        MFU_LOG(MFU_LOG_ERR,
+                                "Failed to parse memory limit: '%s'", optarg);
+                    }
+                    usage = 1;
+                } else {
+                    archive_opts->mem_size = (size_t) bytes;
+                }
                 break;
             case 'R':
                 mfu_progress_timeout = atoi(optarg);
@@ -198,6 +312,28 @@ int main(int argc, char** argv)
         usage = 1;
     }
 
+    if (!opts_create && !opts_extract) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "One of extract(x) or create(c) needs to be specified");
+        }
+        usage = 1;
+    }
+
+    if (opts_create && opts_extract) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Only one of extraction(x) or create(c) can be specified");
+        }
+        usage = 1;
+    }
+
+    /* when creating a tarbll, we require a file name */
+    if (opts_create && opts_tarfile == NULL) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Must specify a file name(-f)");
+        }
+        usage = 1;
+    }
+
     /* print usage if we need to */
     if (usage) {
         if (rank == 0) {
@@ -206,28 +342,6 @@ int main(int argc, char** argv)
         mfu_finalize();
         MPI_Finalize();
         return 0;
-    }
-
-    if (!opts_create && !opts_extract) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "One of extract(x) or create(c) needs to be specified");
-        }
-        DTAR_exit(EXIT_FAILURE);
-    }
-
-    if (opts_create && opts_extract) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Only one of extraction(x) or create(c) can be specified");
-        }
-        DTAR_exit(EXIT_FAILURE);
-    }
-
-    /* when creating a tarbll, we require a file name */
-    if (opts_create && opts_tarfile == NULL) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Must specify a file name(-f)");
-        }
-        DTAR_exit(EXIT_FAILURE);
     }
 
     if (archive_opts->preserve) {
@@ -239,6 +353,19 @@ int main(int argc, char** argv)
     /* adjust pointers to start of paths */
     int numpaths = argc - optind;
     const char** pathlist = (const char**) &argv[optind];
+
+    /* change directory if requested */
+    if (opts_chdir != NULL) {
+        /* change directory, and check that all processes succeeded */
+        int chdir_rc = chdir(opts_chdir);
+        if (! mfu_alltrue(chdir_rc == 0, MPI_COMM_WORLD)) {
+            /* at least one process failed, so bail out */
+            if (rank == 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to change directory to '%s'", opts_chdir);
+            }
+            DTAR_exit(EXIT_FAILURE);
+        }
+    }
 
     /* standardize current working dir */
     mfu_param_path cwd_param;
@@ -265,6 +392,18 @@ int main(int argc, char** argv)
         /* walk path to get stats info on all files */
         mfu_flist flist = mfu_flist_new();
         mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_src_file);
+
+        /* we may need to add parent directories between the cwd
+         * and the source paths the user specified */
+        int tmp_rc = add_parent_dirs(numpaths, paths, &cwd_param, flist);
+        if (tmp_rc != MFU_SUCCESS) {
+            mfu_flist_free(&flist);
+            mfu_param_path_free(&destpath);
+            mfu_param_path_free_all(numpaths, paths);
+            mfu_free(&paths);
+            mfu_param_path_free(&cwd_param);
+            DTAR_exit(EXIT_FAILURE);
+        }
 
         /* spread elements evenly among ranks */
         mfu_flist flist2 = mfu_flist_spread(flist);
@@ -299,6 +438,7 @@ int main(int argc, char** argv)
         /* free paths */
         mfu_param_path_free_all(numpaths, paths);
         mfu_param_path_free(&destpath);
+        mfu_free(&paths);
     } else if (opts_extract) {
         char* tarfile = opts_tarfile;
 #if 0
@@ -343,6 +483,7 @@ int main(int argc, char** argv)
 
     /* free context */
     mfu_free(&opts_tarfile);
+    mfu_free(&opts_chdir);
 
     if (ret != MFU_SUCCESS) {
         DTAR_exit(EXIT_FAILURE);
