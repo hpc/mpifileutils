@@ -405,17 +405,19 @@ static int encode_header(
     /* done with the entry object */
     archive_entry_free(entry);
 
-    /* at this point, the used variable tells us the size of the header for this item */
+    /* at this point, the used variable tells us the size of the header for this item,
+     * capture it now before calls below change it */
+    *outsize = used;
 
     /* hack: mark the archive as failed, so that libarchive will not write
-     * to the archive when we call free */
+     * bytes for the data segment of this item when we call close/free */
     archive_write_fail(dest);
+
+    /* close out our archive */
+    archive_write_close(dest);
 
     /* free resources associated with dest object */
     archive_write_free(dest);
-
-    /* output size of header */
-    *outsize = used;
 
     /* return size of header for this entry */
     return rc;
@@ -1768,7 +1770,7 @@ int mfu_flist_archive_create(
 
     /* create the archive file */
     int flags = O_WRONLY | O_CREAT | O_CLOEXEC | O_LARGEFILE;
-    int fd    = mfu_open(filename, flags, 0664);
+    int fd = mfu_open(filename, flags, 0664);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open archive '%s' errno=%d %s",
             filename, errno, strerror(errno));
@@ -1933,7 +1935,7 @@ int mfu_flist_archive_create(
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* free sorted list */
-    mfu_free(&flist);
+    mfu_flist_free(&flist);
 
     /* stop overall time */
     time_t time_ended;
@@ -3068,6 +3070,7 @@ static int extract_flist_offsets(
     allgather_offsets(count, doffsets, &total_count, data_offsets, &rank_disps);
 
     mfu_free(&rank_disps);
+    mfu_free(&doffsets);
 
     mfu_path_delete(&cwd);
 
