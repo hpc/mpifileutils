@@ -30,14 +30,14 @@ OPTIONS
 
    Set the I/O buffer to be SIZE bytes.  Units like "MB" and "GB" may
    immediately follow the number without spaces (eg. 8MB). The default
-   blocksize is 1MB.
+   blocksize is 64MB.
 
 .. option:: --chunksize SIZE
 
    Multiple processes copy a large file in parallel by dividing it into chunks.
    Set chunk to be at minimum SIZE bytes.  Units like "MB" and
    "GB" can immediately follow the number without spaces (eg. 64MB).
-   The default chunksize is 1MB.
+   The default chunksize is 64MB.
 
 .. option:: -c, --contents
 
@@ -57,7 +57,7 @@ OPTIONS
 
    Do not follow symbolic links in source paths. Effectviely allows
    symbolic links to be copied when the link target is not valid
-   or there is not permission to read the link's target.
+   or there is not permission to read the link's target.
 
 .. option:: -s, --direct
 
