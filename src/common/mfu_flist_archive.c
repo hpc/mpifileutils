@@ -27,8 +27,13 @@
 #include <string.h>
 #include <getopt.h>
 
-#if DCOPY_USE_XATTR
-#include <attr/xattr.h>
+/* gettimeofday */
+#include <sys/time.h>
+
+#include <unistd.h>
+
+#if DCOPY_USE_XATTRS
+#include <sys/xattr.h>
 #endif
 
 #ifdef LUSTRE_SUPPORT
@@ -302,6 +307,60 @@ static uint64_t get_filesize_padded(uint64_t filesize)
 
 /* given an entry in the flist, construct and encode its tar header
  * in the provided buffer, return number of bytes consumed in outsize */
+static int encode_header_to_buffer(
+    struct archive_entry* entry, /* entry to encode into buffer */
+    void* buf,                   /* buffer in which to store encoded header */
+    size_t bufsize,              /* size of input buffer */
+    mfu_archive_opts_t* opts,    /* archive options, which may affect encoding */
+    size_t* outsize)             /* number of bytes consumed to encode header */
+{
+    /* assume we'll succeed in encoding header */
+    int rc = MFU_SUCCESS;
+
+    /* write entry info to archive */
+    struct archive* dest = archive_write_new();
+    archive_write_set_format_pax(dest);
+
+    /* don't buffer data, write everything directly to output (file or memory) */
+    archive_write_set_bytes_per_block(dest, 0);
+
+    /* encode entry into user's buffer */
+    size_t used = 0;
+    if (archive_write_open_memory(dest, buf, bufsize, &used) != ARCHIVE_OK) {
+        MFU_LOG(MFU_LOG_ERR, "archive_write_open_memory(): %s",
+            archive_error_string(dest)
+        );
+        rc = MFU_FAILURE;
+    }
+
+    /* write header for this item */
+    if (archive_write_header(dest, entry) != ARCHIVE_OK) {
+        MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s",
+            archive_error_string(dest)
+        );
+        rc = MFU_FAILURE;
+    }
+
+    /* at this point, the used variable tells us the size of the header for this item,
+     * capture it now before calls below change it */
+    *outsize = used;
+
+    /* hack: mark the archive as failed, so that libarchive will not write
+     * bytes for the data segment of this item when we call close/free */
+    archive_write_fail(dest);
+
+    /* close out our archive */
+    archive_write_close(dest);
+
+    /* free resources associated with dest object */
+    archive_write_free(dest);
+
+    /* return size of header for this entry */
+    return rc;
+}
+
+/* given an entry in the flist, construct and encode its tar header
+ * in the provided buffer, return number of bytes consumed in outsize */
 static int encode_header(
     mfu_flist flist,               /* list of items */
     uint64_t idx,                  /* index of list item to be encoded */
@@ -382,46 +441,14 @@ static int encode_header(
         }
     }
 
-    /* write entry info to archive */
-    struct archive* dest = archive_write_new();
-    archive_write_set_format_pax(dest);
-
-    /* don't buffer data, write everything directly to output (file or memory) */
-    archive_write_set_bytes_per_block(dest, 0);
-
-    /* encode entry into user's buffer */
-    size_t used = 0;
-    if (archive_write_open_memory(dest, buf, bufsize, &used) != ARCHIVE_OK) {
-        MFU_LOG(MFU_LOG_ERR, "archive_write_open_memory(): %s",
-            archive_error_string(dest)
-        );
-        rc = MFU_FAILURE;
-    }
-
-    /* write header for this item */
-    if (archive_write_header(dest, entry) != ARCHIVE_OK) {
-        MFU_LOG(MFU_LOG_ERR, "archive_write_header(): %s",
-            archive_error_string(dest)
-        );
-        rc = MFU_FAILURE;
+    /* encode entry into memory buffer and get its size */
+    int tmp_rc = encode_header_to_buffer(entry, buf, bufsize, opts, outsize);
+    if (tmp_rc != MFU_SUCCESS) {
+        rc = tmp_rc;
     }
 
     /* done with the entry object */
     archive_entry_free(entry);
-
-    /* at this point, the used variable tells us the size of the header for this item,
-     * capture it now before calls below change it */
-    *outsize = used;
-
-    /* hack: mark the archive as failed, so that libarchive will not write
-     * bytes for the data segment of this item when we call close/free */
-    archive_write_fail(dest);
-
-    /* close out our archive */
-    archive_write_close(dest);
-
-    /* free resources associated with dest object */
-    archive_write_free(dest);
 
     /* return size of header for this entry */
     return rc;
@@ -1041,62 +1068,6 @@ bcast:
     }
 }
 
-#if DCOPY_USE_XATTR
-static int write_entry_index_xattr(
-    const char* file,  /* name of archive file */
-    uint64_t count,    /* number of items in offsets list */
-    uint64_t* offsets) /* byte offset to each item in the archive file */
-{
-    /* assume we'll succeed */
-    int rc = MFU_SUCCESS;
-
-    /* xattr name for index */
-    char name[] = "user.dtar.idx";
-
-    /* let user know what we're doing */
-    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Writing index to xattr '%s' in '%s'", name, filename);
-    }
-
-    /* have rank 0 set the extended attribute */
-    if (mfu_rank == 0) {
-        /* compute size of memory buffer holding offsets */
-        size_t bufsize = count * sizeof(uint64_t);
-    
-        /* pack offset values in network order */
-        uint64_t i;
-        uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
-        char* ptr = (char*) packed;
-        for (i = 0; i < count; i++) {
-            mfu_pack_uint64(&ptr, offsets[i]);
-        }
-    
-        /* we remove the index first so that we don't end up with an
-         * old (inconsistent) value in case we fail to apply the new value */
-        removexattr(file, name);
-
-        /* save the index as an extended attribute on the archive file */
-        int ret = mfu_lsetxattr(file, name, packed, bufsize, 0);
-        if (ret != 0) {
-            /* failed to write the index */
-            MFU_LOG(MFU_LOG_ERR, "Failed to write index xattr '%s' in '%s' errno=%d %s",
-                name, file, errno, strerror(errno)
-            );
-            rc = MFU_FAILURE;
-        }
-
-        /* free buffer allocaed to hold packed offsets */
-        mfu_free(&packed);
-    }
-
-    /* determine whether everyone succeeded */
-    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
-        rc = MFU_FAILURE;
-    }
-    return rc;
-}
-#endif /* DCOPY_USE_XATTR */
-
 static int write_entry_index_file(
     const char* file,  /* name of archive file */
     uint64_t count,    /* number of items in offsets list */
@@ -1170,13 +1141,305 @@ static int write_entry_index_file(
     return rc;
 }
 
+#if DCOPY_USE_XATTRS
+static int write_entry_index_xattr(
+    const char* file,  /* name of archive file */
+    uint64_t count,    /* number of items in offsets list */
+    uint64_t* offsets) /* byte offset to each item in the archive file */
+{
+    /* assume we'll succeed */
+    int rc = MFU_SUCCESS;
+
+    /* xattr name for index */
+    char name[] = "user.dtar.idx";
+
+    /* let user know what we're doing */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Writing index as xattr '%s' in '%s'", name, file);
+    }
+
+    /* have rank 0 set the extended attribute */
+    if (mfu_rank == 0) {
+        /* compute size of memory buffer holding offsets */
+        size_t bufsize = count * sizeof(uint64_t);
+    
+        /* pack offset values in network order */
+        uint64_t i;
+        uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
+        char* ptr = (char*) packed;
+        for (i = 0; i < count; i++) {
+            mfu_pack_uint64(&ptr, offsets[i]);
+        }
+    
+        /* we remove the index first so that we don't end up with an
+         * old (inconsistent) value in case we fail to apply the new value */
+        removexattr(file, name);
+
+        /* save the index as an extended attribute on the archive file */
+        int ret = mfu_lsetxattr(file, name, packed, bufsize, 0);
+        if (ret != 0) {
+            /* failed to write the index */
+            MFU_LOG(MFU_LOG_ERR, "Failed to write index xattr '%s' in '%s' errno=%d %s",
+                name, file, errno, strerror(errno)
+            );
+            rc = MFU_FAILURE;
+        }
+
+        /* free buffer allocaed to hold packed offsets */
+        mfu_free(&packed);
+    }
+
+    /* determine whether everyone succeeded */
+    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+        rc = MFU_FAILURE;
+    }
+    return rc;
+}
+#endif /* DCOPY_USE_XATTRS */
+
+/* encode a header in buf for our index entry,
+ * return size of the header in outsize */
+static int encode_index_header(
+    const char* name,         /* name of archive file */
+    uint64_t index_size,      /* number of items in offsets list */
+    void* buf,                /* buffer in which to store encoded header */
+    size_t bufsize,           /* size of input buffer */
+    mfu_archive_opts_t* opts, /* archive options, which may affect encoding */
+    uint64_t* outsize)
+{
+    int rc = MFU_SUCCESS;
+
+    /* allocate and entry for this item */
+    struct archive_entry* entry = archive_entry_new();
+
+    /* set path to index entry */
+    archive_entry_copy_pathname(entry, name);
+
+    /* mark index as regular file with read/write bits set for owner */
+    archive_entry_set_mode(entry, 0600 | S_IFREG);
+
+    /* record data size of the index */
+    archive_entry_set_size(entry, index_size);
+
+    /* set uid/gid to effective uid/gid of process */
+    archive_entry_set_uid(entry, geteuid());
+    archive_entry_set_gid(entry, getegid());
+
+    /* get current time */
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+
+    /* set atime, mtime, ctime, and birthtime to current time */
+    time_t sec = tv.tv_sec;
+    long nsec  = (long)(tv.tv_usec * 1000);
+    archive_entry_set_atime(entry, sec, nsec);
+    archive_entry_set_mtime(entry, sec, nsec);
+    archive_entry_set_ctime(entry, sec, nsec);
+    archive_entry_set_birthtime(entry, sec, nsec);
+
+    /* encode entry into memory buffer and get its size */
+    int tmp_rc = encode_header_to_buffer(entry, buf, bufsize, opts, outsize);
+    if (tmp_rc != MFU_SUCCESS) {
+        rc = tmp_rc;
+    }
+
+    /* done with the entry object */
+    archive_entry_free(entry);
+
+    return rc;
+}
+
+/* writes the index as the last entry in the archive */
+static int write_entry_index_footer(
+    const char* file,         /* name of archive file */
+    uint64_t count,           /* number of items in offsets list */
+    uint64_t* offsets,        /* byte offset to each item in the archive file */
+    mfu_archive_opts_t* opts, /* archive options, which may affect encoding */
+    uint64_t* inout_size)     /* size of archive in bytes (last byte after last entry) */
+{
+    /* assume we'll succeed */
+    int rc = MFU_SUCCESS;
+
+    /* make sure we're given an archive size */
+    if (inout_size == NULL) {
+        return MFU_FAILURE;
+    }
+
+    /* get current size of the archive */
+    uint64_t archive_size = *inout_size;
+
+    /* compute file name of index file from archive file name */
+    size_t namelen = strlen(file) + strlen(".dtar") + 1;
+    char* name = (char*) MFU_MALLOC(namelen);
+    snprintf(name, namelen, "%s.dtar", file);
+
+    /* use basename of archve file for the index entry */
+    mfu_path* path = mfu_path_from_str(name);
+    mfu_path_basename(path);
+    char* entry_name = mfu_path_strdup(path);
+    mfu_path_delete(&path);
+
+    /* let user know what we're doing */
+    if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Writing index as last entry in %s", file);
+    }
+
+    /* have rank 0 write the index */
+    if (mfu_rank == 0) {
+        /* open the archive file for writing */
+        int fd = mfu_open(file, O_WRONLY, 0660);
+        if (fd >= 0) {
+            /* seek to end of the last entry in the archive */
+            off_t seek_rc = mfu_lseek(file, fd, archive_size, SEEK_SET);
+            if (seek_rc == (off_t)-1) {
+               /* failed to seek in file */
+               MFU_LOG(MFU_LOG_ERR, "Failed to seek to offset %llu in '%s' errno=%d %s",
+                   archive_size, file, errno, strerror(errno)
+               );
+               rc = MFU_FAILURE;
+            }
+
+            /* compute data size of the index */
+            uint64_t index_bytes = count * sizeof(uint64_t);
+            uint64_t data_size = get_filesize_padded(index_bytes);
+            data_size += 512; // append trailer at end within an additional 512-byte block
+
+            /* assume 1MB is sufficient for the header for the index */
+            size_t max_header_size = 1024 * 1024;
+
+            /* allocate space to prepare index data */
+            size_t bufsize = max_header_size + (size_t)data_size;
+            char* buf = (char*) MFU_MALLOC(bufsize);
+
+            /* zero out the buffer so bytes we don't write are well-defined */
+            memset(buf, 0, bufsize);
+
+            /* write header for our index file */
+            uint64_t header_size = 0;
+            int tmp_rc = encode_index_header(entry_name, (size_t)data_size, buf, max_header_size, opts, &header_size);
+            if (tmp_rc != MFU_SUCCESS) {
+                rc = tmp_rc;
+            }
+
+            /* update bufsize to record smaller size with actual encoded header */
+            uint64_t entry_size = header_size + data_size;
+            bufsize = (size_t)entry_size;
+
+            /* pack offset values in network order */
+            uint64_t i;
+            char* ptr = buf + header_size;
+            for (i = 0; i < count; i++) {
+                mfu_pack_uint64(&ptr, offsets[i]);
+            }
+
+            /* get pointer to start of footer */
+            uint64_t* footer = (uint64_t*)(buf + bufsize - 6 * sizeof(uint64_t));
+            footer[0] = mfu_hton64(count);        /* number of entries in the archive */
+            footer[1] = mfu_hton64(archive_size); /* archive size in bytes (entries only) */
+            footer[2] = mfu_hton64(0);            /* max header size */
+            footer[3] = mfu_hton64(entry_size);   /* index size to seek back to header of index */
+            footer[4] = mfu_hton64(1);            /* index version number */
+            footer[5] = mfu_hton64(42);           /* magic value */
+    
+            /* write offsets to the index file */
+            size_t total_written = 0;
+            while (total_written < bufsize && rc == MFU_SUCCESS) {
+                size_t bytes_to_write = bufsize - total_written;
+                ptr = buf + total_written;
+                ssize_t nwritten = mfu_write(file, fd, ptr, bytes_to_write);
+                if (nwritten < 0) {
+                    /* failed to write to the file */
+                    MFU_LOG(MFU_LOG_ERR, "Failed to write index to archive '%s' errno=%d %s",
+                        file, errno, strerror(errno)
+                    );
+                    rc = MFU_FAILURE;
+                    break;
+                }
+                total_written += (size_t)nwritten;
+            }
+
+            /* inform caller of the updated archive size, after writing the index entry */
+            *inout_size = archive_size + bufsize;
+
+            /* close the file */
+            mfu_close(file, fd);
+
+            /* free buffer allocaed to hold packed offsets */
+            mfu_free(&buf);
+        } else {
+            /* failed to open the file */
+            MFU_LOG(MFU_LOG_ERR, "Failed to open archive '%s' errno=%d %s",
+                file, errno, strerror(errno)
+            );
+            rc = MFU_FAILURE;
+        }
+    }
+
+    mfu_free(&entry_name);
+    mfu_free(&name);
+
+    /* determine whether everyone succeeded */
+    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+        rc = MFU_FAILURE;
+    }
+    return rc;
+}
+
+typedef enum {
+    INDEX_FILE,  /* write index as a separate file from the archive */
+    INDEX_XATTR, /* write index as xattr */
+    INDEX_FOOTER /* write index as footer entry in archive */
+} mfu_flist_archive_index_algo;
+
+static mfu_flist_archive_index_algo select_index_algo(void)
+{
+    mfu_flist_archive_index_algo algo = INDEX_FILE;
+
+    /* see if the user is trying to request a specific create algorithm */
+    const char varname[] = "MFU_FLIST_ARCHIVE_INDEX";
+    const char* value = getenv(varname);
+    if (value == NULL) {
+        return algo;
+    }
+
+    /* user is trying to request a specific algorithm */
+    if (strcmp(value, "FILE") == 0) {
+        algo = INDEX_FILE;
+    }
+#if DCOPY_USE_XATTRS
+    else if (strcmp(value, "XATTR") == 0) {
+        algo = INDEX_XATTR;
+    }
+#endif /* DCOPY_USE_XATTRS */
+    else if (strcmp(value, "FOOTER") == 0) {
+        algo = INDEX_FOOTER;
+    } else {
+        /* value does not match any known algorithm name,
+         * print an error and fall back to default */
+        if (mfu_rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "%s: unknown value %s", varname, value);
+        }
+        value = "FILE";
+        algo = INDEX_FILE;
+    }
+
+    /* is user tried to select something, echo it back to confirm */
+    if (mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "%s: %s", varname, value);
+    }
+
+    return algo;
+}
+
 /* Each process calls with the byte offset for each entry
  * it owns.  These are gathered in order and written into
  * an index file that is created for specified archive file. */
 static int write_entry_index(
     const char* file,  /* name of archive file */
     uint64_t count,    /* number of items in offsets list */
-    uint64_t* offsets) /* byte offset to each item in the archive file */
+    uint64_t* offsets, /* byte offset to each item in the archive file */
+    mfu_archive_opts_t* opts, /* archive options, which may affect encoding */
+    uint64_t* inout_size) /* size of archive in bytes */
 {
     /* let user know what we're doing */
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
@@ -1220,9 +1483,21 @@ static int write_entry_index(
         0, MPI_COMM_WORLD
     );
     
+    mfu_flist_archive_index_algo algo = select_index_algo();
+
     /* have rank 0 write the file */
-    int rc = write_entry_index_file(file, total, all_offsets);
-    //int rc = write_entry_index_xattr(file, total, all_offsets);
+    int rc = MFU_FAILURE;
+    if (algo == INDEX_FILE) {
+        rc = write_entry_index_file(file, total, all_offsets);
+    }
+#if DCOPY_USE_XATTRS
+    else if (algo == INDEX_XATTR) {
+        rc = write_entry_index_xattr(file, total, all_offsets);
+    }
+#endif /* DCOPY_USE_XATTRS */
+    else if (algo == INDEX_FOOTER) {
+        rc = write_entry_index_footer(file, total, all_offsets, opts, inout_size);
+    }
 
     /* free memory buffers */
     mfu_free(&all_offsets);
@@ -1260,100 +1535,6 @@ static int get_filesize(const char* file, uint64_t* out_size)
 
     return rc;
 }
-
-#if DCOPY_USE_XATTR
-/* attempts to read index for specified archive file name,
- * returns MFU_SUCCESS if successful, MFU_FAILURE otherwise,
- * on success, returns total number of entries in out_count,
- * and an allocated array of offsets in out_offsets */
-static int read_entry_index_xattr(
-    const char* filename,
-    uint64_t* out_count,
-    uint64_t** out_offsets)
-{
-    /* assume we'll succeed */
-    int rc = MFU_SUCCESS;
-
-    /* assume we have the index */
-    int have_index = 1;
-
-    /* compute file name of index */
-    char name[] = "user.dtar.idx";
-
-    /* TODO: use a better encoding with index format
-     * version number */
-
-    /* compute number of entries based on index size */
-    uint64_t count = 0;
-    if (mfu_rank == 0) {
-        /* check to see if index is defined, and if so, get its size */
-        ssize_t ret = mfu_lgetxattr(filename, name, NULL, 0);
-        if (ret >= 0) {
-            /* index is set, and ret has its current size in bytes,
-             * index stores one offset as uint64_t for each entry */
-            count = ret / sizeof(uint64_t);
-        } else {
-            /* failed to find the index,
-             * don't bother with an error since this likely
-             * means the index doesn't exist because the archive
-             * was created with something other than mpiFileUtils */
-            have_index = 0;
-        }
-    }
-
-    /* broadcast number of entries to all ranks */
-    MPI_Bcast(&count, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-
-    /* read entry offsets from xattr */
-    size_t bufsize = count * sizeof(uint64_t);
-    uint64_t* offsets = (uint64_t*) MFU_MALLOC(bufsize);
-    if (mfu_rank == 0 && have_index) {
-        ssize_t ret = mfu_lgetxattr(filename, name, offsets, bufsize);
-        if (ret == -1) {
-           /* have index, but failed to read it */
-           MFU_LOG(MFU_LOG_ERR, "Failed to read xattr '%s' errno=%d %s",
-               name, errno, strerror(errno)
-           );
-           have_index = 0;
-        }
-    }
-
-    /* broadcast whether rank 0 could read the index */
-    MPI_Bcast(&have_index, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-
-    /* bail out if we don't have an index */
-    if (! have_index) {
-        /* no index, free memory and return failure */
-        mfu_free(&offsets);
-        return MFU_FAILURE;
-    }
-
-    /* indicate to user what phase we're in */
-    if (mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Read index from xattr '%s' in '%s'", name, filename);
-    }
-
-    /* convert offsets into host order */
-    uint64_t i;
-    uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
-    const char* ptr = (const char*) offsets;
-    for (i = 0; i < count; i++) {
-        mfu_unpack_uint64(&ptr, &packed[i]);
-    }
-
-    /* free offsets we read from file */
-    mfu_free(&offsets);
-
-    /* broadcast offsets to all ranks */
-    MPI_Bcast(packed, count, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-
-    /* return count and list of offsets */
-    *out_count   = count;
-    *out_offsets = packed;
-
-    return rc; 
-}
-#endif /* DCOPY_USE_XATTR */
 
 /* attempts to read index for specified archive file name,
  * returns MFU_SUCCESS if successful, MFU_FAILURE otherwise,
@@ -1445,12 +1626,16 @@ static int read_entry_index_file(
         MFU_LOG(MFU_LOG_INFO, "Read index %s", name);
     }
 
-    /* convert offsets into host order */
-    uint64_t i;
+    /* allocate memory to hold incoming offsets */
     uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
-    const char* ptr = (const char*) offsets;
-    for (i = 0; i < count; i++) {
-        mfu_unpack_uint64(&ptr, &packed[i]);
+
+    /* convert offsets into host order */
+    if (mfu_rank == 0) {
+        uint64_t i;
+        const char* ptr = (const char*) offsets;
+        for (i = 0; i < count; i++) {
+            mfu_unpack_uint64(&ptr, &packed[i]);
+        }
     }
 
     /* free offsets we read from file */
@@ -1469,6 +1654,268 @@ static int read_entry_index_file(
     return rc; 
 }
 
+#if DCOPY_USE_XATTRS
+/* attempts to read index for specified archive file name,
+ * returns MFU_SUCCESS if successful, MFU_FAILURE otherwise,
+ * on success, returns total number of entries in out_count,
+ * and an allocated array of offsets in out_offsets */
+static int read_entry_index_xattr(
+    const char* filename,
+    uint64_t* out_count,
+    uint64_t** out_offsets)
+{
+    /* assume we'll succeed */
+    int rc = MFU_SUCCESS;
+
+    /* assume we have the index */
+    int have_index = 1;
+
+    /* compute file name of index */
+    char name[] = "user.dtar.idx";
+
+    /* TODO: use a better encoding with index format
+     * version number */
+
+    /* compute number of entries based on index size */
+    uint64_t count = 0;
+    if (mfu_rank == 0) {
+        /* check to see if index is defined, and if so, get its size */
+        ssize_t ret = mfu_lgetxattr(filename, name, NULL, 0);
+        if (ret >= 0) {
+            /* index is set, and ret has its current size in bytes,
+             * index stores one offset as uint64_t for each entry */
+            count = ret / sizeof(uint64_t);
+        } else {
+            /* failed to find the index,
+             * don't bother with an error since this likely
+             * means the index doesn't exist because the archive
+             * was created with something other than mpiFileUtils */
+            have_index = 0;
+        }
+    }
+
+    /* broadcast number of entries to all ranks */
+    MPI_Bcast(&count, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+
+    /* read entry offsets from xattr */
+    size_t bufsize = count * sizeof(uint64_t);
+    uint64_t* offsets = (uint64_t*) MFU_MALLOC(bufsize);
+    if (mfu_rank == 0 && have_index) {
+        ssize_t ret = mfu_lgetxattr(filename, name, offsets, bufsize);
+        if (ret == -1) {
+           /* have index, but failed to read it */
+           MFU_LOG(MFU_LOG_ERR, "Failed to read xattr '%s' errno=%d %s",
+               name, errno, strerror(errno)
+           );
+           have_index = 0;
+        }
+    }
+
+    /* broadcast whether rank 0 could read the index */
+    MPI_Bcast(&have_index, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+
+    /* bail out if we don't have an index */
+    if (! have_index) {
+        /* no index, free memory and return failure */
+        mfu_free(&offsets);
+        return MFU_FAILURE;
+    }
+
+    /* indicate to user what phase we're in */
+    if (mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Read index from xattr '%s' in '%s'", name, filename);
+    }
+
+    /* allocate memory to hold incoming offsets */
+    uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
+
+    /* convert offsets into host order */
+    if (mfu_rank == 0) {
+        uint64_t i;
+        const char* ptr = (const char*) offsets;
+        for (i = 0; i < count; i++) {
+            mfu_unpack_uint64(&ptr, &packed[i]);
+        }
+    }
+
+    /* free offsets we read from file */
+    mfu_free(&offsets);
+
+    /* broadcast offsets to all ranks */
+    MPI_Bcast(packed, count, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+
+    /* return count and list of offsets */
+    *out_count   = count;
+    *out_offsets = packed;
+
+    return rc; 
+}
+#endif /* DCOPY_USE_XATTRS */
+
+/* attempts to read index for specified archive file name,
+ * returns MFU_SUCCESS if successful, MFU_FAILURE otherwise,
+ * on success, returns total number of entries in out_count,
+ * and an allocated array of offsets in out_offsets,
+ * reads index as last entry of the archive */
+static int read_entry_index_footer(
+    const char* filename,
+    uint64_t* out_count,
+    uint64_t** out_offsets)
+{
+    /* assume we'll succeed */
+    int rc = MFU_SUCCESS;
+
+    /* TODO: encode and check a CRC in the index */
+
+    uint64_t count    = 0;
+    size_t bufsize    = 0;
+    uint64_t* offsets = NULL;
+
+    /* have rank 0 lookup index info */
+    if (mfu_rank == 0) {
+        /* open the archive file for reading */
+        int fd = mfu_open(filename, O_RDONLY);
+        if (fd >= 0) {
+            /* opened file successfully, seek to location where footer
+             * info should start, this assumes version = 1 */
+            off_t offset = 2 * 512 + 6 * sizeof(uint64_t);
+            off_t seek_rc = mfu_lseek(filename, fd, -offset, SEEK_END);
+            if (seek_rc == (off_t)-1) {
+               /* failed to seek into archive file,
+                * since we're trying to read an index entry which
+                * may not exist, don't bother printing an error */
+               rc = MFU_FAILURE;
+            }
+
+            /* we're assuming we're using version 1 */
+            uint64_t footer[6];
+            bufsize = sizeof(footer);
+
+            /* read the footer info */
+            size_t total_read = 0;
+            while (total_read < bufsize && rc == MFU_SUCCESS) {
+                size_t bytes_to_read = bufsize - total_read;
+                char* ptr = (char*)footer + total_read;
+                ssize_t nread = mfu_read(filename, fd, ptr, bytes_to_read);
+                if (nread < 0) {
+                    /* have archive file, but failed to read it,
+                     * since we're trying to read the index, which
+                     * may not exist, don't bother printing an error here */
+                    rc = MFU_FAILURE;
+                    break;
+                }
+                total_read += nread;
+            }
+
+            /* check the magic value and get the version number */
+            if (rc == MFU_SUCCESS) {
+                uint64_t magic = mfu_ntoh64(footer[5]);
+                if (magic != 42) {
+                    rc = MFU_FAILURE;
+                }
+
+                uint64_t version = mfu_ntoh64(footer[4]);
+                if (version != 1) {
+                    rc = MFU_FAILURE;
+                }
+            }
+
+            /* given the version, read the count of items and the offset
+             * for each one */
+            if (rc == MFU_SUCCESS) {
+                /* extract item count from footer */
+                count = mfu_ntoh64(footer[0]);
+
+                /* allocate a buffer to hold offset to each item */
+                bufsize = count * sizeof(uint64_t);
+                offsets = (uint64_t*) MFU_MALLOC(bufsize);
+
+                /* compute size of data segment holding the offsets */
+                uint64_t index_bytes = count * sizeof(uint64_t);
+                uint64_t data_size = get_filesize_padded(index_bytes);
+                data_size += 512; // append trailer at end within an additional 512-byte block
+
+                /* seek to start of offsets */
+                off_t offset = 2 * 512 + data_size;
+                off_t seek_rc = mfu_lseek(filename, fd, -offset, SEEK_END);
+                if (seek_rc == (off_t)-1) {
+                   /* have index file, but failed to read it */
+                   MFU_LOG(MFU_LOG_ERR, "Failed to seek in archive '%s' errno=%d %s",
+                       filename, errno, strerror(errno)
+                   );
+                   rc = MFU_FAILURE;
+                }
+
+                /* read offsets from the file */
+                size_t total_read = 0;
+                while (total_read < bufsize && rc == MFU_SUCCESS) {
+                    size_t bytes_to_read = bufsize - total_read;
+                    char* ptr = (char*)offsets + total_read;
+                    ssize_t nread = mfu_read(filename, fd, ptr, bytes_to_read);
+                    if (nread < 0) {
+                        /* have index file, but failed to read it */
+                        MFU_LOG(MFU_LOG_ERR, "Failed to read index from archive '%s' errno=%d %s",
+                            filename, errno, strerror(errno)
+                        );
+                        rc = MFU_FAILURE;
+                        break;
+                    }
+                    total_read += nread;
+                }
+            }
+
+            /* done with archive */
+            mfu_close(filename, fd);
+        } else {
+            /* failed to open index file */
+            MFU_LOG(MFU_LOG_ERR, "Failed to open archive '%s' errno=%d %s",
+                filename, errno, strerror(errno)
+            );
+            rc = MFU_FAILURE;
+        }
+    }
+
+    /* bail out if we don't have an index */
+    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+        /* no index, free memory and return failure */
+        mfu_free(&offsets);
+        return MFU_FAILURE;
+    }
+
+    /* indicate to user what phase we're in */
+    if (mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Read index from entry in %s", filename);
+    }
+
+    /* broadcast number of entries to all ranks */
+    MPI_Bcast(&count, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+
+    /* allocate memory to hold incoming offsets */
+    bufsize = count * sizeof(uint64_t);
+    uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
+
+    /* convert offsets into host order */
+    if (mfu_rank == 0) {
+        uint64_t i;
+        const char* ptr = (const char*) offsets;
+        for (i = 0; i < count; i++) {
+            mfu_unpack_uint64(&ptr, &packed[i]);
+        }
+    }
+
+    /* free offsets we read from file */
+    mfu_free(&offsets);
+
+    /* broadcast offsets to all ranks */
+    MPI_Bcast(packed, count, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+
+    /* return count and list of offsets */
+    *out_count   = count;
+    *out_offsets = packed;
+
+    return rc; 
+}
+
 /* attempts to read index for specified archive file name,
  * returns MFU_SUCCESS if successful, MFU_FAILURE otherwise,
  * on success, returns total number of entries in out_count,
@@ -1478,11 +1925,22 @@ static int read_entry_index(
     uint64_t* out_count,
     uint64_t** out_offsets)
 {
-    /* assume we'll succeed */
-    int rc = MFU_SUCCESS;
+    /* assume we'll fail */
+    int rc = MFU_FAILURE;
 
-    rc = read_entry_index_file(filename, out_count, out_offsets);
-    //rc = read_entry_index_xattr(filename, out_count, out_offsets);
+    if (rc != MFU_SUCCESS) {
+        rc = read_entry_index_file(filename, out_count, out_offsets);
+    }
+
+#if DCOPY_USE_XATTRS
+    if (rc != MFU_SUCCESS) {
+        rc = read_entry_index_xattr(filename, out_count, out_offsets);
+    }
+#endif /* DCOPY_USE_XATTRS */
+
+    if (rc != MFU_SUCCESS) {
+        rc = read_entry_index_footer(filename, out_count, out_offsets);
+    }
 
     return rc; 
 }
@@ -2033,13 +2491,12 @@ int mfu_flist_archive_create(
         data_offsets[idx] = entry_offsets[idx] + header_sizes[idx];
     }
 
-    /* record global offsets in index */
-    write_entry_index(filename, listsize, entry_offsets);
-
     /* print message to user that we're starting */
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Truncating archive");
     }
+
+    /* TODO: delete any existing index */
 
     /* truncate file to correct size to overwrite existing file
      * and to preallocate space on the file system */
@@ -2055,6 +2512,10 @@ int mfu_flist_archive_create(
         posix_fallocate(fd, 0, final_size);
     }
     MPI_Barrier(MPI_COMM_WORLD);
+
+    /* TODO: include index as entry when truncating/preallocating file above */
+    /* record global offsets in index */
+    write_entry_index(filename, listsize, entry_offsets, opts, &archive_size);
 
     /* print message to user that we're starting */
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
@@ -4638,7 +5099,10 @@ int mfu_flist_archive_extract(
     /* if we constructed an offset list while unpacking the archive,
      * save it to an index file in case we need to unpack again */
     if (have_offsets && !have_index) {
-        write_entry_index(filename, entry_count, &offsets[entry_start]);
+        /* TODO: when encoding index as the last entry, we need to know the archive size,
+         * and we'll need to rewrite the two trailing 512-byte blocks */
+        //write_entry_index(filename, entry_count, &offsets[entry_start], opts, &archive_size);
+        write_entry_index(filename, entry_count, &offsets[entry_start], opts, NULL);
     }
 
     /* free options structure needed for create calls */
