@@ -53,10 +53,30 @@ OPTIONS
    Apply recorded atime and mtime to extracted files.
    Default uses current system times.
 
-.. option:: --preserve-perm
+.. option:: --preserve-perms
 
    Apply recorded permissions to extracted files.
-   Default applies umask of the running process.
+   Default subtracts umask from file permissions.
+
+.. option:: --preserve-xattrs
+
+   Record extended attributes (xattrs) when creating archive.
+   Apply recorded xattrs to extracted files.
+   Default does not record or extract xattrs.
+
+..
+   .. option:: --preserve-acls
+
+   Record access control lists (acls) when creating archive.
+   Apply recorded acls to extracted files.
+   Default does not record or extract acls.
+
+..
+   .. option:: --preserve-flags
+
+   Record ioctl iflags (flags) when creating archive.
+   Apply recorded flags to extracted files.
+   Default does not record or extract flags.
 
 .. option:: --fsync
 

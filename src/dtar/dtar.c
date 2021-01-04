@@ -140,7 +140,10 @@ static void print_usage(void)
 //    printf("  -p, --preserve          - preserve attributes\n");
     printf("      --preserve-owner    - preserve owner/group (default effective uid/gid)\n");
     printf("      --preserve-times    - preserve atime/mtime (default current time)\n");
-//    printf("      --preserve-perms    - preserve permissions (default applies umask)\n");
+    printf("      --preserve-perms    - preserve permissions (default subtracts umask)\n");
+    printf("      --preserve-xattrs   - preserve xattrs (default ignores xattrs)\n");
+//    printf("      --preserve-acls     - preserve acls (default ignores acls)\n");
+//    printf("      --preserve-flags    - preserve fflags (default ignores ioctl iflags)\n");
     printf("      --fsync             - sync file data to disk on close\n");
     printf("  -b, --blocksize <SIZE>  - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>  - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
@@ -172,10 +175,6 @@ int main(int argc, char** argv)
     /* allocate options to configure archive operation */
     mfu_archive_opts_t* archive_opts = mfu_archive_opts_new();
 
-    /* we create files with just read/write bits set for the owner,
-     * be sure to apply permissions after writing all files */
-    archive_opts->preserve_permissions = true;
-
     /* verbose by default */
     mfu_debug_level = MFU_LOG_VERBOSE;
 
@@ -193,9 +192,12 @@ int main(int argc, char** argv)
         {"file",      1, 0, 'f'},
         {"chdir",     1, 0, 'C'},
         {"preserve",  0, 0, 'p'},
-        {"preserve-owner", 0, 0, 'O'},
-        {"preserve-times", 0, 0, 'T'},
-        {"preserve-perm",  0, 0, 'P'},
+        {"preserve-owner",  0, 0, 'O'},
+        {"preserve-times",  0, 0, 'T'},
+        {"preserve-perms",  0, 0, 'P'},
+        {"preserve-xattrs", 0, 0, 'X'},
+        {"preserve-acls",   0, 0, 'A'},
+        {"preserve-flags",  0, 0, 'F'},
         {"fsync",     0, 0, 's'},
         {"blocksize", 1, 0, 'b'},
         {"chunksize", 1, 0, 'k'},
@@ -248,6 +250,15 @@ int main(int argc, char** argv)
                 break;
             case 'P':
                 archive_opts->preserve_permissions = true;
+                break;
+            case 'X':
+                archive_opts->preserve_xattrs = true;
+                break;
+            case 'A':
+                archive_opts->preserve_acls = true;
+                break;
+            case 'F':
+                archive_opts->preserve_fflags = true;
                 break;
             case 's':
                 archive_opts->sync_on_close = true;

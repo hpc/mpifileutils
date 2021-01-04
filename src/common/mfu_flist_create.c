@@ -129,15 +129,11 @@ void mfu_flist_mkdir(mfu_flist flist, mfu_create_opts_t* opts)
     int level;
     uint64_t reduce_count = 0;
     for (level = 0; level < levels; level++) {
-        /* time how long this takes */
-        double start = MPI_Wtime();
-
         /* get list of items for this level */
         mfu_flist list = lists[level];
 
         /* create each directory we have at this level */
         size = mfu_flist_size(list);
-        count = 0;
         for (idx = 0; idx < size; idx++) {
             /* check whether we have a directory */
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
@@ -149,38 +145,15 @@ void mfu_flist_mkdir(mfu_flist flist, mfu_create_opts_t* opts)
                     rc = tmp_rc;
                 }
 
-                count++;
+                /* update our running count for progress messages */
                 reduce_count++;
+                mfu_progress_update(&reduce_count, mkdir_prog);
             }
-
-            /* update our running count for progress messages */
-            mfu_progress_update(&reduce_count, mkdir_prog);
         }
 
         /* wait for all procs to finish before we start
          * creating directories at next level */
         MPI_Barrier(MPI_COMM_WORLD);
-
-        /* stop our timer */
-        double end = MPI_Wtime();
-
-         /* print statistics */
-        if (verbose) {
-            uint64_t min, max, sum;
-            MPI_Allreduce(&count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-            double rate = 0.0;
-            double secs = end - start;
-            if (secs > 0.0) {
-                rate = (double)sum / secs;
-            }
-            if (rank == 0) {
-                MFU_LOG(MFU_LOG_INFO, "  level=%d min=%lu max=%lu sum=%lu rate=%f/sec secs=%f",
-                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
-                );
-            }
-        }
     }
 
     /* finalize progress messages */
@@ -358,9 +331,6 @@ void mfu_flist_mknod(mfu_flist flist, mfu_create_opts_t* opts)
         MFU_LOG(MFU_LOG_INFO, "Creating %llu files", mknod_total_count);
     }
 
-    /* time how long this takes */
-    double start = MPI_Wtime();
-
     /* start progress messages while setting metadata */
     mfu_progress* mknod_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, mknod_progress_fn);
 
@@ -372,11 +342,11 @@ void mfu_flist_mknod(mfu_flist flist, mfu_create_opts_t* opts)
         if (type == MFU_TYPE_FILE) {
             /* TODO: skip file if it's not readable */
             create_file(flist, idx, opts);
-            count++;
-        }
 
-        /* update our running count for progress messages */
-        mfu_progress_update(&count, mknod_prog);
+            /* update our running count for progress messages */
+            count++;
+            mfu_progress_update(&count, mknod_prog);
+        }
     }
 
     /* finalize progress messages */
@@ -384,27 +354,6 @@ void mfu_flist_mknod(mfu_flist flist, mfu_create_opts_t* opts)
 
     /* wait for all procs to finish */
     MPI_Barrier(MPI_COMM_WORLD);
-
-    /* stop our timer */
-    double end = MPI_Wtime();
-
-    /* print timing statistics */
-    if (verbose) {
-        uint64_t min, max, sum;
-        MPI_Allreduce(&count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-        MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-        MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-        double rate = 0.0;
-        double secs = end - start;
-        if (secs > 0.0) {
-            rate = (double)sum / secs;
-        }
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_DBG, "  min=%lu max=%lu sum=%lu rate=%f secs=%f",
-              (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
-            );
-        }
-    }
 
     return;
 }
@@ -461,17 +410,27 @@ static int mfu_set_ownership(
 /* TODO: condionally set setuid and setgid bits? */
 static int mfu_set_permissions(
     mfu_flist flist,
-    uint64_t idx)
+    uint64_t idx,
+    mfu_create_opts_t* opts)
 {
     /* assume we'll succeed */
     int rc = 0;
 
-    /* get mode and type */
+    /* change mode on everything but symlinks */
     mfu_filetype type = mfu_flist_file_get_type(flist, idx);
-    mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
-
-    /* change mode */
     if(type != MFU_TYPE_LINK) {
+        /* get mode of this item */
+        mode_t mode = (mode_t) mfu_flist_file_get_mode(flist, idx);
+
+        /* only consider the mode bits chmod can set */
+        mode = mode & 07777;
+
+        /* conditionally subtract off umask */
+        if (! opts->set_permissions) {
+            mode = mode & ~opts->umask;
+        }
+
+        /* chmod of the item */
         const char* name = mfu_flist_file_get_name(flist, idx);
         if(mfu_chmod(name, mode) != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to change permissions on `%s' chmod() (errno=%d %s)",
@@ -569,11 +528,9 @@ void mfu_flist_metadata_apply(mfu_flist flist, mfu_create_opts_t* opts)
                 }
             }
 
-            if (opts->set_permissions) {
-                int tmp_rc = mfu_set_permissions(list, idx);
-                if (tmp_rc < 0) {
-                    rc = -1;
-                }
+            int tmp_rc = mfu_set_permissions(list, idx, opts);
+            if (tmp_rc < 0) {
+                rc = -1;
             }
 
 #if 0
@@ -648,6 +605,11 @@ mfu_create_opts_t* mfu_create_opts_new(void)
 
     /* whether to set permission bits */
     opts->set_permissions = false;
+
+    /* record current umask value which we'll use when setting permission bits
+     * in metadata_apply */
+    opts->umask = umask(0022);
+    umask(opts->umask);
 
     /* whether to apply lustre striping */
     opts->lustre_stripe = false;

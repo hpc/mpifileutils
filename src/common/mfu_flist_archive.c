@@ -40,6 +40,9 @@
 #include <lustre/lustreapi.h>
 #endif
 
+/* TODO: pick a good magic value */
+#define DTAR_MAGIC (0x3141314131413141)
+
 #include "mfu.h"
 
 /* libcircle work operation types */
@@ -385,19 +388,57 @@ static int encode_header(
     mfu_free(&relname);
 
     /* determine whether user wants to encode ACLs and xattrs */
-    if (opts->preserve) {
-        /* TODO: check that this still works */
-        struct archive* source = archive_read_disk_new();
-        archive_read_disk_set_standard_lookup(source);
-        int fd = mfu_open(fname, O_RDONLY);
-        if (archive_read_disk_entry_from_file(source, entry, fd, NULL) != ARCHIVE_OK) {
-            MFU_LOG(MFU_LOG_ERR, "archive_read_disk_entry_from_file(): %s",
-                archive_error_string(source)
+    bool preserve = (opts->preserve_xattrs || opts->preserve_acls || opts->preserve_fflags);
+    if (preserve) {
+        /* TODO: rather than opening/closing the file here,
+         * perhaps it's more efficient to directly query and set ACLs and XATTRs
+         * through the archive_entry acl/xattr_add_entry calls */
+
+        /* to preserve ACLs and XATTRs, we rely on read disk to capture that info,
+         * libarchive captures this info in an entry by default (unless told not to),
+         * we need to open the target item with a file descriptor for the read_disk call */
+        int fd = mfu_open(relname, O_RDONLY);
+        if (fd >= 0) {
+            /* define an host archive for encoding our entry */
+            struct archive* source = archive_read_disk_new();
+            archive_read_disk_set_standard_lookup(source);
+
+            /* disable encoding xattrs, acls, and fflags unless requested */
+            int flags = 0;
+            if (! opts->preserve_xattrs) {
+                /* tell libarchive not to bother recording xattrs */
+                flags |= ARCHIVE_READDISK_NO_XATTR;
+            }
+            if (! opts->preserve_acls) {
+                /* tell libarchive not to bother recording acls */
+                flags |= ARCHIVE_READDISK_NO_ACL;
+            }
+            if (! opts->preserve_fflags) {
+                /* tell libarchive not to bother recording ioctl iflags */
+                flags |= ARCHIVE_READDISK_NO_FFLAGS;
+            }
+            archive_read_disk_set_behavior(source, flags);
+
+            /* build the entry by querying the item associated with the open file descriptor */
+            int r = archive_read_disk_entry_from_file(source, entry, fd, NULL);
+            if (r != ARCHIVE_OK) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to define entry for '%s': archive_read_disk_entry_from_file(): %s",
+                    relname, archive_error_string(source)
+                );
+                rc = MFU_FAILURE;
+            }
+
+            /* we can free the archive now that we have the entry */
+            archive_read_free(source);
+
+            /* and close out the file */
+            mfu_close(relname, fd);
+        } else {
+            MFU_LOG(MFU_LOG_ERR, "Failed to open '%s' to create entry errno=%d %s",
+                relname, errno, strerror(errno)
             );
             rc = MFU_FAILURE;
         }
-        archive_read_free(source);
-        mfu_close(fname, fd);
     } else {
         /* TODO: read stat info from mfu_flist */
         struct stat stbuf;
@@ -1090,22 +1131,29 @@ static int write_entry_index_file(
     if (mfu_rank == 0) {
         int fd = mfu_open(name, O_WRONLY | O_CREAT | O_TRUNC, 0660);
         if (fd >= 0) {
-            /* compute size of memory buffer holding offsets */
-            size_t bufsize = count * sizeof(uint64_t);
-    
+            /* compute size of memory buffer holding header and offsets */
+            size_t header_size = 3 * sizeof(uint64_t);
+            size_t bufsize = header_size + count * sizeof(uint64_t);
+            char* buf = (char*) MFU_MALLOC(bufsize);
+
+            /* write the header */
+            uint64_t* header = (uint64_t*) buf;
+            header[0] = mfu_hton64(DTAR_MAGIC); /* DTAR MAGIC value */
+            header[1] = mfu_hton64(1);          /* file format version number */
+            header[2] = mfu_hton64(count);      /* number of entries in index */
+
             /* pack offset values in network order */
             uint64_t i;
-            uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
-            char* ptr = (char*) packed;
+            char* ptr = buf + header_size;
             for (i = 0; i < count; i++) {
                 mfu_pack_uint64(&ptr, offsets[i]);
             }
     
             /* write offsets to the index file */
             size_t total_written = 0;
-            while (total_written < bufsize) {
+            while (total_written < bufsize && rc == MFU_SUCCESS) {
                 size_t bytes_to_write = bufsize - total_written;
-                ptr = ((char*)packed) + total_written;
+                ptr = buf + total_written;
                 ssize_t nwritten = mfu_write(name, fd, ptr, bytes_to_write);
                 if (nwritten < 0) {
                     /* failed to write to the file */
@@ -1121,8 +1169,8 @@ static int write_entry_index_file(
             /* close the file */
             mfu_close(name, fd);
 
-            /* free buffer allocaed to hold packed offsets */
-            mfu_free(&packed);
+            /* free buffer holding index data */
+            mfu_free(&buf);
         } else {
             /* failed to open the file */
             MFU_LOG(MFU_LOG_ERR, "Failed to open index '%s' errno=%d %s",
@@ -1161,12 +1209,19 @@ static int write_entry_index_xattr(
     /* have rank 0 set the extended attribute */
     if (mfu_rank == 0) {
         /* compute size of memory buffer holding offsets */
-        size_t bufsize = count * sizeof(uint64_t);
+        size_t header_size = 3 * sizeof(uint64_t);
+        size_t bufsize = header_size + count * sizeof(uint64_t);
+        char* buf = (char*) MFU_MALLOC(bufsize);
     
+        /* write the header */
+        uint64_t* header = (uint64_t*) buf;
+        header[0] = mfu_hton64(DTAR_MAGIC); /* DTAR MAGIC value */
+        header[1] = mfu_hton64(1);          /* file format version number */
+        header[2] = mfu_hton64(count);      /* number of entries in index */
+
         /* pack offset values in network order */
         uint64_t i;
-        uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
-        char* ptr = (char*) packed;
+        char* ptr = buf + header_size;
         for (i = 0; i < count; i++) {
             mfu_pack_uint64(&ptr, offsets[i]);
         }
@@ -1176,7 +1231,7 @@ static int write_entry_index_xattr(
         removexattr(file, name);
 
         /* save the index as an extended attribute on the archive file */
-        int ret = mfu_lsetxattr(file, name, packed, bufsize, 0);
+        int ret = mfu_lsetxattr(file, name, buf, bufsize, 0);
         if (ret != 0) {
             /* failed to write the index */
             MFU_LOG(MFU_LOG_ERR, "Failed to write index xattr '%s' in '%s' errno=%d %s",
@@ -1186,7 +1241,7 @@ static int write_entry_index_xattr(
         }
 
         /* free buffer allocaed to hold packed offsets */
-        mfu_free(&packed);
+        mfu_free(&buf);
     }
 
     /* determine whether everyone succeeded */
@@ -1339,7 +1394,7 @@ static int write_entry_index_footer(
             footer[2] = mfu_hton64(0);            /* max header size */
             footer[3] = mfu_hton64(entry_size);   /* index size to seek back to header of index */
             footer[4] = mfu_hton64(1);            /* index version number */
-            footer[5] = mfu_hton64(42);           /* magic value */
+            footer[5] = mfu_hton64(DTAR_MAGIC);   /* magic value */
     
             /* write offsets to the index file */
             size_t total_written = 0;
@@ -1548,45 +1603,70 @@ static int read_entry_index_file(
     /* assume we'll succeed */
     int rc = MFU_SUCCESS;
 
-    /* assume we have the index file */
-    int have_index = 1;
-
     /* compute file name of index file */
     size_t namelen = strlen(filename) + strlen(".idx") + 1;
     char* name = (char*) MFU_MALLOC(namelen);
     snprintf(name, namelen, "%s.idx", filename);
 
-    /* TODO: use a better encoding with index format
-     * version number */
-
-    /* compute number of entries based on file size */
-    uint64_t count = 0;
-    if (mfu_rank == 0) {
-        struct stat st;
-        int stat_rc = mfu_stat(name, &st);
-        if (stat_rc == 0) {
-            /* index stores one offset as uint64_t for each entry */
-            count = st.st_size / sizeof(uint64_t);
-        } else {
-            /* failed to stat the index file,
-             * don't bother with an error since this likely
-             * means the index doesn't exist because the archive
-             * was created with something other than mpiFileUtils */
-            have_index = 0;
-        }
-    }
-
-    /* broadcast number of entries to all ranks */
-    MPI_Bcast(&count, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-
     /* read entry offsets from file */
-    size_t bufsize = count * sizeof(uint64_t);
-    uint64_t* offsets = (uint64_t*) MFU_MALLOC(bufsize);
-    if (mfu_rank == 0 && have_index) {
+    uint64_t count    = 0;
+    size_t bufsize    = 0;
+    uint64_t* offsets = NULL;
+    if (mfu_rank == 0) {
+        /* attempt to open the index file for reading */
         int fd = mfu_open(name, O_RDONLY);
         if (fd >= 0) {
+            /* read the header first, assuming version 1 */
+            uint64_t header[3];
+            bufsize = sizeof(header);
             size_t total_read = 0;
-            while (total_read < bufsize) {
+            while (total_read < bufsize && rc == MFU_SUCCESS) {
+                size_t bytes_to_read = bufsize - total_read;
+                char* ptr = ((char*)header) + total_read;
+                ssize_t nread = mfu_read(name, fd, ptr, bytes_to_read);
+                if (nread < 0) {
+                    /* have index file, but failed to read it */
+                    MFU_LOG(MFU_LOG_ERR, "Failed to read index '%s' errno=%d %s",
+                        name, errno, strerror(errno)
+                    );
+                    rc = MFU_FAILURE;
+                    break;
+                }
+                if (nread == 0) {
+                    /* hit early EOF */
+                    MFU_LOG(MFU_LOG_ERR, "Early EOF reading index '%s' errno=%d %s",
+                        name, errno, strerror(errno)
+                    );
+                    rc = MFU_FAILURE;
+                    break;
+                }
+                total_read += (size_t) nread;
+            }
+
+            /* if we read the header, check magic and version numbers */
+            if (rc == MFU_SUCCESS) {
+                uint64_t magic = mfu_ntoh64(header[0]);
+                if (magic != DTAR_MAGIC) {
+                    rc = MFU_FAILURE;
+                }
+
+                uint64_t version = mfu_ntoh64(header[1]);
+                if (version != 1) {
+                    rc = MFU_FAILURE;
+                }
+            }
+
+            /* allocate space to hold offsets */
+            if (rc == MFU_SUCCESS) {
+                count = mfu_ntoh64(header[2]);
+
+                bufsize = count * sizeof(uint64_t);
+                offsets = (uint64_t*) MFU_MALLOC(bufsize);
+            }
+
+            /* read offset values for entries */
+            total_read = 0;
+            while (total_read < bufsize && rc == MFU_SUCCESS) {
                 size_t bytes_to_read = bufsize - total_read;
                 char* ptr = (char*)offsets + total_read;
                 ssize_t nread = mfu_read(name, fd, ptr, bytes_to_read);
@@ -1595,31 +1675,40 @@ static int read_entry_index_file(
                     MFU_LOG(MFU_LOG_ERR, "Failed to read index '%s' errno=%d %s",
                         name, errno, strerror(errno)
                     );
-                    have_index = 0;
+                    rc = MFU_FAILURE;
+                    break;
+                }
+                if (nread == 0) {
+                    /* hit early EOF */
+                    MFU_LOG(MFU_LOG_ERR, "Early EOF reading index '%s' errno=%d %s",
+                        name, errno, strerror(errno)
+                    );
+                    rc = MFU_FAILURE;
                     break;
                 }
                 total_read += (size_t) nread;
             }
+
             mfu_close(name, fd);
         } else {
-            /* failed to open index file */
-            MFU_LOG(MFU_LOG_ERR, "Failed to open index '%s' errno=%d %s",
-                name, errno, strerror(errno)
-            );
-            have_index = 0;
+            /* failed to open the index file,
+             * don't bother with an error since this likely
+             * means the index doesn't exist because the archive
+             * was created with something other than mpiFileUtils */
+            rc = MFU_FAILURE;
         }
     }
 
-    /* broadcast whether rank 0 could stat index file */
-    MPI_Bcast(&have_index, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-
-    /* bail out if we don't have an index file */
-    if (! have_index) {
-        /* no index file, free memory and return failure */
+    /* bail out if we don't have an index */
+    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+        /* no index, free memory and return failure */
         mfu_free(&offsets);
         mfu_free(&name);
         return MFU_FAILURE;
     }
+
+    /* broadcast number of entries to all ranks */
+    MPI_Bcast(&count, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
     /* indicate to user what phase we're in */
     if (mfu_rank == 0) {
@@ -1627,6 +1716,7 @@ static int read_entry_index_file(
     }
 
     /* allocate memory to hold incoming offsets */
+    bufsize = count * sizeof(uint64_t);
     uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
 
     /* convert offsets into host order */
@@ -1667,55 +1757,84 @@ static int read_entry_index_xattr(
     /* assume we'll succeed */
     int rc = MFU_SUCCESS;
 
-    /* assume we have the index */
-    int have_index = 1;
-
     /* compute file name of index */
     char name[] = "user.dtar.idx";
 
-    /* TODO: use a better encoding with index format
-     * version number */
-
     /* compute number of entries based on index size */
-    uint64_t count = 0;
+    uint64_t count    = 0;
+    size_t bufsize    = 0;
+    uint64_t* offsets = NULL;
     if (mfu_rank == 0) {
         /* check to see if index is defined, and if so, get its size */
         ssize_t ret = mfu_lgetxattr(filename, name, NULL, 0);
         if (ret >= 0) {
-            /* index is set, and ret has its current size in bytes,
-             * index stores one offset as uint64_t for each entry */
-            count = ret / sizeof(uint64_t);
+            /* allocate a buffer to hold xattr value */
+            bufsize = (size_t) ret;
+            char* buf = (char*) MFU_MALLOC(bufsize);
+
+            /* read xattr value */
+            ssize_t ret = mfu_lgetxattr(filename, name, buf, bufsize);
+            if (ret == -1) {
+               /* have index, but failed to read it */
+               MFU_LOG(MFU_LOG_ERR, "Failed to read xattr '%s' errno=%d %s",
+                   name, errno, strerror(errno)
+               );
+               rc = MFU_FAILURE;
+            }
+
+            /* failed to read enough bytes to get magic and version numbers */
+            if ((size_t) ret < 2 * sizeof(uint64_t)) {
+               rc = MFU_FAILURE;
+            }
+
+            /* define header pointer at start of xattr value */
+            uint64_t* header = (uint64_t*) buf;
+            size_t header_size = 3 * sizeof(uint64_t);
+
+            /* if we read the header, check magic and version numbers */
+            if (rc == MFU_SUCCESS) {
+                uint64_t magic = mfu_ntoh64(header[0]);
+                if (magic != DTAR_MAGIC) {
+                    rc = MFU_FAILURE;
+                }
+
+                uint64_t version = mfu_ntoh64(header[1]);
+                if (version != 1) {
+                    rc = MFU_FAILURE;
+                }
+
+                /* version 1 requires at least 3 uint64_t values */
+                if (rc == MFU_SUCCESS && version == 1 && ret < 3 * sizeof(uint64_t)) {
+                    rc = MFU_FAILURE;
+                }
+            }
+
+            /* allocate space to hold offsets */
+            if (rc == MFU_SUCCESS) {
+                /* extract number of entries from header */
+                count = mfu_ntoh64(header[2]);
+
+                /* allocate memory to hold offsets */
+                size_t offsets_size = count * sizeof(uint64_t);
+                offsets = (uint64_t*) MFU_MALLOC(offsets_size);
+
+                /* copy from xattr value buffer into offsets array */
+                memcpy(offsets, buf + header_size, offsets_size);
+            }
+
+            /* free buffer holding xattr value */
+            mfu_free(&buf);
         } else {
             /* failed to find the index,
              * don't bother with an error since this likely
              * means the index doesn't exist because the archive
              * was created with something other than mpiFileUtils */
-            have_index = 0;
+            rc = MFU_FAILURE;
         }
     }
-
-    /* broadcast number of entries to all ranks */
-    MPI_Bcast(&count, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
-
-    /* read entry offsets from xattr */
-    size_t bufsize = count * sizeof(uint64_t);
-    uint64_t* offsets = (uint64_t*) MFU_MALLOC(bufsize);
-    if (mfu_rank == 0 && have_index) {
-        ssize_t ret = mfu_lgetxattr(filename, name, offsets, bufsize);
-        if (ret == -1) {
-           /* have index, but failed to read it */
-           MFU_LOG(MFU_LOG_ERR, "Failed to read xattr '%s' errno=%d %s",
-               name, errno, strerror(errno)
-           );
-           have_index = 0;
-        }
-    }
-
-    /* broadcast whether rank 0 could read the index */
-    MPI_Bcast(&have_index, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
     /* bail out if we don't have an index */
-    if (! have_index) {
+    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
         /* no index, free memory and return failure */
         mfu_free(&offsets);
         return MFU_FAILURE;
@@ -1726,7 +1845,11 @@ static int read_entry_index_xattr(
         MFU_LOG(MFU_LOG_INFO, "Read index from xattr '%s' in '%s'", name, filename);
     }
 
+    /* broadcast number of entries to all ranks */
+    MPI_Bcast(&count, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+
     /* allocate memory to hold incoming offsets */
+    bufsize = count * sizeof(uint64_t);
     uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
 
     /* convert offsets into host order */
@@ -1810,7 +1933,7 @@ static int read_entry_index_footer(
             /* check the magic value and get the version number */
             if (rc == MFU_SUCCESS) {
                 uint64_t magic = mfu_ntoh64(footer[5]);
-                if (magic != 42) {
+                if (magic != DTAR_MAGIC) {
                     rc = MFU_FAILURE;
                 }
 
@@ -3958,7 +4081,7 @@ static uint64_t flist_sum_bytes(mfu_flist flist)
 
 /* Extract items from a given archive file, given the offset of each entry in the archive.
  * This uses libarchive to actually read data from the archive and write to an item on disk. */
-static int extract_files_offsets(
+static int extract_files_offsets_libarchive(
     const char* filename,     /* name of archive file */
     int flags,                /* flags passed to archive_write_disk_set_options */
     uint64_t entries,         /* number of total entries in offsets array */
@@ -4047,7 +4170,7 @@ static int extract_files_offsets(
         archive_read_support_format_tar(a);
 
         /* we can use a large blocksize for reading,
-         * since we'll read headers and data in a contguous
+         * since we'll read headers and data in a contiguous
          * region of the file */
         r = archive_read_open_fd(a, fd, opts->buf_size);
         if (r != ARCHIVE_OK) {
@@ -4096,11 +4219,22 @@ static int extract_files_offsets(
             /* extract file data (if item is a file) */
             int tmp_rc = copy_data(a, ext);
             if (tmp_rc != MFU_SUCCESS) {
-                rc = tmp_rc;
                 archive_read_close(a);
                 archive_read_free(a);
+                rc = tmp_rc;
                 break;
             }
+        }
+
+        /* set any properties on the item that need to be set at end,
+         * e.g., turn off write bit on a file we just wrote or set timestamps */
+        r = archive_write_finish_entry(ext);
+        if (r != ARCHIVE_OK) {
+            MFU_LOG(MFU_LOG_ERR, "finish writing entry %llu at offset %llu %s",
+                idx, offset, archive_error_string(ext)
+            );
+            rc = MFU_FAILURE;
+            break;
         }
 
         /* increment our count of items extracted */
@@ -4575,6 +4709,17 @@ static int extract_files(
                 }
             }
 
+            /* set any properties on the item that need to be set at end,
+             * e.g., turn off write bit on a file we just wrote or set timestamps */
+            r = archive_write_finish_entry(ext);
+            if (r != ARCHIVE_OK) {
+                MFU_LOG(MFU_LOG_ERR, "finish writing entry %llu %s",
+                    count, archive_error_string(ext)
+                );
+                rc = MFU_FAILURE;
+                break;
+            }
+
             /* increment our count of items extracted */
             reduce_buf[REDUCE_ITEMS]++;
 
@@ -4900,10 +5045,13 @@ int mfu_flist_archive_extract(
     if (opts->preserve_permissions) {
         flags |= ARCHIVE_EXTRACT_PERM;
     }
-
-    if (opts->preserve) {
+    if (opts->preserve_xattrs) {
         flags |= ARCHIVE_EXTRACT_XATTR;
+    }
+    if (opts->preserve_acls) {
         flags |= ARCHIVE_EXTRACT_ACL;
+    }
+    if (opts->preserve_fflags) {
         flags |= ARCHIVE_EXTRACT_FFLAGS;
     }
 
@@ -4976,6 +5124,27 @@ int mfu_flist_archive_extract(
         return MFU_FAILURE;
     }
 
+    /* to preserve ACLs and XATTRs, we need to extract with libarchive for now */
+    bool extract_with_libarchive = (opts->preserve_xattrs || opts->preserve_acls || opts->preserve_fflags);
+    if (extract_with_libarchive) {
+        /* if user requested a specific algorithm that is not compatibile,
+         * print and error and return with an error */
+        if (algo == CHUNK || algo == LIBCIRCLE) {
+            if (mfu_rank == 0) {
+                MFU_LOG(MFU_LOG_ERR, "To extract ACLs and XATTRs, one must extract with libarchive: LIBARCHIVE or LIBARCHIVE_IDX");
+            }
+            mfu_create_opts_delete(&create_opts);
+            return MFU_FAILURE;
+        }
+
+        /* force to an algorithm that extracts items with libarchive */
+        if (have_offsets) {
+            algo = LIBARCHIVE_IDX;
+        } else {
+            algo = LIBARCHIVE;
+        }
+    }
+
     /* divide entries among ranks */
     uint64_t entry_start, entry_count;
     get_start_count(mfu_rank, ranks, entries, &entry_start, &entry_count);
@@ -5026,7 +5195,7 @@ int mfu_flist_archive_extract(
             /* in this case we use libarchve to read entries from the archive
              * and write them to disk, though we can use offsets to seek to
              * the start of each entry */
-            ret = extract_files_offsets(filename, flags,
+            ret = extract_files_offsets_libarchive(filename, flags,
                 entries, entry_start, entry_count, offsets, flist, opts);
         } else {
             /* in this case, we'll use an mfu chunk list to distribute work
@@ -5202,6 +5371,16 @@ mfu_archive_opts_t* mfu_archive_opts_new(void)
 
     /* When extracting, whether to apply permission bits from archive to extracted files. */
     opts->preserve_permissions = false;
+
+    /* When extracting, whether to copy xattrs to extracted files. */
+    opts->preserve_xattrs = false;
+
+    /* When extracting, whether to copy acls to extracted files. */
+    opts->preserve_acls = false;
+
+    /* When extracting, whether to copy ioctl inode flags to extracted files. */
+    /* see https://man7.org/linux/man-pages/man2/ioctl_iflags.2.html */
+    opts->preserve_fflags = false;
 
     /* By default, don't bother to preserve all attributes. */
     opts->preserve = false;
