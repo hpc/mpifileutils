@@ -397,7 +397,7 @@ static int encode_header(
         /* to preserve ACLs and XATTRs, we rely on read disk to capture that info,
          * libarchive captures this info in an entry by default (unless told not to),
          * we need to open the target item with a file descriptor for the read_disk call */
-        int fd = mfu_open(relname, O_RDONLY);
+        int fd = mfu_open(fname, O_RDONLY);
         if (fd >= 0) {
             /* define an host archive for encoding our entry */
             struct archive* source = archive_read_disk_new();
@@ -423,7 +423,7 @@ static int encode_header(
             int r = archive_read_disk_entry_from_file(source, entry, fd, NULL);
             if (r != ARCHIVE_OK) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to define entry for '%s': archive_read_disk_entry_from_file(): %s",
-                    relname, archive_error_string(source)
+                    fname, archive_error_string(source)
                 );
                 rc = MFU_FAILURE;
             }
@@ -432,10 +432,10 @@ static int encode_header(
             archive_read_free(source);
 
             /* and close out the file */
-            mfu_close(relname, fd);
+            mfu_close(fname, fd);
         } else {
             MFU_LOG(MFU_LOG_ERR, "Failed to open '%s' to create entry errno=%d %s",
-                relname, errno, strerror(errno)
+                fname, errno, strerror(errno)
             );
             rc = MFU_FAILURE;
         }
@@ -3655,6 +3655,32 @@ static int index_entries_distread(
     return rc;
 }
 
+/* name in the archive is relative,
+ * but paths in flist are absolute (typically),
+ * prepend given prefix and reduce resulting path */
+static const char* full_path_to_entry(
+    struct archive_entry* entry,
+    const mfu_path* prefix)
+{
+    /* get name of archive entry, this is likely a relative path */
+    const char* name = archive_entry_pathname(entry);
+    mfu_path* path = mfu_path_from_str(name);
+
+    /* prepend given prefix if entry path is not absolute */
+    if (! mfu_path_is_absolute(path)) {
+        mfu_path_prepend(path, prefix);
+    }
+
+    /* simplify the path */
+    mfu_path_reduce(path);
+
+    /* allocate the new path as a string to return */
+    char* str = mfu_path_strdup(path);
+    mfu_path_delete(&path);
+
+    return str;
+}
+
 /* given an entry data structure read from the archive,
  * create a corresponding item in the flist */
 static void insert_entry_into_flist(
@@ -3665,19 +3691,12 @@ static void insert_entry_into_flist(
     /* allocate a new item in our list, and get its index */
     uint64_t idx = mfu_flist_file_create(flist);
 
-    /* get name of archive entry, this is likely a relative path */
-    const char* name = archive_entry_pathname(entry);
-
     /* name in the archive is relative,
      * but paths in flist are absolute (typically),
      * prepend given prefix and reduce resulting path */
-    mfu_path* path = mfu_path_from_str(name);
-    mfu_path_prepend(path, prefix);
-    mfu_path_reduce(path);
-    const char* name2 = mfu_path_strdup(path);
-    mfu_flist_file_set_name(flist, idx, name2);
-    mfu_free(&name2);
-    mfu_path_delete(&path);
+    const char* fullpath = full_path_to_entry(entry, prefix);
+    mfu_flist_file_set_name(flist, idx, fullpath);
+    mfu_free(&fullpath);
 
     /* get mode of entry, and deduce mfu type */
     mode_t mode = archive_entry_mode(entry);
@@ -4943,6 +4962,197 @@ static int extract_symlinks(
     return rc;
 }
 
+/* Extract xattrs from archive file and copy to item.
+ * This uses libarchive to actually read the entry from the archive */
+static int extract_xattrs(
+    const char* filename,     /* name of archive file */
+    const mfu_param_path* cwdpath, /* path to prepend to any relative path in archive */
+    int flags,                /* flags passed to archive_write_disk_set_options */
+    uint64_t entries,         /* number of total entries in offsets array */
+    uint64_t entry_start,     /* starting offset in offsets we're responsible for */
+    uint64_t entry_count,     /* number of entries we're responsible for */
+    uint64_t* offsets,        /* offset to each entry in the archive */
+    mfu_flist flist,          /* file list corresponding to our subset of entries */
+    mfu_archive_opts_t* opts) /* options to configure extract operation */
+{
+    /* assume we'll succeed */
+    int rc = MFU_SUCCESS;
+
+    /* indicate to user what phase we're in */
+    if (mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Extracting items");
+    }
+
+    /* intitialize counters to track number of bytes and items extracted */
+//    reduce_buf[REDUCE_BYTES] = 0;
+//    reduce_buf[REDUCE_ITEMS] = 0;
+
+    /* start progress messages while setting metadata */
+//    extract_prog = mfu_progress_start(mfu_progress_timeout, 2, MPI_COMM_WORLD, extract2_progress_fn);
+
+    /* open the archive file for reading */
+    int fd = mfu_open(filename, O_RDONLY);
+    if (fd < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to open archive: '%s' errno=%d %s",
+            filename, errno, strerror(errno)
+        );
+        rc = MFU_FAILURE;
+    }
+
+    /* check that everyone opened the archive successfully */
+    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+        /* someone failed, close the file if we opened it and return */
+        if (fd >= 0) {
+            mfu_close(filename, fd);
+        }
+        return MFU_FAILURE;
+    }
+
+    /* get current working directory */
+    mfu_path* cwd = mfu_path_from_str(cwdpath->path);
+
+    /* iterate over and extract each item we're responsible for */
+    uint64_t count = 0;
+    while (count < entry_count && rc == MFU_SUCCESS) {
+        /* seek to start of the entry in the archive file */
+        uint64_t idx = entry_start + count;
+        off_t offset = (off_t) offsets[idx];
+        off_t pos = mfu_lseek(filename, fd, offset, SEEK_SET);
+        if (pos == (off_t)-1) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to seek to offset %llu in open archive: '%s' errno=%d %s",
+                offset, filename, errno, strerror(errno)
+            );
+            rc = MFU_FAILURE;
+            break;
+        }
+
+        /* initiate archive object for reading,
+         * we do this new each time to be sure that state is
+         * not left over from the previous item */
+        struct archive* a = archive_read_new();
+
+        /* when using offsets, we assume there is no compression */
+//        archive_read_support_filter_bzip2(a);
+//        archive_read_support_filter_gzip(a);
+//        archive_read_support_filter_compress(a);
+        archive_read_support_format_tar(a);
+
+        /* use a small block size since we're just reading headers */
+        int r = archive_read_open_fd(a, fd, 10240);
+        if (r != ARCHIVE_OK) {
+            MFU_LOG(MFU_LOG_ERR, "opening archive to extract entry %llu at offset %llu %s",
+                idx, offset, archive_error_string(a)
+            );
+            archive_read_free(a);
+            rc = MFU_FAILURE;
+            break;
+        }
+
+        /* read the entry header for this item */
+        struct archive_entry* entry;
+        r = archive_read_next_header(a, &entry);
+        if (r == ARCHIVE_EOF) {
+            MFU_LOG(MFU_LOG_ERR, "unexpected end of archive, read %llu of %llu items",
+                count, entry_count
+            );
+            archive_read_close(a);
+            archive_read_free(a);
+            rc = MFU_FAILURE;
+            break;
+        }
+        if (r != ARCHIVE_OK) {
+            MFU_LOG(MFU_LOG_ERR, "extracting entry %llu at offset %llu %s",
+                idx, offset, archive_error_string(a)
+            );
+            archive_read_close(a);
+            archive_read_free(a);
+            rc = MFU_FAILURE;
+            break;
+        }
+
+        /* copy xattrs from entry to file */
+        int num = archive_entry_xattr_count(entry);
+        if (num > 0) {
+            /* get path to entry on the file system */
+            const char* path = full_path_to_entry(entry, cwd);
+
+            /* entry has some xattrs recorded, extract and apply them */
+            int i;
+            archive_entry_xattr_reset(entry);
+            for (i = 0; i < num; i++) {
+                /* read next xattr value recorded in archive entry */
+                const char* xname = NULL;
+                const void* xval  = NULL;
+                size_t xsize = 0;
+                r = archive_entry_xattr_next(entry, &xname, &xval, &xsize);
+                if (r == ARCHIVE_OK) {
+                    /* successfully extracted xattr, now try to set it */
+                    int set_rc = setxattr(path, xname, xval, xsize, 0);
+                    if (set_rc == -1) {
+                        MFU_LOG(MFU_LOG_ERR, "failed to setxattr '%s' on '%s' errno=%d %s",
+                            xname, path, errno, strerror(errno) 
+                        );
+                        rc = MFU_FAILURE;
+                        /* don't break in case other xattrs work */
+                    }
+                } else {
+                    /* failed to read xattr */
+                    MFU_LOG(MFU_LOG_ERR, "failed to extract xattr for '%s' of entry %llu at offset %llu",
+                        path, idx, offset
+                    );
+                    rc = MFU_FAILURE;
+                    /* don't break in case other xattrs work */
+                }
+            }
+
+            mfu_free(&path);
+        }
+
+        /* increment our count of items extracted */
+//        reduce_buf[REDUCE_ITEMS]++;
+
+        /* update number of items we have completed for progress messages */
+//        mfu_progress_update(reduce_buf, extract_prog);
+
+        /* close out the read archive object */
+        r = archive_read_close(a);
+        if (r != ARCHIVE_OK) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to close read archive %s",
+                archive_error_string(a)
+            );
+            archive_read_free(a);
+            rc = MFU_FAILURE;
+            break;
+        }
+
+        /* free memory allocated in read archive object */
+        r = archive_read_free(a);
+        if (r != ARCHIVE_OK) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to free read archive %s",
+                archive_error_string(a)
+            );
+            rc = MFU_FAILURE;
+            break;
+        }
+
+        /* advance to our next entry */
+        count++;
+    }
+
+    /* free path object of current working directory */
+    mfu_path_delete(&cwd);
+
+    /* finalize progress messages */
+//    mfu_progress_complete(reduce_buf, &extract_prog);
+
+    /* figure out whether anyone failed */
+    if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+        rc = MFU_FAILURE;
+    }
+
+    return rc;
+}
+
 typedef enum {
     DEFAULT,        /* attempt to dynamically choose best option */
     LIBARCHIVE,     /* read/write through libarchvie, round-robin items across ranks */
@@ -5125,7 +5335,7 @@ int mfu_flist_archive_extract(
     }
 
     /* to preserve ACLs and XATTRs, we need to extract with libarchive for now */
-    bool extract_with_libarchive = (opts->preserve_xattrs || opts->preserve_acls || opts->preserve_fflags);
+    bool extract_with_libarchive = (opts->preserve_acls || opts->preserve_fflags);
     if (extract_with_libarchive) {
         /* if user requested a specific algorithm that is not compatibile,
          * print and error and return with an error */
@@ -5219,6 +5429,17 @@ int mfu_flist_archive_extract(
             if (tmp_rc != MFU_SUCCESS) {
                 /* tried but failed to get some symlink, so mark as failure */
                 ret = tmp_rc;
+            }
+
+            /* copy xattrs if needed */
+            if (opts->preserve_xattrs) {
+                /* read xattrs from archive and apply to files */
+                tmp_rc = extract_xattrs(filename, cwdpath, flags,
+                    entries, entry_start, entry_count, offsets, flist, opts);
+                if (tmp_rc != MFU_SUCCESS) {
+                    /* failed to copy xattrs, so mark as failure */
+                    ret = tmp_rc;
+                }
             }
 
             /* set timestamps and permissions on everything */
