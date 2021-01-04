@@ -511,6 +511,7 @@ typedef struct {
     bool set_owner;       /* whether to copy uid/gid from flist to item */
     bool set_timestamps;  /* whether to copy timestamps from flist to item */
     bool set_permissions; /* whether to copy permission bits from flist to item */
+    mode_t umask;         /* umask to apply when setting permissions (default current umask) */
     bool lustre_stripe;   /* whether to apply lustre striping parameters */
     uint64_t lustre_stripe_minsize; /* min file size in bytes for which to stripe file */
     uint64_t lustre_stripe_width;   /* size of a single stripe in bytes */
@@ -625,6 +626,9 @@ typedef struct {
     bool    preserve_owner;
     bool    preserve_times;
     bool    preserve_permissions;
+    bool    preserve_xattrs;
+    bool    preserve_acls;
+    bool    preserve_fflags;
     bool    preserve;
     int     flags;
     size_t  chunk_size;
