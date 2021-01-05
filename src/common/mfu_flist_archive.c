@@ -4343,7 +4343,7 @@ static int extract_files_offsets_chunk_libcircle(
 
     /* indicate to user what phase we're in */
     if (mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Extracting items");
+        MFU_LOG(MFU_LOG_INFO, "Extracting file data");
     }
 
     /* open the archive file for reading */
@@ -4467,7 +4467,7 @@ static int extract_files_offsets_chunk(
 
     /* indicate to user what phase we're in */
     if (mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Extracting items");
+        MFU_LOG(MFU_LOG_INFO, "Extracting file data");
     }
 
     /* open the archive file for reading */
@@ -4817,12 +4817,32 @@ static int extract_symlinks(
 {
     int rc = MFU_SUCCESS;
 
-#if 0
+    /* iterate over all items in our list and count symlinks */
+    uint64_t count = 0;
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(flist);
+    for (idx = 0; idx < size; idx++) {
+        mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+        if (type == MFU_TYPE_LINK) {
+            /* found a symlink */
+            count++;
+        }
+    }
+
+    /* count total number of links */
+    uint64_t all_count;
+    MPI_Allreduce(&count, &all_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* bail out early if there is nothing to do */
+    if (all_count == 0) {
+        return MFU_SUCCESS;
+    }
+
+    /* let user know what we're doing */
     MPI_Barrier(MPI_COMM_WORLD);
     if (mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Creating symlinks");
+        MFU_LOG(MFU_LOG_INFO, "Creating %llu symlinks", (unsigned long long)all_count);
     }
-#endif
 
     /* open the archive file for reading */
     int fd = mfu_open(filename, O_RDONLY);
@@ -4846,8 +4866,6 @@ static int extract_symlinks(
     uint64_t global_offset = mfu_flist_global_offset(flist);
 
     /* iterate over all items in our list and create any symlinks */
-    uint64_t idx;
-    uint64_t size = mfu_flist_size(flist);
     for (idx = 0; idx < size; idx++) {
         /* skip entries that are not symlinks */
         mfu_filetype type = mfu_flist_file_get_type(flist, idx);
@@ -4927,9 +4945,20 @@ static int extract_symlinks(
         /* create the link on the file system */
         int symlink_rc = mfu_symlink(target, name);
         if (symlink_rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to set symlink `%s' (errno=%d %s)",
-                name, errno, strerror(errno));
-            rc = MFU_FAILURE;
+            /* TODO: check whether user wants overwrite */
+            if (errno == EEXIST) {
+                /* failed because something exists,
+                 * attempt to delete item and try again */
+                mfu_unlink(name);
+                symlink_rc = mfu_symlink(target, name);
+            }
+
+            /* if we still failed, give up */
+            if (symlink_rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to set symlink `%s' (errno=%d %s)",
+                    name, errno, strerror(errno));
+                rc = MFU_FAILURE;
+            }
         }
 
         /* close out the read archive object */
@@ -4980,7 +5009,7 @@ static int extract_xattrs(
 
     /* indicate to user what phase we're in */
     if (mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Extracting items");
+        MFU_LOG(MFU_LOG_INFO, "Extracting xattrs");
     }
 
     /* intitialize counters to track number of bytes and items extracted */
@@ -5415,15 +5444,6 @@ int mfu_flist_archive_extract(
              * create the files in advance */
             mfu_flist_mknod(flist, create_opts);
 
-            /* extract file data from archive */
-            if (algo == CHUNK) {
-                ret = extract_files_offsets_chunk(filename, flags,
-                    entries, entry_start, entry_count, data_offsets, flist, opts);
-            } else { /* LIBCIRCLE or DEFAULT */
-                ret = extract_files_offsets_chunk_libcircle(filename, flags,
-                    entries, entry_start, entry_count, data_offsets, flist, opts);
-            }
-
             /* create symlinks */
             int tmp_rc = extract_symlinks(filename, flist, offsets, opts);
             if (tmp_rc != MFU_SUCCESS) {
@@ -5431,7 +5451,9 @@ int mfu_flist_archive_extract(
                 ret = tmp_rc;
             }
 
-            /* copy xattrs if needed */
+            /* copy xattrs if needed, we do this before writing file data
+             * since some file systems encode data layout properties in xattrs
+             * and those must be defined before writing any data */
             if (opts->preserve_xattrs) {
                 /* read xattrs from archive and apply to files */
                 tmp_rc = extract_xattrs(filename, cwdpath, flags,
@@ -5440,6 +5462,15 @@ int mfu_flist_archive_extract(
                     /* failed to copy xattrs, so mark as failure */
                     ret = tmp_rc;
                 }
+            }
+
+            /* extract file data from archive */
+            if (algo == CHUNK) {
+                ret = extract_files_offsets_chunk(filename, flags,
+                    entries, entry_start, entry_count, data_offsets, flist, opts);
+            } else { /* LIBCIRCLE or DEFAULT */
+                ret = extract_files_offsets_chunk_libcircle(filename, flags,
+                    entries, entry_start, entry_count, data_offsets, flist, opts);
             }
 
             /* set timestamps and permissions on everything */
