@@ -1498,7 +1498,7 @@ static int write_entry_index(
 {
     /* let user know what we're doing */
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Writing index");
+        MFU_LOG(MFU_LOG_INFO, "Gathering index");
     }
 
     /* compute total number of entries */
@@ -5370,7 +5370,7 @@ int mfu_flist_archive_extract(
          * print and error and return with an error */
         if (algo == CHUNK || algo == LIBCIRCLE) {
             if (mfu_rank == 0) {
-                MFU_LOG(MFU_LOG_ERR, "To extract ACLs and XATTRs, one must extract with libarchive: LIBARCHIVE or LIBARCHIVE_IDX");
+                MFU_LOG(MFU_LOG_ERR, "To extract ACLs, one must extract with libarchive: LIBARCHIVE or LIBARCHIVE_IDX");
             }
             mfu_create_opts_delete(&create_opts);
             return MFU_FAILURE;
@@ -5387,6 +5387,16 @@ int mfu_flist_archive_extract(
     /* divide entries among ranks */
     uint64_t entry_start, entry_count;
     get_start_count(mfu_rank, ranks, entries, &entry_start, &entry_count);
+
+    /* if we constructed an offset list by scanning the archive,
+     * save it to an index in case we need to extract again
+     * since scanning can be expensive */
+    if (have_offsets && !have_index) {
+        /* TODO: when encoding index as the last entry, we need to know the archive size,
+         * and we'll need to rewrite the two trailing 512-byte blocks */
+        //write_entry_index(filename, entry_count, &offsets[entry_start], opts, &archive_size);
+        write_entry_index(filename, entry_count, &offsets[entry_start], opts, NULL);
+    }
 
     /* extract metadata for items in archive and construct flist,
      * also get offsets to start of data region for each entry */
@@ -5515,15 +5525,6 @@ int mfu_flist_archive_extract(
 
         /* free the list of directories */
         mfu_flist_free(&flist_dirs);
-    }
-
-    /* if we constructed an offset list while unpacking the archive,
-     * save it to an index file in case we need to unpack again */
-    if (have_offsets && !have_index) {
-        /* TODO: when encoding index as the last entry, we need to know the archive size,
-         * and we'll need to rewrite the two trailing 512-byte blocks */
-        //write_entry_index(filename, entry_count, &offsets[entry_start], opts, &archive_size);
-        write_entry_index(filename, entry_count, &offsets[entry_start], opts, NULL);
     }
 
     /* free options structure needed for create calls */
