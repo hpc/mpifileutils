@@ -1017,6 +1017,16 @@ static void DTAR_perform_extract(CIRCLE_handle* handle)
     mfu_free(&op);
 }
 
+/* compute file name of index file from archive file name,
+ * returns as newly allocated string to be freed by caller */
+static char* archive_index_filename(const char* file)
+{
+    size_t namelen = strlen(file) + strlen(".idx") + 1;
+    char* name = (char*) MFU_MALLOC(namelen);
+    snprintf(name, namelen, "%s.idx", file);
+    return name;
+}
+
 /* check that we got at least one readable path in source paths,
  * and check whether destination archive file already exists
  * and if not whether we can write to the parent directory */
@@ -1027,75 +1037,73 @@ void mfu_param_path_check_archive(
     mfu_archive_opts_t* opts,
     int* valid)
 {
-    /* TODO: need to parallize this, rather than have every rank do the test */
-
     /* assume paths are valid */
     *valid = 1;
 
-    /* count number of source paths that we can read */
-    int i;
-    int num_readable = 0;
-    for (i = 0; i < numparams; i++) {
-        char* path = srcparams[i].path;
-        if (mfu_access(path, R_OK) == 0) {
-            /* found one that we can read */
-            num_readable++;
-        } else {
-            /* not readable, report using the verbatim string user specified */
-            if (mfu_rank == 0) {
+    /* TODO: if there are lots of source paths, we could parallize this */
+
+    /* have rank 0 do the work and broadcast the result of the check */
+    if (mfu_rank == 0) {
+        /* count number of source paths that we can read */
+        int i;
+        int num_readable = 0;
+        for (i = 0; i < numparams; i++) {
+            char* path = srcparams[i].path;
+            if (mfu_access(path, R_OK) == 0) {
+                /* found one that we can read */
+                num_readable++;
+            } else {
+                /* not readable, report using the verbatim string user specified */
                 char* orig = srcparams[i].orig;
                 MFU_LOG(MFU_LOG_ERR, "Could not read '%s' errno=%d %s",
                     orig, errno, strerror(errno));
             }
         }
-    }
 
-    /* verify we have at least one valid source */
-    if (num_readable < 1) {
-        if (mfu_rank == 0) {
+        /* verify we have at least one valid source */
+        if (num_readable < 1) {
             MFU_LOG(MFU_LOG_ERR, "At least one valid source must be specified");
-        }
-        *valid = 0;
-        goto bcast;
-    }
-
-    /* copy destination to user opts structure */
-    opts->dest_path = MFU_STRDUP(destparam.path);
-
-    /* check destination */
-    if (destparam.path_stat_valid) {
-        if (mfu_rank == 0) {
-            MFU_LOG(MFU_LOG_WARN, "Destination target exists, we will overwrite");
-        }
-    } else {
-        /* destination archive file does not exist,
-         * check whether parent directory exists and is writable */
-
-        /* compute path to parent of destination archive */
-        mfu_path* parent = mfu_path_from_str(destparam.path);
-        mfu_path_dirname(parent);
-        char* parent_str = mfu_path_strdup(parent);
-        mfu_path_delete(&parent);
-
-        /* check if parent is writable */
-        if (mfu_access(parent_str, W_OK) < 0) {
-            if (mfu_rank == 0) {
-                MFU_LOG(MFU_LOG_ERR, "Destination parent directory is not wriable: '%s' ",
-                    parent_str
-                );
-            }
             *valid = 0;
-            mfu_free(&parent_str);
             goto bcast;
         }
 
-        mfu_free(&parent_str);
-    }
+        /* copy destination to user opts structure */
+        opts->dest_path = MFU_STRDUP(destparam.path);
 
-    /* at this point, we know
-     * (1) destination doesn't exist
-     * (2) parent directory is writable
-     */
+        /* check destination */
+        if (destparam.path_stat_valid) {
+            /* archive file already exists, let's delete it,
+             * we're goind to overwrite the existing file, but we delete it now before we walk
+             * so that we don't try to include the archive file as part of the archive */
+            MFU_LOG(MFU_LOG_WARN, "Archive file already exists, deleting: '%s'", opts->dest_path);
+            mfu_unlink(opts->dest_path);
+
+            /* TODO: if we stop using a separate file for the index, we need to fix this */
+            /* since this is an archive, we also delete its index file */
+            char* idxfile = archive_index_filename(opts->dest_path);
+            mfu_unlink(idxfile);
+            mfu_free(&idxfile);
+        } else {
+            /* destination archive file does not exist,
+             * check whether parent directory exists and is writable */
+
+            /* compute path to parent of destination archive */
+            mfu_path* parent = mfu_path_from_str(destparam.path);
+            mfu_path_dirname(parent);
+            char* parent_str = mfu_path_strdup(parent);
+            mfu_path_delete(&parent);
+
+            /* check if parent is writable */
+            if (mfu_access(parent_str, W_OK) < 0) {
+                MFU_LOG(MFU_LOG_ERR, "Archive parent directory is not writable: '%s' ",
+                    parent_str
+                );
+                *valid = 0;
+            }
+
+            mfu_free(&parent_str);
+        }
+    }
 
 bcast:
     MPI_Bcast(valid, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -1118,9 +1126,7 @@ static int write_entry_index_file(
     int rc = MFU_SUCCESS;
 
     /* compute file name of index file from archive file name */
-    size_t namelen = strlen(file) + strlen(".idx") + 1;
-    char* name = (char*) MFU_MALLOC(namelen);
-    snprintf(name, namelen, "%s.idx", file);
+    char* name = archive_index_filename(file);
 
     /* let user know what we're doing */
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
@@ -1604,9 +1610,7 @@ static int read_entry_index_file(
     int rc = MFU_SUCCESS;
 
     /* compute file name of index file */
-    size_t namelen = strlen(filename) + strlen(".idx") + 1;
-    char* name = (char*) MFU_MALLOC(namelen);
-    snprintf(name, namelen, "%s.idx", filename);
+    char* name = archive_index_filename(filename);
 
     /* read entry offsets from file */
     uint64_t count    = 0;

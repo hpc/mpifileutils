@@ -400,6 +400,10 @@ int main(int argc, char** argv)
         mfu_param_path destpath;
         mfu_param_path_set(opts_tarfile, &destpath);
 
+        /* if we have an existing archive, it is deleted in check_archive so that we don't
+         * walk it to be included as an entry of the archive itself in the target archive
+         * happens to be in the directory we are walking */
+
         /* check that source and destination are okay */
         int valid;
         mfu_param_path_check_archive(numpaths, paths, destpath, archive_opts, &valid);
