@@ -151,7 +151,7 @@ static void remove_spread(mfu_flist flist, uint64_t* rmcount)
     /* evenly spread flist among processes,
      * execute direct delete, and free temp list */
     bool is_posix_copy = true;
-    mfu_flist newlist = mfu_flist_spread(flist, &is_posix_copy);
+    mfu_flist newlist = mfu_flist_spread(flist);
     remove_direct(newlist, rmcount);
     mfu_flist_free(&newlist);
     return;
@@ -603,7 +603,7 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
     /* if traceless, restore the stat of each item's pdir */
     if (traceless) {
         bool is_posix_copy = true;
-        mfu_flist newlist = mfu_flist_spread(pstatlist, &is_posix_copy);
+        mfu_flist newlist = mfu_flist_spread(pstatlist);
         size = mfu_flist_size(newlist);
         uint64_t idx;
 

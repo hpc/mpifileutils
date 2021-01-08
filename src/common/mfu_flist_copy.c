@@ -2463,8 +2463,7 @@ int mfu_flist_copy(
             uint64_t tmplist_size = mfu_flist_global_size(tmplist);
             if (tmplist_size > 0) {
                 /* spread items evenly over ranks */
-                bool is_posix_copy = true;
-                mfu_flist spreadlist = mfu_flist_spread(tmplist, &is_posix_copy);
+                mfu_flist spreadlist = mfu_flist_spread(tmplist);
 
                 /* split items in file list into sublists depending on their
                  * directory depth */

@@ -797,7 +797,6 @@ static int daos_copy_list_keys(daos_handle_t *src_oh,
 {
     /* loop to enumerate dkeys */
     daos_anchor_t dkey_anchor = {0}; 
-    printf("\n\nHERE\n\n");
     int rc;
     while (!daos_anchor_is_eof(&dkey_anchor)) {
         d_sg_list_t     dkey_sgl;

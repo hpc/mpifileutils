@@ -485,10 +485,11 @@ int main(int argc, char** argv)
                            walk_opts->dereference, mfu_src_file);
             mfu_flist_free(&input_flist);
         }
+
         /* copy flist into destination */ 
         rc = mfu_flist_copy(flist, numpaths_src, paths,
-                                destpath, mfu_copy_opts, mfu_src_file,
-                                mfu_dst_file);
+                            destpath, mfu_copy_opts, mfu_src_file,
+                            mfu_dst_file);
         if (rc < 0) {
             /* hit some sort of error during copy */
             rc = 1;
@@ -510,20 +511,16 @@ int main(int argc, char** argv)
         daos_epoch_t epoch;
         if (rank == 0) {
             rc = daos_obj_list_oids(daos_args, &epoch, flist);
-	    if (rc != 0) {
-                MFU_LOG(MFU_LOG_ERR, "DAOS failed to list oids: ", MFU_ERRF,
-                        MFU_ERRP(-MFU_ERR_DAOS));
-                rc = 1;
-                
-            }
         }
-
-        /* procs should wait here until rank 0 has retrieved all obj ids */
-        MPI_Barrier(MPI_COMM_WORLD);
+	    if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "DAOS failed to list oids: ", MFU_ERRF,
+                    MFU_ERRP(-MFU_ERR_DAOS));
+            rc = 1;
+        }
 
         /* evenly spread obj ids among each rank */
         mfu_flist_summarize(flist);
-        mfu_flist newlist = mfu_flist_spread(flist, &is_posix_copy);
+        mfu_flist newlist = mfu_flist_spread(flist);
 
         /* perform copy after oids are spread evenly across all ranks */
         flist_t* local_flist = (flist_t*) newlist;
@@ -551,8 +548,8 @@ int main(int argc, char** argv)
             }
         }
 
-	/* free newlist that was created for non-posix copy */
-	mfu_flist_free(&newlist);
+	    /* free newlist that was created for non-posix copy */
+	    mfu_flist_free(&newlist);
     }
 
     // Synchronize rc across all processes
@@ -561,7 +558,7 @@ int main(int argc, char** argv)
     }
 
     // Rank 0 prints success if needed
-    if (rc == 0 && rank == 0) {
+    if (rc == 0 && rank == 0 && !is_posix_copy) {
         printf("Successfully copied to DAOS Destination Container.\n");
     }
 

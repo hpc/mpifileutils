@@ -639,23 +639,16 @@ void mfu_flist_array_free(int levels, mfu_flist** outlists)
     return;
 }
 
-/* return total number of obj ids across procs,
- * only for non-posix copies */
-static uint64_t mfu_flist_global_oid_size(mfu_flist bflist)
-{
-#ifdef DAOS_SUPPORT
-    flist_t* flist = (flist_t*) bflist;
-    uint64_t val = flist->total_oids;
-    return val;
-#else
-    return 0;
-#endif
-}
-
-/* return number of files across all procs */
+/* return number of files or oids across all procs */
 uint64_t mfu_flist_global_size(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
+#ifdef DAOS_SUPPORT
+    uint64_t total_oids = flist->total_oids;
+    if (total_oids > 0) {
+        return total_oids;
+    }
+#endif
     uint64_t val = flist->total_files;
     return val;
 }
@@ -1508,12 +1501,7 @@ static int map_spread(mfu_flist flist, uint64_t idx, int ranks, const void* args
 
     /* global size will be total obj ids instead of total files,
      * if a non-posix copy is being performed */
-    bool* is_posix_copy = (bool*)args;
-    if (*is_posix_copy) {
-        global_size = mfu_flist_global_oid_size(flist);
-    } else {
-        global_size = mfu_flist_global_size(flist);
-    }
+    global_size = mfu_flist_global_size(flist);
 
     /* get whole number of items on each rank */
     uint64_t items_per_rank = global_size / (uint64_t)ranks;
@@ -1544,10 +1532,10 @@ static int map_spread(mfu_flist flist, uint64_t idx, int ranks, const void* args
 
 /* This takes in a list, spreads it out evenly, and then returns the newly created 
  * list to the caller */
-mfu_flist mfu_flist_spread(mfu_flist flist, bool* is_posix_copy)
+mfu_flist mfu_flist_spread(mfu_flist flist)
 {
     /* remap files to evenly distribute items to processes */
-    mfu_flist newlist = mfu_flist_remap(flist, map_spread, (bool*)is_posix_copy);
+    mfu_flist newlist = mfu_flist_remap(flist, map_spread, NULL);
     return newlist;
 }
 

@@ -430,7 +430,7 @@ mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args
 
 /* takes a list, spreads it evenly among processes with respect to item count,
  * and then returns the newly created list to the caller */
-mfu_flist mfu_flist_spread(mfu_flist flist, bool* is_posix_copy);
+mfu_flist mfu_flist_spread(mfu_flist flist);
 
 /* sort flist by specified fields, given as common-delimitted list
  * precede field name with '-' character to reverse sort order:
