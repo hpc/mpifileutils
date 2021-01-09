@@ -601,7 +601,6 @@ void mfu_flist_unlink(mfu_flist flist, bool traceless)
 
     /* if traceless, restore the stat of each item's pdir */
     if (traceless) {
-        bool is_posix_copy = true;
         mfu_flist newlist = mfu_flist_spread(pstatlist);
         size = mfu_flist_size(newlist);
         uint64_t idx;
