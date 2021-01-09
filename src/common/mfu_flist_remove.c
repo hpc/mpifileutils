@@ -150,7 +150,6 @@ static void remove_spread(mfu_flist flist, uint64_t* rmcount)
 {
     /* evenly spread flist among processes,
      * execute direct delete, and free temp list */
-    bool is_posix_copy = true;
     mfu_flist newlist = mfu_flist_spread(flist);
     remove_direct(newlist, rmcount);
     mfu_flist_free(&newlist);
