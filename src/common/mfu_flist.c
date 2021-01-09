@@ -1497,11 +1497,7 @@ static int map_spread(mfu_flist flist, uint64_t idx, int ranks, const void* args
     uint64_t global_idx = offset + idx;
 
     /* get global size of the list */
-    uint64_t global_size;
-
-    /* global size will be total obj ids instead of total files,
-     * if a non-posix copy is being performed */
-    global_size = mfu_flist_global_size(flist);
+    uint64_t global_size = mfu_flist_global_size(flist);
 
     /* get whole number of items on each rank */
     uint64_t items_per_rank = global_size / (uint64_t)ranks;
