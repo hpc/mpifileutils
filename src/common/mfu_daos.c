@@ -920,12 +920,16 @@ static int daos_copy_list_keys(daos_handle_t *src_oh,
     return rc;
 }
 
-int daos_obj_copy(daos_args_t* da,
-                          flist_t* flist) {
+static int daos_obj_copy(
+    daos_args_t* da,
+    flist_t bflist)
+{
     int rc = 0;
+
+    flist_t* flist = (flist_t*) bflist;
+
     uint64_t i;
     const elem_t* p = flist->list_head;
-
     for (i = 0; i < flist->list_count; i++) {
         /* open DAOS object based on oid[i] to get obj handle */
         daos_handle_t oh;
@@ -964,10 +968,11 @@ int daos_obj_copy(daos_args_t* da,
         daos_obj_close(dst_oh, NULL);
         p = p->next;
     }
+
     return rc;
 }
 
-int daos_obj_list_oids(daos_args_t* da, daos_epoch_t* epoch, mfu_flist bflist) {
+static int daos_obj_list_oids(daos_args_t* da, daos_epoch_t* epoch, mfu_flist bflist) {
     /* List objects in src container to be copied to 
      * destination container */
     static const int     OID_ARR_SIZE = 50;
@@ -1026,5 +1031,56 @@ int daos_obj_list_oids(daos_args_t* da, daos_epoch_t* epoch, mfu_flist bflist) {
         MFU_LOG(MFU_LOG_ERR, "DAOS failed to close oit: ", MFU_ERRF,
                 MFU_ERRP(-MFU_ERR_DAOS));
     }
+    return rc;
+}
+
+int mfu_flist_walk_daos(
+    daos_args_t* da,
+    daos_epoch_t* epoch,
+    mfu_flist flist)
+{
+    /* assume we'll succeed */
+    int rc = 0;
+
+    /* get our rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* have rank 0 do the work of listing the objects */
+    if (rank == 0) {
+        rc = daos_obj_list_oids(da, epoch, flist);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "DAOS failed to list oids: ",
+                MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
+        }
+    }
+
+    /* summarize list since we added items to it */
+    mfu_flist_summarize(flist);
+
+    /* broadcast return code from rank 0 so everyone knows whether walk succeeded */
+    MPI_Bcast(&rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    return rc;
+}
+
+int mfu_flist_copy_daos(
+    daos_args_t* da,
+    mfu_flist flist)
+{
+    /* copy object ids listed in flist to destination in daos args */
+    int rc = daos_obj_copy(da, flist);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS object copy failed: ",
+            MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
+    }
+
+    /* wait until all procs are done copying,
+     * and determine whether everyone succeeded */
+    if (! mfu_alltrue(rc == 0, MPI_COMM_WORLD)) {
+        /* someone failed, so return failure on all ranks */
+        rc = 1;
+    }
+
     return rc;
 }

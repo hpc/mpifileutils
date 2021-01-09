@@ -509,32 +509,28 @@ int main(int argc, char** argv)
     } 
 #ifdef DAOS_SUPPORT
     else {
+        /* take a snapshot and walk container to get list of objects,
+         * returns epoch number of snapshot */
         daos_epoch_t epoch;
-        if (rank == 0) {
-            rc = daos_obj_list_oids(daos_args, &epoch, flist);
-        }
-	    if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "DAOS failed to list oids: ", MFU_ERRF,
-                    MFU_ERRP(-MFU_ERR_DAOS));
+        int tmp_rc = mfu_flist_walk_daos(daos_args, &epoch, flist);
+        if (tmp_rc != 0) {
             rc = 1;
         }
 
-        /* evenly spread obj ids among each rank */
-        mfu_flist_summarize(flist);
+        /* all objects are on rank 0 at this point,
+         * evenly spread them among the ranks */
         mfu_flist newlist = mfu_flist_spread(flist);
 
         /* perform copy after oids are spread evenly across all ranks */
-        flist_t* local_flist = (flist_t*) newlist;
-        rc = daos_obj_copy(daos_args, local_flist);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "DAOS object copy failed: ", MFU_ERRF,
-                    MFU_ERRP(-MFU_ERR_DAOS));
+        tmp_rc = mfu_flist_copy_daos(daos_args, newflist);
+        if (tmp_rc != 0) {
             rc = 1;
         }
 
-        /* wait here until until all procs are done copying,
-         * then destroy snapshot */
-        MPI_Barrier(MPI_COMM_WORLD);
+        /* Rank 0 prints success if needed */
+        if (rc == 0 && rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Successfully copied to DAOS Destination Container.");
+        }
 
         /* destroy snapshot after copy */
         if (rank == 0) {
@@ -548,19 +544,10 @@ int main(int argc, char** argv)
                 rc = 1;
             }
         }
+        MPI_Bcast(&rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
-	    /* free newlist that was created for non-posix copy */
-	    mfu_flist_free(&newlist);
-    }
-
-    // Synchronize rc across all processes
-    if (!mfu_alltrue(rc == 0, MPI_COMM_WORLD)) {
-        rc = 1;
-    }
-
-    // Rank 0 prints success if needed
-    if (rc == 0 && rank == 0 && !is_posix_copy) {
-        MFU_LOG(MFU_LOG_INFO, "Successfully copied to DAOS Destination Container.");
+        /* free newlist that was created for non-posix copy */
+        mfu_flist_free(&newflist);
     }
 
     /* Cleanup DAOS-related variables, etc. */

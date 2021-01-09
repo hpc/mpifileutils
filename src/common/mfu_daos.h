@@ -59,11 +59,16 @@ int daos_cleanup(
   bool* is_posix_copy
 );
 
-/* list obj ids for non-dfs copy */
-int daos_obj_list_oids(daos_args_t* da,
-                        daos_epoch_t* epoch,
-                        mfu_flist bflist);
+/* walk objects in daos and insert to given flist */
+int mfu_flist_walk_daos(
+    daos_args_t* da,
+    daos_epoch_t* epoch,
+    mfu_flist flist
+);
 
-/* copy DAOS data at obj level (non-posix) */
-int daos_obj_copy(daos_args_t* da,
-                  flist_t* flist);
+/* copy objects in flist to destination listed in daos args,
+ * copies DAOS data at object level (non-posix) */
+int mfu_flist_copy_daos(
+    daos_args_t* da,
+    mfu_flist flist
+);
