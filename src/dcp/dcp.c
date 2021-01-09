@@ -560,7 +560,7 @@ int main(int argc, char** argv)
 
     // Rank 0 prints success if needed
     if (rc == 0 && rank == 0 && !is_posix_copy) {
-        printf("Successfully copied to DAOS Destination Container.\n");
+        MFU_LOG(MFU_LOG_INFO, "Successfully copied to DAOS Destination Container.");
     }
 
     /* Cleanup DAOS-related variables, etc. */
