@@ -1117,6 +1117,109 @@ bcast:
     }
 }
 
+/* given a count of the number of offsets, return data size needed to pack
+ * and index, including its footer info */
+static size_t index_data_size(uint64_t count)
+{
+    /* compute data size of the index */
+    uint64_t index_bytes = count * sizeof(uint64_t);
+    size_t size = (size_t) get_filesize_padded(index_bytes);
+
+    /* we place the footer in a trailing 512-byte section */
+    size += 512;
+
+    return size;
+}
+
+/* pack offset values into buffer with footer info */
+static void index_pack(
+    void* buf,             /* pointer to start of buffer in which to pack the index */
+    size_t bufsize,        /* size of memory buffer */
+    uint64_t archive_size, /* size of archive file in bytes (entries only) if known, 0 otherwise */
+    uint64_t entry_size,   /* size of index entry in the archive file if known, 0 otherwise */
+    uint64_t count,        /* number of entries */
+    uint64_t* offsets)     /* byte offset of each entry */
+{
+    /* zero out the buffer so bytes we don't write are well-defined */
+    memset(buf, 0, bufsize);
+
+    /* pack offset values in network order */
+    uint64_t i;
+    char* ptr = (char*)buf;
+    for (i = 0; i < count; i++) {
+        mfu_pack_uint64(&ptr, offsets[i]);
+    }
+
+    /* get pointer to start of footer */
+    size_t footer_size = 6 * sizeof(uint64_t);
+    uint64_t* footer = (uint64_t*)((char*)buf + bufsize - footer_size);
+    footer[0] = mfu_hton64(count);        /* number of entries in the archive */
+    footer[1] = mfu_hton64(archive_size); /* archive size in bytes (entries only) */
+    footer[2] = mfu_hton64(0);            /* max header size */
+    footer[3] = mfu_hton64(entry_size);   /* index size to seek back to header of index */
+    footer[4] = mfu_hton64(1);            /* index version number */
+    footer[5] = mfu_hton64(DTAR_MAGIC);   /* magic value */
+
+    return;
+}
+
+/* read footer and unpack offsets in given buffer, returns MFU_SUCCESS on succes */
+static int index_unpack(
+    const void* buf,            /* pointer to start of buffer in which to pack the index */
+    size_t bufsize,             /* size of memory buffer */
+    uint64_t* out_archive_size, /* returns size of archive file in bytes (entries only) if known, 0 otherwise */
+    uint64_t* out_entry_size,   /* returns size of index entry in the archive file if known, 0 otherwise */
+    uint64_t* out_count,        /* returns number of entries */
+    uint64_t** out_offsets)     /* returns byte offset of each entry in newly allocated array */
+{
+    /* assume a version 1 footer */
+    size_t footer_size = 6 * sizeof(uint64_t);
+    if (bufsize < footer_size) {
+        /* buffer is not large enough for even a version 1 footer structure */
+        return MFU_FAILURE;
+    }
+
+    /* get pointer to start of footer */
+    uint64_t* footer = (uint64_t*)((char*)buf + bufsize - footer_size);
+
+    /* check magic value */
+    uint64_t magic = mfu_ntoh64(footer[5]);
+    if (magic != DTAR_MAGIC) {
+        return MFU_FAILURE;
+    }
+
+    /* check version number */
+    uint64_t version = mfu_ntoh64(footer[4]);
+    if (version != 1) {
+        return MFU_FAILURE;
+    }
+
+    /* got a match, pull values from footer, including number of entries */
+    uint64_t count        = mfu_ntoh64(footer[0]); /* number of entries in the archive */
+    uint64_t archive_size = mfu_ntoh64(footer[1]); /* archive size in bytes (entries only) */
+    uint64_t max_header   = mfu_ntoh64(footer[2]); /* max header size */
+    uint64_t entry_size   = mfu_ntoh64(footer[3]); /* index size to seek back to header of index */
+
+    /* allocate memory to hold offsets */
+    size_t bytes = count * sizeof(uint64_t);
+    uint64_t* offsets = (uint64_t*) MFU_MALLOC(bytes);
+
+    /* unpack offset values in network order */
+    uint64_t i;
+    const char* ptr = (const char*)buf;
+    for (i = 0; i < count; i++) {
+        mfu_unpack_uint64(&ptr, &offsets[i]);
+    }
+
+    /* set output parameters */
+    *out_archive_size = archive_size;
+    *out_entry_size   = entry_size;
+    *out_count        = count;
+    *out_offsets      = offsets;
+
+    return MFU_SUCCESS;
+}
+
 static int write_entry_index_file(
     const char* file,  /* name of archive file */
     uint64_t count,    /* number of items in offsets list */
@@ -1138,28 +1241,17 @@ static int write_entry_index_file(
         int fd = mfu_open(name, O_WRONLY | O_CREAT | O_TRUNC, 0660);
         if (fd >= 0) {
             /* compute size of memory buffer holding header and offsets */
-            size_t header_size = 3 * sizeof(uint64_t);
-            size_t bufsize = header_size + count * sizeof(uint64_t);
+            size_t bufsize = index_data_size(count);
             char* buf = (char*) MFU_MALLOC(bufsize);
 
-            /* write the header */
-            uint64_t* header = (uint64_t*) buf;
-            header[0] = mfu_hton64(DTAR_MAGIC); /* DTAR MAGIC value */
-            header[1] = mfu_hton64(1);          /* file format version number */
-            header[2] = mfu_hton64(count);      /* number of entries in index */
+            /* pack index into buffer */
+            index_pack(buf, bufsize, 0, 0, count, offsets);
 
-            /* pack offset values in network order */
-            uint64_t i;
-            char* ptr = buf + header_size;
-            for (i = 0; i < count; i++) {
-                mfu_pack_uint64(&ptr, offsets[i]);
-            }
-    
             /* write offsets to the index file */
             size_t total_written = 0;
             while (total_written < bufsize && rc == MFU_SUCCESS) {
                 size_t bytes_to_write = bufsize - total_written;
-                ptr = buf + total_written;
+                char* ptr = buf + total_written;
                 ssize_t nwritten = mfu_write(name, fd, ptr, bytes_to_write);
                 if (nwritten < 0) {
                     /* failed to write to the file */
@@ -1215,23 +1307,12 @@ static int write_entry_index_xattr(
     /* have rank 0 set the extended attribute */
     if (mfu_rank == 0) {
         /* compute size of memory buffer holding offsets */
-        size_t header_size = 3 * sizeof(uint64_t);
-        size_t bufsize = header_size + count * sizeof(uint64_t);
+        size_t bufsize = index_data_size(count);
         char* buf = (char*) MFU_MALLOC(bufsize);
     
-        /* write the header */
-        uint64_t* header = (uint64_t*) buf;
-        header[0] = mfu_hton64(DTAR_MAGIC); /* DTAR MAGIC value */
-        header[1] = mfu_hton64(1);          /* file format version number */
-        header[2] = mfu_hton64(count);      /* number of entries in index */
+        /* pack index into buffer */
+        index_pack(buf, bufsize, 0, 0, count, offsets);
 
-        /* pack offset values in network order */
-        uint64_t i;
-        char* ptr = buf + header_size;
-        for (i = 0; i < count; i++) {
-            mfu_pack_uint64(&ptr, offsets[i]);
-        }
-    
         /* we remove the index first so that we don't end up with an
          * old (inconsistent) value in case we fail to apply the new value */
         removexattr(file, name);
@@ -1360,16 +1441,14 @@ static int write_entry_index_footer(
                rc = MFU_FAILURE;
             }
 
-            /* compute data size of the index */
-            uint64_t index_bytes = count * sizeof(uint64_t);
-            uint64_t data_size = get_filesize_padded(index_bytes);
-            data_size += 512; // append trailer at end within an additional 512-byte block
-
             /* assume 1MB is sufficient for the header for the index */
             size_t max_header_size = 1024 * 1024;
 
+            /* compute data size of the index */
+            size_t data_size = index_data_size(count);
+
             /* allocate space to prepare index data */
-            size_t bufsize = max_header_size + (size_t)data_size;
+            size_t bufsize = max_header_size + data_size;
             char* buf = (char*) MFU_MALLOC(bufsize);
 
             /* zero out the buffer so bytes we don't write are well-defined */
@@ -1377,30 +1456,19 @@ static int write_entry_index_footer(
 
             /* write header for our index file */
             uint64_t header_size = 0;
-            int tmp_rc = encode_index_header(entry_name, (size_t)data_size, buf, max_header_size, opts, &header_size);
+            int tmp_rc = encode_index_header(entry_name, data_size, buf, max_header_size, opts, &header_size);
             if (tmp_rc != MFU_SUCCESS) {
                 rc = tmp_rc;
             }
 
             /* update bufsize to record smaller size with actual encoded header */
-            uint64_t entry_size = header_size + data_size;
+            uint64_t entry_size = header_size + (uint64_t)data_size;
             bufsize = (size_t)entry_size;
 
-            /* pack offset values in network order */
-            uint64_t i;
+            /* get pointer to start of data section of entry,
+             * and pack index into data section */
             char* ptr = buf + header_size;
-            for (i = 0; i < count; i++) {
-                mfu_pack_uint64(&ptr, offsets[i]);
-            }
-
-            /* get pointer to start of footer */
-            uint64_t* footer = (uint64_t*)(buf + bufsize - 6 * sizeof(uint64_t));
-            footer[0] = mfu_hton64(count);        /* number of entries in the archive */
-            footer[1] = mfu_hton64(archive_size); /* archive size in bytes (entries only) */
-            footer[2] = mfu_hton64(0);            /* max header size */
-            footer[3] = mfu_hton64(entry_size);   /* index size to seek back to header of index */
-            footer[4] = mfu_hton64(1);            /* index version number */
-            footer[5] = mfu_hton64(DTAR_MAGIC);   /* magic value */
+            index_pack(ptr, data_size, archive_size, entry_size, count, offsets);
     
             /* write offsets to the index file */
             size_t total_written = 0;
@@ -1612,21 +1680,27 @@ static int read_entry_index_file(
     /* compute file name of index file */
     char* name = archive_index_filename(filename);
 
+    /* get size of index file */
+    uint64_t index_file_size = 0;
+    get_filesize(name, &index_file_size);
+
     /* read entry offsets from file */
     uint64_t count    = 0;
     size_t bufsize    = 0;
     uint64_t* offsets = NULL;
     if (mfu_rank == 0) {
+        /* allocate memory to read the entire index file */
+        bufsize = (size_t) index_file_size;
+        void* buf = MFU_MALLOC(bufsize);
+
         /* attempt to open the index file for reading */
         int fd = mfu_open(name, O_RDONLY);
         if (fd >= 0) {
             /* read the header first, assuming version 1 */
-            uint64_t header[3];
-            bufsize = sizeof(header);
             size_t total_read = 0;
             while (total_read < bufsize && rc == MFU_SUCCESS) {
                 size_t bytes_to_read = bufsize - total_read;
-                char* ptr = ((char*)header) + total_read;
+                char* ptr = ((char*)buf) + total_read;
                 ssize_t nread = mfu_read(name, fd, ptr, bytes_to_read);
                 if (nread < 0) {
                     /* have index file, but failed to read it */
@@ -1649,48 +1723,9 @@ static int read_entry_index_file(
 
             /* if we read the header, check magic and version numbers */
             if (rc == MFU_SUCCESS) {
-                uint64_t magic = mfu_ntoh64(header[0]);
-                if (magic != DTAR_MAGIC) {
-                    rc = MFU_FAILURE;
-                }
-
-                uint64_t version = mfu_ntoh64(header[1]);
-                if (version != 1) {
-                    rc = MFU_FAILURE;
-                }
-            }
-
-            /* allocate space to hold offsets */
-            if (rc == MFU_SUCCESS) {
-                count = mfu_ntoh64(header[2]);
-
-                bufsize = count * sizeof(uint64_t);
-                offsets = (uint64_t*) MFU_MALLOC(bufsize);
-            }
-
-            /* read offset values for entries */
-            total_read = 0;
-            while (total_read < bufsize && rc == MFU_SUCCESS) {
-                size_t bytes_to_read = bufsize - total_read;
-                char* ptr = (char*)offsets + total_read;
-                ssize_t nread = mfu_read(name, fd, ptr, bytes_to_read);
-                if (nread < 0) {
-                    /* have index file, but failed to read it */
-                    MFU_LOG(MFU_LOG_ERR, "Failed to read index '%s' errno=%d %s",
-                        name, errno, strerror(errno)
-                    );
-                    rc = MFU_FAILURE;
-                    break;
-                }
-                if (nread == 0) {
-                    /* hit early EOF */
-                    MFU_LOG(MFU_LOG_ERR, "Early EOF reading index '%s' errno=%d %s",
-                        name, errno, strerror(errno)
-                    );
-                    rc = MFU_FAILURE;
-                    break;
-                }
-                total_read += (size_t) nread;
+                uint64_t archive_size = 0;
+                uint64_t entry_size   = 0;
+                rc = index_unpack(buf, bufsize, &archive_size, &entry_size, &count, &offsets);
             }
 
             mfu_close(name, fd);
@@ -1701,6 +1736,9 @@ static int read_entry_index_file(
              * was created with something other than mpiFileUtils */
             rc = MFU_FAILURE;
         }
+
+        /* free buffer holding index file */
+        mfu_free(&buf);
     }
 
     /* bail out if we don't have an index */
@@ -1720,30 +1758,20 @@ static int read_entry_index_file(
     }
 
     /* allocate memory to hold incoming offsets */
-    bufsize = count * sizeof(uint64_t);
-    uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
-
-    /* convert offsets into host order */
-    if (mfu_rank == 0) {
-        uint64_t i;
-        const char* ptr = (const char*) offsets;
-        for (i = 0; i < count; i++) {
-            mfu_unpack_uint64(&ptr, &packed[i]);
-        }
+    if (mfu_rank != 0) {
+        bufsize = count * sizeof(uint64_t);
+        offsets = (uint64_t*) MFU_MALLOC(bufsize);
     }
 
-    /* free offsets we read from file */
-    mfu_free(&offsets);
-
     /* broadcast offsets to all ranks */
-    MPI_Bcast(packed, count, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+    MPI_Bcast(offsets, count, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
     /* free name of index file */
     mfu_free(&name);
 
     /* return count and list of offsets */
     *out_count   = count;
-    *out_offsets = packed;
+    *out_offsets = offsets;
 
     return rc; 
 }
@@ -1786,44 +1814,11 @@ static int read_entry_index_xattr(
                rc = MFU_FAILURE;
             }
 
-            /* failed to read enough bytes to get magic and version numbers */
-            if ((size_t) ret < 2 * sizeof(uint64_t)) {
-               rc = MFU_FAILURE;
-            }
-
-            /* define header pointer at start of xattr value */
-            uint64_t* header = (uint64_t*) buf;
-            size_t header_size = 3 * sizeof(uint64_t);
-
-            /* if we read the header, check magic and version numbers */
+            /* extract count and offset array from packed index */
             if (rc == MFU_SUCCESS) {
-                uint64_t magic = mfu_ntoh64(header[0]);
-                if (magic != DTAR_MAGIC) {
-                    rc = MFU_FAILURE;
-                }
-
-                uint64_t version = mfu_ntoh64(header[1]);
-                if (version != 1) {
-                    rc = MFU_FAILURE;
-                }
-
-                /* version 1 requires at least 3 uint64_t values */
-                if (rc == MFU_SUCCESS && version == 1 && ret < 3 * sizeof(uint64_t)) {
-                    rc = MFU_FAILURE;
-                }
-            }
-
-            /* allocate space to hold offsets */
-            if (rc == MFU_SUCCESS) {
-                /* extract number of entries from header */
-                count = mfu_ntoh64(header[2]);
-
-                /* allocate memory to hold offsets */
-                size_t offsets_size = count * sizeof(uint64_t);
-                offsets = (uint64_t*) MFU_MALLOC(offsets_size);
-
-                /* copy from xattr value buffer into offsets array */
-                memcpy(offsets, buf + header_size, offsets_size);
+                uint64_t archive_size = 0;
+                uint64_t entry_size   = 0;
+                rc = index_unpack(buf, bufsize, &archive_size, &entry_size, &count, &offsets);
             }
 
             /* free buffer holding xattr value */
@@ -1852,28 +1847,18 @@ static int read_entry_index_xattr(
     /* broadcast number of entries to all ranks */
     MPI_Bcast(&count, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
-    /* allocate memory to hold incoming offsets */
-    bufsize = count * sizeof(uint64_t);
-    uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
-
-    /* convert offsets into host order */
-    if (mfu_rank == 0) {
-        uint64_t i;
-        const char* ptr = (const char*) offsets;
-        for (i = 0; i < count; i++) {
-            mfu_unpack_uint64(&ptr, &packed[i]);
-        }
+    /* allocate memory to hold incoming offset values */
+    if (mfu_rank != 0) {
+        bufsize = count * sizeof(uint64_t);
+        offsets = (uint64_t*) MFU_MALLOC(bufsize);
     }
 
-    /* free offsets we read from file */
-    mfu_free(&offsets);
-
     /* broadcast offsets to all ranks */
-    MPI_Bcast(packed, count, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+    MPI_Bcast(offsets, count, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
     /* return count and list of offsets */
     *out_count   = count;
-    *out_offsets = packed;
+    *out_offsets = offsets;
 
     return rc; 
 }
@@ -1954,16 +1939,11 @@ static int read_entry_index_footer(
                 count = mfu_ntoh64(footer[0]);
 
                 /* allocate a buffer to hold offset to each item */
-                bufsize = count * sizeof(uint64_t);
-                offsets = (uint64_t*) MFU_MALLOC(bufsize);
-
-                /* compute size of data segment holding the offsets */
-                uint64_t index_bytes = count * sizeof(uint64_t);
-                uint64_t data_size = get_filesize_padded(index_bytes);
-                data_size += 512; // append trailer at end within an additional 512-byte block
+                bufsize = index_data_size(count);
+                void* buf = MFU_MALLOC(bufsize);
 
                 /* seek to start of offsets */
-                off_t offset = 2 * 512 + data_size;
+                off_t offset = 2 * 512 + bufsize;
                 off_t seek_rc = mfu_lseek(filename, fd, -offset, SEEK_END);
                 if (seek_rc == (off_t)-1) {
                    /* have index file, but failed to read it */
@@ -1977,7 +1957,7 @@ static int read_entry_index_footer(
                 size_t total_read = 0;
                 while (total_read < bufsize && rc == MFU_SUCCESS) {
                     size_t bytes_to_read = bufsize - total_read;
-                    char* ptr = (char*)offsets + total_read;
+                    char* ptr = (char*)buf + total_read;
                     ssize_t nread = mfu_read(filename, fd, ptr, bytes_to_read);
                     if (nread < 0) {
                         /* have index file, but failed to read it */
@@ -1989,6 +1969,16 @@ static int read_entry_index_footer(
                     }
                     total_read += nread;
                 }
+
+                /* extract count and offset array from packed index */
+                if (rc == MFU_SUCCESS) {
+                    uint64_t archive_size = 0;
+                    uint64_t entry_size   = 0;
+                    rc = index_unpack(buf, bufsize, &archive_size, &entry_size, &count, &offsets);
+                }
+    
+                /* free buffer holding the index data */
+                mfu_free(&buf);
             }
 
             /* done with archive */
@@ -2018,27 +2008,17 @@ static int read_entry_index_footer(
     MPI_Bcast(&count, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
     /* allocate memory to hold incoming offsets */
-    bufsize = count * sizeof(uint64_t);
-    uint64_t* packed = (uint64_t*) MFU_MALLOC(bufsize);
-
-    /* convert offsets into host order */
-    if (mfu_rank == 0) {
-        uint64_t i;
-        const char* ptr = (const char*) offsets;
-        for (i = 0; i < count; i++) {
-            mfu_unpack_uint64(&ptr, &packed[i]);
-        }
+    if (mfu_rank != 0) {
+        bufsize = count * sizeof(uint64_t);
+        offsets = (uint64_t*) MFU_MALLOC(bufsize);
     }
 
-    /* free offsets we read from file */
-    mfu_free(&offsets);
-
     /* broadcast offsets to all ranks */
-    MPI_Bcast(packed, count, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+    MPI_Bcast(offsets, count, MPI_UINT64_T, 0, MPI_COMM_WORLD);
 
     /* return count and list of offsets */
     *out_count   = count;
-    *out_offsets = packed;
+    *out_offsets = offsets;
 
     return rc; 
 }
