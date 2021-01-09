@@ -59,8 +59,7 @@ typedef struct {
 typedef struct flist {
     int detail;              /* set to 1 if we have stat, 0 if just file name */
     uint64_t offset;         /* global offset of our file across all procs */
-    uint64_t total_files;    /* total file count in list across all procs */
-    uint64_t total_oids;     /* total obj ids in list across all procs */
+    uint64_t total_files;    /* total item count in list across all procs */
     uint64_t total_users;    /* number of users (valid if detail is 1) */
     uint64_t total_groups;   /* number of groups (valid if detail is 1) */
     uint64_t max_file_name;  /* maximum filename strlen()+1 in global list */

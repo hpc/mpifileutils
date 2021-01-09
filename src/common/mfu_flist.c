@@ -421,7 +421,6 @@ static void list_compute_summary(flist_t* flist)
     flist->min_depth      = 0;
     flist->max_depth      = 0;
     flist->total_files    = 0;
-    flist->total_oids     = 0;
     flist->offset         = 0;
 
     /* get our rank and the size of comm_world */
@@ -521,7 +520,6 @@ mfu_flist mfu_flist_new()
 
     flist->detail = 0;
     flist->total_files = 0;
-    flist->total_oids = 0;
 
     /* initialize linked list */
     flist->list_count = 0;
@@ -639,16 +637,10 @@ void mfu_flist_array_free(int levels, mfu_flist** outlists)
     return;
 }
 
-/* return number of files or oids across all procs */
+/* return number of items across all procs */
 uint64_t mfu_flist_global_size(mfu_flist bflist)
 {
     flist_t* flist = (flist_t*) bflist;
-#ifdef DAOS_SUPPORT
-    uint64_t total_oids = flist->total_oids;
-    if (total_oids > 0) {
-        return total_oids;
-    }
-#endif
     uint64_t val = flist->total_files;
     return val;
 }

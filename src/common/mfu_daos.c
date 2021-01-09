@@ -1020,9 +1020,6 @@ int daos_obj_list_oids(daos_args_t* da, daos_epoch_t* epoch, mfu_flist bflist) {
  	}
     }
 
-    /* store total number of obj ids in flist */
-    flist->total_oids = oids_total;
-
     /* close object iterator */
     rc = daos_oit_close(toh, NULL);
     if (rc != 0) {
