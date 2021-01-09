@@ -494,6 +494,7 @@ int main(int argc, char** argv)
             /* hit some sort of error during copy */
             rc = 1;
         }
+
         /* free the file list */
         mfu_flist_free(&flist);
 
