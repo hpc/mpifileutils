@@ -2838,6 +2838,43 @@ static void get_start_count(
     return;
 }
 
+typedef enum {
+    SCAN_SINGLE,   /* single process scans the archive */
+    SCAN_LINEAR,   /* distributed read, with linear scan across processes */
+    SCAN_PARALLEL, /* distributed read, with parallel scan (experimental, requires a well-formed archive) */
+} mfu_flist_archive_scan_algo;
+
+static mfu_flist_archive_scan_algo select_scan_algo(void)
+{
+    mfu_flist_archive_scan_algo algo = SCAN_LINEAR;
+
+    const char varname[] = "MFU_FLIST_ARCHIVE_SCAN";
+    const char* value = getenv(varname);
+    if (value == NULL) {
+        return algo;
+    }
+
+    if (strcmp(value, "SINGLE") == 0) {
+        algo = SCAN_SINGLE;
+    } else if (strcmp(value, "LINEAR") == 0) {
+        algo = SCAN_LINEAR;
+    } else if (strcmp(value, "PARALLEL") == 0) {
+        algo = SCAN_PARALLEL;
+    } else {
+        if (mfu_rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "%s: unknown value %s", varname, value);
+        }
+        value = "LINEAR";
+        algo = SCAN_LINEAR;
+    }
+
+    if (mfu_rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "%s: %s", varname, value);
+    }
+
+    return algo;
+}
+
 /* Given a path to an archive, scan archive to determine number
  * of entries and the byte offset to each one.
  * Returns MFU_SUCCESS if successful, MFU_FAILURE otherwise.
@@ -3468,10 +3505,11 @@ static int index_entries_distread_linearscan(
 /* Given an archive file, determine number of entries and the byte offset
  * to the start of each one */
 static int index_entries_distread(
-    const char* filename,     /* name of archive to scan */
-    mfu_archive_opts_t* opts, /* options to configure extraction operation */
-    uint64_t* out_count,      /* number of entries found in archive (if successful) */
-    uint64_t** out_offsets)   /* list of byte offsets for each entry (if successful), caller must free */
+    const char* filename,             /* name of archive to scan */
+    mfu_archive_opts_t* opts,         /* options to configure extraction operation */
+    mfu_flist_archive_scan_algo algo, /* whether to use a linear or parallel scan */
+    uint64_t* out_count,              /* number of entries found in archive (if successful) */
+    uint64_t** out_offsets)           /* list of byte offsets for each entry (if successful), caller must free */
 {
     /* assume we'll succeed */
     int rc = MFU_SUCCESS;
@@ -3638,17 +3676,30 @@ static int index_entries_distread(
          * and byte offset within archive for each one */
         uint64_t count = 0;
         uint64_t* offsets = NULL;
-#if 1
-        int tmp_rc = index_entries_distread_linearscan(filename, buf, bufsize,
-            overlap_before, offset_start, offset_last,
-            file_size, &starting_pos, &count, &offsets);
-#else
-        int tmp_rc = index_entries_distread_parallelscan(filename, buf, bufsize,
-            overlap_before, offset_start, offset_last,
-            file_size, &starting_pos, &count, &offsets);
-#endif
-        if (tmp_rc != MFU_SUCCESS) {
-            rc = tmp_rc;
+
+        /* pick among different algorithms to read file section and scan
+         * it for entry offsets, each process returns a list of offsets
+         * from its own region */
+        if (algo == SCAN_LINEAR) {
+            /* all procs read a section, linear scan from low to high rank
+             * to find entry offsets */
+            int tmp_rc = index_entries_distread_linearscan(filename, buf, bufsize,
+                overlap_before, offset_start, offset_last,
+                file_size, &starting_pos, &count, &offsets);
+            if (tmp_rc != MFU_SUCCESS) {
+                rc = tmp_rc;
+            }
+        } else {
+            /* all procs read a section, parallel search for "ustar" boundaries,
+             * and execute a parallel scan to find entry offsets, this currently
+             * can be fooled if an archive contains nested archives that are ill-formed
+             * or truncated */
+            int tmp_rc = index_entries_distread_parallelscan(filename, buf, bufsize,
+                overlap_before, offset_start, offset_last,
+                file_size, &starting_pos, &count, &offsets);
+            if (tmp_rc != MFU_SUCCESS) {
+                rc = tmp_rc;
+            }
         }
 
         /* gather list of global offsets */
@@ -5419,10 +5470,13 @@ int mfu_flist_archive_extract(
             /* don't have an index file */
             have_index = false;
 
-            /* Try to read in the full archive if we can
-             * to execute the scan in memory. */
-            ret = index_entries_distread(filename, opts, &entries, &offsets);
-            if (ret != MFU_SUCCESS) {
+            /* Next best option is to scan the archive
+             * and see if we can extract entry offsets. */
+            mfu_flist_archive_scan_algo scan_algo = select_scan_algo();
+            if (scan_algo == SCAN_LINEAR || scan_algo == SCAN_PARALLEL) {
+                /* Read the full archive and execute the scan in memory. */
+                ret = index_entries_distread(filename, opts, scan_algo, &entries, &offsets);
+            } else {
                 /* Fall back to scan archive with a single process */
                 ret = index_entries(filename, &entries, &offsets);
             }
