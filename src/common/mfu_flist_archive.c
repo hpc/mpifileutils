@@ -3038,6 +3038,8 @@ static int index_entries_distread_parallelscan(
     uint64_t overlap_before,
     uint64_t offset_start,
     uint64_t offset_last,
+    uint64_t file_size,
+    uint64_t* out_starting_pos,
     uint64_t* out_count,
     uint64_t** out_offsets)
 {
@@ -3162,6 +3164,9 @@ static int index_entries_distread_parallelscan(
     /* get maximum offset from all ranks before us to use as our starting position */
     uint64_t starting_pos = 0;
     MPI_Exscan(&max_offset, &starting_pos, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+    if (rank == 0) {
+        starting_pos = *out_starting_pos;
+    }
 
     /* TODO: also record entry sizes, add to headers, and then check that starting
      * position on each rank matches where the rank before left off */
@@ -3259,12 +3264,13 @@ static int index_entries_distread_parallelscan(
     }
 
     /* have the last rank check that we processed the full file */
-    if (rank  == (ranks - 1) && rc == MFU_SUCCESS) {
+    if (rank  == (ranks - 1) && offset_last == file_size && rc == MFU_SUCCESS) {
         /* if we're the last rank and things are still successful up
          * to this point, check that pos reached the last byte
          * of the archive */
         uint64_t termination_bytes = 2 * 512;
-        if (pos + termination_bytes != offset_last) {
+        pos += termination_bytes;
+        if (pos != offset_last) {
            MFU_LOG(MFU_LOG_ERR, "Failed to process full archive '%s'",
                filename);
            rc = MFU_FAILURE;
@@ -3274,6 +3280,11 @@ static int index_entries_distread_parallelscan(
     /* done reading the archive, so free resources */
     archive_read_close(a);
     archive_read_free(a);
+
+    /* get maximum offset from all ranks before us to use as our starting position */
+    uint64_t max_pos = 0;
+    MPI_Allreduce(&pos, &max_pos, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+    *out_starting_pos = max_pos;
 
     /* check whether anyone failed */
     if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
@@ -3293,6 +3304,8 @@ static int index_entries_distread_linearscan(
     uint64_t overlap_before,
     uint64_t offset_start,
     uint64_t offset_last,
+    uint64_t file_size,
+    uint64_t* out_starting_pos,
     uint64_t* out_count,
     uint64_t** out_offsets)
 {
@@ -3314,7 +3327,7 @@ static int index_entries_distread_linearscan(
 
     /* direct scan: rank 0 starts by reading its buffer, and then it sends the
      * file offset at which rank 1 should pick up and continue */
-    uint64_t starting_pos = 0;
+    uint64_t starting_pos = *out_starting_pos;
     if (rank > 0) {
         /* if we are not the first rank, wait to receive starting offset in file */
         MPI_Status status;
@@ -3420,12 +3433,13 @@ static int index_entries_distread_linearscan(
     if (rank < ranks - 1) {
         MPI_Send(&pos, 1, MPI_UINT64_T, rank + 1, 0, MPI_COMM_WORLD);
         MPI_Send(&rc,  1, MPI_INT,      rank + 1, 0, MPI_COMM_WORLD);
-    } else if (rc == MFU_SUCCESS) {
+    } else if (rc == MFU_SUCCESS && offset_last == file_size) {
         /* if we're the last rank and things are still successful up
          * to this point, check that pos reached the last byte
          * of the archive */
         uint64_t termination_bytes = 2 * 512;
-        if (pos + termination_bytes != offset_last) {
+        pos += termination_bytes;
+        if (pos != offset_last) {
            MFU_LOG(MFU_LOG_ERR, "Failed to process full archive '%s'",
                filename);
            rc = MFU_FAILURE;
@@ -3435,6 +3449,10 @@ static int index_entries_distread_linearscan(
     /* done reading the archive, so free resources */
     archive_read_close(a);
     archive_read_free(a);
+
+    /* get starting position for the next round, if any */
+    *out_starting_pos = pos;
+    MPI_Bcast(out_starting_pos, 1, MPI_UINT64_T, ranks-1, MPI_COMM_WORLD);
 
     /* check whether anyone failed */
     if (! mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
@@ -3468,52 +3486,6 @@ static int index_entries_distread(
         return MFU_FAILURE;
     }
 
-    /* get our rank and number of ranks in our communicator */
-    int rank, ranks;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
-
-    /* compute amount of file to read per rank,
-     * slice at boundaries of our buffer size */
-    uint64_t chunk_size = opts->buf_size;
-    uint64_t num_chunks = file_size / chunk_size;
-    if (file_size > num_chunks * chunk_size) {
-        num_chunks++;
-    }
-
-    /* spread file chunks evenly among ranks,
-     * get our starting chunk offset and number of chunks */
-    uint64_t chunk_start, chunk_count;
-    get_start_count(rank, ranks, num_chunks, &chunk_start, &chunk_count);
-
-    /* byte offset of start of region we are responsible for */
-    off_t offset_start = chunk_start * chunk_size;
-    if (offset_start > file_size) {
-        /* no need to run past the end of the file */
-        offset_start = file_size;
-    }
-
-    /* offset of byte one past region we are responsible for */
-    off_t offset_last = offset_start + chunk_count * chunk_size;
-    if (offset_last > file_size) {
-        /* no need to run past the end of the file */
-        offset_last = file_size;
-    }
-
-    /* compute size of our preceding overlap region and
-     * the size of the file region we are responsible for */
-    size_t overlap_size = 16 * 1024 * 1024;
-    size_t region_size = (size_t)(offset_last - offset_start);
-
-    /* check that our slice of the archive fits within the memory limit,
-     * and kick out with an error if not */
-    size_t mem_size = region_size + overlap_size;
-    if (! mfu_alltrue(mem_size <= opts->mem_size, MPI_COMM_WORLD)) {
-        /* amount of space we'd need to allocate on some process
-         * is more than the limit we're allowed */
-        return MFU_FAILURE;
-    }
-
     /* indicate to user what phase we're in */
     if (mfu_rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Indexing archive with parallel read");
@@ -3536,98 +3508,229 @@ static int index_entries_distread(
         return MFU_FAILURE;
     }
 
-    /* allocate buffer to hold data and read our part of the archive file */
-    size_t bufsize = 0;
-    char* buf = NULL;
-    uint64_t overlap_before = 0;
-    if (region_size > 0) {
-        /* we only bother allocating a buffer and reading data
-         * when we have an actual range of the file to cover */
+    /* get our rank and number of ranks in our communicator */
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
-        /* Compute offset within file to start reading from,
-         * which includes section we're responsible for and any overlap.
-         * Also compute exact number of overlap bytes we will read. */
-        off_t offset;
-        if (offset_start > (off_t)overlap_size) {
-            /* a full overlap region fits before our section */
-            offset = (off_t)(offset_start - overlap_size);
-            overlap_before = overlap_size;
+    /* start timer for progress messages */
+    double start = MPI_Wtime();
+    double last = start;
+
+    /* record running count and list of offsets */
+    uint64_t total_count  = 0;
+    uint64_t* all_offsets = NULL;
+
+    /* get max number of bytes to store in memory at one time,
+     * use at least one full buffer size if mem size happens to be lower */
+    uint64_t bytes_per_rank = opts->mem_size;
+    if (bytes_per_rank < opts->buf_size) {
+        bytes_per_rank = opts->buf_size;
+    }
+
+    /* iterate over file length in waves */
+    uint64_t starting_pos = 0;
+    while (starting_pos < file_size && rc == MFU_SUCCESS) {
+        /* compute max segment size we can read in this iteration */
+        uint64_t segment_size = ranks * bytes_per_rank;
+        uint64_t remainder = file_size - starting_pos;
+        if (remainder < segment_size) {
+            segment_size = remainder;
+        }
+
+        /* compute amount of file to read per rank,
+         * slice at boundaries of our buffer size */
+        uint64_t chunk_size = opts->buf_size;
+        uint64_t num_chunks = segment_size / chunk_size;
+        if (segment_size > num_chunks * chunk_size) {
+            num_chunks++;
+        }
+    
+        /* spread file chunks evenly among ranks,
+         * get our starting chunk offset and number of chunks */
+        uint64_t chunk_start, chunk_count;
+        get_start_count(rank, ranks, num_chunks, &chunk_start, &chunk_count);
+
+        /* compute max offset size for this round */
+        off_t offset_max = starting_pos + segment_size;
+
+        /* byte offset of start of region we are responsible for */
+        off_t offset_start = starting_pos + chunk_start * chunk_size;
+        if (offset_start > offset_max) {
+            /* no need to run past the end of the file segment */
+            offset_start = offset_max;
+        }
+
+        /* offset of byte one past region we are responsible for */
+        off_t offset_last = offset_start + chunk_count * chunk_size;
+        if (offset_last > offset_max) {
+            /* no need to run past the end of the file segment */
+            offset_last = offset_max;
+        }
+
+        /* compute size of our preceding overlap region and
+         * the size of the file region we are responsible for */
+        size_t overlap_size = 16 * 1024 * 1024;
+        size_t region_size = (size_t)(offset_last - offset_start);
+    
+        /* allocate buffer to hold data and read our part of the archive file */
+        size_t bufsize = 0;
+        char* buf = NULL;
+        uint64_t overlap_before = 0;
+        if (region_size > 0) {
+            /* we only bother allocating a buffer and reading data
+             * when we have an actual range of the file to cover */
+
+            /* Compute offset within file to start reading from,
+             * which includes section we're responsible for and any overlap.
+             * Also compute exact number of overlap bytes we will read. */
+            off_t offset;
+            if (offset_start > (off_t)overlap_size) {
+                /* a full overlap region fits before our section */
+                offset = (off_t)(offset_start - overlap_size);
+                overlap_before = overlap_size;
+            } else {
+                /* only a partial overlap section is available
+                 * before our section, so read from the start of the file */
+                offset = 0;
+                overlap_before = (uint64_t)offset_start;
+            }
+
+            /* allocate buffer to hold our entire region and leading overlap */
+            bufsize = overlap_before + region_size;
+            buf = (char*) MFU_MALLOC(bufsize);
+
+            /* seek to offset within the archive file */
+            int lseek_rc = mfu_lseek(filename, fd, offset, SEEK_SET);
+            if (lseek_rc == (off_t)-1) {
+               MFU_LOG(MFU_LOG_ERR, "Failed to seek to offset %llu in archive file '%s' errno=%d %s",
+                   offset, filename, errno, strerror(errno));
+               rc = MFU_FAILURE;
+            }
+
+            /* read data from archive into our buffer */
+            size_t total_read = 0;
+            while (total_read < bufsize && rc == MFU_SUCCESS) {
+                char* ptr = buf + total_read;
+                size_t remaining = bufsize - total_read;
+                ssize_t nread = mfu_read(filename, fd, ptr, remaining);
+                if (nread == 0) {
+                    /* hit unexpected end of the archive */
+                    MFU_LOG(MFU_LOG_ERR, "Failed to read all bytes in archive file '%s'",
+                        filename);
+                    rc = MFU_FAILURE;
+                    break;
+                }
+                if (nread < 0) {
+                    /* hit a read error */
+                    MFU_LOG(MFU_LOG_ERR, "Failed to read archive file '%s' errno=%d %s",
+                        filename, errno, strerror(errno));
+                    rc = MFU_FAILURE;
+                    break;
+                }
+
+                /* total up number of bytes read */
+                total_read += (size_t) nread;
+            }
+        }
+
+        /* variables to count number of entries we find,
+         * and byte offset within archive for each one */
+        uint64_t count = 0;
+        uint64_t* offsets = NULL;
+#if 1
+        int tmp_rc = index_entries_distread_linearscan(filename, buf, bufsize,
+            overlap_before, offset_start, offset_last,
+            file_size, &starting_pos, &count, &offsets);
+#else
+        int tmp_rc = index_entries_distread_parallelscan(filename, buf, bufsize,
+            overlap_before, offset_start, offset_last,
+            file_size, &starting_pos, &count, &offsets);
+#endif
+        if (tmp_rc != MFU_SUCCESS) {
+            rc = tmp_rc;
+        }
+
+        /* gather list of global offsets */
+        uint64_t tmp_count;
+        uint64_t* tmp_offsets;
+        int* tmp_disps;
+        allgather_offsets(count, offsets, &tmp_count, &tmp_offsets, &tmp_disps);
+
+        /* figure out whether anyone failed */
+        if (mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+            /* append offsets from this round to our running list,
+             * allocate memory to hold the full list */
+            uint64_t new_count = total_count + tmp_count;
+            uint64_t* new_offsets = (uint64_t*) MFU_MALLOC(new_count * sizeof(uint64_t));
+
+            /* copy over existing list and free it */
+            uint64_t total_bytes = total_count * sizeof(uint64_t);
+            if (total_bytes > 0) {
+                memcpy(new_offsets, all_offsets, total_bytes);
+                mfu_free(&all_offsets);
+            }
+
+            /* append new entries to end of list */
+            char* ptr = (char*)new_offsets + total_bytes;
+            uint64_t tmp_bytes = tmp_count * sizeof(uint64_t);
+            memcpy(ptr, tmp_offsets, tmp_bytes);
+
+            /* reassing list variables to point to our new, longer list */
+            total_count = new_count;
+            all_offsets = new_offsets;
         } else {
-            /* only a partial overlap section is available
-             * before our section, so read from the start of the file */
-            offset = 0;
-            overlap_before = (uint64_t)offset_start;
+            /* someone failed */
+            rc = MFU_FAILURE;
         }
 
-        /* allocate buffer to hold our entire region and leading overlap */
-        bufsize = overlap_before + region_size;
-        buf = (char*) MFU_MALLOC(bufsize);
+        /* free memory buffers */
+        mfu_free(&tmp_disps);
+        mfu_free(&tmp_offsets);
+        mfu_free(&offsets);
+        mfu_free(&buf);
 
-        /* seek to offset within the archive file */
-        int lseek_rc = mfu_lseek(filename, fd, offset, SEEK_SET);
-        if (lseek_rc == (off_t)-1) {
-           MFU_LOG(MFU_LOG_ERR, "Failed to seek to offset %llu in archive file '%s' errno=%d %s",
-               offset, filename, errno, strerror(errno));
-           rc = MFU_FAILURE;
+        if (rank == 0) {
+            /* print progress message if needed */
+            double now = MPI_Wtime();
+            if (mfu_progress_timeout > 0 &&
+                (now - last) > mfu_progress_timeout &&
+                file_size > 0)
+            {
+                /* compute percent progress and estimated time remaining */
+                double percent = (double)starting_pos * 100.0 / (double)file_size;
+                double secs = now - start;
+                double secs_remaining = 0.0;
+                if (percent > 0.0) {
+                    secs_remaining = (double)(100.0 - percent) * secs / percent;
+                }
+                MFU_LOG(MFU_LOG_INFO, "Indexed %llu items in %.3lf secs (%.0f%%) %.0f secs left ...",
+                    total_count, secs, percent, secs_remaining
+                );
+                last = now;
+            }
         }
+    }
 
-        /* read data from archive into our buffer */
-        size_t total_read = 0;
-        while (total_read < bufsize && rc == MFU_SUCCESS) {
-            char* ptr = buf + total_read;
-            size_t remaining = bufsize - total_read;
-            ssize_t nread = mfu_read(filename, fd, ptr, remaining);
-            if (nread == 0) {
-                /* hit unexpected end of the archive */
-                MFU_LOG(MFU_LOG_ERR, "Failed to read all bytes in archive file '%s'",
-                    filename);
-                rc = MFU_FAILURE;
-                break;
-            }
-            if (nread < 0) {
-                /* hit a read error */
-                MFU_LOG(MFU_LOG_ERR, "Failed to read archive file '%s' errno=%d %s",
-                    filename, errno, strerror(errno));
-                rc = MFU_FAILURE;
-                break;
-            }
-
-            /* total up number of bytes read */
-            total_read += (size_t) nread;
+    /* print a final progress message if we may have printed any */
+    if (rank == 0) {
+        double now = MPI_Wtime();
+        double secs = now - start;
+        if (rc == MFU_SUCCESS &&
+            mfu_progress_timeout > 0 &&
+            secs > mfu_progress_timeout)
+        {
+            MFU_LOG(MFU_LOG_INFO, "Indexed %llu items in %.3lf secs (100%%) done",
+                total_count, secs
+            );
         }
     }
 
     /* done reading the archive file, we can close it */
     mfu_close(filename, fd);
 
-    /* variables to count number of entries we find,
-     * and byte offset within archive for each one */
-    uint64_t count = 0;
-    uint64_t* offsets = NULL;
-#if 1
-    int tmp_rc = index_entries_distread_linearscan(filename, buf, bufsize,
-        overlap_before, offset_start, offset_last, &count, &offsets);
-#else
-    int tmp_rc = index_entries_distread_parallelscan(filename, buf, bufsize,
-        overlap_before, offset_start, offset_last, &count, &offsets);
-#endif
-    if (tmp_rc != MFU_SUCCESS) {
-        rc = tmp_rc;
-    }
-
-    /* gather list of global offsets */
-    uint64_t total_count;
-    uint64_t* all_offsets;
-    int* rank_disps;
-    allgather_offsets(count, offsets, &total_count, &all_offsets, &rank_disps);
-
-    /* free memory buffers */
-    mfu_free(&rank_disps);
-    mfu_free(&offsets);
-    mfu_free(&buf);
-
     /* figure out whether anyone failed */
-    if (mfu_alltrue(rc == MFU_SUCCESS, MPI_COMM_WORLD)) {
+    if (rc == MFU_SUCCESS) {
         /* return count and list of offsets */
         *out_count   = total_count;
         *out_offsets = all_offsets;
@@ -5316,9 +5419,7 @@ int mfu_flist_archive_extract(
             /* don't have an index file */
             have_index = false;
 
-            /* Next best option is to scan the archive
-             * and see if we can extract entry offsets.
-             * Try to read in the full archive if we can
+            /* Try to read in the full archive if we can
              * to execute the scan in memory. */
             ret = index_entries_distread(filename, opts, &entries, &offsets);
             if (ret != MFU_SUCCESS) {
@@ -5632,7 +5733,7 @@ mfu_archive_opts_t* mfu_archive_opts_new(void)
     opts->buf_size = MFU_BLOCK_SIZE;
 
     /* max buffer size for reading in a full archive file */
-    opts->mem_size = 1024ULL * 1024ULL * 1024ULL;
+    opts->mem_size = 256ULL * 1024ULL * 1024ULL;
 
     /* whether to use libcircle (1) vs a static chunk list (0) when creating an archive */
     opts->create_libcircle   = 0;
