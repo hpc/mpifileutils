@@ -1522,7 +1522,7 @@ typedef enum {
 
 static mfu_flist_archive_index_algo select_index_algo(void)
 {
-    mfu_flist_archive_index_algo algo = INDEX_FILE;
+    mfu_flist_archive_index_algo algo = INDEX_FOOTER;
 
     /* see if the user is trying to request a specific create algorithm */
     const char varname[] = "MFU_FLIST_ARCHIVE_INDEX";
@@ -1548,8 +1548,8 @@ static mfu_flist_archive_index_algo select_index_algo(void)
         if (mfu_rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "%s: unknown value %s", varname, value);
         }
-        value = "FILE";
-        algo = INDEX_FILE;
+        value = "FOOTER";
+        algo = INDEX_FOOTER;
     }
 
     /* is user tried to select something, echo it back to confirm */
