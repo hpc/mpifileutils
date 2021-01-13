@@ -175,7 +175,7 @@ static int mfu_copy_open_file(
     }
 
 #ifdef DAOS_SUPPORT
-    if (mfu_file->type == DAOS) {
+    if (mfu_file->type == DFS) {
         if (mfu_file->obj == NULL) {
             return -1;
         }
@@ -1819,7 +1819,7 @@ static int mfu_copy_file_fiemap(
 
 #ifdef DAOS_SUPPORT
     /* Not yet supported */
-    if (mfu_src_file->type == DAOS) {
+    if (mfu_src_file->type == DFS) {
         goto fail_normal_copy;
     }
 #endif
@@ -2359,7 +2359,7 @@ int mfu_flist_copy(
     int rc = 0;
 
     /* DAOS only supports using one source path */
-    if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
+    if (mfu_src_file->type == DFS || mfu_dst_file->type == DFS) {
         if (numpaths != 1) {
             MFU_LOG(MFU_LOG_ERR, "Only one source can be specified when using DAOS");
         }
