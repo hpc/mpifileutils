@@ -713,12 +713,15 @@ void mfu_flist_walk_param_paths(uint64_t num,
     /* allocate memory to hold a list of paths */
     const char** path_list = (const char**) MFU_MALLOC(num * sizeof(char*));
 
+#ifdef DAOS_SUPPORT
     /* DAOS only supports using one source path */
-    if (mfu_file->type == DAOS) {
+    if (mfu_file->type == DFS) {
         if (num != 1) {
             MFU_LOG(MFU_LOG_ERR, "Only one source can be specified when using DAOS");
+            return;
         }
     }
+#endif
 
     /* fill list of paths and print each one */
     uint64_t i;

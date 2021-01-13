@@ -14,6 +14,12 @@ enum handleType {
     ARRAY_HANDLE
 };
 
+typedef enum {
+    DAOS_API_AUTO,
+    DAOS_API_DFS,
+    DAOS_API_DAOS
+} daos_api_t;
+
 /* struct for holding DAOS arguments */
 typedef struct {
     daos_handle_t src_poh; /* source pool handle */
@@ -25,6 +31,9 @@ typedef struct {
     uuid_t src_cont_uuid;  /* source container UUID */
     uuid_t dst_cont_uuid;  /* destination container UUID */
     char* dfs_prefix;      /* prefix for UNS */
+    char* src_path;        /* allocated src path */
+    char* dst_path;        /* allocated dst path */
+    daos_api_t api;        /* API to use */
 } daos_args_t;
 
 /* Return a newly allocated daos_args_t structure.
@@ -33,6 +42,11 @@ daos_args_t* daos_args_new(void);
 
 /* free a daos_args_t structure */
 void daos_args_delete(daos_args_t** pda);
+
+/* Parse a string representation of the API */
+int daos_parse_api_str(
+    const char* api_str,
+    daos_api_t* api);
 
 /* Setup DAOS arguments.
  * Connect to pools.
@@ -44,8 +58,7 @@ int daos_setup(
   char** argpaths,
   daos_args_t* da,
   mfu_file_t* mfu_src_file,
-  mfu_file_t* mfu_dst_file,
-  bool* is_posix_copy
+  mfu_file_t* mfu_dst_file
 );
 
 /* Unmount DFS.
@@ -55,8 +68,7 @@ int daos_setup(
 int daos_cleanup(
   daos_args_t* da,
   mfu_file_t* mfu_src_file,
-  mfu_file_t* mfu_dst_file,
-  bool* is_posix_copy
+  mfu_file_t* mfu_dst_file
 );
 
 /* walk objects in daos and insert to given flist */

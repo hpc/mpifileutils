@@ -262,7 +262,7 @@ int mfu_file_access(const char* path, int amode, mfu_file_t* mfu_file)
     if (mfu_file->type == POSIX) {
         int rc = mfu_access(path, amode);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_access(path, amode, mfu_file);
         return rc;
     } else {
@@ -330,7 +330,7 @@ int mfu_file_faccessat(int dirfd, const char* path, int amode, int flags, mfu_fi
     if (mfu_file->type == POSIX) {
         int rc = mfu_faccessat(dirfd, path, amode, flags);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_faccessat(dirfd, path, amode, flags, mfu_file);
         return rc;
     } else {
@@ -437,7 +437,7 @@ int mfu_file_lchown(const char* path, uid_t owner, gid_t group, mfu_file_t* mfu_
     if (mfu_file->type == POSIX) {
         int rc = mfu_lchown(path, owner, group);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_lchown(path, owner, group, mfu_file);
         return rc;
     } else {
@@ -535,7 +535,7 @@ int mfu_file_chmod(const char* path, mode_t mode, mfu_file_t* mfu_file)
     if (mfu_file->type == POSIX) {
         int rc = mfu_chmod(path, mode);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_chmod(path, mode, mfu_file);
         return rc;
     } else {
@@ -551,7 +551,7 @@ int mfu_file_utimensat(int dirfd, const char* pathname, const struct timespec ti
     if (mfu_file->type == POSIX) {
         int rc = mfu_utimensat(dirfd, pathname, times, flags);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_utimensat(dirfd, pathname, times, flags, mfu_file);
         return rc;
     } else {
@@ -712,7 +712,7 @@ int mfu_file_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
     if (mfu_file->type == POSIX) {
         int rc = mfu_stat(path, buf);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_stat(path, buf, mfu_file);
         return rc;
     } else {
@@ -782,7 +782,7 @@ int mfu_file_lstat(const char* path, struct stat* buf, mfu_file_t* mfu_file)
     if (mfu_file->type == POSIX) {
         int rc = mfu_lstat(path, buf);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_lstat(path, buf, mfu_file);
         return rc;
     } else {
@@ -898,7 +898,7 @@ int mfu_file_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_fil
     if (mfu_file->type == POSIX) {
         int rc = mfu_mknod(path, mode, dev);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_mknod(path, mode, dev, mfu_file);
         return rc;
     } else {
@@ -934,7 +934,7 @@ char* mfu_file_realpath(const char* path, char* resolved_path, mfu_file_t* mfu_f
     if (mfu_file->type == POSIX) {
         char* p = mfu_realpath(path, resolved_path);
         return p;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         char* p = daos_realpath(path, resolved_path, mfu_file);
         return p;
     } else {
@@ -1047,7 +1047,7 @@ ssize_t mfu_file_readlink(const char* path, char* buf, size_t bufsize, mfu_file_
 
     if (mfu_file->type == POSIX) {
         rc = mfu_readlink(path, buf, bufsize);
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         rc = daos_readlink(path, buf, bufsize, mfu_file);
     } else {
         MFU_ABORT(-1, "File type not known: %s type=%d",
@@ -1133,7 +1133,7 @@ int mfu_file_symlink(const char* oldpath, const char* newpath, mfu_file_t* mfu_f
 
     if (mfu_file->type == POSIX) {
         rc = mfu_symlink(oldpath, newpath);
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         rc = daos_symlink(oldpath, newpath, mfu_file);
     } else {
         MFU_ABORT(-1, "File type not known: %s type=%d",
@@ -1307,7 +1307,7 @@ void mfu_file_open(const char* file, int flags, mfu_file_t* mfu_file, ...)
         } else {
             mfu_file->fd = mfu_open(file, flags);
         }
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         daos_open(file, flags, mode, mfu_file);
     } else {
         MFU_ABORT(-1, "File type not known: %s type=%d",
@@ -1360,7 +1360,7 @@ int mfu_file_close(const char* file, mfu_file_t* mfu_file)
             mfu_file->fd = -1;
         }
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_close(file, mfu_file);
 #ifdef DAOS_SUPPORT
         if (rc == 0) {
@@ -1413,7 +1413,7 @@ off_t mfu_file_lseek(const char* file, mfu_file_t* mfu_file, off_t pos, int when
     if (mfu_file->type == POSIX) {
         off_t rc = mfu_lseek(file, mfu_file->fd, pos, whence);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         off_t rc = daos_lseek(file, mfu_file, pos, whence);
         return rc;
     } else {
@@ -1428,7 +1428,7 @@ ssize_t mfu_file_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_
     if (mfu_file->type == POSIX) {
         ssize_t got_size = mfu_read(file, mfu_file->fd, buf, size);
         return got_size;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         ssize_t got_size = daos_read(file, buf, size, mfu_file);
         return got_size;
     } else {
@@ -1511,7 +1511,7 @@ ssize_t mfu_file_write(const char* file, const void* buf, size_t size, mfu_file_
     if (mfu_file->type == POSIX) {
         ssize_t num_bytes_written = mfu_write(file, mfu_file->fd, buf, size);
         return num_bytes_written;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         ssize_t num_bytes_written = daos_write(file, buf, size, mfu_file);
         return num_bytes_written;
     } else {
@@ -1593,7 +1593,7 @@ ssize_t mfu_file_pread(const char* file, void* buf, size_t size, off_t offset, m
     if (mfu_file->type == POSIX) {
         ssize_t rc = mfu_pread(file, mfu_file->fd, buf, size, offset);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         ssize_t rc = daos_pread(file, buf, size, offset, mfu_file);
         return rc;
     } else {
@@ -1664,7 +1664,7 @@ ssize_t mfu_file_pwrite(const char* file, const void* buf, size_t size, off_t of
     if (mfu_file->type == POSIX) {
         ssize_t rc = mfu_pwrite(file, mfu_file->fd, buf, size, offset);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         ssize_t rc = daos_pwrite(file, buf, size, offset, mfu_file);
         return rc;
     } else {
@@ -1736,7 +1736,7 @@ int mfu_file_truncate(const char* file, off_t length, mfu_file_t* mfu_file)
     if (mfu_file->type == POSIX) {
         int rc = mfu_truncate(file, length);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_truncate(file, length, mfu_file);
         return rc;
     } else {
@@ -1866,7 +1866,7 @@ int mfu_file_ftruncate(mfu_file_t* mfu_file, off_t length)
     if (mfu_file->type == POSIX) {
         int rc = mfu_ftruncate(mfu_file->fd, length);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_ftruncate(mfu_file, length);
         return rc;
     } else {
@@ -1881,7 +1881,7 @@ int mfu_file_unlink(const char* file, mfu_file_t* mfu_file)
     if (mfu_file->type == POSIX) {
         int rc = mfu_unlink(file);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_unlink(file, mfu_file);
         return rc;
     } else {
@@ -2050,7 +2050,7 @@ int mfu_file_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file)
     if (mfu_file->type == POSIX) {
         int rc = mfu_mkdir(dir, mode);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_mkdir(dir, mode, mfu_file);
         return rc;
     } else {
@@ -2184,7 +2184,7 @@ DIR* mfu_file_opendir(const char* dir, mfu_file_t* mfu_file)
     if (mfu_file->type == POSIX) {
         DIR* dirp = mfu_opendir(dir);
         return dirp;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         DIR* dirp = daos_opendir(dir, mfu_file);
         return dirp;
     } else {
@@ -2238,7 +2238,7 @@ int mfu_file_closedir(DIR* dirp, mfu_file_t* mfu_file)
     if (mfu_file->type == POSIX) {
         int rc = mfu_closedir(dirp);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_closedir(dirp, mfu_file);
         return rc;
     } else {
@@ -2308,7 +2308,7 @@ struct dirent* mfu_file_readdir(DIR* dirp, mfu_file_t* mfu_file)
     if (mfu_file->type == POSIX) {
         struct dirent* entry = mfu_readdir(dirp);
         return entry;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         struct dirent* entry = daos_readdir(dirp, mfu_file);
         return entry;
     } else {
@@ -2323,7 +2323,7 @@ ssize_t mfu_file_llistxattr(const char* path, char* list, size_t size, mfu_file_
     if (mfu_file->type == POSIX) {
         ssize_t rc = mfu_llistxattr(path, list, size);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         ssize_t rc = daos_llistxattr(path, list, size, mfu_file);
         return rc;
     } else {
@@ -2407,7 +2407,7 @@ ssize_t mfu_file_listxattr(const char* path, char* list, size_t size, mfu_file_t
     if (mfu_file->type == POSIX) {
         ssize_t rc = mfu_listxattr(path, list, size);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         ssize_t rc = daos_listxattr(path, list, size, mfu_file);
         return rc;
     } else {
@@ -2489,7 +2489,7 @@ ssize_t mfu_file_lgetxattr(const char* path, const char* name, void* value, size
    if (mfu_file->type == POSIX) {
         ssize_t rc = mfu_lgetxattr(path, name, value, size);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         ssize_t rc = daos_lgetxattr(path, name, value, size, mfu_file);
         return rc;
     } else {
@@ -2570,7 +2570,7 @@ ssize_t mfu_file_getxattr(const char* path, const char* name, void* value, size_
    if (mfu_file->type == POSIX) {
         ssize_t rc = mfu_getxattr(path, name, value, size);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         ssize_t rc = daos_getxattr(path, name, value, size, mfu_file);
         return rc;
     } else {
@@ -2651,7 +2651,7 @@ int mfu_file_lsetxattr(const char* path, const char* name, const void* value, si
     if (mfu_file->type == POSIX) {
         int rc = mfu_lsetxattr(path, name, value, size, flags);
         return rc;
-    } else if (mfu_file->type == DAOS) {
+    } else if (mfu_file->type == DFS) {
         int rc = daos_lsetxattr(path, name, value, size, flags, mfu_file);
         return rc;
     } else {

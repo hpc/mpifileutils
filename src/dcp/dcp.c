@@ -66,6 +66,11 @@ void print_usage(void)
     printf("\n");
     printf("Usage: dcp [options] source target\n");
     printf("       dcp [options] source ... target_dir\n");
+#ifdef DAOS_SUPPORT
+    printf("\n");
+    printf("DAOS paths can be specified as:\n");
+    printf("       daos://<pool>/<cont>[/<path>] | <UNS path>\n");
+#endif
     printf("\n");
     printf("Options:\n");
     /* printf("  -d, --debug <level> - specify debug verbosity level (default info)\n"); */
@@ -75,11 +80,8 @@ void print_usage(void)
     printf("  -b, --blocksize <SIZE>   - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>   - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
 #ifdef DAOS_SUPPORT
-    printf("      --daos-src-pool      - DAOS source pool \n");
-    printf("      --daos-dst-pool      - DAOS destination pool \n");
-    printf("      --daos-src-cont      - DAOS source container \n");
-    printf("      --daos-dst-cont      - DAOS destination container \n");
-    printf("      --daos-prefix        - DAOS prefix for unified namespace path \n");
+    printf("      --daos-prefix        - DAOS prefix for unified namespace path\n");
+    printf("      --daos-api           - DAOS API in {DFS, DAOS} (default uses DFS for POSIX containers)\n");
 #endif
     printf("  -i, --input <file>       - read source list from file\n");
     printf("  -L, --dereference        - copy original files instead of links\n");
@@ -139,11 +141,8 @@ int main(int argc, char** argv)
         {"blocksize"            , required_argument, 0, 'b'},
         {"debug"                , required_argument, 0, 'd'}, // undocumented
         {"grouplock"            , required_argument, 0, 'g'}, // untested
-        {"daos-src-pool"        , required_argument, 0, 'x'},
-        {"daos-dst-pool"        , required_argument, 0, 'D'},
-        {"daos-src-cont"        , required_argument, 0, 'y'},
-        {"daos-dst-cont"        , required_argument, 0, 'Y'},
         {"daos-prefix"          , required_argument, 0, 'X'},
+        {"daos-api"             , required_argument, 0, 'x'},
         {"input"                , required_argument, 0, 'i'},
         {"chunksize"            , required_argument, 0, 'k'},
         {"dereference"          , no_argument      , 0, 'L'},
@@ -237,46 +236,14 @@ int main(int argc, char** argv)
                 break;
 #endif
 #ifdef DAOS_SUPPORT
-            case 'x':
-                rc = uuid_parse(optarg, daos_args->src_pool_uuid);
-                if (rc != 0) {
-                    if (rank == 0) {
-                        MFU_LOG(MFU_LOG_ERR, "Failed to parse source pool uuid: '%s'", optarg);
-                    }
-                    usage = 1;
-                }
-                break;
-            case 'D':
-                rc = uuid_parse(optarg, daos_args->dst_pool_uuid);
-                if (rc != 0) {
-                    if (rank == 0) {
-                        MFU_LOG(MFU_LOG_ERR, "Failed to parse dst pool uuid: '%s'", optarg);
-                    }
-                    usage = 1;
-                }
-                break;
-            case 'y':
-                rc = uuid_parse(optarg, daos_args->src_cont_uuid);
-                if (rc != 0) {
-                    if (rank == 0) {
-                        MFU_LOG(MFU_LOG_ERR, "Failed to parse source cont uuid: '%s'", optarg);
-                    }
-                    usage = 1;
-                }
-                mfu_src_file->type = DAOS;
-                break;
-            case 'Y':
-                rc = uuid_parse(optarg, daos_args->dst_cont_uuid);
-                if (rc != 0) {
-                    if (rank == 0) {
-                        MFU_LOG(MFU_LOG_ERR, "Failed to parse dst cont uuid: '%s'", optarg);
-                    }
-                    usage = 1;
-                }
-                mfu_dst_file->type = DAOS;
-                break;
             case 'X':
                 daos_args->dfs_prefix = MFU_STRDUP(optarg);
+                break;
+            case 'x':
+                if (daos_parse_api_str(optarg, &daos_args->api) != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to parse --daos-api");
+                    usage = 1;
+                }
                 break;
 #endif
             case 'i':
@@ -373,13 +340,25 @@ int main(int argc, char** argv)
     }
 
     char** argpaths = (&argv[optind]);
+    
+    /* The remaining arguments are treated as src/dst paths */
+    int numpaths = argc - optind;
 
-    /* var to keep track if this is a posix copy, defaults to true */
-    bool is_posix_copy = true;
+    /* advance to next set of options */
+    optind += numpaths;
+
+    /* Before processing, make sure we have at least two paths to begin with */
+    if (numpaths < 2) {
+        MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed: "
+                MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
 
 #ifdef DAOS_SUPPORT
     /* Set up DAOS arguments, containers, dfs, etc. */
-    rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file, &is_posix_copy);
+    rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
     if (rc != 0) {
         mfu_finalize();
         MPI_Finalize();
@@ -387,7 +366,7 @@ int main(int argc, char** argv)
     }
     
     /* TODO add support for this */
-    if (inputname && mfu_src_file->type == DAOS) {
+    if (inputname && mfu_src_file->type == DFS) {
         MFU_LOG(MFU_LOG_ERR, "--input is not supported with DAOS"
                 MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
         daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
@@ -397,72 +376,33 @@ int main(int argc, char** argv)
     }
 #endif
 
-    /* Early check to avoid extra processing.
-     * Will be further checked below. */
-    if ((argc-optind) < 2 && is_posix_copy) {
-        MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed: "
-                MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
-
     /* paths to walk come after the options */
-    int numpaths = 0;
-    int numpaths_src = 0;
     mfu_param_path* paths = NULL;
-
-    if (optind < argc) {
-        /* determine number of paths specified by user */
-        numpaths = argc - optind;
-
-        /* allocate space for each path */
-        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
-
-#ifdef DAOS_SUPPORT
-        /* Process the source and dest path individually for DAOS. */
-        if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
-            mfu_param_path_set(argpaths[0], &paths[0], mfu_src_file);
-            mfu_param_path_set(argpaths[1], &paths[1], mfu_dst_file);
-        } else {
-#endif
-
-            /* process each path */
-            mfu_param_path_set_all(numpaths, (const char**)argpaths, paths, mfu_src_file);
-
-#ifdef DAOS_SUPPORT
-        }
-#endif
-
-        /* advance to next set of options */
-        optind += numpaths;
-
-        /* the last path is the destination path, all others are source paths */
-        numpaths_src = numpaths - 1;
-    }
-
-    if (numpaths_src == 0 && is_posix_copy) {
-        if(rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed: "
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
-        }
-
-        mfu_param_path_free_all(numpaths, paths);
-        mfu_free(&paths);
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
-
-    /* last item in the list is the destination path */
-    const mfu_param_path* destpath = &paths[numpaths - 1];
 
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
 
-    /* Parse the source and destination paths. */
-    if (is_posix_copy) {
+    /* Perform a POSIX copy for non-DAOS types */
+    if (mfu_src_file->type != DAOS && mfu_dst_file->type != DAOS) {
+        /* allocate space for each path */
+        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
+
+        /* Process the source and dest path individually for DFS. */
+        if (mfu_src_file->type == DFS || mfu_dst_file->type == DFS) {
+            mfu_param_path_set(argpaths[0], &paths[0], mfu_src_file);
+            mfu_param_path_set(argpaths[1], &paths[1], mfu_dst_file);
+        } else {
+            mfu_param_path_set_all(numpaths, (const char**)argpaths, paths, mfu_src_file);
+        }
+
+        /* last item in the list is the destination path */
+        const mfu_param_path* destpath = &paths[numpaths - 1];
+
+        /* Parse the source and destination paths. */
         int valid, copy_into_dir;
+
+        /* the last path is the destination path, all others are source paths */
+        int numpaths_src = numpaths - 1;
         mfu_param_path_check_copy(numpaths_src, paths, destpath, mfu_src_file, mfu_dst_file,
                                   mfu_copy_opts->no_dereference, &valid, &copy_into_dir);
         mfu_copy_opts->copy_into_dir = copy_into_dir;
@@ -475,6 +415,9 @@ int main(int argc, char** argv)
             }
             mfu_param_path_free_all(numpaths, paths);
             mfu_free(&paths);
+#ifdef DAOS_SUPPORT
+	    daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
+#endif
             mfu_finalize();
             MPI_Finalize();
             return 1;
@@ -520,6 +463,9 @@ int main(int argc, char** argv)
         mfu_free(&inputname);
     } 
 #ifdef DAOS_SUPPORT
+    /* Perform an object-level copy for DAOS types */
+    /* TODO consider moving most of this into mfu_daos as a single call.
+     * The benefit would be that we could reuse it for dsync. */
     else {
         /* take a snapshot and walk container to get list of objects,
          * returns epoch number of snapshot */
@@ -563,7 +509,7 @@ int main(int argc, char** argv)
     }
 
     /* Cleanup DAOS-related variables, etc. */
-    daos_cleanup(daos_args, mfu_src_file, mfu_dst_file, &is_posix_copy);
+    daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
 #endif
 
     /* free the copy options */
