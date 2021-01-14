@@ -1145,9 +1145,11 @@ static void index_pack(
 
     /* pack offset values in network order */
     uint64_t i;
-    char* ptr = (char*)buf;
+    uint64_t* ptr = (uint64_t*)buf;
     for (i = 0; i < count; i++) {
-        mfu_pack_uint64(&ptr, offsets[i]);
+        uint64_t val = offsets[i];
+        *ptr = mfu_hton64(val);
+        ptr += 1;
     }
 
     /* get pointer to start of footer */
@@ -1206,9 +1208,11 @@ static int index_unpack(
 
     /* unpack offset values in network order */
     uint64_t i;
-    const char* ptr = (const char*)buf;
+    const uint64_t* ptr = (const uint64_t*)buf;
     for (i = 0; i < count; i++) {
-        mfu_unpack_uint64(&ptr, &offsets[i]);
+        uint64_t val = mfu_ntoh64(*ptr);
+        offsets[i] = val;
+        ptr += 1;
     }
 
     /* set output parameters */
