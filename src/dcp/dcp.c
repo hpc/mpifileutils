@@ -469,8 +469,7 @@ int main(int argc, char** argv)
     else {
         /* take a snapshot and walk container to get list of objects,
          * returns epoch number of snapshot */
-        daos_epoch_t epoch;
-        int tmp_rc = mfu_flist_walk_daos(daos_args, &epoch, flist);
+        int tmp_rc = mfu_flist_walk_daos(daos_args, flist);
         if (tmp_rc != 0) {
             rc = 1;
         }
@@ -491,10 +490,11 @@ int main(int argc, char** argv)
         }
 
         /* destroy snapshot after copy */
+        /* TODO consider moving this into mfu_flist_copy_daos */
         if (rank == 0) {
             daos_epoch_range_t epr;
-            epr.epr_lo = epoch;
-            epr.epr_hi = epoch;
+            epr.epr_lo = daos_args->epc;
+            epr.epr_hi = daos_args->epc;
             rc = daos_cont_destroy_snap(daos_args->src_coh, epr, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "DAOS destroy snapshot failed: ", MFU_ERRF,
