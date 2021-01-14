@@ -32,27 +32,18 @@ OPTIONS
    "GB" can immediately follow the number without spaces (eg. 64MB).
    The default chunksize is 1MB.
 
-.. option:: --daos-src-pool POOL
-
-   Specify the DAOS source pool to be used.
-
-.. option:: --daos-dst-pool POOL
-
-   Specify the DAOS destination pool to be used.
-
-.. option:: --daos-src-cont CONTAINER
-
-   Specify the DAOS source container to be used.
-
-.. option:: --daos-dst-cont CONTAINER
-
-   Specify the DAOS destination container to be used.
-
 .. option:: --daos-prefix PREFIX
 
    Specify the DAOS prefix to be used. This is only necessary
    if copying a subset of a POSIX container in DAOS using a
    Unified Namespace path.
+
+.. option:: --daos-api API
+
+   Specify the DAOS API to be used. By default, the API is automatically
+   determined based on the container type, where POSIX containers use the
+   DFS API, and all other containers use the DAOS object API.
+   Values must be in {DFS, DAOS}.
 
 .. option:: -i, --input FILE
 
