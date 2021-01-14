@@ -34,6 +34,7 @@ typedef struct {
     char* src_path;        /* allocated src path */
     char* dst_path;        /* allocated dst path */
     daos_api_t api;        /* API to use */
+    daos_epoch_t epc;      /* src container epoch */
 } daos_args_t;
 
 /* Return a newly allocated daos_args_t structure.
@@ -47,6 +48,11 @@ void daos_args_delete(daos_args_t** pda);
 int daos_parse_api_str(
     const char* api_str,
     daos_api_t* api);
+
+/* Parse a string representation of the epoch */
+int daos_parse_epc_str(
+    const char* epc_str,
+    daos_epoch_t* epc);
 
 /* Setup DAOS arguments.
  * Connect to pools.
@@ -74,7 +80,6 @@ int daos_cleanup(
 /* walk objects in daos and insert to given flist */
 int mfu_flist_walk_daos(
     daos_args_t* da,
-    daos_epoch_t* epoch,
     mfu_flist flist
 );
 

@@ -633,6 +633,8 @@ daos_args_t* daos_args_new(void)
     /* By default, try to automatically determine the API */
     da->api = DAOS_API_AUTO;
 
+    da->epc = 0;
+
     return da;
 }
 
@@ -664,6 +666,18 @@ int daos_parse_api_str(
     }
 
     return rc;
+}
+
+int daos_parse_epc_str(
+    const char* epc_str,
+    daos_epoch_t* epc)
+{
+    *epc = strtoull(epc_str, NULL, 10);
+    if (*epc == 0 || (*epc == ULLONG_MAX && errno != 0)) {
+        return 1;
+    }
+
+    return 0;
 }
 
 int daos_setup(
@@ -1165,7 +1179,7 @@ static int daos_obj_copy(
     return rc;
 }
 
-static int daos_obj_list_oids(daos_args_t* da, daos_epoch_t* epoch, mfu_flist bflist) {
+static int daos_obj_list_oids(daos_args_t* da, mfu_flist bflist) {
     /* List objects in src container to be copied to 
      * destination container */
     static const int     OID_ARR_SIZE = 50;
@@ -1177,7 +1191,7 @@ static int daos_obj_list_oids(daos_args_t* da, daos_epoch_t* epoch, mfu_flist bf
     int                  rc = 0;
 
     /* create snapshot to pass to object iterator table */
-    rc = daos_cont_create_snap_opt(da->src_coh, epoch, NULL,
+    rc = daos_cont_create_snap_opt(da->src_coh, &da->epc, NULL,
     				   DAOS_SNAP_OPT_CR | DAOS_SNAP_OPT_OIT,
 				   NULL);
     if (rc != 0) {
@@ -1187,7 +1201,7 @@ static int daos_obj_list_oids(daos_args_t* da, daos_epoch_t* epoch, mfu_flist bf
     }
 
     /* open object iterator table */
-    rc = daos_oit_open(da->src_coh, *epoch, &toh, NULL);
+    rc = daos_oit_open(da->src_coh, da->epc, &toh, NULL);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "DAOS failed to open oit: ", MFU_ERRF,
                 MFU_ERRP(-MFU_ERR_DAOS));
@@ -1229,7 +1243,6 @@ static int daos_obj_list_oids(daos_args_t* da, daos_epoch_t* epoch, mfu_flist bf
 
 int mfu_flist_walk_daos(
     daos_args_t* da,
-    daos_epoch_t* epoch,
     mfu_flist flist)
 {
     /* assume we'll succeed */
@@ -1241,7 +1254,7 @@ int mfu_flist_walk_daos(
 
     /* have rank 0 do the work of listing the objects */
     if (rank == 0) {
-        rc = daos_obj_list_oids(da, epoch, flist);
+        rc = daos_obj_list_oids(da, flist);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "DAOS failed to list oids: ",
                 MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
