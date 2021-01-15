@@ -13,8 +13,7 @@ before_install:
  - test -n $CC  && unset CC
  - test -n $CXX && unset CXX
  - sudo apt-get update -qq
- - sudo apt-cache search mpich
- - sudo apt-get install -qq check mpich bc libattr1-dev libcap-dev python-pip
+ - sudo apt-get install -qq check mpich bc libattr1-dev libcap-dev
  - sudo pip install nose
  - libcircle=libcircle-0.3.0
  - wget https://github.com/hpc/libcircle/releases/download/v0.3/${libcircle}.tar.gz
