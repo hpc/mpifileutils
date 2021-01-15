@@ -634,6 +634,7 @@ typedef struct {
     size_t  chunk_size;
     size_t  buf_size;
     size_t  mem_size;
+    size_t  header_size;
     int     create_libcircle;
     int     extract_libarchive;
 } mfu_archive_opts_t;

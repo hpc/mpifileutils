@@ -1017,13 +1017,15 @@ static void DTAR_perform_extract(CIRCLE_handle* handle)
     mfu_free(&op);
 }
 
+#define DTAR_INDEX_FILENAME_SUFFIX ".dtaridx"
+
 /* compute file name of index file from archive file name,
  * returns as newly allocated string to be freed by caller */
 static char* archive_index_filename(const char* file)
 {
-    size_t namelen = strlen(file) + strlen(".idx") + 1;
+    size_t namelen = strlen(file) + strlen(DTAR_INDEX_FILENAME_SUFFIX) + 1;
     char* name = (char*) MFU_MALLOC(namelen);
-    snprintf(name, namelen, "%s.idx", file);
+    snprintf(name, namelen, "%s%s", file, DTAR_INDEX_FILENAME_SUFFIX);
     return name;
 }
 
@@ -1415,9 +1417,9 @@ static int write_entry_index_footer(
     uint64_t archive_size = *inout_size;
 
     /* compute file name of index file from archive file name */
-    size_t namelen = strlen(file) + strlen(".dtar") + 1;
+    size_t namelen = strlen(file) + strlen(DTAR_INDEX_FILENAME_SUFFIX) + 1;
     char* name = (char*) MFU_MALLOC(namelen);
-    snprintf(name, namelen, "%s.dtar", file);
+    snprintf(name, namelen, "%s%s", file, DTAR_INDEX_FILENAME_SUFFIX);
 
     /* use basename of archve file for the index entry */
     mfu_path* path = mfu_path_from_str(name);
@@ -2558,7 +2560,7 @@ int mfu_flist_archive_create(
      * The entire header must fit in this buffer.
      * Typical entries will have no problems, but we may exhaust
      * space for entries that have very long ACLs or XATTRs. */
-    size_t header_bufsize = 128 * 1024 * 1024;
+    size_t header_bufsize = opts->header_size;
     void* header_buf = MFU_MALLOC(header_bufsize);
 
     /* get number of items in our portion of the list */
@@ -3612,7 +3614,7 @@ static int index_entries_distread(
 
         /* compute size of our preceding overlap region and
          * the size of the file region we are responsible for */
-        size_t overlap_size = 16 * 1024 * 1024;
+        size_t overlap_size = opts->header_size;
         size_t region_size = (size_t)(offset_last - offset_start);
     
         /* allocate buffer to hold data and read our part of the archive file */
@@ -5792,6 +5794,9 @@ mfu_archive_opts_t* mfu_archive_opts_new(void)
 
     /* max buffer size for reading in a full archive file */
     opts->mem_size = 256ULL * 1024ULL * 1024ULL;
+
+    /* max size for an entry header */
+    opts->header_size = 16ULL * 1024ULL * 1024ULL;
 
     /* whether to use libcircle (1) vs a static chunk list (0) when creating an archive */
     opts->create_libcircle   = 0;
