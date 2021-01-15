@@ -1,21 +1,21 @@
 sudo: required
-dist: trusty
+dist: focal
 
 language: c
 
+# - wget https://www.mpich.org/static/downloads/3.3/mpich-3.3.tar.gz
+# - tar -zxf mpich-3.3.tar.gz
+# - pushd mpich-3.3
+# - ./configure --enable-fortran=no && make -j4 && sudo make install
+# - popd
 # - sudo apt-get install -qq check mpich check bc libattr1-dev python-pip
 before_install:
  - test -n $CC  && unset CC
  - test -n $CXX && unset CXX
  - sudo apt-get update -qq
  - sudo apt-cache search mpich
- - sudo apt-get install -qq check bc libattr1-dev libcap-dev python-pip
+ - sudo apt-get install -qq check mpich bc libattr1-dev libcap-dev python-pip
  - sudo pip install nose
- - wget https://www.mpich.org/static/downloads/3.3/mpich-3.3.tar.gz
- - tar -zxf mpich-3.3.tar.gz
- - pushd mpich-3.3
- - ./configure --enable-fortran=no && make -j4 && sudo make install
- - popd
  - libcircle=libcircle-0.3.0
  - wget https://github.com/hpc/libcircle/releases/download/v0.3/${libcircle}.tar.gz
  - tar -zxf ${libcircle}.tar.gz
