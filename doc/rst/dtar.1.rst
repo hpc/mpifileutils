@@ -11,19 +11,29 @@ SYNOPSIS
 DESCRIPTION
 -----------
 
-Parallel MPI application to create and extract tar archive files.
+Parallel MPI application to create and extract tar files.
 
-dtar writes archives using the pax file format.
-In addition to the archive file, dtar creates an index that records
-the byte offset of each entry in the archive.
-dtar reads the index file to improve performance when extracting the archive.
+dtar writes archives in pax file format.
+In addition to the archive file, dtar creates an index to record
+the number of items and the byte offset of each entry within the archive.
+This index enables faster parallel extraction of the archive file.
+By default, dtar appends its index as the last entry in the archive.
+Optionally, the index may be written as a separate file or as an extended attribute (xattr) of the archive file.
 
-dtar can extract archives in various tar formats, including archives created by other tools.
-Archives can be compressed with gzip, bz2, or compress.
-Compressed archives are significantly slower to extract than uncompressed archives.
-Uncompressed archives can be extracted fastest when a corresponding dtar index file exists.
-If an index file does not exist, dtar can create an index file
-during extraction to benefit subsequent extractions of the same archive.
+dtar can extract archives in various tar formats, including archive files that were created by other tools like tar.
+dtar can also extract archives that have been compressed with gzip, bz2, or compress.
+Compressed archives are significantly slower to extract than uncompressed archives,
+namely because decompression inhibits available parallelism.
+
+Archives are extracted fastest when a dtar index exists.
+If an index does not exist, dtar can create and record an index
+during extraction to benefit subsequent extractions of the same archive file.
+
+When extracting an archive, dtar avoids extracting the entry corresponding to its index.
+If other tools, like tar, are used to extract the archive, the index
+entry is extracted as a regular file in the current working directory
+with a file extension of ".dtaridx" and the same basename as the original archive file.
+For an archive named "file.tar", the index file is named "file.tar.dtaridx".
 
 OPTIONS
 -------
@@ -82,26 +92,26 @@ OPTIONS
 
    Call fsync before closing files after writing.
 
-.. option:: --blocksize SIZE
+.. option:: --bufsize SIZE
 
    Set the I/O buffer to be SIZE bytes.  Units like "MB" and "GB" may
    immediately follow the number without spaces (eg. 8MB). The default
-   blocksize is 1MB.
+   blocksize is 64MB.
 
 .. option:: --chunksize SIZE
 
    Multiple processes copy a large file in parallel by dividing it into chunks.
    Set chunk to be at minimum SIZE bytes.  Units like "MB" and
    "GB" can immediately follow the number without spaces (eg. 64MB).
-   The default chunksize is 1MB.
+   The default chunksize is 64MB.
 
-.. option:: --memory SIZE
+.. option:: --memsize SIZE
 
    Set the memory limit to be SIZE bytes when reading archive files.
    For some archives, dtar can distribute the file across processes
-   to store the full archive in memory for faster processing.
+   to store segments of the archive in memory for faster processing.
    Units like "MB" and "GB" may immediately follow the number
-   without spaces (eg. 8MB). The default is 1GB.
+   without spaces (eg. 8MB). The default is 256MB.
 
 .. option:: --progress N
 

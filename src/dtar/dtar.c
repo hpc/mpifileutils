@@ -145,9 +145,9 @@ static void print_usage(void)
 //    printf("      --preserve-acls     - preserve acls (default ignores acls)\n");
 //    printf("      --preserve-flags    - preserve fflags (default ignores ioctl iflags)\n");
     printf("      --fsync             - sync file data to disk on close\n");
-    printf("  -b, --blocksize <SIZE>  - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
+    printf("  -b, --bufsize <SIZE>    - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>  - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
-    printf("      --memory <SIZE>     - memory limit per task in bytes for parallel read (default 1GB)\n");
+    printf("      --memsize <SIZE>    - memory limit per task for parallel read in bytes (default 256MB)\n");
     printf("      --progress <N>      - print progress every N seconds\n");
 //    printf("  -v, --verbose           - verbose output\n");
     printf("  -q, --quiet             - quiet output\n");
@@ -199,9 +199,9 @@ int main(int argc, char** argv)
         {"preserve-acls",   0, 0, 'A'},
         {"preserve-flags",  0, 0, 'F'},
         {"fsync",     0, 0, 's'},
-        {"blocksize", 1, 0, 'b'},
+        {"bufsize",   1, 0, 'b'},
         {"chunksize", 1, 0, 'k'},
-        {"memory",    1, 0, 'm'},
+        {"memsize",   1, 0, 'm'},
         {"progress",  1, 0, 'R'},
         {"verbose",   0, 0, 'v'},
         {"quiet",     0, 0, 'q'},
