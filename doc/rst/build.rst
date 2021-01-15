@@ -46,8 +46,9 @@ Then to install the dependencies, run the following commands:
    mkdir deps
    cd deps
      wget https://github.com/hpc/libcircle/releases/download/v0.3/libcircle-0.3.0.tar.gz
-     wget https://github.com/llnl/lwgrp/releases/download/v1.0.2/lwgrp-1.0.2.tar.gz
-     wget https://github.com/llnl/dtcmp/releases/download/v1.1.0/dtcmp-1.1.0.tar.gz
+     wget https://github.com/llnl/lwgrp/releases/download/v1.0.3/lwgrp-1.0.3.tar.gz
+     wget https://github.com/llnl/dtcmp/releases/download/v1.1.1/dtcmp-1.1.1.tar.gz
+     wget https://github.com/libarchive/libarchive/releases/download/v3.5.0/libarchive-3.5.0.tar.gz
      
      tar -zxf libcircle-0.3.0.tar.gz
      cd libcircle-0.3.0
@@ -55,15 +56,21 @@ Then to install the dependencies, run the following commands:
        make install
      cd ..
      
-     tar -zxf lwgrp-1.0.2.tar.gz
-     cd lwgrp-1.0.2
+     tar -zxf lwgrp-1.0.3.tar.gz
+     cd lwgrp-1.0.3
        ./configure --prefix=$installdir
        make install
      cd ..
      
-     tar -zxf dtcmp-1.1.0.tar.gz
-     cd dtcmp-1.1.0
+     tar -zxf dtcmp-1.1.1.tar.gz
+     cd dtcmp-1.1.1
        ./configure --prefix=$installdir --with-lwgrp=$installdir
+       make install
+     cd ..
+
+     tar -zxf libarchive-3.5.0.tar.gz
+     cd libarchive-3.5.0
+       ./configure --prefix=$installdir
        make install
      cd ..
    cd ..
@@ -90,7 +97,7 @@ or to build the latest mpiFileUtils from the master branch:
 
 .. code-block:: Bash
 
-   git clone https://github.com/hpc/mpifileutils
+   git clone --depth 1 https://github.com/hpc/mpifileutils
    mkdir build install
    cd build
    cmake ../mpifileutils \
@@ -103,17 +110,16 @@ build latest mpiFileUtils from the master branch with DAOS Support:
 
 .. code-block:: Bash
 
-   git clone https://github.com/hpc/mpifileutils
+   git clone --depth 1 https://github.com/hpc/mpifileutils
    mkdir build install
    cd build
    cmake ../mpifileutils \
      -DWITH_DTCMP_PREFIX=../install \
      -DWITH_LibCircle_PREFIX=../install \
-     -DCMAKE_INSTALL_PREFIX=../install
-     -DWITH_CART_PREFIX=</path/to/daos/>
-     -DWITH_DAOS_PREFIX=</path/to/daos/>
-     -DCMAKE_INSTALL_PREFIX=../install
-     -DENABLE_DAOS=ON;
+     -DCMAKE_INSTALL_PREFIX=../install \
+     -DWITH_CART_PREFIX=</path/to/daos/> \
+     -DWITH_DAOS_PREFIX=</path/to/daos/> \
+     -DENABLE_DAOS=ON
    make install
 
 The above build with DAOS option also assumes you have already installed DAOS. If
@@ -144,7 +150,7 @@ Thus, the commands to build become:
 
 .. code-block:: Bash
 
-   git clone https://github.com/hpc/mpifileutils
+   git clone --depth 1 https://github.com/hpc/mpifileutils
    mkdir build install
    cd mpifileutils
    spack install
