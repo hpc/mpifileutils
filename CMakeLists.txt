@@ -84,7 +84,7 @@ LIST(APPEND MFU_EXTERNAL_LIBS ${DTCMP_LIBRARIES})
 # libarchive 3.1.2 is available on some systems,
 # but pick a newer libarchive to avoid bug with files starting with "._",
 # which is misinterpretted as a MacOS extension on Linuxlibarchive 3.1.2
-FIND_PACKAGE(LibArchive 3.5.0 REQUIRED)
+FIND_PACKAGE(LibArchive 3.5.1 REQUIRED)
 INCLUDE_DIRECTORIES(${LibArchive_INCLUDE_DIRS})
 LIST(APPEND MFU_EXTERNAL_LIBS ${LibArchive_LIBRARIES})
 
