@@ -34,8 +34,8 @@ before_install:
  - pushd ${dtcmp}
  - ./configure --with-lwgrp=/usr/local && make && sudo make install
  - popd
- - libarchive=libarchive-3.5.0
- - wget https://github.com/libarchive/libarchive/releases/download/v3.5.0/${libarchive}.tar.gz
+ - libarchive=libarchive-3.5.1
+ - wget https://github.com/libarchive/libarchive/releases/download/3.5.1/${libarchive}.tar.gz
  - tar zxvf ${libarchive}.tar.gz
  - pushd ${libarchive}
  - ./configure && make && sudo make install
