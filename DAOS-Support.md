@@ -10,22 +10,25 @@ filesystems:
 2. POSIX -> DAOS
 3. DAOS  -> DAOS
 
+The DAOS->DAOS case supports both POSIX and non-POSIX DAOS containers.
+
 ## DAOS Data Movement Use Cases
 
-In each use case, it is assumed the the pools used already exist. Also,
-only one DAOS source is supported.
+In each use case, it is assumed that the pools and containers used already exist.
+Also, only one DAOS source is supported.
 
 1. **DAOS Destination**
-    * POSIX container may or may not exist already
+    * Container is assumed to exist already
 
 2. **DAOS Source**
-    * POSIX source container exists
+    * Source container exists
 
 3. **DAOS Source and Destination**
     * Copy across two different pools
     * Copy across containers in the same pool
+    * Copying non-POSIX containers is only supported for the DAOS -> DAOS case
 
-## DAOS Data Movement Examples
+## DAOS POSIX Data Movement Examples
 
 #### Example One
 
@@ -50,7 +53,7 @@ with a path. The destination is the relative path within the DAOS container, whi
 in this example is the root of the container. 
 
 ```shell
-$ mpirun -np 3 dcp -v --daos-dst-pool $pool --daos-dst-cont $p1cont1 /tmp/$USER/s /
+$ mpirun -np 3 dcp -v /tmp/$USER/s daos://$pool/$cont
 [2020-04-23T17:17:51] Items: 6
 [2020-04-23T17:17:51]   Directories: 3
 [2020-04-23T17:17:51]   Files: 3
@@ -76,8 +79,7 @@ is the relative path within the DAOS container, which in this case is a subset o
 the DAOS container. 
 
 ```shell
-$ mpirun -np 3 dcp -v --daos-src-pool $pool --daos-src-cont $p1cont1 \
---daos-dst-pool $pool2 --daos-dst-cont $p2cont2 /s/biggerfile /
+$ mpirun -np 3 dcp -v daos://$pool1/$cont1/s/biggerfile daos://$pool2/$cont2
 [2020-04-28T00:47:59] Items: 1
 [2020-04-28T00:47:59]   Directories: 0
 [2020-04-28T00:47:59]   Files: 1
@@ -95,4 +97,26 @@ $ mpirun -np 3 dcp -v /tmp/$USER/conts/p1cont1 /tmp/$USER/d
 [2020-04-23T17:17:51]   Directories: 3
 [2020-04-23T17:17:51]   Files: 3
 [2020-04-23T17:17:51]   Links: 0
+```
+## DAOS non-POSIX Data Movement Examples 
+
+#### Example One 
+
+Show the copy from one DAOS container to another, where both of the DAOS
+containers are of the POSIX type, but a user would like to copy DAOS
+containers at the object level.
+
+```shell
+$ mpirun -np 3 dcp -v --daos-api=DAOS daos://$pool1/$p1cont1 daos://$pool1/$p1cont2
+[2021-01-20T16:16:25] Successfully copied to DAOS Destination Container.
+```
+#### Example Two
+
+Show the copy from one DAOS container to another, where both of the DAOS
+containers are not of the POSIX type. This run does not require passing
+in the --daos-api=DAOS flag as it will detect the containers as non-POSIX.
+
+```shell
+$ mpirun -np 3 dcp -v daos://$pool1/$p1cont1 daos://$pool1/$p1cont2
+[2021-01-20T16:16:25] Successfully copied to DAOS Destination Container.
 ```
