@@ -47,7 +47,7 @@ before_script:
 
 script:
  - mkdir build install && cd build
- - cmake ../ -DCMAKE_INSTALL_PREFIX=../install
+ - cmake ../ -DCMAKE_INSTALL_PREFIX=../install -DENABLE_EXPERIMENTAL=ON
  - make
  - make test
  - make install
