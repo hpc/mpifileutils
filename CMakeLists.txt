@@ -80,13 +80,17 @@ INCLUDE_DIRECTORIES(${DTCMP_INCLUDE_DIRS})
 LIST(APPEND MFU_EXTERNAL_LIBS ${DTCMP_LIBRARIES})
 
 ## LIBARCHIVE
+OPTION(ENABLE_LIBARCHIVE "Enable usage of libarchive and corresponding tools" ON)
 # TODO how would we pass a version from spack?
 # libarchive 3.1.2 is available on some systems,
 # but pick a newer libarchive to avoid bug with files starting with "._",
 # which is misinterpretted as a MacOS extension on Linuxlibarchive 3.1.2
-FIND_PACKAGE(LibArchive 3.5.1 REQUIRED)
-INCLUDE_DIRECTORIES(${LibArchive_INCLUDE_DIRS})
-LIST(APPEND MFU_EXTERNAL_LIBS ${LibArchive_LIBRARIES})
+IF(ENABLE_LIBARCHIVE)
+  FIND_PACKAGE(LibArchive 3.5.1 REQUIRED)
+  INCLUDE_DIRECTORIES(${LibArchive_INCLUDE_DIRS})
+  LIST(APPEND MFU_EXTERNAL_LIBS ${LibArchive_LIBRARIES})
+  ADD_DEFINITIONS(-DLIBARCHIVE_SUPPORT)
+ENDIF(ENABLE_LIBARCHIVE)
 
 OPTION(ENABLE_DAOS "Enable DAOS support")
 IF(ENABLE_DAOS)

@@ -134,6 +134,12 @@ To enable Lustre, GPFS, and experimental tools, add the following flags during C
     -DENABLE_GPFS=ON
     -DENABLE_EXPERIMENTAL=ON
 
+To disable linking against libarchive, and tools requiring libarchive, add the following flag during CMake:
+
+.. code-block:: Bash
+
+    -DENABLE_LIBARCHIVE=OFF
+
 --------------------------------------------------------------
 Build mpiFileUtils directly, build its dependencies with Spack
 --------------------------------------------------------------
