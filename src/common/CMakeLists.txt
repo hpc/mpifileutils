@@ -33,7 +33,6 @@ LIST(APPEND libmfu_srcs
   mfu_compress_bz2_libcircle.c
   mfu_decompress_bz2_libcircle.c
   mfu_flist.c
-  mfu_flist_archive.c
   mfu_flist_chunk.c
   mfu_flist_copy.c
   mfu_flist_io.c
@@ -51,7 +50,12 @@ LIST(APPEND libmfu_srcs
   mfu_util.c
   strmap.c
   )
-if(ENABLE_DAOS)
+IF(ENABLE_LIBARCHIVE)
+  LIST(APPEND libmfu_srcs
+    mfu_flist_archive.c
+	)
+ENDIF(ENABLE_LIBARCHIVE)
+IF(ENABLE_DAOS)
   LIST(APPEND libmfu_srcs
     mfu_daos.c
     )
