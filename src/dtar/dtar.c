@@ -386,7 +386,7 @@ int main(int argc, char** argv)
     mfu_param_path cwd_param;
     char cwd[PATH_MAX];
     mfu_getcwd(cwd, PATH_MAX);
-    mfu_param_path_set(cwd, &cwd_param);
+    mfu_param_path_set(cwd, &cwd_param, mfu_src_file);
 
     int ret = MFU_SUCCESS;
     if (opts_create) {
