@@ -40,8 +40,8 @@
 #include <lustre/lustreapi.h>
 #endif
 
-/* TODO: pick a good magic value */
-#define DTAR_MAGIC (0x3141314131413141)
+/* for magic value we use "DTAR_IDX" in ASCII (8-bit) */
+#define DTAR_MAGIC (0x445441525F494458)
 
 #include "mfu.h"
 
