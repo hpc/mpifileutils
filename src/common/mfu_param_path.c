@@ -637,24 +637,8 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* determine number we should look up */
-    uint64_t count = num / (uint64_t) ranks;
-    uint64_t extra = num - count * (uint64_t) ranks;
-    if (rank < (int) extra) {
-        /* procs whose rank is less than extra each
-         * handle one extra param than those whose
-         * rank is equal or greater than extra */
-        count++;
-    }
-
-    /* determine our starting point */
-    uint64_t start = 0;
-    if (rank < (int) extra) {
-        /* for these procs, count is one more than procs with ranks >= extra */
-        start = (uint64_t)rank * count;
-    } else {
-        /* for these procs, count is one less than procs with ranks < extra */
-        start = extra * (count + 1) + ((uint64_t)rank - extra) * count;
-    }
+    uint64_t start, count;
+    mfu_get_start_count(rank, ranks, num, &start, &count);
 
     /* TODO: allocate temporary params */
     mfu_param_path* p = MFU_MALLOC(count * sizeof(mfu_param_path));

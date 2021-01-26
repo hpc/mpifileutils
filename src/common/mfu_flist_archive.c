@@ -2809,41 +2809,6 @@ static int copy_data(struct archive* ar, struct archive* aw)
     return rc;
 }
 
-/* given the rank of the calling process, the number of ranks,
- * and the number of items, compute starting offset and count
- * for the calling rank so as to evenly spread items across ranks */
-static void get_start_count(
-    int rank,            /* rank of calling process */
-    int ranks,           /* number of ranks */
-    uint64_t num,        /* number of items */
-    uint64_t* out_start, /* starting offset for calling rank */
-    uint64_t* out_count) /* number of items for calling rank */
-{
-    /* divide items among ranks */
-    uint64_t num_per_rank = num / ranks;
-    uint64_t remainder = num - num_per_rank * ranks;
-
-    /* compute starting entry and number of entries based on our rank */
-    uint64_t start = 0;
-    uint64_t count = 0;
-    if (rank < remainder) {
-        /* if we have a remainder, we given each rank from [0,remainder)
-         * one extra item */
-        count = num_per_rank + 1;
-        start = rank * count;
-    } else {
-        /* all ranks from [remainder, ranks) are assigned num_per_rank items */
-        count = num_per_rank;
-        start = remainder * (count + 1) + (rank - remainder) * count;
-    }
-
-    /* restart starting offset and number of items to caller */
-    *out_start = start;
-    *out_count = count;
-
-    return;
-}
-
 typedef enum {
     SCAN_SINGLE,   /* single process scans the archive */
     SCAN_LINEAR,   /* distributed read, with linear scan across processes */
@@ -3609,7 +3574,7 @@ static int index_entries_distread(
         /* spread file chunks evenly among ranks,
          * get our starting chunk offset and number of chunks */
         uint64_t chunk_start, chunk_count;
-        get_start_count(rank, ranks, num_chunks, &chunk_start, &chunk_count);
+        mfu_get_start_count(rank, ranks, num_chunks, &chunk_start, &chunk_count);
 
         /* compute max offset size for this round */
         off_t offset_max = starting_pos + segment_size;
@@ -5547,7 +5512,7 @@ int mfu_flist_archive_extract(
 
     /* divide entries among ranks */
     uint64_t entry_start, entry_count;
-    get_start_count(mfu_rank, ranks, entries, &entry_start, &entry_count);
+    mfu_get_start_count(mfu_rank, ranks, entries, &entry_start, &entry_count);
 
     /* if we constructed an offset list by scanning the archive,
      * save it to an index in case we need to extract again
