@@ -1,16 +1,18 @@
 # DAOS Support
 
-[DAOS](https://github.com/daos-stack/daos) is supported as a backend storage system in dcp. The build instructions for
+[DAOS](https://github.com/daos-stack/daos) is supported as a backend storage system in dcp, dsync, and dcmp. The build instructions for
 enabling DAOS support can be found here:
 [Enable DAOS](https://mpifileutils.readthedocs.io/en/latest/build.html#build-everything-directly).
 The following are ways that DAOS can be used to move data both across DAOS as well as POSIX
-filesystems:
+filesystems in dcp and dsync:
 
 1. DAOS  -> POSIX
 2. POSIX -> DAOS
 3. DAOS  -> DAOS
 
-The DAOS->DAOS case supports both POSIX and non-POSIX DAOS containers.
+For dcp, the DAOS->DAOS case supports both POSIX and non-POSIX DAOS containers.
+
+For dsync, the DAOS->DAOS case currently only supports POSIX containers.
 
 ## DAOS Data Movement Use Cases
 
@@ -26,9 +28,9 @@ Also, only one DAOS source is supported.
 3. **DAOS Source and Destination**
     * Copy across two different pools
     * Copy across containers in the same pool
-    * Copying non-POSIX containers is only supported for the DAOS -> DAOS case
+    * Copying non-POSIX containers is only supported for the DAOS -> DAOS case in dcp
 
-## DAOS POSIX Data Movement Examples
+## DAOS POSIX Data Movement Examples with dcp
 
 #### Example One
 
@@ -38,7 +40,7 @@ the pool and container UUID from the path. This feature can only be used if the
 container is created with a path.
 
 ```shell
-$ mpirun -np 3 -v /tmp/$USER/s /tmp/$USER/conts/p1cont1
+$ mpirun -np 3 dcp -v /tmp/$USER/s /tmp/$USER/conts/p1cont1
 [2020-04-23T17:04:15]   Items: 6
 [2020-04-23T17:04:15]   Directories: 3
 [2020-04-23T17:04:15]   Files: 3
@@ -98,7 +100,7 @@ $ mpirun -np 3 dcp -v /tmp/$USER/conts/p1cont1 /tmp/$USER/d
 [2020-04-23T17:17:51]   Files: 3
 [2020-04-23T17:17:51]   Links: 0
 ```
-## DAOS non-POSIX Data Movement Examples 
+## DAOS non-POSIX Data Movement Examples With dsync
 
 #### Example One 
 
@@ -119,4 +121,45 @@ in the --daos-api=DAOS flag as it will detect the containers as non-POSIX.
 ```shell
 $ mpirun -np 3 dcp -v daos://$pool1/$p1cont1 daos://$pool1/$p1cont2
 [2021-01-20T16:16:25] Successfully copied to DAOS Destination Container.
+```
+
+## DAOS POSIX Data Movement Examples with dsync
+
+The usage for dsync is similar to the usage for dcp. The source and destination
+can be DAOS, POSIX, or UNS paths. However, dsync currently only supports
+POSIX-type DAOS containers.
+
+#### Example One
+
+Show the sync from one DAOS container to another, where both of the DAOS
+containers are of the POSIX type, and both the source and destination use
+a path relative to the root of each container.
+
+```shell
+$ mpirun -np 3 dsync -v daos://$pool1/$cont1/source daos://$pool2/$cont2/dest
+[2020-04-28T00:47:59] Items: 1
+[2020-04-28T00:47:59]   Directories: 0
+[2020-04-28T00:47:59]   Files: 1
+[2020-04-28T00:47:59]   Links: 0
+```
+
+## DAOS POSIX Data Comparison Examples with dcmp
+
+Similar to dcp and dsync, dcmp supports DAOS, POSIX, and UNS paths,
+but dcmp currently only supports POSIX-type DAOS containers.
+
+#### Example One
+
+Show the comparison between two DAOS containers, where both of the DAOS
+containers are of the POSIX type, and both containers use a path relative
+to the root of each container.
+
+```shell
+$ mpirun -np 3 dcmp -v daos://$pool1/$cont1/source daos://$pool2/$cont2/dest
+Number of items that exist in both directories: 1 (Src: 1 Dest: 1)
+Number of items that exist only in one directory: 0 (Src: 0 Dest: 0)
+Number of items that exist in both directories and have the same type: 1 (Src: 1 Dest: 1)
+Number of items that exist in both directories and have different types: 0 (Src: 0 Dest: 0)
+Number of items that exist in both directories and have the same content: 1 (Src: 1 Dest: 1)
+Number of items that exist in both directories and have different contents: 0 (Src: 0 Dest: 0)
 ```
