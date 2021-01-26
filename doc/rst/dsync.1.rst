@@ -29,15 +29,15 @@ OPTIONS
 .. option:: --bufsize SIZE
 
    Set the I/O buffer to be SIZE bytes.  Units like "MB" and "GB" may
-   immediately follow the number without spaces (eg. 8MB). The default
-   bufsize is 64MB.
+   immediately follow the number without spaces (e.g. 8MB). The default
+   bufsize is 4MB.
 
 .. option:: --chunksize SIZE
 
    Multiple processes copy a large file in parallel by dividing it into chunks.
    Set chunk to be at minimum SIZE bytes.  Units like "MB" and
-   "GB" can immediately follow the number without spaces (eg. 64MB).
-   The default chunksize is 64MB.
+   "GB" can immediately follow the number without spaces (e.g. 64MB).
+   The default chunksize is 4MB.
 
 .. option:: --daos-prefix PREFIX
 
