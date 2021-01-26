@@ -60,12 +60,12 @@ extern "C" {
 #define DCOPY_DEF_PERMS_DIR  (S_IRWXU)
 
 /* default chunk size to split files into work units */
-#define MFU_CHUNK_SIZE_STR "64MB"
-#define MFU_CHUNK_SIZE (64*1024*1024)
+#define MFU_CHUNK_SIZE_STR "4MB"
+#define MFU_CHUNK_SIZE (4*1024*1024)
 
 /* default buffer size to read/write data to file system */
-#define MFU_BLOCK_SIZE_STR "64MB"
-#define MFU_BLOCK_SIZE (64*1024*1024)
+#define MFU_BLOCK_SIZE_STR "4MB"
+#define MFU_BLOCK_SIZE (4*1024*1024)
 
 /*
  * FIXME: Is this description correct?
