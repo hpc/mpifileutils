@@ -203,7 +203,7 @@ static void mfu_flist_pred(mfu_flist flist, mfu_pred* p)
 static mfu_pred_times* get_mtimes(const char* file, mfu_file_t* mfu_file)
 {
     mfu_param_path param_path;
-    mfu_param_path_set(file, &param_path, mfu_file);
+    mfu_param_path_set(file, &param_path, mfu_file, true);
     if (! param_path.path_stat_valid) {
         return NULL;
     }
@@ -559,7 +559,7 @@ int main (int argc, char** argv)
 
         /* process each path */
         char** p = &argv[optind];
-        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths, mfu_file);
+        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths, mfu_file, true);
         optind += numpaths;
 
         /* don't allow user to specify input file with walk */

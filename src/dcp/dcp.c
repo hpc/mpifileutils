@@ -387,16 +387,17 @@ int main(int argc, char** argv)
         /* allocate space for each path */
         paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
+        /* last item in the list is the destination path */
+        mfu_param_path* destpath = &paths[numpaths - 1];
+
         /* Process the source and dest path individually for DFS. */
         if (mfu_src_file->type == DFS || mfu_dst_file->type == DFS) {
-            mfu_param_path_set(argpaths[0], &paths[0], mfu_src_file);
-            mfu_param_path_set(argpaths[1], &paths[1], mfu_dst_file);
+            mfu_param_path_set(argpaths[0], &paths[0], mfu_src_file, true);
+            mfu_param_path_set(argpaths[1], &paths[1], mfu_dst_file, false);
         } else {
-            mfu_param_path_set_all(numpaths, (const char**)argpaths, paths, mfu_src_file);
+            mfu_param_path_set_all(numpaths-1, (const char**)argpaths, paths, mfu_src_file, true);
+            mfu_param_path_set((const char*)(argpaths[numpaths-1]), destpath, mfu_dst_file, false);
         }
-
-        /* last item in the list is the destination path */
-        const mfu_param_path* destpath = &paths[numpaths - 1];
 
         /* Parse the source and destination paths. */
         int valid, copy_into_dir;

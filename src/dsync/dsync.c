@@ -3116,15 +3116,16 @@ int main(int argc, char **argv)
     }
 #endif
 
+    /* first item is source and second is dest */
+    mfu_param_path* srcpath  = &paths[0];
+    mfu_param_path* destpath = &paths[1];
+
     /* process each path */
-    mfu_param_path_set_all(numargs, (const char**)argpaths, paths, mfu_src_file);
+    mfu_param_path_set((const char*)argpaths[0], srcpath,  mfu_src_file, true);
+    mfu_param_path_set((const char*)argpaths[1], destpath, mfu_dst_file, false);
 
     /* advance to next set of options */
     optind += numargs;
-
-    /* first item is source and second is dest */
-    const mfu_param_path* srcpath  = &paths[0];
-    const mfu_param_path* destpath = &paths[1];
 
     /* create an empty file list */
     mfu_flist flist_tmp_src = mfu_flist_new();
@@ -3152,7 +3153,7 @@ int main(int argc, char **argv)
         } else {
             /* we can use hardlinks, so set up variables for it */
             linkpath = (mfu_param_path*) MFU_MALLOC(sizeof(mfu_param_path));
-            mfu_param_path_set(options.link_dest, linkpath, mfu_dst_file);
+            mfu_param_path_set(options.link_dest, linkpath, mfu_dst_file, true);
             flist_tmp_link = mfu_flist_new();
         }
     }

@@ -2293,7 +2293,7 @@ int main(int argc, char **argv)
 #endif
 
     /* process each path */
-    mfu_param_path_set_all(numargs, (const char**)argpaths, paths, mfu_src_file);
+    mfu_param_path_set_all(numargs, (const char**)argpaths, paths, mfu_src_file, true);
 
     /* advance to next set of options */
     optind += numargs;

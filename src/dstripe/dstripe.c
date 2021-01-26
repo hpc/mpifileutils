@@ -507,7 +507,7 @@ int main(int argc, char* argv[])
 
         /* process each path */
         char** p = &argv[optind];
-        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths, mfu_file);
+        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths, mfu_file, true);
         optind += numpaths;
     } else {
         usage = 1;

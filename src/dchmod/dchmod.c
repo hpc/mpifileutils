@@ -186,7 +186,7 @@ int main(int argc, char** argv)
 
         /* process each path */
         const char** argpaths = (const char**)(&argv[optind]);
-        mfu_param_path_set_all(numpaths, argpaths, paths, mfu_file);
+        mfu_param_path_set_all(numpaths, argpaths, paths, mfu_file, true);
 
         /* advance to next set of options */
         optind += numpaths;

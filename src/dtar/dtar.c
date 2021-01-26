@@ -386,7 +386,7 @@ int main(int argc, char** argv)
     mfu_param_path cwd_param;
     char cwd[PATH_MAX];
     mfu_getcwd(cwd, PATH_MAX);
-    mfu_param_path_set(cwd, &cwd_param, mfu_src_file);
+    mfu_param_path_set(cwd, &cwd_param, mfu_src_file, true);
 
     int ret = MFU_SUCCESS;
     if (opts_create) {
@@ -394,11 +394,11 @@ int main(int argc, char** argv)
         mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC(numpaths * sizeof(mfu_param_path));
 
         /* process each source path */
-        mfu_param_path_set_all(numpaths, pathlist, paths, mfu_src_file);
+        mfu_param_path_set_all(numpaths, pathlist, paths, mfu_src_file, true);
 
         /* standardize destination path */
         mfu_param_path destpath;
-        mfu_param_path_set(opts_tarfile, &destpath, mfu_src_file);
+        mfu_param_path_set(opts_tarfile, &destpath, mfu_src_file, false);
 
         /* if we have an existing archive, it is deleted in check_archive so that we don't
          * walk it to be included as an entry of the archive itself in the target archive
