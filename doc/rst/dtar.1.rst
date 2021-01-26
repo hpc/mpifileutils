@@ -36,6 +36,36 @@ entry is extracted as a regular file that is placed in the current working direc
 with a file extension of ".dtaridx" and having the same basename as the original archive file.
 For an archive that was named "file.tar" when it was created, the dtar index file is named "file.tar.dtaridx".
 
+LIMITATIONS
+-----------
+
+dtar only supports directories, regular files, and symlinks.
+
+dtar works best on Lustre and GPFS.
+There are no known restrictions for creating or extracting archives on these file systems.
+These file systems also deliver the highest bandwidth and file create rates.
+
+dtar can be used on NFS, but there is one key restriction.
+Namely, one should not create an archive file in NFS.
+To create an archive of NFS files, the archive file itself should be written to a directory in Lustre or GPFS.
+The dtar tool writes to an archive file from multiple processes in parallel,
+and the algorithms used to write the archive are not valid for NFS.
+
+dtar can be used to extract an archive file into NFS.
+The archive file that is being extracted may be on any file system.
+
+The target items to be archived must be under the current working directory where dtar is running, so commands like these work.
+
+``dtar -cf foo.tar foo/``
+
+``dtar -cf foo.tar dir/foo/``
+
+But commands like the following are not supported:
+
+``dtar -cf foo.tar ../foo/``
+
+``dtar -cf foo.tar /some/other/absolute/path/to/foo/``
+
 OPTIONS
 -------
 .. option:: -c, --create
@@ -142,36 +172,6 @@ EXAMPLES
 2. To extract an archive named dir.tar:
 
 ``mpirun -np 128 dtar -x -f dir.tar``
-
-LIMITATIONS
------------
-
-dtar only supports directories, regular files, and symlinks.
-
-dtar works best on Lustre and GPFS.
-There are no known restrictions for creating or extracting archives on these file systems.
-These file systems also deliver the highest bandwidth and file create rates.
-
-dtar can be used on NFS, but there is one key restriction.
-Namely, one should not create an archive file in NFS.
-To create an archive of NFS files, the archive file itself should be written to a directory in Lustre or GPFS.
-The dtar tool writes to an archive file from multiple processes in parallel,
-and the algorithms used to write the archive are not valid for NFS.
-
-dtar can be used to extract an archive file into NFS.
-The archive file that is being extracted may be on any file system.
-
-The target items to be archived must be under the current working directory where dtar is running, so commands like these work.
-
-``dtar -cf foo.tar foo/``
-
-``dtar -cf foo.tar dir/foo/``
-
-But commands like the following are not supported:
-
-``dtar -cf foo.tar ../foo/``
-
-``dtar -cf foo.tar /some/other/absolute/path/to/foo/``
 
 SEE ALSO
 --------
