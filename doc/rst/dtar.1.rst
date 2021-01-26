@@ -97,7 +97,7 @@ OPTIONS
 
    Set the I/O buffer to be SIZE bytes.  Units like "MB" and "GB" may
    immediately follow the number without spaces (eg. 8MB). The default
-   blocksize is 64MB.
+   bufsize is 64MB.
 
 .. option:: --chunksize SIZE
 

@@ -77,7 +77,7 @@ void print_usage(void)
 #ifdef LUSTRE_SUPPORT
     /* printf("  -g, --grouplock <id> - use Lustre grouplock when reading/writing file\n"); */
 #endif
-    printf("  -b, --blocksize <SIZE>   - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
+    printf("  -b, --bufsize <SIZE>     - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>   - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
 #ifdef DAOS_SUPPORT
     printf("      --daos-prefix        - DAOS prefix for unified namespace path\n");
@@ -138,7 +138,7 @@ int main(int argc, char** argv)
 
     int option_index = 0;
     static struct option long_options[] = {
-        {"blocksize"            , required_argument, 0, 'b'},
+        {"bufsize"              , required_argument, 0, 'b'},
         {"debug"                , required_argument, 0, 'd'}, // undocumented
         {"grouplock"            , required_argument, 0, 'g'}, // untested
         {"daos-prefix"          , required_argument, 0, 'X'},
