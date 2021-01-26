@@ -333,12 +333,12 @@ void DCOPY_parse_path_args(char** argv, \
     for(opt_index = optind_local; opt_index < last_arg_index; opt_index++) {
         char* path = argv[opt_index];
         int idx = opt_index - optind_local;
-        mfu_param_path_set(path, &src_params[idx], mfu_src_file);
+        mfu_param_path_set(path, &src_params[idx], mfu_src_file, true);
     }
 
     /* standardize destination path */
     const char* dstpath = argv[last_arg_index];
-    mfu_param_path_set(dstpath, &dest_param, mfu_dst_file);
+    mfu_param_path_set(dstpath, &dest_param, mfu_dst_file, false);
 
     /* copy the destination path to user opts structure */
     DCOPY_user_opts.dest_path = MFU_STRDUP(dest_param.path);

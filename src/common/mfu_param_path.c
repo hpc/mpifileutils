@@ -629,7 +629,12 @@ static void mfu_param_path_free_list(uint64_t num, mfu_param_path* params)
     return;
 }
 
-void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params, mfu_file_t* mfu_file)
+void mfu_param_path_set_all(
+    uint64_t num,
+    const char** paths,
+    mfu_param_path* params,
+    mfu_file_t* mfu_file,
+    bool warn)
 {
     /* get our rank and number of ranks */
     int rank, ranks;
@@ -735,7 +740,7 @@ void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* pa
     /* Loop through the list of files &/or directories, and check the params 
      * struct to see if all of them are valid file names. If one is not, let 
      * the user know by printing a warning */
-    if (rank == 0) {
+    if (rank == 0 && warn) {
         for (i = 0; i < num; i++) {
             /* get pointer to param structure */
             mfu_param_path* param = &params[i];
@@ -769,9 +774,9 @@ void mfu_param_path_free_all(uint64_t num, mfu_param_path* params)
 }
 
 /* set fields in param according to path */
-void mfu_param_path_set(const char* path, mfu_param_path* param, mfu_file_t* mfu_file)
+void mfu_param_path_set(const char* path, mfu_param_path* param, mfu_file_t* mfu_file, bool warn)
 {
-    mfu_param_path_set_all(1, &path, param, mfu_file);
+    mfu_param_path_set_all(1, &path, param, mfu_file, warn);
     return;
 }
 

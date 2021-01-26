@@ -66,7 +66,12 @@ typedef struct {
 } mfu_file_t;
 
 /* set fields in param according to path */
-void mfu_param_path_set(const char* path, mfu_param_path* param, mfu_file_t* mfu_file);
+void mfu_param_path_set(
+    const char* path,      /* IN  - path to be queried */
+    mfu_param_path* param, /* OUT - param_path structure to fill in after querying input path */
+    mfu_file_t* mfu_file,  /* IN  - file system type holding the specified path */
+    bool warn              /* IN  - if path does not exist, whether to print warning (true) or not (false) */
+);
 
 /* free memory associated with param */
 void mfu_param_path_free(mfu_param_path* param);
@@ -75,7 +80,13 @@ void mfu_param_path_free(mfu_param_path* param);
  * the number of paths is specified in num,
  * paths is an array of char* of length num pointing to the input paths,
  * params is an array of length num to hold output */
-void mfu_param_path_set_all(uint64_t num, const char** paths, mfu_param_path* params, mfu_file_t* mfu_file);
+void mfu_param_path_set_all(
+    uint64_t num,           /* IN  - number of paths to be queried */
+    const char** paths,     /* IN  - list of paths to be queried, of length num */
+    mfu_param_path* params, /* OUT - list of param_paths to fill in with results of querying input paths */
+    mfu_file_t* mfu_file,   /* IN  - file system type holding the specified paths */
+    bool warn               /* IN  - if path does not exist, whether to print warning (true) or not (false) */
+);
 
 /* free resources allocated in call to mfu_param_path_set_all */
 void mfu_param_path_free_all(uint64_t num, mfu_param_path* params);

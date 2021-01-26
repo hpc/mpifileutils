@@ -191,7 +191,7 @@ int main (int argc, char* argv[])
         /* process paths to be walked */
         const char** p = (const char**)(&argv[optind]);
         paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
-        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths, mfu_file);
+        mfu_param_path_set_all((uint64_t)numpaths, (const char**)p, paths, mfu_file, true);
 
         /* TODO: check that walk paths are valid */
 
