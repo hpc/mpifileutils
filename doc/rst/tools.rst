@@ -18,6 +18,7 @@ invocation of the tool has sufficient time to complete before it is killed.
 - drm - Remove files.
 - dstripe - Restripe files.
 - dsync - Synchronize files.
+- dtar - Create and extract tape archive files.
 - dwalk - List, sort, and profile files.
 
 ==============================
@@ -31,5 +32,4 @@ who are interested in developing them further or to provide additional examples.
 - dgrep - Run grep on files in parallel.
 - dparallel - Perform commands in parallel.
 - dsh - List and remove files with interactive commands.
-- dtar - Create file tape archives.
 - dfilemaker - Generate random files.
