@@ -39,7 +39,7 @@ static void print_usage(void)
     printf("  -o, --output <EXPR:FILE>  - write list of entries matching EXPR to FILE\n");
     printf("  -t, --text                - change output option to write in text format\n");
     printf("  -b, --base                - enable base checks and normal output with --output\n");
-    printf("      --blocksize <SIZE>    - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
+    printf("      --bufsize <SIZE>      - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
     printf("      --chunksize <SIZE>    - minimum work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
 #ifdef DAOS_SUPPORT
     printf("      --daos-prefix         - DAOS prefix for unified namespace path\n");
@@ -2099,7 +2099,7 @@ int main(int argc, char **argv)
         {"output",        1, 0, 'o'},
         {"text",          0, 0, 't'},
         {"base",          0, 0, 'b'},
-        {"blocksize",     1, 0, 'B'},
+        {"bufsize",       1, 0, 'B'},
         {"chunksize",     1, 0, 'k'},
         {"daos-prefix",   1, 0, 'X'},
         {"daos-api",      1, 0, 'x'},

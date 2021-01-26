@@ -264,7 +264,7 @@ void DCOPY_print_usage(void)
     printf("       dcp [options] source ... target_dir\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -b, --blocksize     - IO buffer size in bytes (default 1MB)\n");
+    printf("  -b, --bufsize       - IO buffer size in bytes (default 1MB)\n");
     /* printf("  -c, --compare       - read data back after writing to compare\n"); */
     printf("  -d, --debug <level> - specify debug verbosity level (default info)\n");
     printf("  -f, --force         - delete destination file if error on open\n");
@@ -339,7 +339,7 @@ int main(int argc, \
     DCOPY_user_opts.synchronous = false;
 
     static struct option long_options[] = {
-        {"blocksize"            , required_argument, 0, 'b'},
+        {"bufsize"              , required_argument, 0, 'b'},
         {"compare"              , no_argument      , 0, 'c'},
         {"debug"                , required_argument, 0, 'd'},
         {"force"                , no_argument      , 0, 'f'},
