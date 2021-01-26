@@ -5771,7 +5771,7 @@ mfu_archive_opts_t* mfu_archive_opts_new(void)
     opts->chunk_size = MFU_CHUNK_SIZE;
 
     /* buffer size for individual read/write operations */
-    opts->buf_size = MFU_BLOCK_SIZE;
+    opts->buf_size = MFU_BUFFER_SIZE;
 
     /* max buffer size for reading in a full archive file */
     opts->mem_size = 256ULL * 1024ULL * 1024ULL;

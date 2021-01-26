@@ -64,8 +64,8 @@ extern "C" {
 #define MFU_CHUNK_SIZE (4*1024*1024)
 
 /* default buffer size to read/write data to file system */
-#define MFU_BLOCK_SIZE_STR "4MB"
-#define MFU_BLOCK_SIZE (4*1024*1024)
+#define MFU_BUFFER_SIZE_STR "4MB"
+#define MFU_BUFFER_SIZE (4*1024*1024)
 
 /*
  * FIXME: Is this description correct?

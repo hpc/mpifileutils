@@ -128,7 +128,7 @@ typedef struct {
     bool   direct;         /* whether to use O_DIRECT */
     bool   sparse;         /* whether to create sparse files */
     size_t chunk_size;     /* size to chunk files by */
-    size_t block_size;     /* block size to read/write to file system */
+    size_t buf_size;       /* buffer size to read/write to file system */
     char*  block_buf1;     /* buffer to read / write data */
     char*  block_buf2;     /* another buffer to read / write data */
     int    grouplock_id;   /* Lustre grouplock ID */

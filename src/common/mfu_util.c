@@ -697,7 +697,7 @@ int mfu_compare_contents(
 {
     /* extract values from copy options */
     int direct = copy_opts->direct;
-    size_t buf_size = copy_opts->block_size;
+    size_t buf_size = copy_opts->buf_size;
 
     /* for O_DIRECT, check that length is a multiple of buf_size */
     if (direct &&                      /* using O_DIRECT */
