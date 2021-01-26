@@ -1653,10 +1653,10 @@ static int mfu_copy_file_normal(
     mfu_file_t* mfu_dst_file)
 {
     /* set buffer and buffer size */
-    size_t buf_size = copy_opts->block_size;
+    size_t buf_size = copy_opts->buf_size;
     void* buf       = copy_opts->block_buf1;
 
-    /* for O_DIRECT, check that length is multiple of block_size */
+    /* for O_DIRECT, check that length is multiple of buf_size */
     if (copy_opts->direct &&           /* using O_DIRECT */
         offset + length < file_size && /* not at end of file */
         length % buf_size != 0)        /* length not an integer multiple of block size */
@@ -1916,7 +1916,7 @@ static int mfu_copy_file_fiemap(
         size_t ext_len;
         size_t ext_hole_size;
 
-        size_t buf_size = copy_opts->block_size;
+        size_t buf_size = copy_opts->buf_size;
         void* buf = copy_opts->block_buf1;
 
         ext_start = fiemap->fm_extents[i].fe_logical;
@@ -2383,8 +2383,8 @@ int mfu_flist_copy(
 
     /* allocate buffer to read/write files, aligned on 1MB boundaraies */
     size_t alignment = 1024*1024;
-    copy_opts->block_buf1 = (char*) MFU_MEMALIGN(copy_opts->block_size, alignment);
-    copy_opts->block_buf2 = (char*) MFU_MEMALIGN(copy_opts->block_size, alignment);
+    copy_opts->block_buf1 = (char*) MFU_MEMALIGN(copy_opts->buf_size, alignment);
+    copy_opts->block_buf2 = (char*) MFU_MEMALIGN(copy_opts->buf_size, alignment);
 
     /* Grab a relative and actual start time for the epilogue. */
     time(&(mfu_copy_stats.time_started));
@@ -2775,7 +2775,7 @@ static int mfu_fill_file(
     }
 
     /* get buffer */
-    size_t buf_size = copy_opts->block_size;
+    size_t buf_size = copy_opts->buf_size;
     void* buf = copy_opts->block_buf1;
 
     /* fill buffer with data */
@@ -2860,12 +2860,12 @@ int mfu_flist_fill(mfu_flist list, mfu_copy_opts_t* copy_opts, mfu_file_t* mfu_f
 
     /* allocate buffer to write files, aligned on 1MB boundaraies */
     size_t alignment = 1024*1024;
-    copy_opts->block_buf1 = (char*) MFU_MEMALIGN(copy_opts->block_size, alignment);
+    copy_opts->block_buf1 = (char*) MFU_MEMALIGN(copy_opts->buf_size, alignment);
 
     /* fill buffer with data */
-    //memset(copy_opts->block_buf1, 0, copy_opts->block_size);
+    //memset(copy_opts->block_buf1, 0, copy_opts->buf_size);
     size_t idx;
-    for (idx = 0; idx < copy_opts->block_size; idx++) {
+    for (idx = 0; idx < copy_opts->buf_size; idx++) {
         copy_opts->block_buf1[idx] = (char) rand();
     }
 
@@ -3272,7 +3272,7 @@ mfu_copy_opts_t* mfu_copy_opts_new(void)
     opts->chunk_size = MFU_CHUNK_SIZE;
 
     /* temporaries used during the copy operation for buffers to read/write data */
-    opts->block_size = MFU_BLOCK_SIZE;
+    opts->buf_size   = MFU_BUFFER_SIZE;
     opts->block_buf1 = NULL;
     opts->block_buf2 = NULL;
 

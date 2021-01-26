@@ -77,7 +77,7 @@ void print_usage(void)
 #ifdef LUSTRE_SUPPORT
     /* printf("  -g, --grouplock <id> - use Lustre grouplock when reading/writing file\n"); */
 #endif
-    printf("  -b, --bufsize <SIZE>     - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
+    printf("  -b, --bufsize <SIZE>     - IO buffer size in bytes (default " MFU_BUFFER_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>   - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
 #ifdef DAOS_SUPPORT
     printf("      --daos-prefix        - DAOS prefix for unified namespace path\n");
@@ -180,7 +180,7 @@ int main(int argc, char** argv)
                     }
                     usage = 1;
                 } else {
-                    mfu_copy_opts->block_size = (size_t)bytes;
+                    mfu_copy_opts->buf_size = (size_t)bytes;
                 }
                 break;
             case 'd':

@@ -145,7 +145,7 @@ static void print_usage(void)
 //    printf("      --preserve-acls     - preserve acls (default ignores acls)\n");
 //    printf("      --preserve-flags    - preserve fflags (default ignores ioctl iflags)\n");
     printf("      --fsync             - sync file data to disk on close\n");
-    printf("  -b, --bufsize <SIZE>    - IO buffer size in bytes (default " MFU_BLOCK_SIZE_STR ")\n");
+    printf("  -b, --bufsize <SIZE>    - IO buffer size in bytes (default " MFU_BUFFER_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>  - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
     printf("      --memsize <SIZE>    - memory limit per task for parallel read in bytes (default 256MB)\n");
     printf("      --progress <N>      - print progress every N seconds\n");
