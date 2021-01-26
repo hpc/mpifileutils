@@ -263,6 +263,17 @@ bool mfu_is_lustre(const char* path);
  * returns 1 if all true and 0 otherwise */
 bool mfu_alltrue(bool flag, MPI_Comm comm);
 
+/* given the rank of the calling process, the number of ranks,
+ * and the number of items, compute starting offset and count
+ * for the calling rank so as to evenly spread items across ranks */
+void mfu_get_start_count(
+    int rank,            /* rank of calling process */
+    int ranks,           /* number of ranks */
+    uint64_t num,        /* number of items */
+    uint64_t* out_start, /* starting offset for calling rank */
+    uint64_t* out_count  /* number of items for calling rank */
+);
+
 #endif /* MFU_UTIL_H */
 
 /* enable C++ codes to include this header directly */
