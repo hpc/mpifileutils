@@ -94,7 +94,7 @@ static int daos_check_args(
 static bool daos_check_prefix(
     char* path,
     const char* dfs_prefix,
-    char* suffix)
+    char** suffix)
 {
     bool is_prefix = false;
     int prefix_len = strlen(dfs_prefix);
@@ -109,12 +109,12 @@ static bool daos_check_prefix(
     if (strncmp(path, dfs_prefix, prefix_len) == 0) {
         /* if equal, assume root */
         if (path_len == prefix_len) {
-            strcpy(suffix, "/");
+            *suffix = strdup("/");
             is_prefix = true;
         }
         /* if path is longer, it must start with '/' */
         else if (path_len > prefix_len && path[prefix_len] == '/') {
-            strcpy(suffix, path + prefix_len);
+            *suffix = strdup(path + prefix_len);
             is_prefix = true;
         }
     }
@@ -131,11 +131,11 @@ static bool daos_check_prefix(
  */
 static int daos_parse_path(
     char* path,
+    size_t path_len,
     uuid_t* p_uuid,
     uuid_t* c_uuid)
 {
     struct duns_attr_t  dattr = {0};
-    size_t              path_len = strlen(path);
     int                 rc;
 
     rc = duns_resolve_path(path, &dattr);
@@ -144,9 +144,9 @@ static int daos_parse_path(
         uuid_copy(*p_uuid, dattr.da_puuid);
         uuid_copy(*c_uuid, dattr.da_cuuid);
         if (dattr.da_rel_path == NULL) {
-            strcpy(path, "/");
+            strncpy(path, "/", path_len);
         } else {
-            strcpy(path, dattr.da_rel_path);
+            strncpy(path, dattr.da_rel_path, path_len);
         }
     } else if (strncmp(path, "daos:", 5) == 0) {
         /* Actual error, since we expect a daos path */
@@ -170,21 +170,8 @@ static int daos_set_paths(
   daos_args_t* da)
 {
     int     rc = 0;
-    char    src_path[PATH_MAX];
-    char    dst_path[PATH_MAX];
-    char    prefix_path[PATH_MAX];
-    size_t  src_len = 0;
-    size_t  dst_len = 0;
-    size_t  prefix_len = 0;
     bool    prefix_on_src = false;
     bool    prefix_on_dst = false;
-
-    src_len = strlen(argpaths[0]);
-    dst_len = strlen(argpaths[1]);
-    if (src_len >= PATH_MAX || dst_len >= PATH_MAX) {
-        MFU_LOG(MFU_LOG_ERR, "DAOS path is too long");
-        return 1;
-    }
 
     /* find out if a dfs_prefix is being used,
      * if so, then that means that the container
@@ -195,48 +182,55 @@ static int daos_set_paths(
         uuid_t  prefix_c_uuid;
         int     prefix_rc;
 
-        prefix_len = strlen(da->dfs_prefix);
-        if (prefix_len > PATH_MAX-1) {
-            MFU_LOG(MFU_LOG_ERR, "DAOS prefix is too long");
-            return 1;
+        size_t prefix_len = strlen(da->dfs_prefix);
+        char* prefix_path = strndup(da->dfs_prefix, prefix_len);
+        if (prefix_path == NULL) {
+            MFU_LOG(MFU_LOG_ERR, "Unable to allocate space for DAOS prefix.");
+            rc = 1;
+            goto out;
         }
-        strcpy(prefix_path, da->dfs_prefix);
 
         uuid_clear(prefix_p_uuid);
         uuid_clear(prefix_c_uuid);
 
         /* Get the pool/container uuids from the prefix */
-        prefix_rc = daos_parse_path(prefix_path, &prefix_p_uuid, &prefix_c_uuid);
+        prefix_rc = daos_parse_path(prefix_path, prefix_len, &prefix_p_uuid, &prefix_c_uuid);
         if (prefix_rc != 0 || prefix_p_uuid == NULL || prefix_c_uuid == NULL) {
             MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS Prefix UNS path");
-            return 1;
+            mfu_free(&prefix_path);
+            rc = 1;
+            goto out;
         }
 
         /* In case the user tries to give a sub path in the UNS path */
         if (strcmp(prefix_path, "/") != 0) {
             MFU_LOG(MFU_LOG_ERR, "DAOS prefix must be a UNS path");
-            return 1;
+            mfu_free(&prefix_path);
+            rc = 1;
+            goto out;
         }
 
         /* Check if the prefix matches the source */
-        prefix_on_src = daos_check_prefix(argpaths[0], da->dfs_prefix, src_path);
+        prefix_on_src = daos_check_prefix(argpaths[0], da->dfs_prefix, &da->src_path);
         if (prefix_on_src) {
             uuid_copy(da->src_pool_uuid, prefix_p_uuid);
             uuid_copy(da->src_cont_uuid, prefix_c_uuid);
-            argpaths[0] = da->src_path = strdup(src_path);
+            argpaths[0] = da->src_path;
         }
 
         /* Check if the prefix matches the destination */
-        prefix_on_dst = daos_check_prefix(argpaths[1], da->dfs_prefix, dst_path);
+        prefix_on_dst = daos_check_prefix(argpaths[1], da->dfs_prefix, &da->dst_path);
         if (prefix_on_dst) {
             uuid_copy(da->dst_pool_uuid, prefix_p_uuid);
             uuid_copy(da->dst_cont_uuid, prefix_c_uuid);
-            argpaths[1] = da->dst_path = strdup(dst_path);
+            argpaths[1] = da->dst_path;
         }
 
         if (!prefix_on_src && !prefix_on_dst) {
             MFU_LOG(MFU_LOG_ERR, "DAOS prefix does not match source or destination");
-            return 1;
+            mfu_free(&prefix_path);
+            rc = 1;
+            goto out;
         }
     }
 
@@ -246,28 +240,42 @@ static int daos_set_paths(
      * then just directly try to parse a DAOS path.
      */
     if (!prefix_on_src) {
-        strcpy(src_path, argpaths[0]);
-        int src_rc = daos_parse_path(src_path, &da->src_pool_uuid, &da->src_cont_uuid);
+        size_t src_len = strlen(argpaths[0]);
+        char* src_path = strndup(argpaths[0], src_len);
+        if (src_path == NULL) {
+            MFU_LOG(MFU_LOG_ERR, "Unable to allocate space for source path.");
+            rc = 1;
+            goto out;
+        }
+        int src_rc = daos_parse_path(src_path, src_len, &da->src_pool_uuid, &da->src_cont_uuid);
         if (src_rc == 0) {
             argpaths[0] = da->src_path = strdup(src_path);
+            mfu_free(&src_path);
         } else if (src_rc == -1) {
             MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS source path: daos://<pool>/<cont>[/<path>]");
-            return 1;
+            mfu_free(&src_path);
+            rc = 1;
+            goto out;
         }
     }
 
     if (!prefix_on_dst) {
-        strcpy(dst_path, argpaths[1]);
-        int dst_rc = daos_parse_path(dst_path, &da->dst_pool_uuid, &da->dst_cont_uuid);
+        size_t dst_len = strlen(argpaths[1]);
+        char* dst_path = strndup(argpaths[1], dst_len);
+        int dst_rc = daos_parse_path(dst_path, dst_len, &da->dst_pool_uuid, &da->dst_cont_uuid);
         if (dst_rc == 0) {
             argpaths[1] = da->dst_path = strdup(dst_path);
+            mfu_free(&dst_path);
         } else if (dst_rc == -1) {
             MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS destination path: daos://<pool>/<cont>[/<path>]");
-            return 1;
+            mfu_free(&dst_path);
+            rc = 1;
+            goto out;
         }
     }
 
-    return 0;
+out:
+    return rc;
 }
 
 static int daos_get_cont_type(
