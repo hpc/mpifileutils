@@ -178,6 +178,7 @@ int main(int argc, char** argv)
     /* verbose by default */
     mfu_debug_level = MFU_LOG_VERBOSE;
 
+    int     opts_help     = 0;
     int     opts_create   = 0;
     int     opts_extract  = 0;
     int     opts_compress = 0;
@@ -306,9 +307,11 @@ int main(int argc, char** argv)
                 mfu_progress_timeout = 0;
                 break;
             case 'h':
+                opts_help = 1;
                 usage = 1;
                 break;
             case '?':
+                opts_help = 1;
                 usage = 1;
                 break;
             default:
@@ -327,7 +330,7 @@ int main(int argc, char** argv)
         usage = 1;
     }
 
-    if (!opts_create && !opts_extract) {
+    if (!opts_create && !opts_extract && !opts_help) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "One of extract(x) or create(c) needs to be specified");
         }
