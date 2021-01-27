@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DTAR" "1" "Dec 28, 2020" "0.10.1" "mpiFileUtils"
+.TH "DTAR" "1" "Jan 26, 2021" "0.11.0" "mpiFileUtils"
 .SH NAME
 dtar \- create and extract a tar archive
 .
@@ -37,19 +37,58 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 \fBdtar [OPTION] \-x \-f ARCHIVE\fP
 .SH DESCRIPTION
 .sp
-Parallel MPI application to create and extract tar archive files.
+Parallel MPI application to create and extract tar files.
 .sp
-dtar writes archives using the pax file format.
-In addition to the archive file, dtar creates an index that records
-the byte offset of each entry in the archive.
-dtar reads the index file to improve performance when extracting the archive.
+dtar writes archives in pax file format.
+In addition to the archive file, dtar creates an index to record
+the number of items and the starting byte offset of each entry within the archive.
+This index enables faster parallel extraction.
+By default, dtar appends its index as the last entry of the archive.
+Optionally, the index may be written as a separate file (with a .dtaridx extension)
+or as an extended attribute (named user.dtar.idx) of the archive file.
 .sp
-dtar can extract archives in various tar formats, including archives created by other tools.
-Archives can be compressed with gzip, bz2, or compress.
-Compressed archives are significantly slower to extract than uncompressed archives.
-Uncompressed archives can be extracted fastest when a corresponding dtar index file exists.
-If an index file does not exist, dtar can create an index file
-during extraction to benefit subsequent extractions of the same archive.
+dtar can extract archives in various tar formats, including archive files that were created by other tools like tar.
+dtar can also extract archives that have been compressed with gzip, bz2, or compress.
+Compressed archives are significantly slower to extract than uncompressed archives,
+because decompression inhibits available parallelism.
+.sp
+Archives are extracted fastest when a dtar index exists.
+If an index does not exist, dtar can create and record an index
+during extraction to benefit subsequent extractions of the same archive file.
+.sp
+When extracting an archive, dtar skips the entry corresponding to its index.
+If other tools, like tar, are used to extract the archive, the index
+entry is extracted as a regular file that is placed in the current working directory
+with a file extension of “.dtaridx” and having the same basename as the original archive file.
+For an archive that was named “file.tar” when it was created, the dtar index file is named “file.tar.dtaridx”.
+.SH LIMITATIONS
+.sp
+dtar only supports directories, regular files, and symlinks.
+.sp
+dtar works best on Lustre and GPFS.
+There are no known restrictions for creating or extracting archives on these file systems.
+These file systems also deliver the highest bandwidth and file create rates.
+.sp
+dtar can be used on NFS, but there is one key restriction.
+Namely, one should not create an archive file in NFS.
+To create an archive of NFS files, the archive file itself should be written to a directory in Lustre or GPFS.
+The dtar tool writes to an archive file from multiple processes in parallel,
+and the algorithms used to write the archive are not valid for NFS.
+.sp
+dtar can be used to extract an archive file into NFS.
+The archive file that is being extracted may be on any file system.
+.sp
+The target items to be archived must be under the current working directory where dtar is running, so commands like these work.
+.sp
+\fBdtar \-cf foo.tar foo/\fP
+.sp
+\fBdtar \-cf foo.tar dir/foo/\fP
+.sp
+But commands like the following are not supported:
+.sp
+\fBdtar \-cf foo.tar ../foo/\fP
+.sp
+\fBdtar \-cf foo.tar /some/other/absolute/path/to/foo/\fP
 .SH OPTIONS
 .INDENT 0.0
 .TP
@@ -85,9 +124,16 @@ Default uses current system times.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-\-preserve\-perm
+.B \-\-preserve\-perms
 Apply recorded permissions to extracted files.
-Default applies umask of the running process.
+Default subtracts umask from file permissions.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-\-preserve\-xattrs
+Record extended attributes (xattrs) when creating archive.
+Apply recorded xattrs to extracted files.
+Default does not record or extract xattrs.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -96,10 +142,10 @@ Call fsync before closing files after writing.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-\-blocksize SIZE
+.B \-\-bufsize SIZE
 Set the I/O buffer to be SIZE bytes.  Units like “MB” and “GB” may
 immediately follow the number without spaces (eg. 8MB). The default
-blocksize is 1MB.
+bufsize is 64MB.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -107,16 +153,16 @@ blocksize is 1MB.
 Multiple processes copy a large file in parallel by dividing it into chunks.
 Set chunk to be at minimum SIZE bytes.  Units like “MB” and
 “GB” can immediately follow the number without spaces (eg. 64MB).
-The default chunksize is 1MB.
+The default chunksize is 64MB.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-\-memory SIZE
+.B \-\-memsize SIZE
 Set the memory limit to be SIZE bytes when reading archive files.
 For some archives, dtar can distribute the file across processes
-to store the full archive in memory for faster processing.
+to store segments of the archive in memory for faster processing.
 Units like “MB” and “GB” may immediately follow the number
-without spaces (eg. 8MB). The default is 1GB.
+without spaces (eg. 8MB). The default is 256MB.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -160,6 +206,6 @@ from <\fI\%https://github.com/hpc/mpifileutils\fP>
 .SH AUTHOR
 HPC
 .SH COPYRIGHT
-2018, LLNL/LANL/UT-Battelle/DDN
+2021, LLNL/LANL/UT-Battelle/DDN
 .\" Generated by docutils manpage writer.
 .
