@@ -1194,9 +1194,6 @@ void mfu_flist_chmod(
     /* set bits on items starting at the deepest level, this is so we still get child items
      * in the case that we're disabling bits on the parent items */
     for (int level = levels - 1; level >= 0; level--) {
-        /* start timer for this level */
-        double start = MPI_Wtime();
-
         /* spread items for this level evenly over all procs */
         mfu_flist list = mfu_flist_spread(lists[level]);
 
@@ -1218,24 +1215,6 @@ void mfu_flist_chmod(
 
         /* wait for all processes to finish before we start with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
-
-        /* stop timer and print stats */
-        double end = MPI_Wtime();
-        if (mfu_debug_level >= MFU_LOG_VERBOSE) {
-            uint64_t min, max, sum;
-            MPI_Allreduce(&stats[ITEM_COUNT], &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-            MPI_Allreduce(&stats[ITEM_COUNT], &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-            MPI_Allreduce(&stats[ITEM_COUNT], &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-            double rate = 0.0;
-            if (end - start > 0.0) {
-                rate = (double)sum / (end - start);
-            }
-            double time_diff = end - start;
-            if (mfu_rank == 0) {
-                MFU_LOG(MFU_LOG_INFO, "level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f",
-                       (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, time_diff);
-            }
-        }
     }
 
     /* finalize our progress messages */

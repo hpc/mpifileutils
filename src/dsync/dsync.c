@@ -639,36 +639,38 @@ static int dsync_compare_metadata(
     return diff;
 }
 
+/* variable to record total number of bytes to be compared to report progress and estimate time reamining */
+static uint64_t dsync_total_count;
+
 static void compare_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
 {
-#if 0
-    /* compute percentage of items removed */
-    double percent = 0.0;
-    if (remove_count_total > 0) {
-        percent = 100.0 * (double)vals[0] / (double)remove_count_total;
-    }
-#endif
+    uint64_t read_bytes  = vals[0];
+    uint64_t write_bytes = vals[1];
 
     /* compute average delete rate */
     double read_rate  = 0.0;
     double write_rate = 0.0;
     if (secs > 0) {
-        read_rate  = (double)vals[0] / secs;
-        write_rate = (double)vals[1] / secs;
+        read_rate  = (double)read_bytes / secs;
+        write_rate = (double)write_bytes / secs;
     }
 
-#if 0
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (dsync_total_count > 0) {
+        percent = 100.0 * (double)read_bytes / (double)dsync_total_count;
+    }
+
     /* compute estimated time remaining */
     double secs_remaining = -1.0;
-    if (rate > 0.0) {
-        secs_remaining = (double)(remove_count_total - vals[0]) / rate;
+    if (read_rate > 0.0) {
+        secs_remaining = (double)(dsync_total_count - read_bytes) / read_rate;
     }
-#endif
 
     /* convert bytes to units */
     double agg_read_size_tmp;
     const char* agg_read_size_units;
-    mfu_format_bytes(vals[0], &agg_read_size_tmp, &agg_read_size_units);
+    mfu_format_bytes(read_bytes, &agg_read_size_tmp, &agg_read_size_units);
 
     /* convert bandwidth to units */
     double agg_read_rate_tmp;
@@ -678,7 +680,7 @@ static void compare_progress_fn(const uint64_t* vals, int count, int complete, i
     /* convert bytes to units */
     double agg_write_size_tmp;
     const char* agg_write_size_units;
-    mfu_format_bytes(vals[1], &agg_write_size_tmp, &agg_write_size_units);
+    mfu_format_bytes(write_bytes, &agg_write_size_tmp, &agg_write_size_units);
 
     /* convert bandwidth to units */
     double agg_write_rate_tmp;
@@ -686,15 +688,19 @@ static void compare_progress_fn(const uint64_t* vals, int count, int complete, i
     mfu_format_bw(write_rate, &agg_write_rate_tmp, &agg_write_rate_units);
 
     if (complete < ranks) {
-        MFU_LOG(MFU_LOG_INFO, "Read %.3lf %s in %.3lf secs (%.3lf %s) ...",
-            agg_read_size_tmp, agg_read_size_units, secs, agg_read_rate_tmp, agg_read_rate_units);
-        MFU_LOG(MFU_LOG_INFO, "Wrote %.3lf %s in %.3lf secs (%.3lf %s) ...",
+        MFU_LOG(MFU_LOG_INFO, "Compared %.3lf %s (%.0f%%) in %.3lf secs (%.3lf %s) %.0f secs left ...",
+            agg_read_size_tmp, agg_read_size_units, percent, secs, agg_read_rate_tmp, agg_read_rate_units, secs_remaining);
+#if 0
+        MFU_LOG(MFU_LOG_INFO, "Updated %.3lf %s in %.3lf secs (%.3lf %s) ...",
             agg_write_size_tmp, agg_write_size_units, secs, agg_write_rate_tmp, agg_write_rate_units);
+#endif
     } else {
-        MFU_LOG(MFU_LOG_INFO, "Read %.3lf %s in %.3lf secs (%.3lf %s) done",
-            agg_read_size_tmp, agg_read_size_units, secs, agg_read_rate_tmp, agg_read_rate_units);
-        MFU_LOG(MFU_LOG_INFO, "Wrote %.3lf %s in %.3lf secs (%.3lf %s) done",
+        MFU_LOG(MFU_LOG_INFO, "Compared %.3lf %s (%.0f%%) in %.3lf secs (%.3lf %s) done",
+            agg_read_size_tmp, agg_read_size_units, percent, secs, agg_read_rate_tmp, agg_read_rate_units);
+#if 0
+        MFU_LOG(MFU_LOG_INFO, "Updated %.3lf %s in %.3lf secs (%.3lf %s) done",
             agg_write_size_tmp, agg_write_size_units, secs, agg_write_rate_tmp, agg_write_rate_units);
+#endif
     }
 }
 
@@ -713,6 +719,25 @@ static void dsync_strmap_compare_data_link_dest(
 {
     /* assume we'll succeed */
     int rc = 0;
+
+    /* count number of bytes to compare to print percent progress and estimated time remaining */
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(src_compare_list);
+    uint64_t bytes = 0;
+    for (idx = 0; idx < size; idx++) {
+        /* count bytes from regular files */
+        mfu_filetype type = mfu_flist_file_get_type(src_compare_list, idx);
+        if (type == MFU_TYPE_FILE) {
+            bytes += mfu_flist_file_get_size(src_compare_list, idx);
+        }
+    }
+
+    /* double to account for source and destination bytes */
+    bytes *= 2;
+
+    /* get total for print percent progress while creating */
+    dsync_total_count = 0;
+    MPI_Allreduce(&bytes, &dsync_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* get chunk size for copying files (just hard-coded for now) */
     uint64_t chunk_size = copy_opts->chunk_size;
@@ -782,7 +807,6 @@ static void dsync_strmap_compare_data_link_dest(
     mfu_progress_complete(count_bytes, &compare_prog);
 
     /* allocate a flag for each item in our file list */
-    uint64_t size = mfu_flist_size(src_compare_list);
     int* results = (int*) MFU_MALLOC(size * sizeof(int));
 
     /* execute logical OR over chunks for each file */
@@ -832,6 +856,25 @@ static int dsync_strmap_compare_data(
 {
     /* assume we'll succeed */
     int rc = 0;
+
+    /* count number of bytes to compare to print percent progress and estimated time remaining */
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(src_compare_list);
+    uint64_t bytes = 0;
+    for (idx = 0; idx < size; idx++) {
+        /* count bytes from regular files */
+        mfu_filetype type = mfu_flist_file_get_type(src_compare_list, idx);
+        if (type == MFU_TYPE_FILE) {
+            bytes += mfu_flist_file_get_size(src_compare_list, idx);
+        }
+    }
+
+    /* double to account for source and destination bytes */
+    bytes *= 2;
+
+    /* get total for print percent progress while creating */
+    dsync_total_count = 0;
+    MPI_Allreduce(&bytes, &dsync_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* get chunk size for copying files (just hard-coded for now) */
     uint64_t chunk_size = copy_opts->chunk_size;
@@ -904,7 +947,6 @@ static int dsync_strmap_compare_data(
     mfu_progress_complete(count_bytes, &compare_prog);
 
     /* allocate a flag for each item in our file list */
-    uint64_t size = mfu_flist_size(src_compare_list);
     int* results = (int*) MFU_MALLOC(size * sizeof(int));
 
     /* execute logical OR over chunks for each file */

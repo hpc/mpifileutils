@@ -263,7 +263,7 @@ static void reduce_fini(const void* buf, size_t size)
     }
 
     /* print status to stdout */
-    MFU_LOG(MFU_LOG_INFO, "%s %.3lf %s (%.0f\%) in %.3lf secs (%.3lf %s) %.0f secs left ...",
+    MFU_LOG(MFU_LOG_INFO, "%s %.3lf %s (%.0f%%) in %.3lf secs (%.3lf %s) %.0f secs left ...",
         reduce_opstr, val_tmp, val_units, percent, secs, rate_tmp, rate_units, secs_remaining
     );
 }
@@ -2211,12 +2211,12 @@ static void create_progress_fn(const uint64_t* vals, int count, int complete, in
 
     if (complete < ranks) {
         MFU_LOG(MFU_LOG_INFO,
-            "Tarred %.3lf %s (%.0f\%) in %.3lf secs (%.3lf %s) %.0f secs left ...",
+            "Tarred %.3lf %s (%.0f%%) in %.3lf secs (%.3lf %s) %.0f secs left ...",
             bytes_val, bytes_units, percent, secs, bw_val, bw_units, secs_remaining
         );
     } else {
         MFU_LOG(MFU_LOG_INFO,
-            "Tarred %.3lf %s (%.0f\%) in %.3lf secs (%.3lf %s) done",
+            "Tarred %.3lf %s (%.0f%%) in %.3lf secs (%.3lf %s) done",
             bytes_val, bytes_units, percent, secs, bw_val, bw_units
         );
     }
@@ -4144,12 +4144,12 @@ static void extract2_progress_fn(const uint64_t* vals, int count, int complete, 
 
     if (complete < ranks) {
         MFU_LOG(MFU_LOG_INFO,
-            "Extracted %llu items and %.3lf %s (%.0f\%) in %.3lf secs (%.3lf items/sec, %.3lf %s) %.0f secs left ...",
+            "Extracted %llu items and %.3lf %s (%.0f%%) in %.3lf secs (%.3lf items/sec, %.3lf %s) %.0f secs left ...",
             vals[REDUCE_ITEMS], bytes_val, bytes_units, percent, secs, item_rate, bw_val, bw_units, secs_remaining
         );
     } else {
         MFU_LOG(MFU_LOG_INFO,
-            "Extracted %llu items and %.3lf %s (%.0f\%) in %.3lf secs (%.3lf items/sec, %.3lf %s) done",
+            "Extracted %llu items and %.3lf %s (%.0f%%) in %.3lf secs (%.3lf items/sec, %.3lf %s) done",
             vals[REDUCE_ITEMS], bytes_val, bytes_units, percent, secs, item_rate, bw_val, bw_units
         );
     }
@@ -4188,12 +4188,12 @@ static void extract1_progress_fn(const uint64_t* vals, int count, int complete, 
 
     if (complete < ranks) {
         MFU_LOG(MFU_LOG_INFO,
-            "Extracted %.3lf %s (%.0f\%) in %.3lf secs (%.3lf %s) %.0f secs left ...",
+            "Extracted %.3lf %s (%.0f%%) in %.3lf secs (%.3lf %s) %.0f secs left ...",
             bytes_val, bytes_units, percent, secs, bw_val, bw_units, secs_remaining
         );
     } else {
         MFU_LOG(MFU_LOG_INFO,
-            "Extracted %.3lf %s (%.0f\%) in %.3lf secs (%.3lf %s) done",
+            "Extracted %.3lf %s (%.0f%%) in %.3lf secs (%.3lf %s) done",
             bytes_val, bytes_units, percent, secs, bw_val, bw_units
         );
     }

@@ -98,6 +98,46 @@ typedef struct {
 /** Where we should keep statistics related to this file copy. */
 static mfu_copy_stats_t mfu_copy_stats;
 
+/* stores total number of directories to be created to print percent progress in reductions */
+static uint64_t mkdir_total_count;
+
+/* progress message to print sum of directories while creating */
+static void mkdir_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+    /* get number of items created so far */
+    uint64_t items = vals[0];
+
+    /* compute item rate */
+    double item_rate = 0.0;
+    if (secs > 0) {
+        item_rate = (double)items / secs;
+    }
+
+    /* compute percentage of items created */
+    double percent = 0.0;
+    if (mkdir_total_count > 0) {
+        percent = (double)items * 100.0 / (double)mkdir_total_count;
+    }
+
+    /* estimate seconds remaining */
+    double secs_remaining = 0.0;
+    if (item_rate > 0.0) {
+        secs_remaining = (double)(mkdir_total_count - items) / item_rate;
+    }
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO,
+            "Created %llu directories (%.0f%%) in %.3lf secs (%.3lf dirs/sec) %.0f secs left ...",
+            items, percent, secs, item_rate, secs_remaining
+        );
+    } else {
+        MFU_LOG(MFU_LOG_INFO,
+            "Created %llu directories (%.0f%%) in %.3lf secs (%.3lf dirs/sec) done",
+            items, percent, secs, item_rate
+        );
+    }
+}
+
 /** Cache most recent open file descriptor to avoid opening / closing the same file */
 static mfu_copy_file_cache_t mfu_copy_src_cache;
 static mfu_copy_file_cache_t mfu_copy_dst_cache;
@@ -994,22 +1034,44 @@ static int mfu_create_directories(
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    /* indicate to user what phase we're in */
-    if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Creating directories.");
+    /* count total number of directories to be created */
+    int level;
+    uint64_t count = 0;
+    for (level = 0; level < levels; level++) {
+        /* get list of items for this level */
+        mfu_flist list = lists[level];
+
+        uint64_t idx;
+        uint64_t size = mfu_flist_size(list);
+        for (idx = 0; idx < size; idx++) {
+           /* check whether we have a directory */
+           mfu_filetype type = mfu_flist_file_get_type(list, idx);
+           if (type == MFU_TYPE_DIR) {
+               count++;
+           }
+        }
     }
 
-    /* start timer for entie operation */
-    MPI_Barrier(MPI_COMM_WORLD);
-    double total_start = MPI_Wtime();
-    uint64_t total_count = 0;
+    /* get total for print percent progress while creating */
+    mkdir_total_count = 0;
+    MPI_Allreduce(&count, &mkdir_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* bail early if there is no work to do */
+    if (mkdir_total_count == 0) {
+        return rc;
+    }
+
+    /* indicate to user what phase we're in */
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Creating %llu directories", mkdir_total_count);
+    }
+
+    /* start progress messages while setting metadata */
+    mfu_progress* mkdir_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, mkdir_progress_fn);
 
     /* work from shallowest level to deepest level */
-    int level;
+    uint64_t reduce_count = 0;
     for (level = 0; level < levels; level++) {
-        /* time how long this takes */
-        double start = MPI_Wtime();
-
         /* get list of items for this level */
         mfu_flist list = lists[level];
 
@@ -1028,58 +1090,19 @@ static int mfu_create_directories(
                     rc = -1;
                 }
 
-                count++;
+                /* update our running count for progress messages */
+                reduce_count++;
+                mfu_progress_update(&reduce_count, mkdir_prog);
             }
         }
-
-        /* add items to our running total */
-        total_count += count;
 
         /* wait for all procs to finish before we start
          * creating directories at next level */
         MPI_Barrier(MPI_COMM_WORLD);
-
-        /* stop our timer */
-        double end = MPI_Wtime();
-
-         /* print statistics */
-        if (verbose) {
-            uint64_t min, max, sum;
-            MPI_Allreduce(&count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-            double rate = 0.0;
-            double secs = end - start;
-            if (secs > 0.0) {
-              rate = (double)sum / secs;
-            }
-            if (rank == 0) {
-                MFU_LOG(MFU_LOG_INFO, "  level=%d min=%lu max=%lu sum=%lu rate=%f/sec secs=%f",
-                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
-                );
-            }
-        }
     }
 
-    /* stop timer and report total count */
-    MPI_Barrier(MPI_COMM_WORLD);
-    double total_end = MPI_Wtime();
-
-    /* print timing statistics */
-    if (verbose) {
-        uint64_t sum;
-        MPI_Allreduce(&total_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-        double rate = 0.0;
-        double secs = total_end - total_start;
-        if (secs > 0.0) {
-          rate = (double)sum / secs;
-        }
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_INFO, "Created %lu directories in %.3lf seconds (%.3lf items/sec)",
-              (unsigned long)sum, secs, rate
-            );
-        }
-    }
+    /* finalize progress messages */
+    mfu_progress_complete(&reduce_count, &mkdir_prog);
 
     return rc;
 }
@@ -1303,37 +1326,38 @@ static int mfu_create_hardlink(
     return rc;
 }
 
+static uint64_t mknod_total_count;
+
 /* progress message to print while creating files */
 static void create_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
 {
-#if 0
-    /* compute percentage of items removed */
-    double percent = 0.0;
-    if (remove_count_total > 0) {
-        percent = 100.0 * (double)vals[0] / (double)remove_count_total;
-    }
-#endif
+    /* get number of items created so far */
+    uint64_t items = vals[0];
 
-    /* compute average delete rate */
-    double rate = 0.0;
+    /* compute item rate */
+    double item_rate = 0.0;
     if (secs > 0) {
-        rate = (double)vals[0] / secs;
+        item_rate = (double)items / secs;
     }
 
-#if 0
-    /* compute estimated time remaining */
-    double secs_remaining = -1.0;
-    if (rate > 0.0) {
-        secs_remaining = (double)(remove_count_total - vals[0]) / rate;
+    /* compute percentage of items created */
+    double percent = 0.0;
+    if (mkdir_total_count > 0) {
+        percent = (double)items * 100.0 / (double)mkdir_total_count;
     }
-#endif
+
+    /* estimate seconds remaining */
+    double secs_remaining = -1.0;
+    if (item_rate > 0.0) {
+        secs_remaining = (double)(mkdir_total_count - items) / item_rate;
+    }
 
     if (complete < ranks) {
-        MFU_LOG(MFU_LOG_INFO, "Created %llu items in %.3lf secs (%.3lf items/sec) ...",
-            vals[0], secs, rate);
+        MFU_LOG(MFU_LOG_INFO, "Created %llu items (%.0f%%) in %.3lf secs (%.3lf items/sec) %.0f secs left ...",
+            items, percent, secs, item_rate, secs_remaining);
     } else {
-        MFU_LOG(MFU_LOG_INFO, "Created %llu items in %.3lf secs (%.3lf items/sec) done",
-            vals[0], secs, rate);
+        MFU_LOG(MFU_LOG_INFO, "Created %llu items (%.0f%%) in %.3lf secs (%.3lf items/sec) done",
+            items, percent, secs, item_rate);
     }
 }
 
@@ -1359,31 +1383,51 @@ static int mfu_create_files(
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    /* indicate to user what phase we're in */
-    if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Creating files.");
+    /* first, count number of items to create in the list of the current process */
+    int level;
+    uint64_t count = 0;
+    for (level = 0; level < levels; level++) {
+        /* get list of items for this level */
+        mfu_flist list = lists[level];
+
+        uint64_t idx;
+        uint64_t size = mfu_flist_size(list);
+        for (idx = 0; idx < size; idx++) {
+            /* count regular files and symlinks */
+            mfu_filetype type = mfu_flist_file_get_type(list, idx);
+            if (type == MFU_TYPE_FILE ||
+                type == MFU_TYPE_LINK)
+            {
+                count++;
+            }
+        }
     }
 
-    /* start timer for entie operation */
-    MPI_Barrier(MPI_COMM_WORLD);
-    double total_start = MPI_Wtime();
-    uint64_t total_count = 0;
+    /* get total for print percent progress while creating */
+    mknod_total_count = 0;
+    MPI_Allreduce(&count, &mknod_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* bail early if there is no work to do */
+    if (mknod_total_count == 0) {
+        return rc;
+    }
+
+    /* indicate to user what phase we're in */
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Creating %llu files.", mknod_total_count);
+    }
 
     /* start progress messages for creating files */
     mfu_progress* create_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, create_progress_fn);
 
-    int level;
+    uint64_t total_count = 0;
     for (level = 0; level < levels; level++) {
-        /* time how long this takes */
-        double start = MPI_Wtime();
-
         /* get list of items for this level */
         mfu_flist list = lists[level];
 
         /* iterate over items and set write bit on directories if needed */
         uint64_t idx;
         uint64_t size = mfu_flist_size(list);
-        uint64_t count = 0;
         for (idx = 0; idx < size; idx++) {
             /* get type of item */
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
@@ -1396,7 +1440,6 @@ static int mfu_create_files(
                 if (tmp_rc < 0) {
                     rc = -1;
                 }
-                count++;
                 total_count++;
             } else if (type == MFU_TYPE_LINK) {
                 /* create symlink */
@@ -1405,7 +1448,6 @@ static int mfu_create_files(
                 if (tmp_rc < 0) {
                     rc = -1;
                 }
-                count++;
                 total_count++;
             }
 
@@ -1416,51 +1458,10 @@ static int mfu_create_files(
         /* wait for all procs to finish before we start
          * with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
-
-        /* stop our timer */
-        double end = MPI_Wtime();
-
-        /* print timing statistics */
-        if (verbose) {
-            uint64_t min, max, sum;
-            MPI_Allreduce(&count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-            double rate = 0.0;
-            double secs = end - start;
-            if (secs > 0.0) {
-              rate = (double)sum / secs;
-            }
-            if (rank == 0) {
-                MFU_LOG(MFU_LOG_INFO, "  level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f",
-                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
-                );
-            }
-        }
     }
 
     /* finalize progress messages */
     mfu_progress_complete(&total_count, &create_prog); 
-
-    /* stop timer and report total count */
-    MPI_Barrier(MPI_COMM_WORLD);
-    double total_end = MPI_Wtime();
-
-    /* print timing statistics */
-    if (verbose) {
-        uint64_t sum;
-        MPI_Allreduce(&total_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-        double rate = 0.0;
-        double secs = total_end - total_start;
-        if (secs > 0.0) {
-          rate = (double)sum / secs;
-        }
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_INFO, "Created %lu items in %.3lf seconds (%.3lf items/sec)",
-              (unsigned long)sum, secs, rate
-            );
-        }
-    }
 
     return rc;
 }
@@ -1486,21 +1487,43 @@ static int mfu_create_hardlinks(
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    /* indicate to user what phase we're in */
-    if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Linking files.");
+    /* first, count number of items to create in the list of the current process */
+    int level;
+    uint64_t count = 0;
+    for (level = 0; level < levels; level++) {
+        /* get list of items for this level */
+        mfu_flist list = lists[level];
+
+        uint64_t idx;
+        uint64_t size = mfu_flist_size(list);
+        for (idx = 0; idx < size; idx++) {
+            /* count regular files */
+            mfu_filetype type = mfu_flist_file_get_type(list, idx);
+            if (type == MFU_TYPE_FILE) {
+                count++;
+            }
+        }
     }
 
-    /* start timer for entie operation */
-    MPI_Barrier(MPI_COMM_WORLD);
-    double total_start = MPI_Wtime();
+    /* get total for print percent progress while creating */
+    mknod_total_count = 0;
+    MPI_Allreduce(&count, &mknod_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* bail early if there is no work to do */
+    if (mknod_total_count == 0) {
+        return rc;
+    }
+
+    /* indicate to user what phase we're in */
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Linking %llu files.", mknod_total_count);
+    }
+
+    /* start progress messages for creating files */
+    mfu_progress* create_prog = mfu_progress_start(mfu_progress_timeout, 1, MPI_COMM_WORLD, create_progress_fn);
+
     uint64_t total_count = 0;
-
-    int level;
     for (level = 0; level < levels; level++) {
-        /* time how long this takes */
-        double start = MPI_Wtime();
-
         /* get list of items for this level */
         mfu_flist list = lists[level];
 
@@ -1514,7 +1537,7 @@ static int mfu_create_hardlinks(
             if (type != MFU_TYPE_FILE) {
                 MFU_LOG(MFU_LOG_ERR, "Can't create link for unregular files.");
                 rc = -1;
-                count++;
+                total_count++;
                 continue;
             }
 
@@ -1524,57 +1547,19 @@ static int mfu_create_hardlinks(
             if (tmp_rc != 0) {
                 rc = -1;
             }
-            count++;
-        }
 
-        /* add items to our running total */
-        total_count += count;
+            /* update number of files we have created for progress messages */
+            total_count++;
+            mfu_progress_update(&total_count, create_prog);
+        }
 
         /* wait for all procs to finish before we start
          * with files at next level */
         MPI_Barrier(MPI_COMM_WORLD);
-
-        /* stop our timer */
-        double end = MPI_Wtime();
-
-        /* print timing statistics */
-        if (verbose) {
-            uint64_t min, max, sum;
-            MPI_Allreduce(&count, &min, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &max, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
-            MPI_Allreduce(&count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-            double rate = 0.0;
-            double secs = end - start;
-            if (secs > 0.0) {
-              rate = (double)sum / secs;
-            }
-            if (rank == 0) {
-                MFU_LOG(MFU_LOG_INFO, "  level=%d min=%lu max=%lu sum=%lu rate=%f secs=%f",
-                  (minlevel + level), (unsigned long)min, (unsigned long)max, (unsigned long)sum, rate, secs
-                );
-            }
-        }
     }
 
-    /* stop timer and report total count */
-    MPI_Barrier(MPI_COMM_WORLD);
-    double total_end = MPI_Wtime();
-
-    /* print timing statistics */
-    if (verbose) {
-        uint64_t sum;
-        MPI_Allreduce(&total_count, &sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-        double rate = 0.0;
-        double secs = total_end - total_start;
-        if (secs > 0.0) {
-          rate = (double)sum / secs;
-        }
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_INFO, "Linked %lu items in %.3lf seconds (%.3lf items/sec)",
-              (unsigned long)sum, secs, rate
-            );
-        }
-    }
+    /* finalize progress messages */
+    mfu_progress_complete(&total_count, &create_prog); 
 
     return rc;
 }
@@ -1583,49 +1568,48 @@ static int mfu_create_hardlinks(
 static mfu_progress* copy_prog;
 
 /* tracks number of bytes copied by this process */
+static uint64_t copy_total_count;
 static uint64_t copy_count;
 
 /* progress message to print while copying data */
 static void copy_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
 {
-#if 0
-    /* compute percentage of items removed */
-    double percent = 0.0;
-    if (remove_count_total > 0) {
-        percent = 100.0 * (double)vals[0] / (double)remove_count_total;
-    }
-#endif
+    uint64_t bytes = vals[0];
 
     /* compute average delete rate */
-    double rate = 0.0;
+    double byte_rate = 0.0;
     if (secs > 0) {
-        rate = (double)vals[0] / secs;
+        byte_rate = (double)bytes / secs;
     }
 
-#if 0
-    /* compute estimated time remaining */
-    double secs_remaining = -1.0;
-    if (rate > 0.0) {
-        secs_remaining = (double)(remove_count_total - vals[0]) / rate;
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (copy_total_count > 0) {
+        percent = 100.0 * (double)bytes / (double)copy_total_count;
     }
-#endif
+
+    /* estimate seconds remaining */
+    double secs_remaining = -1.0;
+    if (byte_rate > 0.0) {
+        secs_remaining = (double)(copy_total_count - bytes) / byte_rate;
+    }
 
     /* convert bytes to units */
     double agg_size_tmp;
     const char* agg_size_units;
-    mfu_format_bytes(vals[0], &agg_size_tmp, &agg_size_units);
+    mfu_format_bytes(bytes, &agg_size_tmp, &agg_size_units);
 
     /* convert bandwidth to units */
     double agg_rate_tmp;
     const char* agg_rate_units;
-    mfu_format_bw(rate, &agg_rate_tmp, &agg_rate_units);
+    mfu_format_bw(byte_rate, &agg_rate_tmp, &agg_rate_units);
 
     if (complete < ranks) {
-        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s in %.3lf secs (%.3lf %s) ...",
-            agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
+        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s (%.0f%%) in %.3lf secs (%.3lf %s) %0.f secs left ...",
+            agg_size_tmp, agg_size_units, percent, secs, agg_rate_tmp, agg_rate_units, secs_remaining);
     } else {
-        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s in %.3lf secs (%.3lf %s) done",
-            agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
+        MFU_LOG(MFU_LOG_INFO, "Copied %.3lf %s (%.0f%%) in %.3lf secs (%.3lf %s) done",
+            agg_size_tmp, agg_size_units, percent, secs, agg_rate_tmp, agg_rate_units);
     }
 }
 
@@ -2059,6 +2043,22 @@ static int mfu_copy_files(
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+    /* first, count number of items to create in the list of the current process */
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(list);
+    uint64_t bytes = 0;
+    for (idx = 0; idx < size; idx++) {
+        /* count regular files and symlinks */
+        mfu_filetype type = mfu_flist_file_get_type(list, idx);
+        if (type == MFU_TYPE_FILE) {
+            bytes += mfu_flist_file_get_size(list, idx);
+        }
+    }
+
+    /* get total for print percent progress while creating */
+    copy_total_count = 0;
+    MPI_Allreduce(&bytes, &copy_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
     /* barrier to ensure all procs are ready to start copy */
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -2133,7 +2133,6 @@ static int mfu_copy_files(
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* allocate a flag for each item in our file list */
-    uint64_t size = mfu_flist_size(list);
     int* results = (int*) MFU_MALLOC(size * sizeof(int));
 
     /* intialize values, since not every item is represented

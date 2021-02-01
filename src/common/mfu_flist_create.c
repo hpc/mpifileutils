@@ -33,12 +33,12 @@ static void mkdir_progress_fn(const uint64_t* vals, int count, int complete, int
 
     if (complete < ranks) {
         MFU_LOG(MFU_LOG_INFO,
-            "Created %llu directories (%.0f\%) in %.3lf secs (%.3lf dirs/sec) %.0f secs left ...",
+            "Created %llu directories (%.0f%%) in %.3lf secs (%.3lf dirs/sec) %.0f secs left ...",
             items, percent, secs, item_rate, secs_remaining
         );
     } else {
         MFU_LOG(MFU_LOG_INFO,
-            "Created %llu directories (%.0f\%) in %.3lf secs (%.3lf dirs/sec) done",
+            "Created %llu directories (%.0f%%) in %.3lf secs (%.3lf dirs/sec) done",
             items, percent, secs, item_rate
         );
     }
@@ -194,12 +194,12 @@ static void mknod_progress_fn(const uint64_t* vals, int count, int complete, int
 
     if (complete < ranks) {
         MFU_LOG(MFU_LOG_INFO,
-            "Created %llu items (%.0f\%) in %.3lf secs (%.3lf items/sec) %.0f secs left ...",
+            "Created %llu items (%.0f%%) in %.3lf secs (%.3lf items/sec) %.0f secs left ...",
             items, percent, secs, item_rate, secs_remaining
         );
     } else {
         MFU_LOG(MFU_LOG_INFO,
-            "Created %llu items (%.0f\%) in %.3lf secs (%.3lf items/sec) done",
+            "Created %llu items (%.0f%%) in %.3lf secs (%.3lf items/sec) done",
             items, percent, secs, item_rate
         );
     }
