@@ -783,8 +783,8 @@ static int dcmp_strmap_compare_data(
          MFU_LOG(MFU_LOG_INFO, "Comparing file contents");
     }
 
-    /* get chunk size for copying files (just hard-coded for now) */
-    uint64_t chunk_size = 1024 * 1024;
+    /* get chunk size for copying files */
+    uint64_t chunk_size = copy_opts->chunk_size;
 
     /* get the linked list of file chunks for the src and dest */
     mfu_file_chunk* src_head = mfu_file_chunk_list_alloc(src_compare_list, chunk_size);
