@@ -719,46 +719,47 @@ static uint64_t get_total_bytes_read(mfu_flist src_compare_list) {
     return total_bytes_read;
 }
 
+/* variable to hold total bytes to be compared for computing progress and estimated time remaining */
+static uint64_t compare_total_count;
+
 static void compare_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
 {
-#if 0
-    /* compute percentage of items removed */
-    double percent = 0.0;
-    if (remove_count_total > 0) {
-        percent = 100.0 * (double)vals[0] / (double)remove_count_total;
-    }
-#endif
+    uint64_t bytes = vals[0];
 
     /* compute average delete rate */
-    double rate  = 0.0;
+    double byte_rate  = 0.0;
     if (secs > 0) {
-        rate  = (double)vals[0] / secs;
+        byte_rate  = (double)bytes / secs;
     }
 
-#if 0
-    /* compute estimated time remaining */
-    double secs_remaining = -1.0;
-    if (rate > 0.0) {
-        secs_remaining = (double)(remove_count_total - vals[0]) / rate;
+    /* compute percentage of items removed */
+    double percent = 0.0;
+    if (compare_total_count > 0) {
+        percent = 100.0 * (double)bytes / (double)compare_total_count;
     }
-#endif
+
+    /* estimate seconds remaining */
+    double secs_remaining = -1.0;
+    if (byte_rate > 0.0) {
+        secs_remaining = (double)(compare_total_count - bytes) / byte_rate;
+    }
 
     /* convert bytes to units */
     double agg_size_tmp;
     const char* agg_size_units;
-    mfu_format_bytes(vals[0], &agg_size_tmp, &agg_size_units);
+    mfu_format_bytes(bytes, &agg_size_tmp, &agg_size_units);
 
     /* convert bandwidth to units */
     double agg_rate_tmp;
     const char* agg_rate_units;
-    mfu_format_bw(rate, &agg_rate_tmp, &agg_rate_units);
+    mfu_format_bw(byte_rate, &agg_rate_tmp, &agg_rate_units);
 
     if (complete < ranks) {
-        MFU_LOG(MFU_LOG_INFO, "Compared %.3lf %s in %.3lf secs (%.3lf %s) ...",
-            agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
+        MFU_LOG(MFU_LOG_INFO, "Compared %.3lf %s (%.0f%%) in %.3lf secs (%.3lf %s) %.0f secs left ...",
+            agg_size_tmp, agg_size_units, percent, secs, agg_rate_tmp, agg_rate_units, secs_remaining);
     } else {
-        MFU_LOG(MFU_LOG_INFO, "Compared %.3lf %s in %.3lf secs (%.3lf %s) done",
-            agg_size_tmp, agg_size_units, secs, agg_rate_tmp, agg_rate_units);
+        MFU_LOG(MFU_LOG_INFO, "Compared %.3lf %s (%.0f%%) in %.3lf secs (%.3lf %s) done",
+            agg_size_tmp, agg_size_units, percent, secs, agg_rate_tmp, agg_rate_units);
     }
 }
 
@@ -782,6 +783,24 @@ static int dcmp_strmap_compare_data(
     if (mfu_debug_level >= MFU_LOG_VERBOSE && mfu_rank == 0) {
          MFU_LOG(MFU_LOG_INFO, "Comparing file contents");
     }
+
+    /* first, count number of bytes in our part of the source list,
+     * and double it to count for bytes to read in destination */
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(src_compare_list);
+    uint64_t bytes = 0;
+    for (idx = 0; idx < size; idx++) {
+        /* count regular files and symlinks */
+        mfu_filetype type = mfu_flist_file_get_type(src_compare_list, idx);
+        if (type == MFU_TYPE_FILE) {
+            bytes += mfu_flist_file_get_size(src_compare_list, idx);
+        }
+    }
+    bytes *= 2;
+
+    /* get total for print percent progress while creating */
+    compare_total_count = 0;
+    MPI_Allreduce(&bytes, &compare_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* get chunk size for copying files */
     uint64_t chunk_size = copy_opts->chunk_size;
@@ -848,7 +867,6 @@ static int dcmp_strmap_compare_data(
     mfu_progress_complete(count_bytes, &prg);
 
     /* allocate a flag for each item in our file list */
-    uint64_t size = mfu_flist_size(src_compare_list);
     int* results = (int*) MFU_MALLOC(size * sizeof(int));
 
     /* execute logical OR over chunks for each file */
