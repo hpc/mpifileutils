@@ -101,6 +101,115 @@ static mfu_copy_stats_t mfu_copy_stats;
 /* stores total number of directories to be created to print percent progress in reductions */
 static uint64_t mkdir_total_count;
 
+/* Collectively print aggregated mfu_copy_stats.
+ * print_version can be:
+ *   0 - print stats as in progress.
+ *   1 - print stats as a final total.
+ *   2 - print stats for hardlinks. */
+static void mfu_copy_stats_print_sums(
+    mfu_copy_stats_t* stats,
+    int rank,
+    uint64_t batch_offset,
+    uint64_t src_size,
+    int print_version)
+{
+    /* compute time */
+    double rel_time = stats->wtime_ended - stats->wtime_started;
+
+    /* prep our values into buffer */
+    int64_t values[5];
+    values[0] = stats->total_dirs;
+    values[1] = stats->total_files;
+    values[2] = stats->total_links;
+    values[3] = stats->total_size;
+    values[4] = stats->total_bytes_copied;
+
+    /* sum values across processes */
+    MPI_Allreduce(MPI_IN_PLACE, values, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* extract results from allreduce */
+    int64_t agg_dirs   = values[0];
+    int64_t agg_files  = values[1];
+    int64_t agg_links  = values[2];
+    int64_t agg_size   = values[3];
+    int64_t agg_copied = values[4];
+
+    /* compute rate of copy */
+    double agg_rate = (double)agg_copied / rel_time;
+    if (rel_time > 0.0) {
+        agg_rate = (double)agg_copied / rel_time;
+    }
+
+    if(rank == 0) {
+        /* format start time */
+        char starttime_str[256];
+        struct tm* localstart = localtime(&(stats->time_started));
+        strftime(starttime_str, 256, "%b-%d-%Y,%H:%M:%S", localstart);
+
+        /* format end time */
+        char endtime_str[256];
+        struct tm* localend = localtime(&(stats->time_ended));
+        strftime(endtime_str, 256, "%b-%d-%Y,%H:%M:%S", localend);
+
+        /* total number of items */
+        int64_t agg_items = agg_dirs + agg_files + agg_links;
+
+        double agg_size_tmp;
+        const char* agg_size_units;
+        double agg_rate_tmp;
+        const char* agg_rate_units;
+        if (print_version == 0 || print_version == 1) {
+            /* convert size to units */
+            mfu_format_bytes((uint64_t)agg_size, &agg_size_tmp, &agg_size_units);
+
+            /* convert bandwidth to units */
+            mfu_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
+        }
+
+        if (print_version == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
+            MFU_LOG(MFU_LOG_INFO, "Current: %s", endtime_str);
+            MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
+            MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
+            MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
+                    agg_size_tmp, agg_size_units, agg_size);
+            MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
+                    "(%.3" PRId64 " bytes in %.3lf seconds)", \
+                    agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
+            double total_items = 0;
+            if (src_size > 0) {
+                total_items = (double)batch_offset/(double)src_size*100.0;
+            }
+            MFU_LOG(MFU_LOG_INFO, "Copied %" PRId64 " of %" PRId64 " items (%.3lf%%)",
+                    batch_offset, src_size, total_items);
+        } else if (print_version == 1) {
+            MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
+            MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
+            MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
+            MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
+            MFU_LOG(MFU_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
+            MFU_LOG(MFU_LOG_INFO, "  Files: %" PRId64, agg_files);
+            MFU_LOG(MFU_LOG_INFO, "  Links: %" PRId64, agg_links);
+            MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
+                    agg_size_tmp, agg_size_units, agg_size);
+
+            MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
+                "(%.3" PRId64 " bytes in %.3lf seconds)", \
+                agg_rate_tmp, agg_rate_units, agg_copied, rel_time); 
+        } else if (print_version == 2) {
+            MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
+            MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
+            MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
+            MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
+            MFU_LOG(MFU_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
+            MFU_LOG(MFU_LOG_INFO, "  Files(hardlinks): %" PRId64, agg_files);
+        } else {
+            /* Sanity check */
+            MFU_LOG(MFU_LOG_ERROR, "Incorrect version to mfu_copy_stats_print_sums.");
+        }
+    }
+}
+
 /* progress message to print sum of directories while creating */
 static void mkdir_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
 {
@@ -2510,70 +2619,8 @@ int mfu_flist_copy(
             mfu_copy_stats.wtime_ended = MPI_Wtime();
             time(&(mfu_copy_stats.time_ended));
 
-            /* compute time */
-            double rel_time = mfu_copy_stats.wtime_ended - mfu_copy_stats.wtime_started;
-
-            /* prep our values into buffer */
-            int64_t values[5];
-            values[0] = mfu_copy_stats.total_dirs;
-            values[1] = mfu_copy_stats.total_files;
-            values[2] = mfu_copy_stats.total_links;
-            values[3] = mfu_copy_stats.total_size;
-            values[4] = mfu_copy_stats.total_bytes_copied;
-
-            /* sum values across processes */
-            int64_t sums[5];
-            MPI_Allreduce(values, sums, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-            /* extract results from allreduce */
-            int64_t agg_dirs   = sums[0];
-            int64_t agg_files  = sums[1];
-            int64_t agg_links  = sums[2];
-            int64_t agg_size   = sums[3];
-            int64_t agg_copied = sums[4];
-
-            /* compute rate of copy */
-            double agg_rate = (double)agg_copied / rel_time;
-            if (rel_time > 0.0) {
-                agg_rate = (double)agg_copied / rel_time;
-            }
-
-            if(rank == 0) {
-                /* format start time */
-                char starttime_str[256];
-                struct tm* localstart = localtime(&(mfu_copy_stats.time_started));
-                strftime(starttime_str, 256, "%b-%d-%Y,%H:%M:%S", localstart);
-
-                /* format end time */
-                char endtime_str[256];
-                struct tm* localend = localtime(&(mfu_copy_stats.time_ended));
-                strftime(endtime_str, 256, "%b-%d-%Y,%H:%M:%S", localend);
-
-                /* total number of items */
-                int64_t agg_items = agg_dirs + agg_files + agg_links;
-
-                /* convert size to units */
-                double agg_size_tmp;
-                const char* agg_size_units;
-                mfu_format_bytes((uint64_t)agg_size, &agg_size_tmp, &agg_size_units);
-
-                /* convert bandwidth to units */
-                double agg_rate_tmp;
-                const char* agg_rate_units;
-                mfu_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
-
-                MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
-                MFU_LOG(MFU_LOG_INFO, "Current: %s", endtime_str);
-                MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
-                MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
-                MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
-                    agg_size_tmp, agg_size_units, agg_size);
-
-                MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
-                    "(%.3" PRId64 " bytes in %.3lf seconds)", \
-                    agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
-                MFU_LOG(MFU_LOG_INFO, "Copied %" PRId64 " of %" PRId64 " items (%.3lf%%)", batch_offset, src_size, (double)batch_offset/(double)src_size*100.0);
-            }
+            /* Sum and print the in progress copy stats */
+            mfu_copy_stats_print_sums(&mfu_copy_stats, rank, batch_offset, src_size, 0);
         }
 
         /* set permissions, ownership, and timestamps if needed */
@@ -2622,73 +2669,8 @@ int mfu_flist_copy(
     mfu_copy_stats.wtime_ended = MPI_Wtime();
     time(&(mfu_copy_stats.time_ended));
 
-    /* compute time */
-    double rel_time = mfu_copy_stats.wtime_ended - \
-                      mfu_copy_stats.wtime_started;
-
-    /* prep our values into buffer */
-    int64_t values[5];
-    values[0] = mfu_copy_stats.total_dirs;
-    values[1] = mfu_copy_stats.total_files;
-    values[2] = mfu_copy_stats.total_links;
-    values[3] = mfu_copy_stats.total_size;
-    values[4] = mfu_copy_stats.total_bytes_copied;
-
-    /* sum values across processes */
-    int64_t sums[5];
-    MPI_Allreduce(values, sums, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-    /* extract results from allreduce */
-    int64_t agg_dirs   = sums[0];
-    int64_t agg_files  = sums[1];
-    int64_t agg_links  = sums[2];
-    int64_t agg_size   = sums[3];
-    int64_t agg_copied = sums[4];
-
-    /* compute rate of copy */
-    double agg_rate = (double)agg_copied / rel_time;
-    if (rel_time > 0.0) {
-        agg_rate = (double)agg_copied / rel_time;
-    }
-
-    if(rank == 0) {
-        /* format start time */
-        char starttime_str[256];
-        struct tm* localstart = localtime(&(mfu_copy_stats.time_started));
-        strftime(starttime_str, 256, "%b-%d-%Y,%H:%M:%S", localstart);
-
-        /* format end time */
-        char endtime_str[256];
-        struct tm* localend = localtime(&(mfu_copy_stats.time_ended));
-        strftime(endtime_str, 256, "%b-%d-%Y,%H:%M:%S", localend);
-
-        /* total number of items */
-        int64_t agg_items = agg_dirs + agg_files + agg_links;
-
-        /* convert size to units */
-        double agg_size_tmp;
-        const char* agg_size_units;
-        mfu_format_bytes((uint64_t)agg_size, &agg_size_tmp, &agg_size_units);
-
-        /* convert bandwidth to units */
-        double agg_rate_tmp;
-        const char* agg_rate_units;
-        mfu_format_bw(agg_rate, &agg_rate_tmp, &agg_rate_units);
-
-        MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
-        MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
-        MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
-        MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
-        MFU_LOG(MFU_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
-        MFU_LOG(MFU_LOG_INFO, "  Files: %" PRId64, agg_files);
-        MFU_LOG(MFU_LOG_INFO, "  Links: %" PRId64, agg_links);
-        MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
-            agg_size_tmp, agg_size_units, agg_size);
-
-        MFU_LOG(MFU_LOG_INFO, "Rate: %.3lf %s " \
-            "(%.3" PRId64 " bytes in %.3lf seconds)", \
-            agg_rate_tmp, agg_rate_units, agg_copied, rel_time);
-    }
+    /* Sum and print the final copy stats */
+    mfu_copy_stats_print_sums(&mfu_copy_stats, rank, 0, 0, 1);
 
     /* determine whether any process reported an error,
      * inputs should are either 0 or -1, so min will be -1 on any -1 */
@@ -3095,50 +3077,8 @@ int mfu_flist_hardlink(
     mfu_copy_stats.wtime_ended = MPI_Wtime();
     time(&(mfu_copy_stats.time_ended));
 
-    /* compute time */
-    double rel_time = mfu_copy_stats.wtime_ended - \
-                      mfu_copy_stats.wtime_started;
-
-    /* prep our values into buffer */
-    int64_t values[5];
-    values[0] = mfu_copy_stats.total_dirs;
-    values[1] = mfu_copy_stats.total_files;
-    values[2] = mfu_copy_stats.total_links;
-    values[3] = mfu_copy_stats.total_size;
-    values[4] = mfu_copy_stats.total_bytes_copied;
-
-    /* sum values across processes */
-    int64_t sums[5];
-    MPI_Allreduce(values, sums, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-    /* extract results from allreduce */
-    int64_t agg_dirs   = sums[0];
-    int64_t agg_files  = sums[1];
-    int64_t agg_links  = sums[2];
-    int64_t agg_size   = sums[3];
-    int64_t agg_copied = sums[4];
-
-    if(rank == 0) {
-        /* format start time */
-        char starttime_str[256];
-        struct tm* localstart = localtime(&(mfu_copy_stats.time_started));
-        strftime(starttime_str, 256, "%b-%d-%Y,%H:%M:%S", localstart);
-
-        /* format end time */
-        char endtime_str[256];
-        struct tm* localend = localtime(&(mfu_copy_stats.time_ended));
-        strftime(endtime_str, 256, "%b-%d-%Y,%H:%M:%S", localend);
-
-        /* total number of items */
-        int64_t agg_items = agg_dirs + agg_files + agg_links;
-
-        MFU_LOG(MFU_LOG_INFO, "Started: %s", starttime_str);
-        MFU_LOG(MFU_LOG_INFO, "Completed: %s", endtime_str);
-        MFU_LOG(MFU_LOG_INFO, "Seconds: %.3lf", rel_time);
-        MFU_LOG(MFU_LOG_INFO, "Items: %" PRId64, agg_items);
-        MFU_LOG(MFU_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
-        MFU_LOG(MFU_LOG_INFO, "  Files(hardlinks): %" PRId64, agg_files);
-    }
+    /* Sum and print the hardlink copy stats */
+    mfu_copy_stats_print_sums(&mfu_copy_stats, rank, 0, 0, 2);
 
     /* determine whether any process reported an error,
      * inputs should are either 0 or -1, so min will be -1 on any -1 */
