@@ -41,6 +41,8 @@
 #include "strmap.h"
 #include "list.h"
 
+#include "mfu_errors.h"
+
 /* for daos */
 #ifdef DAOS_SUPPORT
 #include "mfu_daos.h"
@@ -101,7 +103,7 @@ typedef enum _dsync_state {
       * This file only exist in dest directory.
       * Only valid for DCMPF_EXIST.
       * Not used yet,
-      * becuase we don't want to waste a loop in dsync_strmap_compare()
+      * because we don't want to waste a loop in dsync_strmap_compare()
       */
     DCMPS_ONLY_DEST,
 
@@ -2869,6 +2871,91 @@ static int dsync_validate_link_dest(const char *link_dest, const char *dest, mfu
     }
 }
 
+#ifdef DAOS_SUPPORT
+/* Setup DAOS for dsync */
+static int dsync_daos_setup(
+    int rank,
+    daos_args_t* daos_args,
+    char** argpaths,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
+{
+    /* For error handling */
+    bool daos_do_cleanup = false;
+    bool daos_do_exit = false;
+
+    /* Set up DAOS arguments, containers, dfs, etc. */
+    int daos_rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
+    if (daos_rc != 0) {
+        return 1;
+    }
+
+    /* DAOS does not support hard links */
+    if (options.link_dest != NULL &&
+            (mfu_src_file->type == DAOS || mfu_src_file->type == DFS ||
+             mfu_dst_file->type == DAOS || mfu_dst_file->type == DFS)) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS does not support --link-dest.");
+        return 1;
+    }
+
+    /* Not yet supported */
+    if (options.delete && (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS)) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS API does not support --delete.");
+        return 1;
+    }
+
+    return 0;
+}
+
+/* Perform a DAOS object sync */
+static int dsync_daos(
+    int rank,
+    daos_args_t* daos_args,
+    mfu_copy_opts_t* copy_opts,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
+{
+    /* always compare contents */
+    /* TODO DAOS figure out a reliable "lite" comparison */
+    options.contents = 1;
+
+    mfu_flist flist = mfu_flist_new();
+
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Gathering source objects");
+    }
+    int rc = mfu_daos_flist_walk(daos_args, daos_args->src_coh,
+                                 &daos_args->src_epc, flist);
+    if (rc != 0) {
+        rc = 1;
+        goto dsync_daos_out;
+    }
+
+    if (mfu_flist_global_size(flist) == 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "ERROR: No objects found in source container.");
+        }
+        rc = 1;
+        goto dsync_daos_out;
+    }
+
+    /* Collectively copy all objects */
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Copying source objects");
+    }
+    bool compare_dst = options.contents;
+    bool write_dst = !options.dry_run;
+    int tmp_rc = mfu_daos_flist_sync(daos_args, flist, compare_dst, write_dst);
+    if (tmp_rc != 0) {
+        rc = 1;
+    }
+
+dsync_daos_out:
+    mfu_flist_free(&flist);
+    return rc;
+}
+#endif
+
 int main(int argc, char **argv)
 {
     int rc = 0;
@@ -3108,55 +3195,34 @@ int main(int argc, char **argv)
         if (rank == 0) {
             print_usage();
         }
-        dsync_option_fini();
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
+        rc = 1;
+        goto dsync_common_cleanup;
     }
-
-    /* allocate space for each path */
-    mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
 
     /* pointer to path arguments */
     char** argpaths = &argv[optind];
 
 #ifdef DAOS_SUPPORT
-    /* For error handling */
-    bool daos_do_cleanup = false;
-    bool daos_do_exit = false;
-
-    /* Set up DAOS arguments, containers, dfs, etc. */
-    int daos_rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
+    int daos_rc = dsync_daos_setup(rank, daos_args, argpaths, mfu_src_file, mfu_dst_file);
     if (daos_rc != 0) {
-        daos_do_exit = true;
+        MFU_LOG(MFU_LOG_ERR, "Detected one or more DAOS errors: "MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
+        rc = 1;
+        goto dsync_common_cleanup;
     }
 
-    /* DAOS does not support hard links */
-    if (options.link_dest != NULL &&
-            (mfu_src_file->type == DAOS || mfu_src_file->type == DFS) &&
-            (mfu_dst_file->type == DAOS || mfu_dst_file->type == DFS)) {
-        MFU_LOG(MFU_LOG_ERR, "DAOS does not support hard links.");
-        daos_do_cleanup = true;
-        daos_do_exit = true;
-    }
-
-    /* Not yet supported */
+    /* Handle the DAOS API case */
     if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
-        MFU_LOG(MFU_LOG_ERR, "dysnc only supports DAOS POSIX containers with the DFS API.");
-        daos_do_cleanup = true;
-        daos_do_exit = true;
-    }
-
-    if (daos_do_cleanup) {
-        daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
-    }
-    if (daos_do_exit) {
-        dsync_option_fini();
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
+        daos_rc = dsync_daos(rank, daos_args, copy_opts, mfu_src_file, mfu_dst_file);
+        if (daos_rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Detected one or more DAOS errors: "MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
+            rc = 1;
+        }
+        goto dsync_common_cleanup;
     }
 #endif
+
+    /* allocate space for each path */
+    mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
 
     /* first item is source and second is dest */
     mfu_param_path* srcpath  = &paths[0];
@@ -3219,15 +3285,8 @@ int main(int argc, char **argv)
             mfu_param_path_free(linkpath);
             mfu_free(&linkpath);
         }
-        mfu_param_path_free_all(numargs, paths);
-        mfu_free(&paths);
-#ifdef DAOS_SUPPORT
-        daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
-#endif
-        dsync_option_fini();
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
+        rc = 1;
+        goto dsync_common_cleanup;
     }
 
     /* walk destinaton path.
@@ -3304,18 +3363,20 @@ int main(int argc, char **argv)
         mfu_flist_free(&flist_link);
     }
 
-    /* free all param paths */
-    mfu_param_path_free_all(numargs, paths);
-
-    /* free memory allocated to hold params */
-    mfu_free(&paths);
-
     /* free param path for link-dest if we have one */
     if (options.link_dest != NULL) {
         mfu_param_path_free(linkpath);
         mfu_free(&linkpath);
     }
 
+    /* free all param paths */
+    mfu_param_path_free_all(numargs, paths);
+
+    /* free memory allocated to hold params */
+    mfu_free(&paths);
+
+    /* Common cleanup for all APIs and early exit conditions */
+dsync_common_cleanup:
     dsync_option_fini();
 
     /* free the copy options structure */
