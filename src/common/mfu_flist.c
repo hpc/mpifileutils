@@ -345,6 +345,11 @@ static void list_insert_copy(flist_t* flist, elem_t* src)
     elem->ctime_nsec = src->ctime_nsec;
     elem->size       = src->size;
 
+#ifdef DAOS_SUPPORT
+    elem->obj_id_lo  = src->obj_id_lo;
+    elem->obj_id_hi  = src->obj_id_hi;
+#endif
+
     /* append element to tail of linked list */
     mfu_flist_insert_elem(flist, elem);
 
@@ -1010,6 +1015,28 @@ void mfu_flist_file_set_oid(mfu_flist bflist, uint64_t idx, daos_obj_id_t oid)
         elem->obj_id_hi = oid.hi;
     }
     return;
+}
+
+uint64_t mfu_flist_file_get_obj_id_hi(mfu_flist bflist, uint64_t idx)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    uint64_t oid_hi = 0;
+    if (elem != NULL) {
+        oid_hi = elem->obj_id_hi;
+    }
+    return oid_hi;
+}
+
+uint64_t mfu_flist_file_get_obj_id_lo(mfu_flist bflist, uint64_t idx)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    uint64_t oid_lo = 0;
+    if (elem != NULL) {
+        oid_lo = elem->obj_id_lo;
+    }
+    return oid_lo;
 }
 #endif 
 

@@ -403,6 +403,8 @@ const char* mfu_flist_file_get_groupname(mfu_flist flist, uint64_t index);
 /* set properties on specified item in local flist */
 #ifdef DAOS_SUPPORT
 void mfu_flist_file_set_oid(mfu_flist flist, uint64_t index, daos_obj_id_t oid);
+uint64_t mfu_flist_file_get_obj_id_hi(mfu_flist bflist, uint64_t idx);
+uint64_t mfu_flist_file_get_obj_id_lo(mfu_flist bflist, uint64_t idx);
 #endif
 void mfu_flist_file_set_name(mfu_flist flist, uint64_t index, const char* name);
 void mfu_flist_file_set_type(mfu_flist flist, uint64_t index, mfu_filetype type);
@@ -591,6 +593,11 @@ typedef struct mfu_file_chunk_struct {
   uint64_t file_size;      /* full size of target file */
   uint64_t rank_of_owner;  /* MPI rank acting as the owner of this file */
   uint64_t index_of_owner; /* index value of file in original flist on its owner rank */
+#ifdef DAOS_SUPPORT
+  /* TODO maybe just use daos_obj_id_t? Here and in flist? */
+  uint64_t obj_id_lo;      /* DAOS oid.lo */
+  uint64_t obj_id_hi;      /* DAOS oid.hi */
+#endif
   struct mfu_file_chunk_struct* next; /* pointer to next chunk element */
 } mfu_file_chunk;
 
