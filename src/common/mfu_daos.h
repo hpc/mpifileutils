@@ -34,7 +34,8 @@ typedef struct {
     char* src_path;        /* allocated src path */
     char* dst_path;        /* allocated dst path */
     daos_api_t api;        /* API to use */
-    daos_epoch_t epc;      /* src container epoch */
+    daos_epoch_t src_epc;  /* src container epoch */
+    daos_epoch_t dst_epc;  /* dst container epoch */
 } daos_args_t;
 
 /* Return a newly allocated daos_args_t structure.
@@ -77,15 +78,20 @@ int daos_cleanup(
   mfu_file_t* mfu_dst_file
 );
 
-/* walk objects in daos and insert to given flist */
-int mfu_flist_walk_daos(
+/* Walk objects in daos and insert to given flist.
+ * Returns -1 on failure, 0 on success. */
+int mfu_daos_flist_walk(
     daos_args_t* da,
+    daos_handle_t coh,
+    daos_epoch_t* epoch,
     mfu_flist flist
 );
 
-/* copy objects in flist to destination listed in daos args,
+/* copy/sync objects in flist to destination listed in daos args,
  * copies DAOS data at object level (non-posix) */
-int mfu_flist_copy_daos(
-    daos_args_t* da,
-    mfu_flist flist
+int mfu_daos_flist_sync(
+    daos_args_t* da,    /* DAOS args */
+    mfu_flist flist,    /* flist containing oids */
+    bool compare_dst,   /* whether to compare the dst before writing */
+    bool write_dst      /* whether to actually write to the dst */
 );
