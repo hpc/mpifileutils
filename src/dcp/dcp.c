@@ -456,22 +456,17 @@ int main(int argc, char** argv)
     } 
 #ifdef DAOS_SUPPORT
     /* Perform an object-level copy for DAOS types */
-    /* TODO consider moving most of this into mfu_daos as a single call.
-     * The benefit would be that we could reuse it for dsync. */
     else {
         /* take a snapshot and walk container to get list of objects,
          * returns epoch number of snapshot */
-        int tmp_rc = mfu_flist_walk_daos(daos_args, flist);
+        int tmp_rc = mfu_flist_walk_daos(daos_args, daos_args->src_coh,
+                                         &daos_args->src_epc, flist);
         if (tmp_rc != 0) {
             rc = 1;
         }
 
-        /* all objects are on rank 0 at this point,
-         * evenly spread them among the ranks */
-        mfu_flist newflist = mfu_flist_spread(flist);
-
-        /* perform copy after oids are spread evenly across all ranks */
-        tmp_rc = mfu_flist_copy_daos(daos_args, newflist);
+        /* Collectively copy all objects */
+        tmp_rc = mfu_flist_copy_daos(daos_args, flist);
         if (tmp_rc != 0) {
             rc = 1;
         }
@@ -480,24 +475,6 @@ int main(int argc, char** argv)
         if (rc == 0 && rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Successfully copied to DAOS Destination Container.");
         }
-
-        /* destroy snapshot after copy */
-        /* TODO consider moving this into mfu_flist_copy_daos */
-        if (rank == 0) {
-            daos_epoch_range_t epr;
-            epr.epr_lo = daos_args->epc;
-            epr.epr_hi = daos_args->epc;
-            rc = daos_cont_destroy_snap(daos_args->src_coh, epr, NULL);
-            if (rc != 0) {
-                MFU_LOG(MFU_LOG_ERR, "DAOS destroy snapshot failed: ", MFU_ERRF,
-                        MFU_ERRP(-MFU_ERR_DAOS));
-                rc = 1;
-            }
-        }
-        MPI_Bcast(&rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-	    /* free newflist that was created for non-posix copy */
-	    mfu_flist_free(&newflist);
     }
 
     /* Cleanup DAOS-related variables, etc. */

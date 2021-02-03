@@ -41,6 +41,8 @@
 #include "strmap.h"
 #include "list.h"
 
+#include "mfu_errors.h"
+
 /* for daos */
 #ifdef DAOS_SUPPORT
 #include "mfu_daos.h"
@@ -101,7 +103,7 @@ typedef enum _dsync_state {
       * This file only exist in dest directory.
       * Only valid for DCMPF_EXIST.
       * Not used yet,
-      * becuase we don't want to waste a loop in dsync_strmap_compare()
+      * because we don't want to waste a loop in dsync_strmap_compare()
       */
     DCMPS_ONLY_DEST,
 
@@ -197,6 +199,13 @@ struct dsync_options options = {
     .link_dest    = NULL,
     .need_compare = {0,}
 };
+
+#ifdef DAOS_SUPPORT
+/* Global DAOS args.
+ * TODO DAOS find a cleaner way to embed this in some existing structure
+ * to remove the need to make this global. */
+daos_args_t* daos_args;
+#endif
 
 /* From tail to head */
 const char *dsync_default_outputs[] = {
@@ -880,8 +889,18 @@ static int dsync_strmap_compare_data(
     uint64_t chunk_size = copy_opts->chunk_size;
 
     /* get the linked list of file chunks for the src and dest */
-    mfu_file_chunk* src_head = mfu_file_chunk_list_alloc(src_compare_list, chunk_size);
-    mfu_file_chunk* dst_head = mfu_file_chunk_list_alloc(dst_compare_list, chunk_size);
+    mfu_file_chunk* src_head;
+    mfu_file_chunk* dst_head;
+#ifdef DAOS_SUPPORT
+    if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
+        src_head = mfu_daos_file_chunk_list_create(src_compare_list);
+        dst_head = mfu_daos_file_chunk_list_create(dst_compare_list);
+    } else
+#endif
+    {
+        src_head = mfu_file_chunk_list_alloc(src_compare_list, chunk_size);
+        dst_head = mfu_file_chunk_list_alloc(dst_compare_list, chunk_size);
+    }
 
     /* get a count of how many items are the chunk list */
     uint64_t list_count = mfu_file_chunk_list_size(src_head);
@@ -917,20 +936,38 @@ static int dsync_strmap_compare_data(
         /* get length of file that we should compare (bytes) */
         off_t filesize = (off_t)src_p->file_size;
         
-        /* compare the contents of the files */
-        int compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length, filesize,
-                overwrite, copy_opts, count_bytes_read, count_bytes_written, compare_prog,
-                mfu_src_file, mfu_dst_file);
-        if (compare_rc == -1) {
-            /* we hit an error while reading */
-            rc = -1;
-            MFU_LOG(MFU_LOG_ERR,
-              "Failed to open, lseek, or read %s and/or %s. Assuming contents are different.",
-                 src_p->name, dst_p->name);
+        int compare_rc;
+#ifdef DAOS_SUPPORT
+        if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
+            compare_rc = mfu_daos_compare_contents(
+                    daos_args,
+                    src_p->obj_id_lo, src_p->obj_id_hi, dst_p->obj_id_lo, dst_p->obj_id_hi,
+                    overwrite, count_bytes_read, count_bytes_written, compare_prog,
+                    mfu_src_file, mfu_dst_file);
+            if (compare_rc == -1) {
+                rc = -1;
 
-            /* set flag to consider files to be different,
-             * could actually be the same, but we'll draw attention to them this way */
-            compare_rc = 1;
+                /* Assume the objects are different */
+                compare_rc = 1;
+            }
+        } else
+#endif
+        {
+            /* compare the contents of the files */
+            compare_rc = mfu_compare_contents(src_p->name, dst_p->name, offset, length, filesize,
+                    overwrite, copy_opts, count_bytes_read, count_bytes_written, compare_prog,
+                    mfu_src_file, mfu_dst_file);
+            if (compare_rc == -1) {
+                /* we hit an error while reading */
+                rc = -1;
+                MFU_LOG(MFU_LOG_ERR,
+                  "Failed to open, lseek, or read %s and/or %s. Assuming contents are different.",
+                     src_p->name, dst_p->name);
+
+                /* set flag to consider files to be different,
+                 * could actually be the same, but we'll draw attention to them this way */
+                compare_rc = 1;
+            }
         }
 
         /* record results of comparison */
@@ -1223,6 +1260,7 @@ static int dsync_strmap_compare_lite(
     return rc;
 }
 
+/* TODO DAOS need a clean way to pass the number of oids, dkeys, and akeys */
 static void print_comparison_stats(
     mfu_flist src_list,
     double start_compare,
@@ -1355,12 +1393,14 @@ static int dsync_sync_files(
 
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
-    mfu_param_path_check_copy(1, src_path, dest_path, mfu_src_file, mfu_dst_file,
-                              copy_opts->no_dereference, &valid, &copy_into_dir);
-    if (!valid) {
-        /* TODO we may want to pass a special error to the caller to
-         * "exit" instead of continuing. */
-        return -1;
+    if (mfu_src_file->type != DAOS && mfu_dst_file->type != DAOS) {
+        mfu_param_path_check_copy(1, src_path, dest_path, mfu_src_file, mfu_dst_file,
+                                  copy_opts->no_dereference, &valid, &copy_into_dir);
+        if (!valid) {
+            /* TODO we may want to pass a special error to the caller to
+             * "exit" instead of continuing. */
+            return -1;
+        }
     }
 
     /* record copy_into_dir flag result from check_copy into
@@ -1381,7 +1421,14 @@ static int dsync_sync_files(
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Deleting items from destination");
         }
-        mfu_flist_unlink(dst_remove_list, 0, mfu_dst_file);
+#ifdef DAOS_SUPPORT
+        if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
+            mfu_daos_flist_punch(daos_args->dst_coh, dst_remove_list);
+        } else
+#endif
+        {
+            mfu_flist_unlink(dst_remove_list, 0, mfu_dst_file);
+        }
     }
 
     /* summarize the src copy list for files
@@ -1394,8 +1441,15 @@ static int dsync_sync_files(
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Copying items to destination");
         }
-        tmp_rc = mfu_flist_copy(src_cp_list, 1, src_path, dest_path, copy_opts,
-                                mfu_src_file, mfu_dst_file);
+#ifdef DAOS_SUPPORT
+        if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
+            tmp_rc = mfu_flist_copy_daos(daos_args, src_cp_list);
+        } else
+#endif
+        {
+            tmp_rc = mfu_flist_copy(src_cp_list, 1, src_path, dest_path, copy_opts,
+                                    mfu_src_file, mfu_dst_file);
+        }
         if (tmp_rc < 0) {
             rc = -1;
         }
@@ -1747,7 +1801,7 @@ static int dsync_strmap_compare(
 
         /* for now, we can only compare content of regular files */
         /* TODO: add support for symlinks */
-        if (! S_ISREG(dst_mode)) {
+        if (! S_ISREG(dst_mode) && (mfu_src_file->type != DAOS || mfu_dst_file->type != DAOS)) {
             /* not regular file, take them as common content */
             dsync_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
             dsync_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
@@ -1804,7 +1858,11 @@ static int dsync_strmap_compare(
         if (options.contents) {
             /* comparing contents could take a while */
             if (rank == 0) {
-                MFU_LOG(MFU_LOG_INFO, "Comparing file contents of %llu items", total_files);
+                if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
+                    MFU_LOG(MFU_LOG_INFO, "Comparing contents of %llu objects", total_files);
+                } else {
+                    MFU_LOG(MFU_LOG_INFO, "Comparing file contents of %llu items", total_files);
+                }
             }
 
             /* compare file contents byte-by-byte, overwrites destination
@@ -1897,26 +1955,28 @@ static int dsync_strmap_compare(
          * the destination and copied fresh from the source a second time,
          * which is not efficient, but should still be correct */
 
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_INFO, "Updating timestamps on newly copied files");
-        }
+        if (mfu_src_file->type != DAOS && mfu_dst_file->type != DAOS) {
+            if (rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "Updating timestamps on newly copied files");
+            }
 
-        /* update metadata on files */
-        strmap_foreach(metadata_refresh, node) {
-            /* extract source and destination indices */
-            unsigned long long src_i, dst_i;
-            const char* key = strmap_node_key(node);
-            const char* val = strmap_node_value(node);
-            sscanf(key, "%llu", &src_i);
-            sscanf(val, "%llu", &dst_i);
-            uint64_t src_index = (uint64_t) src_i;
-            uint64_t dst_index = (uint64_t) dst_i;
+            /* update metadata on files */
+            strmap_foreach(metadata_refresh, node) {
+                /* extract source and destination indices */
+                unsigned long long src_i, dst_i;
+                const char* key = strmap_node_key(node);
+                const char* val = strmap_node_value(node);
+                sscanf(key, "%llu", &src_i);
+                sscanf(val, "%llu", &dst_i);
+                uint64_t src_index = (uint64_t) src_i;
+                uint64_t dst_index = (uint64_t) dst_i;
 
-            /* copy metadata values from source to destination, if needed */
-            tmp_rc = mfu_flist_file_sync_meta(src_list, src_index, dst_list,
-                                              dst_index, mfu_dst_file);
-            if (tmp_rc < 0) {
-                rc = -1;
+                /* copy metadata values from source to destination, if needed */
+                tmp_rc = mfu_flist_file_sync_meta(src_list, src_index, dst_list,
+                                                  dst_index, mfu_dst_file);
+                if (tmp_rc < 0) {
+                    rc = -1;
+                }
             }
         }
     }
@@ -2869,6 +2929,125 @@ static int dsync_validate_link_dest(const char *link_dest, const char *dest, mfu
     }
 }
 
+#ifdef DAOS_SUPPORT
+/* Setup DAOS for dsync */
+static int dsync_daos_setup(
+    int rank,
+    char** argpaths,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
+{
+    /* For error handling */
+    bool daos_do_cleanup = false;
+    bool daos_do_exit = false;
+
+    /* Set up DAOS arguments, containers, dfs, etc. */
+    int daos_rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
+    if (daos_rc != 0) {
+        return 1;
+    }
+
+    /* DAOS does not support hard links */
+    if (options.link_dest != NULL &&
+            (mfu_src_file->type == DAOS || mfu_src_file->type == DFS ||
+             mfu_dst_file->type == DAOS || mfu_dst_file->type == DFS)) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS does not support hard links.");
+        return 1;
+    }
+
+    return 0;
+}
+
+/* Performa a DAOS object sync */
+static int dsync_daos(
+    int rank,
+    mfu_copy_opts_t* copy_opts,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
+{
+    mfu_flist       flist_tmp_src = NULL;
+    mfu_flist       flist_tmp_dst = NULL;
+    mfu_flist       flist_src = NULL;
+    mfu_flist       flist_dst = NULL;
+    strmap*         map_src = NULL;
+    strmap*         map_dst = NULL;
+    mfu_param_path* srcpath = NULL;
+    mfu_param_path* destpath = NULL;
+    int rc;
+
+    /* always compare contents */
+    /* TODO DAOS figure out a reliable "lite" comparison */
+    options.contents = 1;
+
+    /* create empty file lists */
+    flist_tmp_src = mfu_flist_new();
+    flist_tmp_dst = mfu_flist_new();
+
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Gathering source objects");
+    }
+    rc = mfu_flist_walk_daos(daos_args, daos_args->src_coh,
+                             &daos_args->src_epc, flist_tmp_src);
+    if (rc != 0) {
+        rc = 1;
+        goto dsync_daos_out;
+    }
+
+    if (mfu_flist_global_size(flist_tmp_src) == 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "ERROR: No objects found in source container.");
+        }
+        rc = 1;
+        goto dsync_daos_out;
+    }
+
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Gathering destination objects");
+    }
+    rc = mfu_flist_walk_daos(daos_args, daos_args->dst_coh,
+                             &daos_args->dst_epc, flist_tmp_dst);
+    if (rc != 0) {
+        rc = 1;
+        goto dsync_daos_out;
+    }
+
+    /* map source and destination objects to the same rank */
+    flist_src = mfu_flist_remap(flist_tmp_src,
+                                (mfu_flist_map_fn)mfu_daos_map_oid_fn,
+                                (const void*)NULL);
+    flist_dst = mfu_flist_remap(flist_tmp_dst,
+                                (mfu_flist_map_fn)mfu_daos_map_oid_fn,
+                                (const void*)NULL);
+
+    /* map each file name to its index and its comparison state */
+    map_src = dsync_strmap_creat(flist_src, "");
+    map_dst = dsync_strmap_creat(flist_dst, "");
+
+    srcpath = NULL;
+    destpath = NULL;
+    rc = dsync_strmap_compare(flist_src, map_src, flist_dst, map_dst, MFU_FLIST_NULL, NULL,
+                              0, copy_opts, srcpath, destpath, NULL,
+                              mfu_src_file, mfu_dst_file);
+    if (rc < 0) {
+        rc = 1;
+        goto dsync_daos_out;
+    }
+
+    /* Ignore dsync_strmap_compare reported differences */
+    rc = 0;
+
+
+dsync_daos_out:
+    mfu_flist_free(&flist_tmp_src);
+    mfu_flist_free(&flist_tmp_dst);
+    mfu_flist_free(&flist_src);
+    mfu_flist_free(&flist_dst);
+    strmap_delete(&map_src);
+    strmap_delete(&map_dst);
+    return rc;
+}
+#endif
+
 int main(int argc, char **argv)
 {
     int rc = 0;
@@ -2917,7 +3096,7 @@ int main(int argc, char **argv)
 
 #ifdef DAOS_SUPPORT
     /* DAOS vars */ 
-    daos_args_t* daos_args = daos_args_new();    
+    daos_args = daos_args_new();    
 #endif
 
     int option_index = 0;
@@ -3095,6 +3274,7 @@ int main(int argc, char **argv)
 
     /* we should have two arguments left, source and dest paths */
     int numargs = argc - optind;
+    mfu_param_path* paths = NULL;
 
     /* if help flag was thrown, don't bother checking usage */
     if (numargs != 2 && !help) {
@@ -3108,213 +3288,187 @@ int main(int argc, char **argv)
         if (rank == 0) {
             print_usage();
         }
-        dsync_option_fini();
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
+        rc = 1;
+        goto dsync_common_cleanup;
     }
 
     /* allocate space for each path */
-    mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
+    paths = (mfu_param_path*) MFU_MALLOC((size_t)numargs * sizeof(mfu_param_path));
 
     /* pointer to path arguments */
     char** argpaths = &argv[optind];
 
 #ifdef DAOS_SUPPORT
-    /* For error handling */
-    bool daos_do_cleanup = false;
-    bool daos_do_exit = false;
-
-    /* Set up DAOS arguments, containers, dfs, etc. */
-    int daos_rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
+    int daos_rc = dsync_daos_setup(rank, argpaths, mfu_src_file, mfu_dst_file);
     if (daos_rc != 0) {
-        daos_do_exit = true;
+        MFU_LOG(MFU_LOG_ERR, "Detected one or more DAOS errors: "MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
+        goto dsync_common_cleanup;
     }
 
-    /* DAOS does not support hard links */
-    if (options.link_dest != NULL &&
-            (mfu_src_file->type == DAOS || mfu_src_file->type == DFS) &&
-            (mfu_dst_file->type == DAOS || mfu_dst_file->type == DFS)) {
-        MFU_LOG(MFU_LOG_ERR, "DAOS does not support hard links.");
-        daos_do_cleanup = true;
-        daos_do_exit = true;
-    }
-
-    /* Not yet supported */
+    /* Handle the DAOS API case */
     if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
-        MFU_LOG(MFU_LOG_ERR, "dysnc only supports DAOS POSIX containers with the DFS API.");
-        daos_do_cleanup = true;
-        daos_do_exit = true;
-    }
-
-    if (daos_do_cleanup) {
-        daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
-    }
-    if (daos_do_exit) {
-        dsync_option_fini();
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
+        daos_rc = dsync_daos(rank, copy_opts, mfu_src_file, mfu_dst_file);
+        if (daos_rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Detected one or more DAOS errors: "MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
+            goto dsync_common_cleanup;
+        }
+    } else
 #endif
+    /* Handle the non-DAOS API case */
+    {
+        /* first item is source and second is dest */
+        mfu_param_path* srcpath  = &paths[0];
+        mfu_param_path* destpath = &paths[1];
 
-    /* first item is source and second is dest */
-    mfu_param_path* srcpath  = &paths[0];
-    mfu_param_path* destpath = &paths[1];
+        /* process each path */
+        mfu_param_path_set((const char*)argpaths[0], srcpath,  mfu_src_file, true);
+        mfu_param_path_set((const char*)argpaths[1], destpath, mfu_dst_file, false);
 
-    /* process each path */
-    mfu_param_path_set((const char*)argpaths[0], srcpath,  mfu_src_file, true);
-    mfu_param_path_set((const char*)argpaths[1], destpath, mfu_dst_file, false);
+        /* advance to next set of options */
+        optind += numargs;
 
-    /* advance to next set of options */
-    optind += numargs;
+        /* create an empty file list */
+        mfu_flist flist_tmp_src = mfu_flist_new();
+        mfu_flist flist_tmp_dst = mfu_flist_new();
 
-    /* create an empty file list */
-    mfu_flist flist_tmp_src = mfu_flist_new();
-    mfu_flist flist_tmp_dst = mfu_flist_new();
-
-    mfu_param_path* linkpath = NULL;
-    mfu_flist flist_tmp_link = MFU_FLIST_NULL;     
-    if (options.link_dest != NULL) {
-        /* user wants to use hardlinks,
-         * check whether we can given destination and link-dest dirs */
-        int validate_rc;
-        if (rank == 0) {
-            validate_rc = dsync_validate_link_dest(options.link_dest, destpath->path, mfu_dst_file);
-        }
-        MPI_Bcast(&validate_rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-        if (validate_rc < 0) {
-            /* can't use hardlinks from dest to link-dest,
-             * so disable link_dest and fallback to full copies */
+        mfu_param_path* linkpath = NULL;
+        mfu_flist flist_tmp_link = MFU_FLIST_NULL;     
+        if (options.link_dest != NULL) {
+            /* user wants to use hardlinks,
+             * check whether we can given destination and link-dest dirs */
+            int validate_rc;
             if (rank == 0) {
-                MFU_LOG(MFU_LOG_ERR, "Invalid link_dest: [%s], ret:%d. Disabled link_dest",
-                        options.link_dest, rc);
+                validate_rc = dsync_validate_link_dest(options.link_dest, destpath->path, mfu_dst_file);
             }
-            mfu_free(&options.link_dest);
-        } else {
-            /* we can use hardlinks, so set up variables for it */
-            linkpath = (mfu_param_path*) MFU_MALLOC(sizeof(mfu_param_path));
-            mfu_param_path_set(options.link_dest, linkpath, mfu_dst_file, true);
-            flist_tmp_link = mfu_flist_new();
+            MPI_Bcast(&validate_rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+            if (validate_rc < 0) {
+                /* can't use hardlinks from dest to link-dest,
+                 * so disable link_dest and fallback to full copies */
+                if (rank == 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Invalid link_dest: [%s], ret:%d. Disabled link_dest",
+                            options.link_dest, rc);
+                }
+                mfu_free(&options.link_dest);
+            } else {
+                /* we can use hardlinks, so set up variables for it */
+                linkpath = (mfu_param_path*) MFU_MALLOC(sizeof(mfu_param_path));
+                mfu_param_path_set(options.link_dest, linkpath, mfu_dst_file, true);
+                flist_tmp_link = mfu_flist_new();
+            }
         }
-    }
 
-    /* walk source path */
-    if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Walking source path");
-    }
-    mfu_flist_walk_param_paths(1, srcpath, walk_opts, flist_tmp_src, mfu_src_file);
-
-    /* check that we actually got something so that we don't delete
-     * an entire target directory because of a typo on the source dir */
-    if (mfu_flist_global_size(flist_tmp_src) == 0) {
+        /* walk source path */
         if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "ERROR: No items found at source: `%s'", srcpath->orig);
+            MFU_LOG(MFU_LOG_INFO, "Walking source path");
         }
+        mfu_flist_walk_param_paths(1, srcpath, walk_opts, flist_tmp_src, mfu_src_file);
+
+        /* check that we actually got something so that we don't delete
+         * an entire target directory because of a typo on the source dir */
+        if (mfu_flist_global_size(flist_tmp_src) == 0) {
+            if (rank == 0) {
+                MFU_LOG(MFU_LOG_ERR, "ERROR: No items found at source: `%s'", srcpath->orig);
+            }
+            mfu_flist_free(&flist_tmp_src);
+            mfu_flist_free(&flist_tmp_dst);
+            if (options.link_dest != NULL) {
+                mfu_flist_free(&flist_tmp_link);
+                mfu_param_path_free(linkpath);
+                mfu_free(&linkpath);
+            }
+            rc = 1;
+            goto dsync_common_cleanup;
+        }
+
+        /* walk destinaton path.
+         * We never dereference the destination */
+        int tmp_dereference = walk_opts->dereference;
+        walk_opts->dereference = 0;
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_INFO, "Walking destination path");
+        }
+        mfu_flist_walk_param_paths(1, destpath, walk_opts, flist_tmp_dst, mfu_dst_file);
+
+        /* walk link-dest path if we have one */
+        if (options.link_dest != NULL) {
+            if (rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "Walking link-dest path");
+            }
+            mfu_flist_walk_param_paths(1, linkpath, walk_opts, flist_tmp_link, mfu_dst_file);
+        }
+
+        /* reset the dereference flag */
+        walk_opts->dereference = tmp_dereference;
+
+        /* store src and dest path strings */
+        const char* path_src = srcpath->path;
+        const char* path_dst = destpath->path;
+
+        char* path_link = NULL;
+        if (options.link_dest != NULL) {
+            path_link = linkpath->path;
+        }
+
+        /* map files to ranks based on portion following prefix directory */
+        mfu_flist flist_src = mfu_flist_remap(flist_tmp_src, (mfu_flist_map_fn)dsync_map_fn, (const void*)path_src);
+        mfu_flist flist_dst = mfu_flist_remap(flist_tmp_dst, (mfu_flist_map_fn)dsync_map_fn, (const void*)path_dst);
+
+        mfu_flist flist_link = MFU_FLIST_NULL;
+        if (options.link_dest != NULL) {
+            flist_link = mfu_flist_remap(flist_tmp_link, (mfu_flist_map_fn)dsync_map_fn, (const void*)path_link);
+        }
+
+        /* free original file lists */
         mfu_flist_free(&flist_tmp_src);
         mfu_flist_free(&flist_tmp_dst);
         if (options.link_dest != NULL) {
             mfu_flist_free(&flist_tmp_link);
+        }
+
+        /* map each file name to its index and its comparison state */
+        strmap* map_src = dsync_strmap_creat(flist_src, path_src);
+        strmap* map_dst = dsync_strmap_creat(flist_dst, path_dst);
+        strmap* map_link = NULL;
+        if (options.link_dest != NULL) {
+            map_link = dsync_strmap_creat(flist_link, path_link);
+        }
+
+        /* compare files in map_src with those in map_dst */
+        int tmp_rc = dsync_strmap_compare(flist_src, map_src, flist_dst, map_dst, flist_link, map_link,
+            strlen(path_src), copy_opts, srcpath, destpath, linkpath, mfu_src_file, mfu_dst_file);
+        if (tmp_rc < 0) {
+            rc = 1;
+        }
+
+        /* free maps of file names to comparison state info */
+        strmap_delete(&map_src);
+        strmap_delete(&map_dst);
+        if (options.link_dest != NULL) {
+            strmap_delete(&map_link);
+        }
+
+        /* free file lists */
+        mfu_flist_free(&flist_src);
+        mfu_flist_free(&flist_dst);
+        if (options.link_dest != NULL) {
+            mfu_flist_free(&flist_link);
+        }
+
+        /* free param path for link-dest if we have one */
+        if (options.link_dest != NULL) {
             mfu_param_path_free(linkpath);
             mfu_free(&linkpath);
         }
-        mfu_param_path_free_all(numargs, paths);
-        mfu_free(&paths);
-#ifdef DAOS_SUPPORT
-        daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
-#endif
-        dsync_option_fini();
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
+    } /* end non-DAOS API case */
 
-    /* walk destinaton path.
-     * We never dereference the destination */
-    int tmp_dereference = walk_opts->dereference;
-    walk_opts->dereference = 0;
-    if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Walking destination path");
-    }
-    mfu_flist_walk_param_paths(1, destpath, walk_opts, flist_tmp_dst, mfu_dst_file);
-
-    /* walk link-dest path if we have one */
-    if (options.link_dest != NULL) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_INFO, "Walking link-dest path");
-        }
-        mfu_flist_walk_param_paths(1, linkpath, walk_opts, flist_tmp_link, mfu_dst_file);
-    }
-
-    /* reset the dereference flag */
-    walk_opts->dereference = tmp_dereference;
-
-    /* store src and dest path strings */
-    const char* path_src = srcpath->path;
-    const char* path_dst = destpath->path;
-
-    char* path_link = NULL;
-    if (options.link_dest != NULL) {
-        path_link = linkpath->path;
-    }
-
-    /* map files to ranks based on portion following prefix directory */
-    mfu_flist flist_src = mfu_flist_remap(flist_tmp_src, (mfu_flist_map_fn)dsync_map_fn, (const void*)path_src);
-    mfu_flist flist_dst = mfu_flist_remap(flist_tmp_dst, (mfu_flist_map_fn)dsync_map_fn, (const void*)path_dst);
-
-    mfu_flist flist_link = MFU_FLIST_NULL;
-    if (options.link_dest != NULL) {
-        flist_link = mfu_flist_remap(flist_tmp_link, (mfu_flist_map_fn)dsync_map_fn, (const void*)path_link);
-    }
-
-    /* free original file lists */
-    mfu_flist_free(&flist_tmp_src);
-    mfu_flist_free(&flist_tmp_dst);
-    if (options.link_dest != NULL) {
-        mfu_flist_free(&flist_tmp_link);
-    }
-
-    /* map each file name to its index and its comparison state */
-    strmap* map_src = dsync_strmap_creat(flist_src, path_src);
-    strmap* map_dst = dsync_strmap_creat(flist_dst, path_dst);
-    strmap* map_link = NULL;
-    if (options.link_dest != NULL) {
-        map_link = dsync_strmap_creat(flist_link, path_link);
-    }
-
-    /* compare files in map_src with those in map_dst */
-    int tmp_rc = dsync_strmap_compare(flist_src, map_src, flist_dst, map_dst, flist_link, map_link,
-        strlen(path_src), copy_opts, srcpath, destpath, linkpath, mfu_src_file, mfu_dst_file);
-    if (tmp_rc < 0) {
-        rc = 1;
-    }
-
-    /* free maps of file names to comparison state info */
-    strmap_delete(&map_src);
-    strmap_delete(&map_dst);
-    if (options.link_dest != NULL) {
-        strmap_delete(&map_link);
-    }
-
-    /* free file lists */
-    mfu_flist_free(&flist_src);
-    mfu_flist_free(&flist_dst);
-    if (options.link_dest != NULL) {
-        mfu_flist_free(&flist_link);
-    }
-
+    /* Common cleanup for all APIs and early exit conditions */
+dsync_common_cleanup:
     /* free all param paths */
     mfu_param_path_free_all(numargs, paths);
 
     /* free memory allocated to hold params */
     mfu_free(&paths);
-
-    /* free param path for link-dest if we have one */
-    if (options.link_dest != NULL) {
-        mfu_param_path_free(linkpath);
-        mfu_free(&linkpath);
-    }
 
     dsync_option_fini();
 
