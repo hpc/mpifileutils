@@ -52,9 +52,17 @@ typedef struct mfu_param_path_t {
     struct stat target_stat; /* stat of target path */
 } mfu_param_path;
 
+/* TODO rename all of these to MFU_FILE_TYPE_* or similar
+ * to avoid potential name conflicts */
+typedef enum {
+    POSIX,
+    DFS,
+    DAOS
+} mfu_file_type_t;
+
 /* options passed to I/O functions that tell them which backend filesystem to use */
 typedef struct {
-    enum                 {POSIX, DFS, DAOS} type;
+    mfu_file_type_t      type;
     int                  fd;
 #ifdef DAOS_SUPPORT
     /* DAOS specific variables for I/O */
