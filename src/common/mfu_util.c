@@ -100,6 +100,28 @@ void* mfu_malloc(size_t size, const char* file, int line)
     return NULL;
 }
 
+/* if size > 0 allocates size bytes and returns pointer,
+ * calls mfu_abort if calloc fails, returns NULL if size == 0 */
+void* mfu_calloc(size_t nelem, size_t elsize, const char* file, int line)
+{
+    /* only bother if size > 0 */
+    if (nelem > 0 && elsize > 0) {
+        /* try to allocate memory and check whether we succeeded */
+        void* ptr = calloc(nelem, elsize);
+        if (ptr == NULL) {
+            /* allocate failed, abort */
+            mfu_abort(file, line, 1, "Failed to allocate %llu * %llu bytes. Try using more nodes.",
+                        (unsigned long long) nelem, (unsigned long long) elsize
+                       );
+        }
+
+        /* return the pointer */
+        return ptr;
+    }
+
+    return NULL;
+}
+
 /* if size > 0, allocates size bytes aligned with specified alignment
  * and returns pointer, calls mfu_abort on failure,
  * returns NULL if size == 0 */

@@ -1,7 +1,13 @@
 # DAOS Support
 
-[DAOS](https://github.com/daos-stack/daos) is supported as a backend storage system in dcp, dsync, and dcmp. The build instructions for
-enabling DAOS support can be found here:
+[DAOS](https://github.com/daos-stack/daos) is supported as a backend storage system in
+dcp, dsync, and dcmp. Custom serialization and deserialization for DAOS
+containers to and from a POSIX filesystem is provided with daos-serialize and
+daos-deserialize. A DAOS container and its associated
+metadata can be serialized to an HDF5 file for storage on a POSIX filesystem using daos-serialize. The container data
+can be later restored to DAOS via the use of daos-deserialize.
+
+The build instructions for enabling DAOS support can be found here:
 [Enable DAOS](https://mpifileutils.readthedocs.io/en/latest/build.html#build-everything-directly).
 The following are ways that DAOS can be used to move data both across DAOS as well as POSIX
 filesystems in dcp and dsync:
@@ -14,21 +20,7 @@ For dcp, the DAOS->DAOS case supports both POSIX and non-POSIX DAOS containers.
 
 For dsync, the DAOS->DAOS case currently only supports POSIX containers.
 
-## DAOS Data Movement Use Cases
-
-In each use case, it is assumed that the pools and containers used already exist.
-Also, only one DAOS source is supported.
-
-1. **DAOS Destination**
-    * Container is assumed to exist already
-
-2. **DAOS Source**
-    * Source container exists
-
-3. **DAOS Source and Destination**
-    * Copy across two different pools
-    * Copy across containers in the same pool
-    * Copying non-POSIX containers is only supported for the DAOS -> DAOS case in dcp
+For daos-serialize and daos-deserialize, any type of DAOS container is supported. 
 
 ## DAOS POSIX Data Movement Examples with dcp
 
@@ -162,4 +154,63 @@ Number of items that exist in both directories and have the same type: 1 (Src: 1
 Number of items that exist in both directories and have different types: 0 (Src: 0 Dest: 0)
 Number of items that exist in both directories and have the same content: 1 (Src: 1 Dest: 1)
 Number of items that exist in both directories and have different contents: 0 (Src: 0 Dest: 0)
+```
+
+## DAOS Serialization and Deserialization Examples
+
+daos-serialize and daos-deserialize can be used on any type of DAOS container.
+They are DAOS only tools that require HDF5.
+
+daos-serialize will serialize a DAOS container to an HDF5 file. Depending on
+the amount of data, multiple files may be written for each rank specified in the job.
+
+daos-deserialize will deserialize or restore the HDF5 files written into a new
+DAOS container, and a pool UUID to deserialize the data to must be specified.
+
+#### Example One
+
+Show the serialization of a DAOS container
+
+```shell
+$ mpirun -np 3 daos-serialize -v /$pool1/$cont1
+Serializing Container to 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank0.h5
+Serializing Container to 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank1.h5
+Serializing Container to 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank2.h5
+```
+
+#### Example Two
+
+Show the serialization of a DAOS container by specifying output directory
+
+```shell
+$ mpirun -np 3 daos-serialize -v -o serialize /$pool1/$cont1
+Serializing Container to serialize/7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank0.h5
+Serializing Container to serialize/7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank1.h5
+Serializing Container to serialize/7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank2.h5
+```
+#### Example Three 
+
+Show the deserialization of an HDF5 file
+
+```shell
+$ mpirun -np 3 daos-deserialize -v 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank0.h5
+7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank1.h5 2-7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank2.h5
+
+Successfully created container cbc52064-303e-497d-afaf-fa554c18e08f
+    Deserializing filename: 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank0.h5
+    Deserializing filename: 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank1.h5
+    Deserializing filename: 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank2.h5
+```
+
+#### Example Four
+
+Show the deserialization of HDF5 files from a specified directory
+
+```shell
+$ mpirun -np 3 daos-deserialize -v serialize
+
+Successfully created container 8d6a6083-4009-4afe-8364-7caa5ebaa72b
+    Deserializing filename: serialize/7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank0.h5
+    Deserializing filename: serialize/7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank1.h5
+    Deserializing filename: serialize/7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank2.h5
 ```
