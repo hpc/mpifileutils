@@ -1036,7 +1036,7 @@ static int mfu_create_directories(
 
     /* count total number of directories to be created */
     int level;
-    uint64_t count = 0;
+    uint64_t mkdir_local_count = 0;
     for (level = 0; level < levels; level++) {
         /* get list of items for this level */
         mfu_flist list = lists[level];
@@ -1047,14 +1047,14 @@ static int mfu_create_directories(
            /* check whether we have a directory */
            mfu_filetype type = mfu_flist_file_get_type(list, idx);
            if (type == MFU_TYPE_DIR) {
-               count++;
+               mkdir_local_count++;
            }
         }
     }
 
     /* get total for print percent progress while creating */
     mkdir_total_count = 0;
-    MPI_Allreduce(&count, &mkdir_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&mkdir_local_count, &mkdir_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* bail early if there is no work to do */
     if (mkdir_total_count == 0) {
@@ -1489,7 +1489,7 @@ static int mfu_create_hardlinks(
 
     /* first, count number of items to create in the list of the current process */
     int level;
-    uint64_t count = 0;
+    uint64_t mknod_local_count = 0;
     for (level = 0; level < levels; level++) {
         /* get list of items for this level */
         mfu_flist list = lists[level];
@@ -1500,14 +1500,14 @@ static int mfu_create_hardlinks(
             /* count regular files */
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
             if (type == MFU_TYPE_FILE) {
-                count++;
+                mknod_local_count++;
             }
         }
     }
 
     /* get total for print percent progress while creating */
     mknod_total_count = 0;
-    MPI_Allreduce(&count, &mknod_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&mknod_local_count, &mknod_total_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* bail early if there is no work to do */
     if (mknod_total_count == 0) {
