@@ -376,16 +376,13 @@ int main(int argc, char** argv)
     }
 #endif
 
-    /* paths to walk come after the options */
-    mfu_param_path* paths = NULL;
-
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
 
     /* Perform a POSIX copy for non-DAOS types */
     if (mfu_src_file->type != DAOS && mfu_dst_file->type != DAOS) {
         /* allocate space for each path */
-        paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
+        mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
         /* last item in the list is the destination path */
         mfu_param_path* destpath = &paths[numpaths - 1];
@@ -451,17 +448,11 @@ int main(int argc, char** argv)
             rc = 1;
         }
 
-        /* free the file list */
-        mfu_flist_free(&flist);
-
         /* free the path parameters */
         mfu_param_path_free_all(numpaths, paths);
 
         /* free memory allocated to hold params */
         mfu_free(&paths);
-
-        /* free the input file name */
-        mfu_free(&inputname);
     } 
 #ifdef DAOS_SUPPORT
     /* Perform an object-level copy for DAOS types */
@@ -512,6 +503,12 @@ int main(int argc, char** argv)
     /* Cleanup DAOS-related variables, etc. */
     daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
 #endif
+
+    /* free the file list */
+    mfu_flist_free(&flist);
+
+    /* free the input file name */
+    mfu_free(&inputname);
 
     /* free the copy options */
     mfu_copy_opts_delete(&mfu_copy_opts);
