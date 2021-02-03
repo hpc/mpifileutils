@@ -403,6 +403,7 @@ const char* mfu_flist_file_get_groupname(mfu_flist flist, uint64_t index);
 /* set properties on specified item in local flist */
 #ifdef DAOS_SUPPORT
 void mfu_flist_file_set_oid(mfu_flist flist, uint64_t index, daos_obj_id_t oid);
+void mfu_flist_file_set_cont(mfu_flist flist, uint64_t index, const char* name);
 #endif
 void mfu_flist_file_set_name(mfu_flist flist, uint64_t index, const char* name);
 void mfu_flist_file_set_type(mfu_flist flist, uint64_t index, mfu_filetype type);

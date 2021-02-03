@@ -1011,6 +1011,17 @@ void mfu_flist_file_set_oid(mfu_flist bflist, uint64_t idx, daos_obj_id_t oid)
     }
     return;
 }
+
+void mfu_flist_file_set_cont(mfu_flist bflist, uint64_t idx, const char* name)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        /* set new name and compute depth */
+        elem->file = MFU_STRDUP(name);
+    }
+    return;
+}
 #endif 
 
 void mfu_flist_file_set_type(mfu_flist bflist, uint64_t idx, mfu_filetype type)
