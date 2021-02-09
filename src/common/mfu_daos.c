@@ -7,6 +7,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <daos_fs.h>
@@ -572,7 +573,6 @@ static int daos_set_api_compat(
         }
         mfu_src_file->type = DAOS;
     }
-
     return 0;
 }
 
@@ -882,6 +882,8 @@ int daos_parse_api_str(
         *api = DAOS_API_DFS;
     } else if (strcasecmp(api_str, "DAOS") == 0) {
         *api = DAOS_API_DAOS;
+    } else if (strcasecmp(api_str, "HDF5") == 0) {
+        *api = DAOS_API_HDF5;
     } else {
         rc = 1;
     }
@@ -4764,6 +4766,171 @@ out:
     if (hdf5.file > 0) {
         H5Fclose(hdf5.file);
     }
+    return rc;
+}
+
+int mfu_daos_hdf5_copy(char **argpaths,
+                       daos_args_t *daos_args)
+{
+    int                 rc = 0;
+    int                 size;
+    char                src_path[FILENAME_LEN];
+    char                src_pool_str[UUID_LEN];
+    char                src_cont_str[UUID_LEN];
+    char                dst_path[FILENAME_LEN];
+    char                dst_pool_str[UUID_LEN];
+    char                dst_cont_str[UUID_LEN];
+    struct duns_attr_t  src_dattr = {0};
+    struct duns_attr_t  dst_dattr = {0};
+    bool                src_daos = false;
+    bool                dst_daos = false;
+    int                 len = 0;
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    if (size > 1) {
+        MFU_LOG(MFU_LOG_ERR, "dcp uses h5repack to copy DAOS HDF5 containers "
+                "to and from a POSIX filesystem. Only one process "
+                "is currently supported. Restart program using only "
+                "one MPI process "
+                MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+                rc = 1;
+                return rc;
+    }
+
+    /* check for DAOS path and set VOL Name accordingly */
+    rc = duns_resolve_path(argpaths[0], &src_dattr);
+    if (rc == 0) {
+        src_daos = true;
+        uuid_copy(daos_args->src_pool_uuid, src_dattr.da_puuid);
+        uuid_copy(daos_args->src_cont_uuid, src_dattr.da_cuuid);
+
+        /* get pool and containter as strings for path */
+        uuid_unparse(daos_args->src_pool_uuid, src_pool_str);
+        uuid_unparse(daos_args->src_cont_uuid, src_cont_str);
+
+        /* build src path for h5repack */
+        len = snprintf(src_path, FILENAME_LEN, "daos://%s/%s",
+                       src_pool_str, src_cont_str);
+        if (len > FILENAME_LEN) {
+            MFU_LOG(MFU_LOG_ERR, "source path exceeds max length "
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DCP));
+        }
+    } else {
+        /* source path is POSIX */
+        rc = 0;
+    }
+
+    rc = duns_resolve_path(argpaths[1], &dst_dattr);
+    if (rc == 0) {
+        dst_daos = true;
+        uuid_copy(daos_args->dst_pool_uuid, dst_dattr.da_puuid);
+        uuid_copy(daos_args->dst_cont_uuid, dst_dattr.da_cuuid);
+        if (!daos_uuid_valid(daos_args->dst_cont_uuid)) {
+            uuid_generate(daos_args->dst_cont_uuid);
+        }
+
+        /* get pool and containter as strings for path */
+        uuid_unparse(daos_args->dst_pool_uuid, dst_pool_str);
+        uuid_unparse(daos_args->dst_cont_uuid, dst_cont_str);
+
+        /* build dst path for h5repack */
+        len = snprintf(dst_path, FILENAME_LEN, "daos://%s/%s",
+                       dst_pool_str, dst_cont_str);
+        if (len > FILENAME_LEN) {
+            MFU_LOG(MFU_LOG_ERR, "destination path exceeds max length "
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DCP));
+        }
+    } else {
+        /* destination path is POSIX */
+        rc = 0;
+    }
+
+    pid_t child;
+    int child_status;
+    pid_t child_pid;
+    char *args[4];
+    args[0] = "h5repack";
+    args[1] = NULL;
+    args[2] = NULL;
+    args[3] = NULL;
+    args[4] = NULL;
+
+    if (src_daos && dst_daos) {
+        /* this must be a DAOS->DAOS copy */
+        args[1] = strdup(src_path);
+        args[2] = strdup(dst_path);
+        args[3] = NULL;
+    } else if (src_daos && !dst_daos) {
+        args[1] = strdup("--dst-vol-name=native");
+        args[2] = strdup(src_path);
+        args[3] = strdup(argpaths[1]);
+        args[4] = NULL; 
+    } else if (!src_daos && dst_daos) {
+        args[1] = strdup("--src-vol-name=native");
+        args[2] = strdup(argpaths[0]);
+        args[3] = strdup(dst_path);
+        args[4] = NULL; 
+    } else {
+        MFU_LOG(MFU_LOG_ERR, "Invalid Format " MFU_ERRF,
+                MFU_ERRP(-MFU_ERR_INVAL_ARG));
+        rc = 1;
+        return rc;
+    }
+
+    /* Child process */
+    if ((child = fork()) == 0) {
+
+        /* start h5repack */
+        execvp(args[0], args);
+
+        /* if child process reaches this point then execvp must have failed */
+        MFU_LOG(MFU_LOG_ERR, "execvp on h5repack failed: "
+                MFU_ERRF, MFU_ERRP(-MFU_ERR_DCP));
+        mfu_free(&args[1]);
+        mfu_free(&args[2]);
+        mfu_free(&args[3]);
+        mfu_free(&args[4]);
+        rc = 1;
+        return rc;
+    /* Parent process */
+    } else {
+        if (child == (pid_t)(-1)) {
+            MFU_LOG(MFU_LOG_ERR, "fork failed: "
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DCP));
+            mfu_free(&args[1]);
+            mfu_free(&args[2]);
+            mfu_free(&args[3]);
+            mfu_free(&args[4]);
+            rc = 1;
+            return rc;
+        } else {
+            /* parent will wait for child to complete */
+            child_pid = wait(&child_status);
+        }
+    }
+
+    /* if child status is 0, then copy was successful */
+    if (child_status != 0) {
+        MFU_LOG(MFU_LOG_ERR, "errors occurred while copying to/from container: "
+                MFU_ERRF, MFU_ERRP(-MFU_ERR_DCP));
+        mfu_free(&args[1]);
+        mfu_free(&args[2]);
+        mfu_free(&args[3]);
+        mfu_free(&args[4]);
+        rc = 1;
+        return rc;
+    } else {
+        if (dst_daos) {
+            MFU_LOG(MFU_LOG_INFO, "Successfully copied to %s", dst_path);
+        } else {
+            MFU_LOG(MFU_LOG_INFO, "Successfully copied to %s", argpaths[1]);
+        }
+    }
+
+    mfu_free(&args[1]);
+    mfu_free(&args[2]);
+    mfu_free(&args[3]);
+    mfu_free(&args[4]);
     return rc;
 }
 #endif

@@ -13,6 +13,7 @@
 #define OID_ARR_SIZE        50
 #define ATTR_NAME_LEN       64
 #define FILENAME_LEN        1024 
+#define UUID_LEN            128
 
 enum handleType {
     POOL_HANDLE,
@@ -23,7 +24,8 @@ enum handleType {
 typedef enum {
     DAOS_API_AUTO,
     DAOS_API_DFS,
-    DAOS_API_DAOS
+    DAOS_API_DAOS,
+    DAOS_API_HDF5
 } daos_api_t;
 
 /* struct for holding DAOS arguments */
@@ -265,3 +267,8 @@ int mfu_daos_flist_sync(
     bool compare_dst,   /* whether to compare the dst before writing */
     bool write_dst      /* whether to actually write to the dst */
 );
+
+/* check if source or destination is HDF5 container, and
+ * if so, then launch/run h5repack */
+int mfu_daos_hdf5_copy(char **argpaths,
+                       daos_args_t *daos_args);
