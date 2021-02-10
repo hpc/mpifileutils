@@ -16,6 +16,9 @@
 
 #ifdef HDF5_SUPPORT
 #include <hdf5.h>
+#if H5_VERS_MAJOR == 1 && H5_VERS_MINOR < 12
+#define H5Sencode1 H5Sencode
+#endif
 #endif
 
 /*
@@ -1549,7 +1552,7 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
             /* get size of buffer needed
              * from nalloc
              */
-            status = H5Sencode(hdf5->rx_dspace, NULL, &nalloc, NULL);
+            status = H5Sencode1(hdf5->rx_dspace, NULL, &nalloc);
             if (status < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to get size of buffer needed");
                 rc = 1;
@@ -1560,8 +1563,8 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
              * attribute on dataset
              */
             encode_buf = malloc(nalloc * sizeof(unsigned char));
-            status = H5Sencode(hdf5->rx_dspace, encode_buf,
-                               &nalloc, NULL);
+            status = H5Sencode1(hdf5->rx_dspace, encode_buf,
+                                &nalloc);
             if (status < 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to encode dataspace");
                 rc = 1;
