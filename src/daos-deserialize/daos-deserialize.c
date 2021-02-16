@@ -190,6 +190,8 @@ int main(int argc, char** argv)
             MFU_LOG(MFU_LOG_ERR, "Failed to deserialize container (%d)", rc);
         }
 
+        /* TODO maybe just let cont_deserialize_hdlr close the cohs, since
+         *      it opened them */
         rc = daos_cont_close(cohs[i], NULL);
         MPI_Barrier(MPI_COMM_WORLD);
         if (rc != 0) {

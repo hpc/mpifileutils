@@ -1339,6 +1339,10 @@ static inline void init_hdf5_args(struct hdf5_args *hdf5)
 {
     hdf5->status = 0;
     hdf5->file = -1;
+    /* User attribute data */
+    hdf5->usr_attr_memtype = 0;
+    hdf5->usr_attr_name_vtype = 0;
+    hdf5->usr_attr_val_vtype = 0;
     /* OID Data */
     hdf5->oid_memtype = 0;
     hdf5->oid_dspace = 0;
@@ -2015,6 +2019,48 @@ static int init_hdf5_file(struct hdf5_args *hdf5, char *filename) {
         rc = 1;
         goto out;
     }
+
+    /* Set user attribute dataset types */
+    hdf5->usr_attr_memtype = H5Tcreate(H5T_COMPOUND, sizeof(usr_attr_t));
+    if (hdf5->usr_attr_memtype < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create user attr memtype");
+        rc = 1;
+        goto out;
+    }
+    hdf5->usr_attr_name_vtype = H5Tcopy(H5T_C_S1);
+    if (hdf5->usr_attr_name_vtype < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create user attr name vtype");
+        rc = 1;
+        goto out;
+    }
+    hdf5->status = H5Tset_size(hdf5->usr_attr_name_vtype, H5T_VARIABLE);
+    if (hdf5->status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create user attr name vtype");
+        rc = 1;
+        goto out;
+    }
+    hdf5->usr_attr_val_vtype = H5Tvlen_create(H5T_NATIVE_OPAQUE);
+    if (hdf5->usr_attr_val_vtype < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create user attr val vtype");
+        rc = 1;
+        goto out;
+    }
+    hdf5->status = H5Tinsert(hdf5->usr_attr_memtype, "Attribute Name",
+                             HOFFSET(usr_attr_t, attr_name), hdf5->usr_attr_name_vtype);
+    if (hdf5->status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to insert user attr name");
+        rc = 1;
+        goto out;
+    }
+    hdf5->status = H5Tinsert(hdf5->usr_attr_memtype, "Attribute Value",
+                             HOFFSET(usr_attr_t, attr_val), hdf5->usr_attr_val_vtype);
+    if (hdf5->status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to insert user attr val");
+        rc = 1;
+        goto out;
+    }
+
+    /* Set oid dataset types */
     hdf5->oid_memtype = H5Tcreate(H5T_COMPOUND, sizeof(oid_t));
     if (hdf5->oid_memtype < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create oid memtype");
@@ -2042,6 +2088,8 @@ static int init_hdf5_file(struct hdf5_args *hdf5, char *filename) {
         rc = 1;
         goto out;
     }
+
+    /* Set dkey dataset types */
     hdf5->dkey_memtype = H5Tcreate(H5T_COMPOUND, sizeof(dkey_t));
     if (hdf5->dkey_memtype < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create dkey memtype");
@@ -2069,6 +2117,8 @@ static int init_hdf5_file(struct hdf5_args *hdf5, char *filename) {
         rc = 1;
         goto out;
     }
+
+    /* Set akey dataset types */
     hdf5->akey_memtype = H5Tcreate(H5T_COMPOUND, sizeof(akey_t));
     if (hdf5->akey_memtype < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create akey memtype");
@@ -2154,239 +2204,245 @@ out:
     return rc;
 }
 
-static int cont_serialize_num_usr_attrs(struct hdf5_args *hdf5,
-                                        daos_handle_t cont,
-                                        uint64_t *total_size)
+/*
+ * Free the user attribute buffers created by cont_get_usr_attrs.
+ */
+static void cont_free_usr_attrs(int n, char*** _names, void*** _buffers,
+                               size_t** _sizes)
 {
-    int     rc = 0;
-    hid_t       status = 0;
-    char        *total_usr_attrs = "Total User Attributes";
+    char**  names = *_names;
+    void**  buffers = *_buffers;
 
-    /* record total number of user defined attributes, if it is 0,
-     * then we don't write any more attrs */
-    rc = daos_cont_list_attr(cont, NULL, total_size, NULL);
+    if (names != NULL) {
+        for (size_t i = 0; i < n; i++) {
+            mfu_free(&names[i]);
+        }
+        mfu_free(_names);
+    }
+    if (buffers != NULL) {
+        for (size_t i = 0; i < n; i++) {
+            mfu_free(&buffers[i]);
+        }
+        mfu_free(_buffers);
+    }
+    mfu_free(_sizes);
+}
+
+/*
+ * Get the user attributes for a container in a format similar
+ * to what daos_cont_set_attr expects.
+ * cont_free_usr_attrs should be called to free the allocations.
+ * Returns 1 on error, 0 on success.
+ */
+static int cont_get_usr_attrs(daos_handle_t coh,
+                              int* _n, char*** _names, void*** _buffers,
+                              size_t** _sizes)
+{
+    int         rc = 0;
+    uint64_t    total_size = 0;
+    uint64_t    cur_size = 0;
+    uint64_t    num_attrs = 0;
+    uint64_t    name_len = 0;
+    char*       name_buf = NULL;
+    char**      names = NULL;
+    void**      buffers = NULL;
+    size_t*     sizes = NULL;
+
+    /* Get the total size needed to store all names */
+    rc = daos_cont_list_attr(coh, NULL, &total_size, NULL);
     if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to retrieve user attributes on "
-                             "container");
+        MFU_LOG(MFU_LOG_ERR, "failed to list user attributes "DF_RC, DP_RC(rc));
+        rc = 1;
         goto out;
     }
 
-    hdf5->attr_dims[0] = 1;
-    hdf5->attr_dtype = H5Tcopy(H5T_NATIVE_INT);
-    status = H5Tset_size(hdf5->attr_dtype, 8);
-    if (status < 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to create version attribute");
+    /* no attributes found */
+    if (total_size == 0) {
+        *_n = 0;
+        goto out;
+    }
+
+    /* Allocate a buffer to hold all attribute names */
+    name_buf = MFU_MALLOC(total_size);
+    if (name_buf == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
         rc = 1;
         goto out;
     }
-    if (hdf5->attr_dtype < 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to create usr attr type");
+
+    /* Get the attribute names */
+    rc = daos_cont_list_attr(coh, name_buf, &total_size, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to list user attributes "DF_RC, DP_RC(rc));
         rc = 1;
         goto out;
     }
-    hdf5->attr_dspace = H5Screate_simple(1, hdf5->attr_dims,
-                                         NULL);
-    if (hdf5->attr_dspace < 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to create version attribute dataspace");
+
+    /* Figure out the number of attributes */
+    while (cur_size < total_size) {
+        name_len = strnlen(name_buf + cur_size, total_size - cur_size);
+        if (name_len == total_size - cur_size) {
+            /* end of buf reached but no end of string, ignoring */
+            break;
+        }
+        num_attrs++;
+        cur_size += name_len + 1;
+    }
+
+    /* Sanity check */
+    if (num_attrs == 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to parse user attributes");
         rc = 1;
         goto out;
     }
-    hdf5->usr_attr_num = H5Acreate2(hdf5->file,
-                                    total_usr_attrs,
-                                    hdf5->attr_dtype,
-                                    hdf5->attr_dspace,
-                                    H5P_DEFAULT,
-                                    H5P_DEFAULT);
-    if (hdf5->usr_attr_num < 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to create version attribute");
-        rc = 1;
-        goto out;
-    }   
-    status = H5Awrite(hdf5->usr_attr_num, hdf5->attr_dtype,
-                      total_size);
-    if (status < 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to write attribute");
+
+    /* Allocate arrays for attribute names, buffers, and sizes */
+    names = MFU_CALLOC(num_attrs, sizeof(char*));
+    if (names == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
         rc = 1;
         goto out;
     }
-    status = H5Aclose(hdf5->usr_attr_num);
-    if (status < 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to close attribute");
+    sizes = MFU_CALLOC(num_attrs, sizeof(size_t));
+    if (sizes == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
         rc = 1;
         goto out;
     }
+    buffers = MFU_CALLOC(num_attrs, sizeof(void*));
+    if (buffers == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
+        rc = 1;
+        goto out;
+    }
+
+    /* Create the array of names */
+    cur_size = 0;
+    for (uint64_t i = 0; i < num_attrs; i++) {
+        name_len = strnlen(name_buf + cur_size, total_size - cur_size);
+        if (name_len == total_size - cur_size) {
+            /* end of buf reached but no end of string, ignoring */
+            break;
+        }
+        names[i] = strndup(name_buf + cur_size, name_len + 1);
+        cur_size += name_len + 1;
+    }
+
+    /* Get the buffer sizes */
+    rc = daos_cont_get_attr(coh, num_attrs,
+                            (const char* const*)names,
+                            NULL, sizes, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to get user attribute sizes "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+
+    /* Allocate space for each value */
+    for (uint64_t i = 0; i < num_attrs; i++) {
+        buffers[i] = MFU_MALLOC(sizes[i]);
+        if (buffers[i] == NULL) {
+            MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
+            rc = 1;
+            goto out;
+        }
+    }
+
+    /* Get the attribute values */
+    rc = daos_cont_get_attr(coh, num_attrs,
+                            (const char* const*)names,
+                            (void * const*)buffers, sizes,
+                            NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to get user attribute values "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+
+    /* Return values to the caller */
+    *_n = num_attrs;
+    *_names = names;
+    *_buffers = buffers;
+    *_sizes = sizes;
+
 out:
+    if (rc != 0) {
+        cont_free_usr_attrs(num_attrs, &names, &buffers, &sizes);
+    }
+
+    mfu_free(&name_buf);
     return rc;
 }
 
 static int cont_serialize_usr_attrs(struct hdf5_args *hdf5, daos_handle_t cont)
 {
     int         rc = 0;
-    int         i = 0;
-    int         j = 0;
     hid_t       status = 0;
-    uint64_t    total_size = 0;
-    uint64_t    size = 0;
-    uint64_t    cur = 0;
-    uint64_t    len = 0;
-    char        *buf = NULL;
-    char        **names = NULL;
+    hid_t       dset = 0;
+    hid_t       dspace = 0;
+    hid_t       vtype = 0;
+    hsize_t     dims[1];
+    usr_attr_t* attr_data = NULL;
     int         num_attrs = 0;
-    void        **val_buf = NULL;
-    size_t      *sizes = NULL;
+    char**      names = NULL;
+    void**      buffers = NULL;
+    size_t*     sizes = NULL;
 
-    rc = cont_serialize_num_usr_attrs(hdf5, cont, &total_size);
+    /* Get all user attributes */
+    rc = cont_get_usr_attrs(cont, &num_attrs, &names, &buffers, &sizes);
     if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to serialize number of user attrs: %d",
-                rc);
-        goto out;
-    }
-
-    /* skip serializing attrs if total_size is zero */
-    if (total_size == 0) {
-        goto out;
-    }
-
-    buf = malloc(total_size);
-    if (buf == NULL) {
-        rc = ENOMEM;
-        goto out;
-    }
-
-    rc = daos_cont_list_attr(cont, buf, &total_size, NULL);
-    if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to list attributes for container");
         rc = 1;
         goto out;
     }
 
-    while (cur < size) {
-        len = strnlen(buf + cur, size - cur);
-        if (len == size - cur) {
-            /* end of buf reached but no end of string, ignoring */
-            break;
-        }
-        num_attrs++;
-        cur += len + 1;
-    }
-
-    /* allocate array of null-terminated attribute names */
-    names = malloc(num_attrs * sizeof(char *));
-    if (names == NULL) {
-        rc = ENOMEM;
-        goto out;
-    }
-
-    cur = 0;
-    /* create array of attribute names to pass to daos_cont_get_attr */
-    for (i = 0; i < num_attrs; i++) {
-        len = strnlen(buf + cur, size - cur);
-        if (len == size - cur) {
-            /* end of buf reached but no end of string, ignoring */
-            break;
-        }
-        names[i] = strndup(buf + cur, len + 1);
-        cur += len + 1;
-    }
-
-    sizes = malloc(num_attrs * sizeof(size_t));
-    if (sizes == NULL) {
-        rc = ENOMEM;
-        goto out;
-    }
-    val_buf = malloc(num_attrs * sizeof(void*));
-    if (val_buf == NULL) {
-        rc = ENOMEM;
-        goto out;
-    }
-
-    rc = daos_cont_get_attr(cont, num_attrs,
-                (const char* const*)names,
-                NULL, sizes, NULL);
-    if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to get attr size");
+    /* Create the user attribute data space */
+    dims[0] = num_attrs;
+    dspace = H5Screate_simple(1, dims, NULL);
+    if (dspace < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create user attr dspace");
         rc = 1;
         goto out;
     }
-    for (j = 0; j < num_attrs; j++) {
-        val_buf[j] = malloc(sizes[j]);
-        if (val_buf[j] == NULL) {
-            rc = ENOMEM;
-            goto out;
-        }
-    }
-    rc = daos_cont_get_attr(cont, num_attrs,
-                            (const char* const*)names,
-                            (void * const*)val_buf, sizes,
-                            NULL);
-    if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to get attr value");
+
+    /* Create the user attribute dataset */
+    dset = H5Dcreate(hdf5->file, "User Attributes",
+                     hdf5->usr_attr_memtype, dspace,
+                     H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    if (dset < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create user attribute dset");
         rc = 1;
         goto out;
     }
-    /* write user attrs to hdf5 file */
-    for (i = 0; i < num_attrs; i++) {
-        /* TODO: remove debug code 
-        printf("attr size: %d\n", (int)sizes[i]);
-        printf("attr name: %s\n", (char*)names[i]);
-        char str[256];
-        snprintf(str, sizes[i] + 1, "%s", (char *)val_buf[i]);
-        printf("attr val: %s\n", str);
-        */
-        hdf5->attr_dims[0] = 1;
-        hdf5->attr_dtype = H5Tcreate(H5T_OPAQUE, sizes[i]);
-        if (hdf5->attr_dtype < 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to create user attr type");
-            rc = 1;
-            goto out;
-        }
-        hdf5->attr_dspace = H5Screate_simple(1, hdf5->attr_dims,
-                                             NULL);
-        if (hdf5->attr_dspace < 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to create version attribute");
-            rc = 1;
-            goto out;
-        }
-        hdf5->usr_attr = H5Acreate2(hdf5->file,
-                                    names[i],
-                                    hdf5->attr_dtype,
-                                    hdf5->attr_dspace,
-                                    H5P_DEFAULT,
-                                    H5P_DEFAULT);
-        if (hdf5->usr_attr < 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to create user attribute name");
-            rc = 1;
-            goto out;
-        }   
-        status = H5Awrite(hdf5->usr_attr, hdf5->attr_dtype,
-                          val_buf[i]);
-        if (status < 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to write attribute");
-            rc = 1;
-            goto out;
-        }
-        status = H5Aclose(hdf5->usr_attr);
-        if (status < 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to close user attribute");
-            rc = 1;
-            goto out;
-        }
+
+    /* Allocate space for all attributes */
+    attr_data = MFU_MALLOC(num_attrs * sizeof(usr_attr_t));
+    if (attr_data == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attributes");
+        rc = 1;
+        goto out;
     }
+
+    /* Set the data for all attributes */
+    for (int i = 0; i < num_attrs; i++) {
+        attr_data[i].attr_name = names[i];
+        attr_data[i].attr_val.p = buffers[i];
+        attr_data[i].attr_val.len = sizes[i];
+    }
+
+    status = H5Dwrite(dset, hdf5->usr_attr_memtype, H5S_ALL,
+                      H5S_ALL, H5P_DEFAULT, attr_data);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to write user attr dset");
+        rc = 1;
+        goto out;
+    }
+
 out:
-    if (buf != NULL)
-        mfu_free(&buf);
-    for (j = 0; j < num_attrs; j++) {
-        mfu_free(&val_buf[j]);
-    }
-    if (val_buf != NULL) {
-        mfu_free(&val_buf);
-    }
-    if (sizes != NULL) {
-        mfu_free(&sizes);
-    }
-    if (names != NULL) {
-        mfu_free(&names);
-    }
+    cont_free_usr_attrs(num_attrs, &names, &buffers, &sizes);
+    mfu_free(&attr_data);
+    H5Dclose(dset);
+    H5Sclose(dspace);
+
     return rc;
 }
 
@@ -3663,6 +3719,111 @@ out:
     return rc;
 }
 
+static int cont_deserialize_usr_attrs(struct hdf5_args* hdf5,
+                                      daos_handle_t coh)
+{
+    hid_t       status = 0;
+    int         rc = 0;
+    int         num_attrs = 0;
+    int         num_dims = 0;
+    char**      names = NULL;
+    void**      buffers = NULL;
+    size_t*     sizes = NULL;
+    hid_t       dset = 0;
+    hid_t       dspace = 0;
+    hid_t       vtype = 0;
+    hsize_t     dims[1];
+    usr_attr_t* attr_data = NULL;
+
+    /* Read the user attributes */
+    dset= H5Dopen(hdf5->file, "User Attributes", H5P_DEFAULT);
+    if (dset < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to open user attributes dset");
+        rc = 1;
+        goto out;
+    }
+    dspace = H5Dget_space(dset);
+    if (dspace < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to get user attributes dspace");
+        rc = 1;
+        goto out;
+    }
+    vtype = H5Dget_type(dset);
+    if (vtype < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to get user attributes vtype");
+        rc = 1;
+        goto out;
+    }
+    num_dims = H5Sget_simple_extent_dims(dspace, dims, NULL);
+    if (num_dims < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to get user attributes dimensions");
+        rc = 1;
+        goto out;
+    }
+    num_attrs = dims[0];
+    attr_data = MFU_CALLOC(dims[0], sizeof(usr_attr_t));
+    if (attr_data == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attributes");
+        rc = 1;
+        goto out;
+    }
+    status = H5Dread(dset, vtype, H5S_ALL, H5S_ALL,
+                     H5P_DEFAULT, attr_data);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to read user attributes data");
+        rc = 1;
+        goto out;
+    }
+
+    names = MFU_CALLOC(num_attrs, sizeof(char*));
+    if (names == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attributes");
+        rc = 1;
+        goto out;
+    }
+    buffers = MFU_CALLOC(num_attrs, sizeof(void*));
+    if (buffers == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attributes");
+        rc = 1;
+        goto out;
+    }
+    sizes = MFU_CALLOC(num_attrs, sizeof(size_t));
+    if (sizes == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attributes");
+        rc = 1;
+        goto out;
+    }
+
+    /* Set the user attribute buffers */
+    MFU_LOG(MFU_LOG_INFO, "num_attrs = %llu", num_attrs);
+    for (int i = 0; i < num_attrs; i++) {
+        MFU_LOG(MFU_LOG_INFO, "attr_data[%llu].attr_name = %s", i, attr_data[i].attr_name);
+        MFU_LOG(MFU_LOG_INFO, "attr_data[%llu].attr_val.p = %s", i, attr_data[i].attr_val.p);
+        MFU_LOG(MFU_LOG_INFO, "attr_data[%llu].attr_val.len = %llu", i, attr_data[i].attr_val.len);
+        names[i] = attr_data[i].attr_name;
+        buffers[i] = attr_data[i].attr_val.p;
+        sizes[i] = attr_data[i].attr_val.len;
+    }
+
+    rc = daos_cont_set_attr(coh, num_attrs,
+                            (const char * const*) names,
+                            (const void * const*) buffers,
+                            sizes, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to set user attributes "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+
+out:
+    H5Dclose(dset);
+    H5Sclose(dspace);
+    H5Tclose(vtype);
+    cont_free_usr_attrs(num_attrs, &names, &buffers, &sizes);
+    mfu_free(&attr_data);
+    return rc;
+}
+
 int cont_deserialize_hdlr(uuid_t pool_uuid, uuid_t cont_uuid,
                           daos_handle_t *poh, daos_handle_t *coh,
                           char *h5filename)
@@ -3722,12 +3883,6 @@ int cont_deserialize_hdlr(uuid_t pool_uuid, uuid_t cont_uuid,
         rc = 1;
         goto out;
     }
-
-    /* TODO: read all container and user attributes */
-    /* check cont type by deserializing LAYOUT cont property,
-     * a serialized POSIX type container needs to be deserialized into
-     * a POSIX type container, and created with dfs_create vs. just
-     * daos_cont_create, also need to set prop on container  */
 
     prop = daos_prop_alloc(17);
     if (prop == NULL) {
@@ -3848,8 +4003,10 @@ int cont_deserialize_hdlr(uuid_t pool_uuid, uuid_t cont_uuid,
         goto out;
     }
 
+    /* TODO fetch ACL into a different prop and merge the two props
+     * only if the ACL succeeds. Otherwise, if the ACL fails, the entry will
+     * be invalid/NULL */
     /* Ignore missing ACL in case user didn't have access when serializing */
-    /* TODO get this working */
     entry = &prop->dpp_entries[16];
     /* read acl as a list of strings in deserialize, then convert
      * back to acl for property entry
@@ -3885,6 +4042,13 @@ int cont_deserialize_hdlr(uuid_t pool_uuid, uuid_t cont_uuid,
                         &cont_info, NULL);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to open container: %d", rc);
+        goto out;
+    }
+
+    /* deserialize and set the user attributes */
+    rc = cont_deserialize_usr_attrs(&hdf5, *coh);
+    if (rc != 0) {
+        rc = 1;
         goto out;
     }
 

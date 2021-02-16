@@ -42,6 +42,12 @@ typedef struct {
 } daos_args_t;
 
 #ifdef HDF5_SUPPORT
+/* for user attr dataset */
+typedef struct {
+    char* attr_name;
+    hvl_t attr_val;
+} usr_attr_t;
+
 /* for oid dataset */
 typedef struct {
 	uint64_t oid_hi;
@@ -64,59 +70,62 @@ typedef struct {
 } akey_t;
 
 struct hdf5_args {
-	hid_t status;
-	hid_t file;
-	/* OID Data */
-	hid_t oid_memtype;
-	hid_t oid_dspace;
-	hid_t oid_dset;
-	hid_t oid_dtype;
-	/* DKEY Data */
-	hid_t dkey_memtype;
-	hid_t dkey_vtype;
-	hid_t dkey_dspace;
-	hid_t dkey_dset;
-	/* AKEY Data */
-	hid_t akey_memtype;
-	hid_t akey_vtype;
-	hid_t akey_dspace;
-	hid_t akey_dset;
-	/* recx Data */
-	hid_t plist;
-	hid_t rx_dspace;
-	hid_t rx_memspace;
-	hid_t attr_dspace;
-	hid_t attr_dtype;
-	hid_t rx_dset;
-	hid_t single_dspace;
-	hid_t single_dset;
-	hid_t rx_dtype;
-	hid_t usr_attr_num;
-	hid_t usr_attr;
-	hid_t cont_attr;
-	hid_t selection_attr;
-	hid_t version_attr;
-	hid_t single_dtype;
-	hid_t version_attr_dspace;
-	hid_t version_attr_type;
-	/* dims for dsets */
-	hsize_t oid_dims[1];
-	hsize_t dkey_dims[1];     
-	hsize_t akey_dims[1];     
-	hsize_t rx_dims[1];
-	hsize_t	mem_dims[1];
-	hsize_t	attr_dims[1];
-	hsize_t rx_chunk_dims[1];
-	hsize_t rx_max_dims[1];
-	hsize_t single_dims[1];
-	hsize_t version_attr_dims[1];
-	/* data for keys */
-	oid_t *oid_data;
-	dkey_t *dkey_data;
-	akey_t *akey_data;
-	oid_t  **oid;
-	dkey_t **dk;
-	akey_t **ak;
+    hid_t status;
+    hid_t file;
+    /* User attribute data */
+    hid_t usr_attr_memtype;
+    hid_t usr_attr_name_vtype;
+    hid_t usr_attr_val_vtype;
+    /* OID Data */
+    hid_t oid_memtype;
+    hid_t oid_dspace;
+    hid_t oid_dset;
+    hid_t oid_dtype;
+    /* DKEY Data */
+    hid_t dkey_memtype;
+    hid_t dkey_vtype;
+    hid_t dkey_dspace;
+    hid_t dkey_dset;
+    /* AKEY Data */
+    hid_t akey_memtype;
+    hid_t akey_vtype;
+    hid_t akey_dspace;
+    hid_t akey_dset;
+    /* recx Data */
+    hid_t plist;
+    hid_t rx_dspace;
+    hid_t rx_memspace;
+    hid_t attr_dspace;
+    hid_t attr_dtype;
+    hid_t rx_dset;
+    hid_t single_dspace;
+    hid_t single_dset;
+    hid_t rx_dtype;
+    hid_t usr_attr;
+    hid_t cont_attr;
+    hid_t selection_attr;
+    hid_t version_attr;
+    hid_t single_dtype;
+    hid_t version_attr_dspace;
+    hid_t version_attr_type;
+    /* dims for dsets */
+    hsize_t oid_dims[1];
+    hsize_t dkey_dims[1];     
+    hsize_t akey_dims[1];     
+    hsize_t rx_dims[1];
+    hsize_t mem_dims[1];
+    hsize_t attr_dims[1];
+    hsize_t rx_chunk_dims[1];
+    hsize_t rx_max_dims[1];
+    hsize_t single_dims[1];
+    hsize_t version_attr_dims[1];
+    /* data for keys */
+    oid_t *oid_data;
+    dkey_t *dkey_data;
+    akey_t *akey_data;
+    oid_t  **oid;
+    dkey_t **dk;
+    akey_t **ak;
 };
 #endif
 
