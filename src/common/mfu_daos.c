@@ -389,9 +389,48 @@ static int daos_set_paths(
             argpaths[1] = da->dst_path = strdup(dst_path);
             mfu_free(&dst_path);
         } else if (dst_rc == -1) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS destination path: daos://<pool>/<cont>[/<path>]");
+            /* The destination has a daos: prefix, so try to parse just the pool uuid. */
+            char* saveptr;
+            char* t = strtok_r(dst_path, "/", &saveptr);
+            if (t == NULL) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS destination path: daos://<pool>/<cont>[/<path>]");
+                rc = 1;
+                goto dst_out;
+            }
+            /* Skip over the daos: prefix */
+            t = strtok_r(NULL, "/", &saveptr);
+            if (t == NULL) {
+                /* No pool provided, so use the source pool uuid */
+                if (!daos_uuid_valid(da->src_pool_uuid)) {
+                    MFU_LOG(MFU_LOG_ERR, "Destination pool and/or container expected.");
+                    rc = 1;
+                    goto dst_out;
+                }
+                uuid_copy(da->dst_pool_uuid, da->src_pool_uuid);
+            } else {
+                /* Make sure the provided pool uuid is valid */
+                dst_rc = uuid_parse(t, da->dst_pool_uuid);
+                if (dst_rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to parse destination pool UUID");
+                    rc = 1;
+                    goto dst_out;
+                }
+            }
+            /* The pool uuid should have been last */
+            t = strtok_r(NULL, "/", &saveptr);
+            if (t != NULL) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS destination path: daos://<pool>/<cont>[/<path>]");
+                rc = 1;
+                goto dst_out;
+            }
+            /* Generate a new container uuid */
+            uuid_generate(da->dst_cont_uuid);
+            argpaths[1] = da->dst_path = strndup("/", 1);
+
+            rc = 0;
+
+dst_out:
             mfu_free(&dst_path);
-            rc = 1;
             goto out;
         }
     }
@@ -433,22 +472,13 @@ static int daos_get_cont_type(
  */
 static int daos_set_api_cont_type(
     mfu_file_t* mfu_file,
-    daos_handle_t coh,
+    enum daos_cont_props cont_type,
     daos_api_t api)
 {
     /* If explicitly using DAOS, just set the type to DAOS */
     if (api == DAOS_API_DAOS) {
         mfu_file->type = DAOS;
         return 0;
-    }
-
-    /* Otherwise, query the container type, and use DFS for POSIX containers. */
-    enum daos_cont_props cont_type;
-
-    int rc = daos_get_cont_type(coh, &cont_type);
-    if (rc) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to get DAOS container type.");
-        return rc;
     }
 
     if (cont_type == DAOS_PROP_CO_LAYOUT_POSIX) {
@@ -470,7 +500,7 @@ static int daos_set_api_cont_type(
  * Set the mfu_file types to either DAOS or DFS,
  * and make sure they are compatible.
  */
-static int daos_set_api(
+static int daos_set_api_compat(
     mfu_file_t* mfu_src_file,
     mfu_file_t* mfu_dst_file,
     daos_args_t* da,
@@ -484,20 +514,11 @@ static int daos_set_api(
 
     int rc;
 
-    /* If the user explicitly wants to use the DAOS API,
-     * then set both types to DAOS.
-     * Otherwise, query the container type and set to DFS
-     * for POSIX containers. */
-    if (have_src_pool && have_src_cont) {
-        rc = daos_set_api_cont_type(mfu_src_file, da->src_coh, da->api);
-        if (rc) {
-            return rc;
-        }
-    }
-    if (have_dst_pool && have_dst_cont) {
-        rc = daos_set_api_cont_type(mfu_dst_file, da->dst_coh, da->api);
-        if (rc) {
-            return rc;
+    /* Containers must be the same type */
+    if (have_src_cont && have_dst_cont) {
+        if (da->src_cont_type != da->dst_cont_type) {
+            MFU_LOG(MFU_LOG_ERR, "Containers must be the same type.");
+            return 1;
         }
     }
 
@@ -627,13 +648,23 @@ static void daos_bcast_handle(
 /* connect to DAOS pool, and then open container */
 static int daos_connect(
   int rank,
+  daos_args_t* da,
   uuid_t pool_uuid,
   uuid_t cont_uuid,
   daos_handle_t* poh,
   daos_handle_t* coh,
   bool connect_pool,
-  bool create_cont)
+  bool create_cont,
+  bool require_new_cont)
 {
+    /* sanity check */
+    if (require_new_cont && !create_cont) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "create_cont must be true when require_new_cont is true");
+        }
+        return -1;
+    }
+
     /* assume failure until otherwise */
     int valid = 0;
     int rc;
@@ -662,23 +693,39 @@ static int daos_connect(
         daos_cont_info_t co_info = {0};
         rc = daos_cont_open(*poh, cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
         if (rc != 0) {
-            if (!create_cont) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to open DFS container");
+            if (rc != -DER_NONEXIST || !create_cont) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to open container "DF_RC, DP_RC(rc));
                 goto bcast;
             }
 
-            rc = dfs_cont_create(*poh, cont_uuid, NULL, NULL, NULL);
+            /* Create a new container. */
+            /* TODO copy container properties */
+            /* TODO copy user attributes */
+            if (da->src_cont_type == DAOS_PROP_CO_LAYOUT_POSIX) {
+                //dfs_attr_t attr; /* TODO set and pass this */
+                rc = dfs_cont_create(*poh, cont_uuid, NULL, NULL, NULL);
+            } else {
+                rc = daos_cont_create(*poh, cont_uuid, NULL, NULL);
+            }
             if (rc != 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to create DFS container");
+                MFU_LOG(MFU_LOG_ERR, "Failed to create container");
                 goto bcast;
             }
+
+            char uuid_str[130];
+            uuid_unparse_lower(cont_uuid, uuid_str);
+            MFU_LOG(MFU_LOG_INFO, "Successfully created container %s", uuid_str);
 
             /* try to open it again */
             rc = daos_cont_open(*poh, cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
             if (rc != 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to open DFS container");
+                MFU_LOG(MFU_LOG_ERR, "Failed to open container");
                 goto bcast;
             }
+        } else if (require_new_cont) {
+            /* We successfully opened the container, but it should not exist */
+            MFU_LOG(MFU_LOG_ERR, "Destination container already exists");
+            goto bcast;
         }
 
         /* everything looks good so far */
@@ -789,6 +836,12 @@ daos_args_t* daos_args_new(void)
     da->src_epc = 0;
     da->dst_epc = 0;
 
+    /* Default does not allow the destination container to exist for DAOS API */
+    da->allow_exist_dst_cont = false;
+
+    da->src_cont_type = DAOS_PROP_CO_LAYOUT_UNKOWN;
+    da->dst_cont_type = DAOS_PROP_CO_LAYOUT_UNKOWN;
+
     return da;
 }
 
@@ -898,6 +951,9 @@ int daos_setup(
         return 1;
     }
 
+    /* At this point, we don't have any errors */
+    local_daos_error = false;
+
     /* Check whether we have pool/cont uuids */
     bool have_src_pool  = daos_uuid_valid(da->src_pool_uuid);
     bool have_src_cont  = daos_uuid_valid(da->src_cont_uuid);
@@ -907,54 +963,124 @@ int daos_setup(
     /* Check if containers are in the same pool */
     bool same_pool = (uuid_compare(da->src_pool_uuid, da->dst_pool_uuid) == 0);
 
+    bool connect_pool = true;
+    bool create_cont = false;
+    bool require_new_cont = false;
+
     /* connect to DAOS source pool if uuid is valid */
-    if (!local_daos_error && have_src_pool && have_src_cont) {
-        /* Open pool connection, but do not create container if non-existent */
-        tmp_rc = daos_connect(rank, da->src_pool_uuid,
-                da->src_cont_uuid, &da->src_poh, &da->src_coh, true, false);
+    if (have_src_cont) {
+        /* Sanity check */
+        if (!have_src_pool) {
+            if (rank == 0) {
+                MFU_LOG(MFU_LOG_ERR, "Source container requires source pool");
+            }
+            local_daos_error = true;
+            goto out;
+        }
+        tmp_rc = daos_connect(rank, da, da->src_pool_uuid, da->src_cont_uuid,
+                              &da->src_poh, &da->src_coh,
+                              connect_pool, create_cont, require_new_cont);
         if (tmp_rc != 0) {
             /* tmp_rc from daos_connect is collective */
             local_daos_error = true;
+            goto out;
         }
+        /* Get the container type */
+        tmp_rc = daos_get_cont_type(da->src_coh, &da->src_cont_type);
+        if (tmp_rc != 0) {
+            /* ideally, this should be the same for each process */
+            local_daos_error = true;
+            goto out;
+        }
+        /* Set the src api based on the container type */
+        tmp_rc = daos_set_api_cont_type(mfu_src_file, da->src_cont_type, da->api);
+        if (tmp_rc != 0) {
+            local_daos_error = true;
+            goto out;
+        }
+        /* Sanity check before we create a new container */
+        if (da->src_cont_type != DAOS_PROP_CO_LAYOUT_POSIX) {
+            if (strcmp(da->src_path, "/") != 0) {
+                if (rank == 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Cannot use path with non-POSIX container.");
+                }
+                local_daos_error = true;
+                goto out;
+            }
+        }
+    }
+
+    /* If we're using the DAOS API, the destination container cannot
+     * exist already, unless overriden by allow_exist_dst_cont. */
+    if (mfu_src_file->type != POSIX && mfu_src_file->type != DFS && !da->allow_exist_dst_cont) {
+        require_new_cont = true;
     }
 
     /* If the source and destination are in the same pool,
      * then open the container in that pool.
      * Otherwise, connect to the second pool and open the container */
-    if (!local_daos_error && have_dst_pool && have_dst_cont) {
+    if (have_dst_pool) {
+        /* Sanity check before we create a new container */
+        if (require_new_cont && da->api == DAOS_API_DAOS) {
+            if (strcmp(da->dst_path, "/") != 0) {
+                if (rank == 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Cannot use path with non-POSIX container.");
+                }
+                local_daos_error = true;
+                goto out;
+            }
+        }
+
+        create_cont = true;
         if (same_pool) {
-            /* Don't reconnect to pool, but do create container if non-existent */
-            tmp_rc = daos_connect(rank, da->dst_pool_uuid,
-                    da->dst_cont_uuid, &da->src_poh, &da->dst_coh, false, true);
+            connect_pool = false;
+            tmp_rc = daos_connect(rank, da, da->dst_pool_uuid, da->dst_cont_uuid,
+                                  &da->src_poh, &da->dst_coh,
+                                  connect_pool, create_cont, require_new_cont);
         } else {
-            /* Open pool connection, and create container if non-existent */
-            tmp_rc = daos_connect(rank, da->dst_pool_uuid,
-                    da->dst_cont_uuid, &da->dst_poh, &da->dst_coh, true, true);
+            connect_pool = true;
+            tmp_rc = daos_connect(rank, da, da->dst_pool_uuid, da->dst_cont_uuid,
+                                  &da->dst_poh, &da->dst_coh,
+                                  connect_pool, create_cont, require_new_cont);
         }
         if (tmp_rc != 0) {
             /* tmp_rc from daos_connect is collective */
             local_daos_error = true;
+            goto out;
+        }
+        /* Get the container type */
+        tmp_rc = daos_get_cont_type(da->dst_coh, &da->dst_cont_type);
+        if (tmp_rc != 0) {
+            /* ideally, this should be the same for each process */
+            local_daos_error = true;
+            goto out;
+        }
+        /* Set the dst api based on the container type */
+        tmp_rc = daos_set_api_cont_type(mfu_dst_file, da->dst_cont_type, da->api);
+        if (tmp_rc != 0) {
+            local_daos_error = true;
+            goto out;
         }
     }
 
     /* Figure out if we should use the DFS or DAOS API */
-    if (!local_daos_error) {
-        tmp_rc = daos_set_api(mfu_src_file, mfu_dst_file, da, argpaths);
-        if (tmp_rc != 0) {
-            local_daos_error = true;
-        }
+    tmp_rc = daos_set_api_compat(mfu_src_file, mfu_dst_file, da, argpaths);
+    if (tmp_rc != 0) {
+        local_daos_error = true;
+        goto out;
     }
 
     /* Mount source DFS container */
-    if (!local_daos_error && mfu_src_file->type == DFS) {
+    if (mfu_src_file->type == DFS) {
         tmp_rc = mfu_dfs_mount(mfu_src_file, &da->src_poh, &da->src_coh);
         if (tmp_rc != 0) {
             local_daos_error = true;
+            goto out;
         }
     }
 
     /* Mount destination DFS container */
-    if (!local_daos_error && mfu_dst_file->type == DFS) {
+    if (mfu_dst_file->type == DFS) {
         if (same_pool) {
             tmp_rc = mfu_dfs_mount(mfu_dst_file, &da->src_poh, &da->dst_coh);
         } else {
@@ -962,12 +1088,14 @@ int daos_setup(
         }
         if (tmp_rc != 0) {
             local_daos_error = true;
+            goto out;
         }
     }
 
+out:
+
     /* Return if any process had a daos error */
     if (daos_any_error(rank, local_daos_error, flag_daos_args)) {
-        tmp_rc = daos_fini();
         return 1;
     }
 

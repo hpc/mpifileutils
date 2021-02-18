@@ -22,20 +22,23 @@ typedef enum {
 
 /* struct for holding DAOS arguments */
 typedef struct {
-    daos_handle_t src_poh; /* source pool handle */
-    daos_handle_t dst_poh; /* destination pool handle */
-    daos_handle_t src_coh; /* source container handle */
-    daos_handle_t dst_coh; /* destination container handle */
-    uuid_t src_pool_uuid;  /* source pool UUID */
-    uuid_t dst_pool_uuid;  /* destination pool UUID */
-    uuid_t src_cont_uuid;  /* source container UUID */
-    uuid_t dst_cont_uuid;  /* destination container UUID */
-    char* dfs_prefix;      /* prefix for UNS */
-    char* src_path;        /* allocated src path */
-    char* dst_path;        /* allocated dst path */
-    daos_api_t api;        /* API to use */
-    daos_epoch_t src_epc;  /* src container epoch */
-    daos_epoch_t dst_epc;  /* dst container epoch */
+    daos_handle_t src_poh;  /* source pool handle */
+    daos_handle_t dst_poh;  /* destination pool handle */
+    daos_handle_t src_coh;  /* source container handle */
+    daos_handle_t dst_coh;  /* destination container handle */
+    uuid_t src_pool_uuid;   /* source pool UUID */
+    uuid_t dst_pool_uuid;   /* destination pool UUID */
+    uuid_t src_cont_uuid;   /* source container UUID */
+    uuid_t dst_cont_uuid;   /* destination container UUID */
+    char* dfs_prefix;       /* prefix for UNS */
+    char* src_path;         /* allocated src path */
+    char* dst_path;         /* allocated dst path */
+    daos_api_t api;         /* API to use */
+    daos_epoch_t src_epc;   /* src container epoch */
+    daos_epoch_t dst_epc;   /* dst container epoch */
+    bool allow_exist_dst_cont;          /* whether to allow the dst container to exist for DAOS API */
+    enum daos_cont_props src_cont_type; /* type of the source container */
+    enum daos_cont_props dst_cont_type; /* type of the destination container */
 } daos_args_t;
 
 /* Return a newly allocated daos_args_t structure.
