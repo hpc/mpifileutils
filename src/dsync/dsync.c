@@ -2884,6 +2884,9 @@ static int dsync_daos_setup(
     bool daos_do_cleanup = false;
     bool daos_do_exit = false;
 
+    /* Always allow the destination to exist. */
+    daos_args->allow_exist_dst_cont = true;
+
     /* Set up DAOS arguments, containers, dfs, etc. */
     int daos_rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
     if (daos_rc != 0) {

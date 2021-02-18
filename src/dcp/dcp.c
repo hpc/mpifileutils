@@ -360,6 +360,7 @@ int main(int argc, char** argv)
     /* Set up DAOS arguments, containers, dfs, etc. */
     rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
     if (rc != 0) {
+        daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
         mfu_finalize();
         MPI_Finalize();
         return 1;
