@@ -1526,7 +1526,7 @@ static int mfu_daos_obj_sync_keys(
 
             /* Print enumerated dkeys */
             daos_key_t diov;
-            snprintf(dkey, dkey_kds[i].kd_key_len + 1, "%s", dkey_ptr);
+            memcpy(dkey, dkey_ptr, dkey_kds[i].kd_key_len);
             d_iov_set(&diov, (void*)dkey, dkey_kds[i].kd_key_len);
             dkey_ptr += dkey_kds[i].kd_key_len;
 
@@ -1566,7 +1566,7 @@ static int mfu_daos_obj_sync_keys(
                     daos_key_t aiov;
                     daos_iod_t iod;
                     daos_recx_t recx;
-                    snprintf(akey, akey_kds[j].kd_key_len + 1, "%s", akey_ptr);
+                    memcpy(akey, akey_ptr, akey_kds[j].kd_key_len);
                     d_iov_set(&aiov, (void*)akey, akey_kds[j].kd_key_len);
 
                     /* set iod values */
