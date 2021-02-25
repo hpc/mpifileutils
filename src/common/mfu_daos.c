@@ -1312,7 +1312,7 @@ static int alloc_iov_buf(
 {
     for (uint32_t i = 0; i < number; i++) {
         buf_len[i] = recxs[i].rx_nr * size;
-        buf[i] = MFU_MALLOC(buf_len[i]);
+        buf[i] = calloc(buf_len[i], sizeof(void*));
         if (buf[i] == NULL) {
             free_iov_buf(number, buf);
             return -1;
@@ -1493,8 +1493,8 @@ static int mfu_daos_obj_sync_keys(
     daos_anchor_t dkey_anchor = {0}; 
     int rc;
     while (!daos_anchor_is_eof(&dkey_anchor)) {
-        d_sg_list_t     dkey_sgl;
-        d_iov_t         dkey_iov;
+        d_sg_list_t     dkey_sgl = {0};
+        d_iov_t         dkey_iov = {0};
         daos_key_desc_t dkey_kds[ENUM_DESC_NR]       = {0};
         uint32_t        dkey_number                  = ENUM_DESC_NR;
         char            dkey_enum_buf[ENUM_DESC_BUF] = {0};
@@ -1533,8 +1533,8 @@ static int mfu_daos_obj_sync_keys(
             /* loop to enumerate akeys */
             daos_anchor_t akey_anchor = {0}; 
             while (!daos_anchor_is_eof(&akey_anchor)) {
-                d_sg_list_t     akey_sgl;
-                d_iov_t         akey_iov;
+                d_sg_list_t     akey_sgl = {0};
+                d_iov_t         akey_iov = {0};
                 daos_key_desc_t akey_kds[ENUM_DESC_NR]       = {0};
                 uint32_t        akey_number                  = ENUM_DESC_NR;
                 char            akey_enum_buf[ENUM_DESC_BUF] = {0};
@@ -1563,9 +1563,9 @@ static int mfu_daos_obj_sync_keys(
 
                 /* parse out individual akeys based on key length and number of dkeys returned */
                 for (akey_ptr = akey_enum_buf, j = 0; j < akey_number; j++) {
-                    daos_key_t aiov;
-                    daos_iod_t iod;
-                    daos_recx_t recx;
+                    daos_key_t aiov = {0};
+                    daos_iod_t iod = {0};
+                    daos_recx_t recx = {0};
                     memcpy(akey, akey_ptr, akey_kds[j].kd_key_len);
                     d_iov_set(&aiov, (void*)akey, akey_kds[j].kd_key_len);
 
@@ -1732,7 +1732,7 @@ static int mfu_daos_obj_list_oids(
     daos_obj_id_t        oids[OID_ARR_SIZE];
     daos_anchor_t        anchor;
     uint32_t             oids_nr;
-    daos_handle_t        toh;
+    daos_handle_t        toh = DAOS_HDL_INVAL;
     uint32_t             oids_total = 0;
     int                  rc = 0;
 
@@ -1742,6 +1742,7 @@ static int mfu_daos_obj_list_oids(
         MFU_LOG(MFU_LOG_ERR, "DAOS failed to open oit "DF_RC, DP_RC(rc));
         return 1;
     }
+    memset(&oids, 0, OID_ARR_SIZE*sizeof(daos_obj_id_t));
     memset(&anchor, 0, sizeof(anchor));
     flist_t* flist = (flist_t*) bflist;
 
