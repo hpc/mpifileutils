@@ -131,6 +131,16 @@ void* mfu_malloc(
   int line
 );
 
+/* if size > 0 allocates size bytes and returns pointer,
+ * calls mfu_abort if calloc fails, returns NULL if size == 0 */
+#define MFU_CALLOC(X, Y) mfu_calloc(X, Y, __FILE__, __LINE__)
+void* mfu_calloc(
+  size_t nelem,
+  size_t elsize,
+  const char* file,
+  int line
+);
+
 /* if size > 0, allocates size bytes aligned with specified alignment
  * and returns pointer, calls mfu_abort on failure,
  * returns NULL if size == 0 */

@@ -771,6 +771,28 @@ void mfu_flist_set_detail (mfu_flist bflist, int detail)
     return;
 }
 
+uint64_t mfu_flist_file_get_oid_low(mfu_flist bflist, uint64_t idx)
+{
+    uint64_t oid_low;
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        oid_low = elem->obj_id_lo;
+    }
+    return oid_low;
+}
+
+uint64_t mfu_flist_file_get_oid_high(mfu_flist bflist, uint64_t idx)
+{
+    uint64_t oid_high;
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        oid_high = elem->obj_id_hi;
+    }
+    return oid_high;
+}
+
 const char* mfu_flist_file_get_name(mfu_flist bflist, uint64_t idx)
 {
     const char* name = NULL;
@@ -1008,6 +1030,20 @@ void mfu_flist_file_set_oid(mfu_flist bflist, uint64_t idx, daos_obj_id_t oid)
     if (elem != NULL) {
         elem->obj_id_lo = oid.lo;
         elem->obj_id_hi = oid.hi;
+    }
+    return;
+}
+
+void mfu_flist_file_set_cont(mfu_flist bflist, uint64_t idx, const char* name)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        /* free existing name if there is one */
+        mfu_free(&elem->file);
+
+        /* set new name */
+        elem->file = MFU_STRDUP(name);
     }
     return;
 }
