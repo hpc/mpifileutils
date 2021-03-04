@@ -106,7 +106,27 @@ or to build the latest mpiFileUtils from the master branch:
      -DCMAKE_INSTALL_PREFIX=../install
    make install
 
-build latest mpiFileUtils from the master branch with DAOS Support:
+To enable Lustre, GPFS, and experimental tools, add the following flags during CMake:
+
+.. code-block:: Bash
+
+    -DENABLE_LUSTRE=ON
+    -DENABLE_GPFS=ON
+    -DENABLE_EXPERIMENTAL=ON
+
+To disable linking against libarchive, and tools requiring libarchive, add the following flag during CMake:
+
+.. code-block:: Bash
+
+    -DENABLE_LIBARCHIVE=OFF
+
+-------------------------------------------
+Build everything directly with DAOS support
+-------------------------------------------
+
+To build with DAOS support, first install the dependenies as mentioned above,
+and make sure DAOS is installed. If CART and DAOS are installed under a standard
+system path then specifying the CART and DAOS paths is unnecessary.
 
 .. code-block:: Bash
 
@@ -122,23 +142,16 @@ build latest mpiFileUtils from the master branch with DAOS Support:
      -DENABLE_DAOS=ON
    make install
 
-The above build with DAOS option also assumes you have already installed DAOS. If
-CART and DAOS are installed under a standard system path then specifying the CART
-and DAOS paths is unnecessary. 
 
-To enable Lustre, GPFS, and experimental tools, add the following flags during CMake:
-
-.. code-block:: Bash
-
-    -DENABLE_LUSTRE=ON
-    -DENABLE_GPFS=ON
-    -DENABLE_EXPERIMENTAL=ON
-
-To disable linking against libarchive, and tools requiring libarchive, add the following flag during CMake:
+To build with HDF5 support, add the following flags during CMake.
+To use the `daos-serialize` and `daos-deserialize` tools, HDF5 1.2+ is required.
+To copy HDF5 containers with `dcp`, HDF5 1.8+ is required, along with the daos-vol.
+If HDF5 is installed under a standard system path then specifying the HDF5 path is unnecessary.
 
 .. code-block:: Bash
 
-    -DENABLE_LIBARCHIVE=OFF
+   -DENABLE_HDF5=ON \
+   -DWITH_HDF5_PREFIX=</path/to/hdf5>
 
 --------------------------------------------------------------
 Build mpiFileUtils directly, build its dependencies with Spack

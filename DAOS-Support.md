@@ -16,11 +16,9 @@ filesystems in dcp and dsync:
 2. POSIX -> DAOS
 3. DAOS  -> DAOS
 
-For dcp, the DAOS->DAOS case supports both POSIX and non-POSIX DAOS containers.
+For the DAOS->DAOS case, both the DFS API and DAOS Object API are supported.
 
-For dsync, the DAOS->DAOS case currently only supports POSIX containers.
-
-For daos-serialize and daos-deserialize, any type of DAOS container is supported. 
+For daos-serialize and daos-deserialize, any type of DAOS container is supported.
 
 ## DAOS POSIX Data Movement Examples with dcp
 
@@ -68,7 +66,7 @@ $ mpirun -np 3 dcp -v /tmp/$USER/conts/p1cont1 /tmp/$USER/conts/p1cont2
 
 #### Example Four
 
-This example passes in the pool and container UUID directly. The destination path
+This example passes in the pool and container UUID directly. The source path
 is the relative path within the DAOS container, which in this case is a subset of 
 the DAOS container. 
 
@@ -92,7 +90,7 @@ $ mpirun -np 3 dcp -v /tmp/$USER/conts/p1cont1 /tmp/$USER/d
 [2020-04-23T17:17:51]   Files: 3
 [2020-04-23T17:17:51]   Links: 0
 ```
-## DAOS non-POSIX Data Movement Examples With dsync
+## DAOS non-POSIX Data Movement Examples with dcp
 
 #### Example One 
 
@@ -118,8 +116,7 @@ $ mpirun -np 3 dcp -v daos://$pool1/$p1cont1 daos://$pool1/$p1cont2
 ## DAOS POSIX Data Movement Examples with dsync
 
 The usage for dsync is similar to the usage for dcp. The source and destination
-can be DAOS, POSIX, or UNS paths. However, dsync currently only supports
-POSIX-type DAOS containers.
+can be DAOS, POSIX, or UNS paths.
 
 #### Example One
 
@@ -133,6 +130,35 @@ $ mpirun -np 3 dsync -v daos://$pool1/$cont1/source daos://$pool2/$cont2/dest
 [2020-04-28T00:47:59]   Directories: 0
 [2020-04-28T00:47:59]   Files: 1
 [2020-04-28T00:47:59]   Links: 0
+```
+
+#### Example Two
+
+Show the sync from one DAOS container to another, where both of the DAOS
+containers are not of the POSIX type.
+
+```shell
+$ mpirun -np 3 dsync -v daos://$pool1/$cont1 daos://$pool1/$cont2
+[2021-03-04T19:14:17] Objects    : 6
+[2021-03-04T19:14:17]   D-Keys   : 10
+[2021-03-04T19:14:17]   A-Keys   : 14
+[2021-03-04T19:14:17] Bytes read    : 4.000 MiB (4194660 bytes)
+[2021-03-04T19:14:17] Bytes written : 4.000 MiB (4194660 bytes)
+```
+
+#### Example Three
+
+Show the same sync from the previous example, but where the destination
+already contains the source data. In this case, the data in the destination
+is compared to the source, and nothing is written.
+
+```shell
+$ mpirun -np 3 dsync -v daos://$pool1/$cont1 daos://$pool1/$cont2
+[2021-03-04T19:15:03] Objects    : 6
+[2021-03-04T19:15:03]   D-Keys   : 10
+[2021-03-04T19:15:03]   A-Keys   : 14
+[2021-03-04T19:15:03] Bytes read    : 8.000 MiB (8389320 bytes)
+[2021-03-04T19:15:03] Bytes written : 0.000 B (0 bytes)
 ```
 
 ## DAOS POSIX Data Comparison Examples with dcmp
@@ -172,7 +198,7 @@ DAOS container, and a pool UUID to deserialize the data to must be specified.
 Show the serialization of a DAOS container
 
 ```shell
-$ mpirun -np 3 daos-serialize -v /$pool1/$cont1
+$ mpirun -np 3 daos-serialize -v daos://$pool1/$cont1
 Serializing Container to 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank0.h5
 Serializing Container to 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank1.h5
 Serializing Container to 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank2.h5
@@ -183,7 +209,7 @@ Serializing Container to 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank2.h5
 Show the serialization of a DAOS container by specifying output directory
 
 ```shell
-$ mpirun -np 3 daos-serialize -v -o serialize /$pool1/$cont1
+$ mpirun -np 3 daos-serialize -v -o serialize daos://$pool1/$cont1
 Serializing Container to serialize/7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank0.h5
 Serializing Container to serialize/7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank1.h5
 Serializing Container to serialize/7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank2.h5
@@ -193,7 +219,7 @@ Serializing Container to serialize/7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank2.h5
 Show the deserialization of an HDF5 file
 
 ```shell
-$ mpirun -np 3 daos-deserialize -v 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank0.h5
+$ mpirun -np 3 daos-deserialize -v --pool $pool1 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank0.h5
 7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank1.h5 2-7bf8037d-823f-4fa5-ac2a-c2cae8f81f57_rank2.h5
 
 Successfully created container cbc52064-303e-497d-afaf-fa554c18e08f
