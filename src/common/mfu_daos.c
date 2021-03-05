@@ -1341,48 +1341,14 @@ out_err:
     return -1;
 }
 
-/* Free a buffer created with alloc_iov_buf */
-static void free_iov_buf(
-    uint32_t    number, /* buffer length */
-    char**      buf)    /* pointer to static buffer */
+/* Sum size needed for an array of recxs */
+static inline uint64_t sum_recx_size(uint32_t number, daos_size_t size, daos_recx_t* recxs)
 {
-    if (buf != NULL) {
-        for (uint32_t i = 0; i < number; i++) {
-            mfu_free(&buf[i]);
-        }
-    }
-}
-
-/* Create a buffer based on recxs and set iov for each index */
-static int alloc_iov_buf(
-    uint32_t        number, /* number of recxs, iovs, and buffer */
-    daos_size_t     size,   /* size of each record */
-    daos_recx_t*    recxs,  /* array of recxs */
-    d_iov_t*        iov,    /* array of iovs */
-    char**          buf,    /* pointer to static buffer */
-    uint64_t*       buf_len)/* pointer to static buffer lengths */
-{
+    uint64_t total_nr = 0;
     for (uint32_t i = 0; i < number; i++) {
-        buf_len[i] = recxs[i].rx_nr * size;
-        buf[i] = calloc(buf_len[i], sizeof(void*));
-        if (buf[i] == NULL) {
-            free_iov_buf(number, buf);
-            return -1;
-        }
-        d_iov_set(&iov[i], buf[i], buf_len[i]);
+        total_nr += recxs[i].rx_nr;
     }
-
-    return 0;
-}
-
-/* Sum an array of uint64_t */
-static uint64_t sum_uint64_t(uint32_t number, uint64_t* buf)
-{
-    uint64_t sum = 0;
-    for (uint32_t i = 0; i < number; i++) {
-        sum += buf[i];
-    }
-    return sum;
+    return total_nr * size;
 }
 
 /* Copy all array recx from a src obj to dst obj for a given dkey/akey.
@@ -1399,11 +1365,16 @@ static int mfu_daos_obj_sync_recx_array(
 {
     bool        all_dst_equal = true;   /* equal until found otherwise */
     uint32_t    max_number = 5;         /* max recxs per fetch */
-    char*       src_buf[max_number];    /* src buffer data */
-    uint64_t    src_buf_len[max_number];/* src buffer lengths */
+    char*       src_buf = NULL;         /* src buffer data */
+    char*       prev_src_buf = NULL;    /* previous src buffer */
+    char*       dst_buf = NULL;         /* dst buffer data */
+    char*       prev_dst_buf = NULL;    /* previous dst buffer */
+    uint64_t    buf_len = 0;            /* current src/dst buffer len */
+    uint64_t    buf_len_alloc = 0;      /* alloacted src/dst buffer len */
     d_sg_list_t src_sgl;
     daos_recx_t recxs[max_number];
     daos_size_t size;
+    d_iov_t     src_iov;
     daos_epoch_range_t eprs[max_number];
 
     daos_anchor_t recx_anchor = {0};
@@ -1423,8 +1394,6 @@ static int mfu_daos_obj_sync_recx_array(
         if (number == 0) 
             continue;
 
-        d_iov_t src_iov[number];
-
         /* set iod values */
         (*iod).iod_type  = DAOS_IOD_ARRAY;
         (*iod).iod_nr    = number;
@@ -1433,17 +1402,31 @@ static int mfu_daos_obj_sync_recx_array(
 
         /* set src_sgl values */
         src_sgl.sg_nr_out = 0;
-        src_sgl.sg_iovs   = src_iov;
-        src_sgl.sg_nr     = number;
+        src_sgl.sg_iovs   = &src_iov;
+        src_sgl.sg_nr     = 1;
 
-        /* allocate and setup src_buf */
-        if (alloc_iov_buf(number, size, recxs, src_iov, src_buf, src_buf_len) != 0) {
-            MFU_LOG(MFU_LOG_ERR, "DAOS failed to allocate source buffer.");
-            goto out_err;
+        /* allocate/reallocate a single src/dst buffer */
+        buf_len = sum_recx_size(number, size, recxs);
+        if (buf_len > buf_len_alloc) {
+            prev_src_buf = src_buf;
+            src_buf = realloc(prev_src_buf, buf_len);
+            if (src_buf == NULL) {
+                MFU_LOG(MFU_LOG_ERR, "DAOS failed to allocate source buffer.");
+                goto out_err;
+            }
+            if (compare_dst) {
+                prev_dst_buf = dst_buf;
+                dst_buf = realloc(prev_dst_buf, buf_len);
+                if (dst_buf == NULL) {
+                    MFU_LOG(MFU_LOG_ERR, "DAOS failed to allocate destination buffer.");
+                    goto out_err;
+                }
+            }
+            buf_len_alloc = buf_len;
         }
+        d_iov_set(&src_iov, src_buf, buf_len);
 
         bool recx_equal = false;
-        uint64_t total_bytes = sum_uint64_t(number, src_buf_len);
 
         /* fetch recx values from source */
         rc = daos_obj_fetch(*src_oh, DAOS_TX_NONE, 0, dkey, 1, iod,
@@ -1454,35 +1437,29 @@ static int mfu_daos_obj_sync_recx_array(
         }
 
         /* Sanity check */
-        if (src_sgl.sg_nr_out != number) {
+        if (src_sgl.sg_nr_out != 1) {
             MFU_LOG(MFU_LOG_ERR, "Failed to fetch array recxs.");
             goto out_err;
         }
 
-        stats->bytes_read += total_bytes;
+        stats->bytes_read += buf_len;
 
         /* Conditionally compare the destination before writing */
         if (compare_dst) {
-            char*       dst_buf[number];
-            uint64_t    dst_buf_len[number];
             d_sg_list_t dst_sgl;
-            d_iov_t     dst_iov[number];
+            d_iov_t     dst_iov;
 
             dst_sgl.sg_nr_out = 0;
-            dst_sgl.sg_iovs   = dst_iov;
-            dst_sgl.sg_nr     = number;
+            dst_sgl.sg_iovs   = &dst_iov;
+            dst_sgl.sg_nr     = 1;
 
-            /* allocate and setup dst_buf */
-            if (alloc_iov_buf(number, size, recxs, dst_iov, dst_buf, dst_buf_len) != 0) {
-                MFU_LOG(MFU_LOG_ERR, "DAOS failed to allocate destination buffer.");
-                goto out_err;
-            }
+            d_iov_set(&dst_iov, dst_buf, buf_len);
 
+            /* fetch recx values from destination */
             rc = daos_obj_fetch(*dst_oh, DAOS_TX_NONE, 0, dkey, 1, iod,
                                 &dst_sgl, NULL, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "DAOS object fetch returned with errors "DF_RC, DP_RC(rc));
-                free_iov_buf(number, dst_buf);
                 goto out_err;
             }
 
@@ -1494,17 +1471,13 @@ static int mfu_daos_obj_sync_recx_array(
              * If any recx is different, update all recxs in dst and flag
              * this akey as different. */
             if (dst_sgl.sg_nr_out > 0) {
-                stats->bytes_read += total_bytes;
+                stats->bytes_read += buf_len;
                 recx_equal = true;
-                for (uint32_t i = 0; i < number; i++) {
-                    if (memcmp(src_buf[i], dst_buf[i], src_buf_len[i]) != 0) {
-                        recx_equal = false;
-                        all_dst_equal = false;
-                        break;
-                    }
+                if (memcmp(src_buf, dst_buf, buf_len) != 0) {
+                    recx_equal = false;
+                    all_dst_equal = false;
                 }
             }
-            free_iov_buf(number, dst_buf);
         }
 
         /* Conditionally write to the destination */
@@ -1515,20 +1488,27 @@ static int mfu_daos_obj_sync_recx_array(
                 MFU_LOG(MFU_LOG_ERR, "DAOS object update returned with errors "DF_RC, DP_RC(rc));
                 goto out_err;
             }
-            stats->bytes_written += total_bytes;
+            stats->bytes_written += buf_len;
         }
-        free_iov_buf(number, src_buf);
     }
 
     /* return 0 if equal, 1 if different */
     if (all_dst_equal) {
-        return 0;
+        rc = 0;
+    } else {
+        rc = 1;
     }
-    return 1;
+
+out_free:
+    mfu_free(&src_buf);
+    mfu_free(&dst_buf);
+
+    return rc;
 
 out_err:
     /* return -1 on true errors */
-    return -1;
+    rc = -1;
+    goto out_free;
 }
 
 /* Copy all dkeys and akeys from a src obj to dst obj.
