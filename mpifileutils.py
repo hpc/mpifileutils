@@ -264,28 +264,14 @@ class FList:
     self.idx = None
 
     self.flist = None
-    if flist is not None:
+    if walk is not None:
+      self.walk(walk)
+    elif flist is not None:
       self.flist = flist
     elif read is not None:
       self.read(read)
     else:
       self.flist = libmfu.mfu_flist_new()
-
-    # walk path if one is given
-    if walk:
-      opts = libmfu.mfu_walk_opts_new()
-      mfufile = libmfu.mfu_file_new()
-      libmfu.mfu_flist_walk_path(walk, opts, self.flist, mfufile)
-
-      mfufile_ptr = ffi.new("mfu_file_t*[1]")
-      mfufile_ptr[0] = mfufile
-      libmfu.mfu_file_delete(mfufile_ptr)
-      #libmfu.mfu_file_delete(mfufile)
-
-      opts_ptr = ffi.new("mfu_walk_opts_t*[1]")
-      opts_ptr[0] = opts
-      libmfu.mfu_walk_opts_delete(opts_ptr)
-      #libmfu.mfu_walk_opts_delete(opts)
 
   # we may hold a pointer to an flist that was allocated in __init__
   # free this during the desctructor
@@ -391,6 +377,23 @@ class FList:
       self.idx += 1
       return self.__getitem__(idx)
     raise StopIteration
+
+  # walk given path and fill in flist
+  def walk(self, path):
+    self.free_flist()
+    self.flist = libmfu.mfu_flist_new()
+
+    opts = libmfu.mfu_walk_opts_new()
+    mfufile = libmfu.mfu_file_new()
+    libmfu.mfu_flist_walk_path(path, opts, self.flist, mfufile)
+
+    mfufile_ptr = ffi.new("mfu_file_t*[1]")
+    mfufile_ptr[0] = mfufile
+    libmfu.mfu_file_delete(mfufile_ptr)
+
+    opts_ptr = ffi.new("mfu_walk_opts_t*[1]")
+    opts_ptr[0] = opts
+    libmfu.mfu_walk_opts_delete(opts_ptr)
 
   # read flist from file name
   def read(self, fname):
