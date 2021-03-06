@@ -552,5 +552,64 @@ class FList:
     mfufile_ptr[0] = mfufile
     libmfu.mfu_file_delete(mfufile_ptr)
 
+  # compute list of unique values over global set
+  def unique(self, fn):
+    # TODO: to avoid gathering all data to one rank,
+    # this could be done in a distributed way with DTCMP
+
+    # iterate over list and compute set of different function values
+    vals = set()
+    for f in self:
+      vals.add(fn(f))
+    vals = list(vals)
+
+    # compute global set across all ranks
+
+    # gather all values to rank 0
+    comm = MPI.COMM_WORLD
+    allvals = comm.gather(vals, root=0)
+
+    # compute set of all values on rank 0
+    uniqlist = []
+    if comm.rank == 0:
+      allset = set()
+      for sublist in allvals:
+        for s in sublist:
+          allset.add(s)
+      uniqlist = list(allset)
+
+    # broadcast list of unique values to all ranks
+    # use a list to be sure all ranks see the same ordering
+    uniqlist = comm.bcast(uniqlist, root=0)
+
+    return uniqlist
+
+  # split FList into a dictionary of FLists with key determined by fn
+  def split(self, fn):
+    # get list of unique values
+    # important: uniqlist is ordered the same on all ranks
+    uniqlist = self.unique(fn)
+
+    # define a map of value to index in the list
+    #val2idx = {val:i for i,val in enumerate(uniqlist)}
+
+    # allocate a subset FList for each unique value
+    flists = dict()
+    for val in uniqlist:
+      flists[val] = self.subset()
+
+    # copy each item in our list into its corresponding sublist
+    for f in self:
+      val = fn(f)
+      #idx = val2idx[val]
+      #flists[idx].append(f)
+      flists[val].append(f)
+
+    # summarize the list for each unique value
+    for val in uniqlist:
+      flists[val].summarize()
+
+    return flists
+
 # shut down libmfu, way to do this on exit?
 #libmfu.mfu_finalize()

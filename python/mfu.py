@@ -84,3 +84,15 @@ for f in flist_dirs:
 print("out")
 for f in flist_notdirs:
   print(f.size, f)
+
+types = flist.unique(lambda f: f.type)
+print(types)
+
+sizes = flist.unique(lambda f: f.size)
+print(sizes)
+
+users = flist.split(lambda f: f.user)
+print(users)
+
+lists = flist.split(lambda f: f.name)
+print(lists)
