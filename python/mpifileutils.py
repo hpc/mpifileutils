@@ -356,19 +356,13 @@ class FList:
 
       i = idx.start
       if i < 0:
-        if size + i >= 0:
-          i += size
-        else:
-          raise IndexError
+        i += size
 
       end = idx.stop
       if end > size:
         end = size 
       if end < 0:
-        if size + end >= 0:
-          end += size
-        else:
-          raise IndexError
+        end += size
 
       step = 1
       if idx.step != None:
