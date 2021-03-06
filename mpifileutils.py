@@ -248,7 +248,7 @@ class FItem:
     self.mode  = None
     self.user  = None
     self.group = None
-    self.atimens = None
+    self.atime   = None
     self.atimens = None
     self.mtime   = None
     self.mtimens = None
@@ -260,17 +260,21 @@ class FItem:
     return self.name
 
 class FList:
-  def __init__(self, walk=None, flist=None, read=None):
+  def __init__(self, walk=None, read=None, flist=None):
     self.idx = None
 
     self.flist = None
-    if walk is not None:
+    if walk != None:
+      # given a path to walk
       self.walk(walk)
-    elif flist is not None:
-      self.flist = flist
-    elif read is not None:
+    elif read != None:
+      # given file to read
       self.read(read)
+    elif flist != None:
+      # given an explicit flist to use
+      self.flist = flist
     else:
+      # create an empty list if not given something else
       self.flist = libmfu.mfu_flist_new()
 
   # we may hold a pointer to an flist that was allocated in __init__
@@ -306,9 +310,10 @@ class FList:
     size = libmfu.mfu_flist_size(self.flist)
     return int(size)
 
+  # report global number of items in list as string representation
   def __repr__(self):
-    libmfu.mfu_flist_print_summary(self.flist)
-    return "Items: " + str(self.__len__())
+    size = self.global_size()
+    return "Total items: " + str(size)
 
   # global list size
   def global_size(self):
