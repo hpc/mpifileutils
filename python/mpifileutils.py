@@ -352,19 +352,38 @@ class FList:
   # get a single item or a list of items from a slice
   def __getitem__(self, idx):
     if isinstance(idx, slice):
+      size = self.__len__()
+
       i = idx.start
+      if i < 0:
+        if size + i >= 0:
+          i += size
+        else:
+          raise IndexError
+
+      end = idx.stop
+      if end > size:
+        end = size 
+      if end < 0:
+        if size + end >= 0:
+          end += size
+        else:
+          raise IndexError
 
       step = 1
       if idx.step != None:
         step = idx.step
 
       l = []
-      while i < idx.stop:
+      while i >= 0 and i < end:
         l.append(self.extract_item(i))
         i += step
 
       return l
     else:
+      if idx < 0:
+        size = self.__len__()
+        idx += size
       return self.extract_item(idx)
 
   # support the iterator interface to step through our local list
