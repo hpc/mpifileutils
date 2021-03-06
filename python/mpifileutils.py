@@ -230,7 +230,7 @@ void mfu_flist_file_set_size(mfu_flist flist, uint64_t index, uint64_t size);
 
 ''')
 
-libmfu = ffi.dlopen('./install/lib64/libmfu.so')
+libmfu = ffi.dlopen('../install/lib64/libmfu.so')
 #print('Loaded lib {0}'.format(libmfu))
 
 # initialize libmfu (just do this once)

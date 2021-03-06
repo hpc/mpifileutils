@@ -6,8 +6,9 @@ from mpifileutils import *
 ##print(flist)
 #quit()
 
-flist = FList('./testdir')
-flist.chmod(mode="g-w", group="tools")
+flist = FList()
+flist.walk('../testdir')
+flist.chmod(mode="g+w", group="tools")
 flist.write('test.txt', text=True)
 quit()
 
