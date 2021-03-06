@@ -182,6 +182,9 @@ mfu_flist mfu_flist_spread(mfu_flist flist);
 
 mfu_flist mfu_flist_sort(const char* fields, mfu_flist flist);
 
+/* copy specified source file into destination list */
+void mfu_flist_file_copy(mfu_flist src, uint64_t index, mfu_flist dest);
+
 /* create a new empty entry in the file list and return its index */
 uint64_t mfu_flist_file_create(mfu_flist flist);
 
@@ -236,10 +239,20 @@ libmfu = ffi.dlopen('../install/lib64/libmfu.so')
 # initialize libmfu (just do this once)
 libmfu.mfu_init()
 
+TYPE_FILE = libmfu.MFU_TYPE_FILE
+TYPE_DIR  = libmfu.MFU_TYPE_DIR
+TYPE_LINK = libmfu.MFU_TYPE_LINK
+
 # represents an item from a list
 # provides attributes to access item information
 class FItem:
   def __init__(self):
+    # pointer back to parent FList and index within that list
+    self.flist = None
+    self.idx   = None
+
+    # TODO: change these to attributes to use setter/getter functions
+    # to reduce code here and for faster list interation
     self.name  = None
     self.type  = None
     self.size  = None
@@ -263,6 +276,7 @@ class FList:
   def __init__(self, walk=None, read=None, flist=None):
     self.idx = None
 
+    # pointer to mfu_flist object
     self.flist = None
     if walk != None:
       # given a path to walk
@@ -332,6 +346,13 @@ class FList:
       raise IndexError
 
     item = FItem()
+
+    # record pointer back to parent FList and our index within it
+    item.flist = self
+    item.idx   = i
+
+    # TODO: drop this code after change to getter/setter
+    # copy attribute values into FItem for easy access
     item.name    = ffi.string(libmfu.mfu_flist_file_get_name(self.flist, i))
     item.type    = libmfu.mfu_flist_file_get_type(self.flist, i)
     item.size    = libmfu.mfu_flist_file_get_size(self.flist, i)
@@ -426,29 +447,58 @@ class FList:
     else:
       libmfu.mfu_flist_write_cache(fname, self.flist)
 
-  # create an empty subset list for this list object
-  def subset(self):
-    flist = libmfu.mfu_flist_subset(self.flist)
-    return FList(flist=flist)
+  # create subset list(s) from the current list
+  def subset(self, fn=None, pivot=False):
+    mfu_flist = libmfu.mfu_flist_subset(self.flist)
+    flist = FList(flist=mfu_flist)
+
+    # if told to pivot, return two lists, the first containing all
+    # items that satisfy the test in fn, and the second list containing
+    # all other items
+    if pivot:
+      if fn:
+        mfu_flist = libmfu.mfu_flist_subset(self.flist)
+        flist_out = FList(flist=mfu_flist)
+        for f in self:
+          if fn(f):
+            flist.append(f)
+          else:
+            flist_out.append(f)
+        flist.summarize()
+        flist_out.summarize()
+        return flist, flist_out
+      else:
+        raise NotImplementedError("FList.subset(): pivot requires fn to be defined")
+
+    if fn:
+      for f in self:
+        if fn(f):
+          flist.append(f)
+      flist.summarize()
+
+    return flist
 
   # append a file item to the current list object
   #def __append__(self, item):
   def append(self, item):
-    idx = libmfu.mfu_flist_file_create(self.flist)
+    # if we have an index into parent list, make a copy
+    if item.flist != None and item.idx != None:
+      libmfu.mfu_flist_file_copy(item.flist.flist, item.idx, self.flist)
+      return
 
-    libmfu.mfu_flist_file_set_name(self.flist,       idx, item.name)
-    libmfu.mfu_flist_file_set_type(self.flist,       idx, item.type)
-    libmfu.mfu_flist_file_set_size(self.flist,       idx, item.size)
-    libmfu.mfu_flist_file_set_mode(self.flist,       idx, item.mode)
-    libmfu.mfu_flist_file_set_uid(self.flist,        idx, item.uid)
-    libmfu.mfu_flist_file_set_gid(self.flist,        idx, item.gid)
-    #libmfu.mfu_flist_file_set_username(self.flist,   idx, item.user)
-    #libmfu.mfu_flist_file_set_groupname(self.flist,  idx, item.group)
-    libmfu.mfu_flist_file_set_atime(self.flist,      idx, item.atime)
+    # otherwise create a new element from scratch
+    idx = libmfu.mfu_flist_file_create(self.flist)
+    libmfu.mfu_flist_file_set_name(      self.flist, idx, item.name)
+    libmfu.mfu_flist_file_set_type(      self.flist, idx, item.type)
+    libmfu.mfu_flist_file_set_size(      self.flist, idx, item.size)
+    libmfu.mfu_flist_file_set_mode(      self.flist, idx, item.mode)
+    libmfu.mfu_flist_file_set_uid(       self.flist, idx, item.uid)
+    libmfu.mfu_flist_file_set_gid(       self.flist, idx, item.gid)
+    libmfu.mfu_flist_file_set_atime(     self.flist, idx, item.atime)
     libmfu.mfu_flist_file_set_atime_nsec(self.flist, idx, item.atimens)
-    libmfu.mfu_flist_file_set_mtime(self.flist,      idx, item.mtime)
+    libmfu.mfu_flist_file_set_mtime(     self.flist, idx, item.mtime)
     libmfu.mfu_flist_file_set_mtime_nsec(self.flist, idx, item.mtimens)
-    libmfu.mfu_flist_file_set_ctime(self.flist,      idx, item.ctime)
+    libmfu.mfu_flist_file_set_ctime(     self.flist, idx, item.ctime)
     libmfu.mfu_flist_file_set_ctime_nsec(self.flist, idx, item.ctimens)
 
   # compute global properties of flist
