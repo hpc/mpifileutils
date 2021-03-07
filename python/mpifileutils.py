@@ -184,6 +184,46 @@ void mfu_flist_chmod(
   mfu_chmod_opts_t* opts
 );
 
+/* options passed to mfu_ */
+typedef struct {
+    int    copy_into_dir;  /* flag indicating whether copying into existing dir */
+    int    do_sync;        /* flag option to sync src dir with dest dir */ 
+    char*  dest_path;      /* prefex of destination directory */
+    char*  input_file;     /* file name of input list */
+    bool   preserve;       /* whether to preserve timestamps, ownership, permissions, etc. */
+    int    dereference;    /* if true, dereference symbolic links in the source.
+                            * this is not a perfect opposite of no_dereference */
+    int    no_dereference; /* if true, don't dereference source symbolic links */
+    bool   direct;         /* whether to use O_DIRECT */
+    bool   sparse;         /* whether to create sparse files */
+    size_t chunk_size;     /* size to chunk files by */
+    size_t buf_size;       /* buffer size to read/write to file system */
+    char*  block_buf1;     /* buffer to read / write data */
+    char*  block_buf2;     /* another buffer to read / write data */
+    int    grouplock_id;   /* Lustre grouplock ID */
+    uint64_t batch_files;  /* max batch size to copy files, 0 implies no limit */
+} mfu_copy_opts_t;
+
+/* allocate a new mfu_copy_opts structure,
+ * and set its fields with default values */
+mfu_copy_opts_t* mfu_copy_opts_new(void);
+
+/* free object allocated in mfu_copy_opts_new */
+void mfu_copy_opts_delete(mfu_copy_opts_t** opts);
+
+/* copy items in list from source paths to destination,
+ * each item in source list must come from one of the
+ * given source paths, returns 0 on success -1 on error */
+int mfu_flist_copy_py(
+    mfu_flist src_cp_list,          /* IN - flist providing source items */
+    int numpaths,                   /* IN - number of source paths */
+    const char** paths,             /* IN - array of source pathts */
+    const char* destpath,           /* IN - destination path */
+    mfu_copy_opts_t* mfu_copy_opts, /* IN - options to be used during copy */
+    mfu_file_t* mfu_src_file,       /* IN - I/O filesystem functions to use for copy of src */
+    mfu_file_t* mfu_dst_file        /* IN - I/O filesystem functions to use for copy of dst */
+);
+
 /* unlink all items in flist,
  * if traceless=1, restore timestamps on parent directories after unlinking children */
 void mfu_flist_unlink(mfu_flist flist, bool traceless, mfu_file_t* mfu_file);
@@ -651,26 +691,27 @@ class FList:
     self.free_flist()
     self.flist = flist
 
-  # exchange items among ranks according to map function
-  # the map function must return a value within the range [0,num_ranks)
-  def map(self, fn):
-    # compute destination rank for each item
-    num_ranks = self.num_ranks()
-    dest = []
-    for f in self:
-      rank = fn(f)
-      if rank < 0 or rank >= num_ranks:
-        raise IndexError("map function returned value (", rank, ") out of range [0,", num_ranks, ")")
-      dest.append(rank)
+  # spread the list evenly among ranks or
+  # according to a given map function
+  def spread(self, fn=None):
+    if fn:
+      # exchange items among ranks according to map function
+      # the map function must return a value within the range [0,num_ranks)
+      # compute destination rank for each item
+      num_ranks = self.num_ranks()
+      dest = []
+      for f in self:
+        rank = fn(f)
+        if rank < 0 or rank >= num_ranks:
+          raise IndexError("map function returned value (", rank, ") out of range [0,", num_ranks, ")")
+        dest.append(rank)
 
-    # exchange items according to destination list
-    flist = libmfu.mfu_flist_map_byarray(self.flist, dest)
-    self.free_flist()
-    self.flist = flist
+      # exchange items according to destination list
+      flist = libmfu.mfu_flist_map_byarray(self.flist, dest)
+    else:
+      # spread the list evenly among ranks
+      flist = libmfu.mfu_flist_spread(self.flist)
 
-  # spread the list evenly among ranks
-  def spread(self):
-    flist = libmfu.mfu_flist_spread(self.flist)
     self.free_flist()
     self.flist = flist
 
@@ -700,6 +741,34 @@ class FList:
 
     if perms_ptr:
       libmfu.mfu_perms_free(perms_ptr)
+
+  # copy items in list to given destination directory
+  def copy(self, dest, srcpath):
+    src_mfufile = libmfu.mfu_file_new()
+    dst_mfufile = libmfu.mfu_file_new()
+
+    opts = libmfu.mfu_copy_opts_new()
+
+    if type(srcpath) == list:
+      cpaths = [ffi.new("char[]", p) for p in srcpath]
+    else:
+      cpaths = [ffi.new("char[]", srcpath)]
+
+    print(len(cpaths), srcpath)
+    rc = libmfu.mfu_flist_copy_py(self.flist, len(cpaths), cpaths, dest, opts, src_mfufile, dst_mfufile)
+    print(rc)
+
+    opts_ptr = ffi.new("mfu_copy_opts_t*[1]")
+    opts_ptr[0] = opts
+    libmfu.mfu_copy_opts_delete(opts_ptr)
+
+    mfufile_ptr = ffi.new("mfu_file_t*[1]")
+    mfufile_ptr[0] = src_mfufile
+    libmfu.mfu_file_delete(mfufile_ptr)
+
+    mfufile_ptr = ffi.new("mfu_file_t*[1]")
+    mfufile_ptr[0] = dst_mfufile
+    libmfu.mfu_file_delete(mfufile_ptr)
 
   # delete items in list from file system
   def unlink(self):

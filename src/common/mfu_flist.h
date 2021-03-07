@@ -486,6 +486,19 @@ int mfu_flist_copy(
     mfu_file_t* mfu_dst_file        /* IN - I/O filesystem functions to use for copy of dst */
 );
 
+/* copy items in list from source paths to destination,
+ * each item in source list must come from one of the
+ * given source paths, returns 0 on success -1 on error */
+int mfu_flist_copy_py(
+    mfu_flist src_cp_list,          /* IN - flist providing source items */
+    int numpaths,                   /* IN - number of source paths */
+    const char** paths,             /* IN - array of source pathts */
+    const char* destpath,           /* IN - destination path */
+    mfu_copy_opts_t* mfu_copy_opts, /* IN - options to be used during copy */
+    mfu_file_t* mfu_src_file,       /* IN - I/O filesystem functions to use for copy of src */
+    mfu_file_t* mfu_dst_file        /* IN - I/O filesystem functions to use for copy of dst */
+);
+
 /* link items in list from source paths to destination,
  * each item in source list must come from the
  * source path, returns 0 on success -1 on error */

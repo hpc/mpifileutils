@@ -32,7 +32,7 @@ for f in flist[:5]:
   print(rank, "before", f.size, f)
 
 # reassign items in list to ranks on some function
-flist.map(lambda f: f.size % ranks)
+flist.spread(lambda f: f.size % ranks)
 for f in flist[:5]:
   print(rank, "after", f.size, f)
 
@@ -42,7 +42,7 @@ flist.sort('-size')
 flist.write('test.txt', text=True)
 #flist.read('test.mfu')
 print(flist)
-#quit()
+quit()
 
 print("Rank: ", rank, "Ranks: ", ranks, "Global size: ", flist.global_size(), "Offset: ", flist.global_offset(), "Local size: ", len(flist))
 
@@ -123,6 +123,12 @@ print(lists)
 flist = FList('testdir')
 print(flist)
 flist.archive('testdir.dtar')
+
+# pause to set breakpoints in libmfu functions
+#import time
+#time.sleep(10)
+#print("Sleeping...")
+#flist.copy('testdir2', 'testdir')
 
 import os
 try:
