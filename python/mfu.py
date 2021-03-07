@@ -119,3 +119,19 @@ for user in users:
 
 lists = flist.split(lambda f: f.name)
 print(lists)
+
+flist = FList('testdir')
+print(flist)
+flist.archive('testdir.dtar')
+
+import os
+try:
+  os.mkdir('tempdir')
+except:
+  pass
+os.chdir('tempdir')
+flist = FList()
+flist.extract('../testdir.dtar')
+os.chdir('..')
+flist = FList('tempdir')
+flist.unlink()

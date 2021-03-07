@@ -682,12 +682,16 @@ int mfu_flist_archive_extract(
 );
 
 int mfu_flist_archive_create_py(
-    mfu_flist flist,               /* list of items to be written to archive */
-    const char* filename,          /* name of target archive file */
-    int numpaths,                  /* number of source paths */
-    const char** paths,            /* list of source paths */
-    const char* cwdpath,           /* current working directory used to construct relative path to each item in flist */
-    mfu_archive_opts_t* opts       /* options to configure archive operation */
+    mfu_flist flist,         /* list of items to be written to archive */
+    const char* filename,    /* name of target archive file */
+    const char* cwdpath,     /* current working directory used to construct relative path to each item in flist */
+    mfu_archive_opts_t* opts /* options to configure archive operation */
+);
+
+int mfu_flist_archive_extract_py(
+    const char* filename,
+    const char* cwd,
+    mfu_archive_opts_t* opts
 );
 
 #endif /* MFU_FLIST_H */

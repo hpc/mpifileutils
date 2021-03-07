@@ -1,3 +1,6 @@
+# for getcwd
+import os
+
 from mpi4py import MPI
 
 from cffi import FFI
@@ -184,6 +187,45 @@ void mfu_flist_chmod(
 /* unlink all items in flist,
  * if traceless=1, restore timestamps on parent directories after unlinking children */
 void mfu_flist_unlink(mfu_flist flist, bool traceless, mfu_file_t* mfu_file);
+
+typedef struct {
+    char*   dest_path;
+    bool    sync_on_close;
+    bool    preserve_owner;
+    bool    preserve_times;
+    bool    preserve_permissions;
+    bool    preserve_xattrs;
+    bool    preserve_acls;
+    bool    preserve_fflags;
+    bool    preserve;
+    int     flags;
+    size_t  chunk_size;
+    size_t  buf_size;
+    size_t  mem_size;
+    size_t  header_size;
+    int     create_libcircle;
+    int     extract_libarchive;
+} mfu_archive_opts_t;
+
+/* return a newly allocated archive_opts structure, set default values on its fields */
+mfu_archive_opts_t* mfu_archive_opts_new(void);
+
+/* free archive opts structure allocated with mfu_archive_opts_new */
+void mfu_archive_opts_delete(mfu_archive_opts_t** popts);
+/* create archive of the given list of items */
+int mfu_flist_archive_create_py(
+    mfu_flist flist,         /* list of items to be written to archive */
+    const char* filename,    /* name of target archive file */
+    const char* cwdpath,     /* current working directory used to construct relative path to each item in flist */
+    mfu_archive_opts_t* opts /* options to configure archive operation */
+);
+
+/* given an archive file name, extract items into cwdpath according to options */
+int mfu_flist_archive_extract_py(
+    const char* filename,    /* name of archive file */
+    const char* cwdpath,     /* path to prepend to entries in archive to build full path */
+    mfu_archive_opts_t* opts /* options to configure extract operation */
+);
 
 /* maps each item in input list according to rank listed in dest array,
  * dest should have one value for each entry in list,
@@ -610,7 +652,7 @@ class FList:
     self.flist = flist
 
   # exchange items among ranks according to map function
-  # function should return an value in the range [0,num_ranks)
+  # the map function must return a value within the range [0,num_ranks)
   def map(self, fn):
     # compute destination rank for each item
     num_ranks = self.num_ranks()
@@ -662,10 +704,40 @@ class FList:
   # delete items in list from file system
   def unlink(self):
     mfufile = libmfu.mfu_file_new()
+
     libmfu.mfu_flist_unlink(self.flist, 0, mfufile)
+
     mfufile_ptr = ffi.new("mfu_file_t*[1]")
     mfufile_ptr[0] = mfufile
     libmfu.mfu_file_delete(mfufile_ptr)
+
+  # write items in current list to given archive file
+  def archive(self, filename, cwd=None):
+    opts = libmfu.mfu_archive_opts_new()
+
+    if not cwd:
+      cwd = os.getcwd()
+      print(cwd)
+
+    libmfu.mfu_flist_archive_create_py(self.flist, filename, cwd, opts)
+
+    opts_ptr = ffi.new("mfu_archive_opts_t*[1]")
+    opts_ptr[0] = opts
+    libmfu.mfu_archive_opts_delete(opts_ptr)
+
+  # extract items from archive file
+  def extract(self, filename, cwd=None):
+    opts = libmfu.mfu_archive_opts_new()
+
+    if not cwd:
+      cwd = os.getcwd()
+      print(cwd)
+
+    libmfu.mfu_flist_archive_extract_py(filename, cwd, opts)
+
+    opts_ptr = ffi.new("mfu_archive_opts_t*[1]")
+    opts_ptr[0] = opts
+    libmfu.mfu_archive_opts_delete(opts_ptr)
 
 # shut down libmfu, way to do this on exit?
 #libmfu.mfu_finalize()
