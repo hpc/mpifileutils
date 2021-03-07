@@ -377,14 +377,14 @@ class FItem:
   #  libmfu.mfu_flist_file_set_name(self.flist.flist, self.idx, value)
 
 class FList:
-  def __init__(self, walk=None, read=None, flist=None):
+  def __init__(self, walk=None, read=None, flist=None, absolute=True):
     self.idx = None
 
     # pointer to mfu_flist object
     self.flist = None
     if walk != None:
       # given a path to walk
-      self.walk(walk)
+      self.walk(walk, absolute=absolute)
     elif read != None:
       # given file to read
       self.read(read)
@@ -421,7 +421,16 @@ class FList:
   # number of ranks in comm
   def num_ranks(self):
     num_ranks = MPI.COMM_WORLD.size
-    return num_ranks 
+    return num_ranks
+
+  # compute a floating point sum based on output of given function
+  # NOTE: when not using numpy, this is not an efficient reduction
+  def sum(self, fn):
+    total = 0.0
+    for f in self:
+      total += float(fn(f))
+    total = MPI.COMM_WORLD.allreduce(total, op=MPI.SUM)
+    return total
 
   # return size of local list for len(flist)
   def __len__(self):
@@ -522,7 +531,7 @@ class FList:
     raise StopIteration
 
   # walk given path and fill in flist
-  def walk(self, path):
+  def walk(self, path, absolute=False):
     self.free_flist()
     self.flist = libmfu.mfu_flist_new()
 
@@ -530,9 +539,13 @@ class FList:
     mfufile = libmfu.mfu_file_new()
 
     if type(path) is list:
+      if absolute:
+        path = [p if os.path.isabs(p) else os.path.abspath(p) for p in path]
       cpaths = [ffi.new("char[]", p) for p in path]
       libmfu.mfu_flist_walk_paths(len(path), cpaths, opts, self.flist, mfufile)
     else:
+      if absolute and not os.path.isabs(path):
+        path = os.path.abspath(path)
       cpath = ffi.new("char[]", path)
       libmfu.mfu_flist_walk_path(cpath, opts, self.flist, mfufile)
 
@@ -742,6 +755,12 @@ class FList:
     if perms_ptr:
       libmfu.mfu_perms_free(perms_ptr)
 
+  # TODO: this doesn't yet work.  We walk with mfu_flist_walk_path(s),
+  # which ends up generating a list of items using relative paths if
+  # given relative paths as input.  The mfu_flist_copy function expects
+  # the flist paths to be absolute.  The source paths in cpaths will
+  # be converted to absolute paths, which will then not match items
+  # in the list.
   # copy items in list to given destination directory
   def copy(self, dest, srcpath):
     src_mfufile = libmfu.mfu_file_new()

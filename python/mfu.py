@@ -12,14 +12,20 @@ for f in flist:
   print(f)
 #quit()
 
-flist = FList('../testdir')
-#flist.walk('../testdir')
+#flist = FList('../testdir')
+flist = FList()
+flist.walk('../tempbuild', absolute=True)
 flist.chmod(mode="g+w", group="tools")
 flist.write('test.txt', text=True)
-print(flist)
-for f in flist:
-  print(f)
-#quit()
+if flist.rank() == 0:
+  print(flist)
+  for f in flist[:5]:
+    print(f)
+print("Bytes: ", flist.sum(lambda f: f.size if f.type == TYPE_FILE else 0))
+print("Chars: ", flist.sum(lambda f: len(f.name)))
+print("Small files: ", flist.sum(lambda f: int(f.size < 10)))
+flist.comm().barrier()
+quit()
 
 comm  = flist.comm()
 rank  = flist.rank()
@@ -42,7 +48,7 @@ flist.sort('-size')
 flist.write('test.txt', text=True)
 #flist.read('test.mfu')
 print(flist)
-quit()
+#quit()
 
 print("Rank: ", rank, "Ranks: ", ranks, "Global size: ", flist.global_size(), "Offset: ", flist.global_offset(), "Local size: ", len(flist))
 
@@ -128,7 +134,13 @@ flist.archive('testdir.dtar')
 #import time
 #time.sleep(10)
 #print("Sleeping...")
-#flist.copy('testdir2', 'testdir')
+cwd = os.getcwd()
+walkdir = os.path.join(cwd, 'testdir')
+flist = FList()
+#flist.walk('testdir', absolute=True)
+flist.walk(walkdir, absolute=True)
+flist.copy('testdir2', 'testdir')
+quit()
 
 import os
 try:
