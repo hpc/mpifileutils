@@ -19,12 +19,24 @@ flist.write('test.txt', text=True)
 print(flist)
 for f in flist:
   print(f)
-quit()
+#quit()
 
 comm  = flist.comm()
 rank  = flist.rank()
 ranks = flist.num_ranks()
 
+# sort starting list alphabetically
+flist = FList('../tempbuild')
+flist.sort()
+for f in flist[:5]:
+  print(rank, "before", f.size, f)
+
+# reassign items in list to ranks on some function
+flist.map(lambda f: f.size % ranks)
+for f in flist[:5]:
+  print(rank, "after", f.size, f)
+
+flist = FList('../testdir')
 flist.spread()
 flist.sort('-size')
 flist.write('test.txt', text=True)
@@ -100,8 +112,10 @@ print(types)
 sizes = flist.unique(lambda f: f.size)
 print(sizes)
 
+# example to write out a list of files for each user
 users = flist.split(lambda f: f.user)
-print(users)
+for user in users:
+  users[user].write(user + ".txt", text=True)
 
 lists = flist.split(lambda f: f.name)
 print(lists)

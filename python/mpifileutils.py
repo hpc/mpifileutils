@@ -185,6 +185,11 @@ void mfu_flist_chmod(
  * if traceless=1, restore timestamps on parent directories after unlinking children */
 void mfu_flist_unlink(mfu_flist flist, bool traceless, mfu_file_t* mfu_file);
 
+/* maps each item in input list according to rank listed in dest array,
+ * dest should have one value for each entry in list,
+ * returns a newly allocated flist resulting after exchanging items */
+mfu_flist mfu_flist_map_byarray(mfu_flist list, const int* dest);
+
 /* takes a list, spreads it evenly among processes with respect to item count,
  * and then returns the newly created list to the caller */
 mfu_flist mfu_flist_spread(mfu_flist flist);
@@ -601,6 +606,23 @@ class FList:
   # sort the list given a comma-delimited list of fields
   def sort(self, fields="name"):
     flist = libmfu.mfu_flist_sort(fields, self.flist)
+    self.free_flist()
+    self.flist = flist
+
+  # exchange items among ranks according to map function
+  # function should return an value in the range [0,num_ranks)
+  def map(self, fn):
+    # compute destination rank for each item
+    num_ranks = self.num_ranks()
+    dest = []
+    for f in self:
+      rank = fn(f)
+      if rank < 0 or rank >= num_ranks:
+        raise IndexError("map function returned value (", rank, ") out of range [0,", num_ranks, ")")
+      dest.append(rank)
+
+    # exchange items according to destination list
+    flist = libmfu.mfu_flist_map_byarray(self.flist, dest)
     self.free_flist()
     self.flist = flist
 
