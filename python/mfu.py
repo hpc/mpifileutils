@@ -6,11 +6,20 @@ from mpifileutils import *
 ##print(flist)
 #quit()
 
-flist = FList()
-flist.walk('../testdir')
+flist = FList(['../testdir', '../testdir2'])
+print(flist)
+for f in flist:
+  print(f)
+#quit()
+
+flist = FList('../testdir')
+#flist.walk('../testdir')
 flist.chmod(mode="g+w", group="tools")
 flist.write('test.txt', text=True)
-#quit()
+print(flist)
+for f in flist:
+  print(f)
+quit()
 
 comm  = flist.comm()
 rank  = flist.rank()

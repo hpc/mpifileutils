@@ -47,6 +47,15 @@ void mfu_flist_walk_path(
     mfu_file_t* mfu_file        /* IN  - I/O filesystem functions to use during the walk */
 );
 
+/* create file list by walking list of directories */
+void mfu_flist_walk_paths(
+    uint64_t num_paths,         /* IN  - number of paths in array */
+    const char** paths,         /* IN  - array of paths to be walkted */
+    mfu_walk_opts_t* walk_opts, /* IN  - functions to perform during the walk */
+    mfu_flist flist,            /* OUT - flist to insert walked items into */
+    mfu_file_t* mfu_file        /* IN  - I/O filesystem functions to use during the walk */
+);
+
 /* create list as subset of another list
  * (returns emtpy list with same user and group maps) */
 mfu_flist mfu_flist_subset(mfu_flist srclist);
@@ -272,6 +281,14 @@ class FItem:
   def __repr__(self):
     return self.name
 
+  #@property
+  #def name(self):
+  #  return ffi.string(libmfu.mfu_flist_file_get_name(self.flist.flist, self.idx))
+
+  #@name.setter
+  #def name(self, value):
+  #  libmfu.mfu_flist_file_set_name(self.flist.flist, self.idx, value)
+
 class FList:
   def __init__(self, walk=None, read=None, flist=None):
     self.idx = None
@@ -424,7 +441,13 @@ class FList:
 
     opts = libmfu.mfu_walk_opts_new()
     mfufile = libmfu.mfu_file_new()
-    libmfu.mfu_flist_walk_path(path, opts, self.flist, mfufile)
+
+    if type(path) is list:
+      cpaths = [ffi.new("char[]", p) for p in path]
+      libmfu.mfu_flist_walk_paths(len(path), cpaths, opts, self.flist, mfufile)
+    else:
+      cpath = ffi.new("char[]", path)
+      libmfu.mfu_flist_walk_path(cpath, opts, self.flist, mfufile)
 
     mfufile_ptr = ffi.new("mfu_file_t*[1]")
     mfufile_ptr[0] = mfufile
@@ -488,69 +511,33 @@ class FList:
 
     # otherwise create a new element from scratch
     idx = libmfu.mfu_flist_file_create(self.flist)
-    libmfu.mfu_flist_file_set_name(      self.flist, idx, item.name)
-    libmfu.mfu_flist_file_set_type(      self.flist, idx, item.type)
-    libmfu.mfu_flist_file_set_size(      self.flist, idx, item.size)
-    libmfu.mfu_flist_file_set_mode(      self.flist, idx, item.mode)
-    libmfu.mfu_flist_file_set_uid(       self.flist, idx, item.uid)
-    libmfu.mfu_flist_file_set_gid(       self.flist, idx, item.gid)
-    libmfu.mfu_flist_file_set_atime(     self.flist, idx, item.atime)
+    libmfu.mfu_flist_file_set_name(self.flist, idx, item.name)
+    libmfu.mfu_flist_file_set_type(self.flist, idx, item.type)
+    libmfu.mfu_flist_file_set_size(self.flist, idx, item.size)
+    libmfu.mfu_flist_file_set_mode(self.flist, idx, item.mode)
+    libmfu.mfu_flist_file_set_uid(self.flist, idx, item.uid)
+    libmfu.mfu_flist_file_set_gid(self.flist, idx, item.gid)
+    libmfu.mfu_flist_file_set_atime(self.flist, idx, item.atime)
     libmfu.mfu_flist_file_set_atime_nsec(self.flist, idx, item.atimens)
-    libmfu.mfu_flist_file_set_mtime(     self.flist, idx, item.mtime)
+    libmfu.mfu_flist_file_set_mtime(self.flist, idx, item.mtime)
     libmfu.mfu_flist_file_set_mtime_nsec(self.flist, idx, item.mtimens)
-    libmfu.mfu_flist_file_set_ctime(     self.flist, idx, item.ctime)
+    libmfu.mfu_flist_file_set_ctime(self.flist, idx, item.ctime)
     libmfu.mfu_flist_file_set_ctime_nsec(self.flist, idx, item.ctimens)
 
   # compute global properties of flist
   def summarize(self):
     libmfu.mfu_flist_summarize(self.flist)
 
-  # sort the list given a comma-delimited list of fields
-  def sort(self, fields="name"):
-    flist = libmfu.mfu_flist_sort(fields, self.flist)
-    self.free_flist()
-    self.flist = flist
-
-  # spread the list evenly among ranks
-  def spread(self):
-    flist = libmfu.mfu_flist_spread(self.flist)
-    self.free_flist()
-    self.flist = flist
-
-  # change mode, owner, or group of items in list
-  def chmod(self, mode=None, user=None, group=None):
-    perms_ptr = None
-    perms = None
-    if mode:
-      perms_ptr = ffi.new("mfu_perms*[1]")
-      libmfu.mfu_perms_parse(mode, perms_ptr)
-      perms = perms_ptr[0]
-
-    opts = libmfu.mfu_chmod_opts_new()
-
-    if not user:
-      user = ffi.NULL
-    if not group:
-      group = ffi.NULL
-    if not perms:
-      perms = ffi.NULL
-
-    libmfu.mfu_flist_chmod(self.flist, user, group, perms, opts)
-
-    opts_ptr = ffi.new("mfu_chmod_opts_t*[1]")
-    opts_ptr[0] = opts
-    libmfu.mfu_chmod_opts_delete(opts_ptr)
-
-    if perms_ptr:
-      libmfu.mfu_perms_free(perms_ptr)
-
-  # delete items in list from file system
-  def unlink(self):
-    mfufile = libmfu.mfu_file_new()
-    libmfu.mfu_flist_unlink(self.flist, 0, mfufile)
-    mfufile_ptr = ffi.new("mfu_file_t*[1]")
-    mfufile_ptr[0] = mfufile
-    libmfu.mfu_file_delete(mfufile_ptr)
+  ## clone current list as a new object
+  ## avoids creating item objects to be more efficient
+  #def clone(self):
+  #  flist = self.subset()
+  #  size = len(self)
+  #  for idx in range(size):
+  #    print(idx)
+  #    libmfu.mfu_flist_file_copy(self.flist, idx, flist.flist)
+  #  flist.summarize()
+  #  return flist
 
   # compute list of unique values over global set
   def unique(self, fn):
@@ -610,6 +597,53 @@ class FList:
       flists[val].summarize()
 
     return flists
+
+  # sort the list given a comma-delimited list of fields
+  def sort(self, fields="name"):
+    flist = libmfu.mfu_flist_sort(fields, self.flist)
+    self.free_flist()
+    self.flist = flist
+
+  # spread the list evenly among ranks
+  def spread(self):
+    flist = libmfu.mfu_flist_spread(self.flist)
+    self.free_flist()
+    self.flist = flist
+
+  # change mode, owner, or group of items in list
+  def chmod(self, mode=None, user=None, group=None):
+    perms_ptr = None
+    perms = None
+    if mode:
+      perms_ptr = ffi.new("mfu_perms*[1]")
+      libmfu.mfu_perms_parse(mode, perms_ptr)
+      perms = perms_ptr[0]
+
+    opts = libmfu.mfu_chmod_opts_new()
+
+    if not user:
+      user = ffi.NULL
+    if not group:
+      group = ffi.NULL
+    if not perms:
+      perms = ffi.NULL
+
+    libmfu.mfu_flist_chmod(self.flist, user, group, perms, opts)
+
+    opts_ptr = ffi.new("mfu_chmod_opts_t*[1]")
+    opts_ptr[0] = opts
+    libmfu.mfu_chmod_opts_delete(opts_ptr)
+
+    if perms_ptr:
+      libmfu.mfu_perms_free(perms_ptr)
+
+  # delete items in list from file system
+  def unlink(self):
+    mfufile = libmfu.mfu_file_new()
+    libmfu.mfu_flist_unlink(self.flist, 0, mfufile)
+    mfufile_ptr = ffi.new("mfu_file_t*[1]")
+    mfufile_ptr[0] = mfufile
+    libmfu.mfu_file_delete(mfufile_ptr)
 
 # shut down libmfu, way to do this on exit?
 #libmfu.mfu_finalize()
