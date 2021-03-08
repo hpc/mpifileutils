@@ -1511,6 +1511,21 @@ out_err:
     goto out_free;
 }
 
+/* Expand a buffer that was previously static with
+ * size = max(2*old_size, 2*min_size).
+ * This is a very specific helper function for sync_keys. */
+static inline void expand_static_buf(char** buf, size_t* buf_size,
+                                     size_t static_size, size_t min_size)
+{
+    /* Only free if the current is not static */
+    if (*buf_size > static_size) {
+        mfu_free(buf);
+    }
+
+    *buf_size = MAX(*buf_size, min_size) * 2;
+    *buf = MFU_CALLOC(*buf_size, sizeof(char));
+}
+
 /* Copy all dkeys and akeys from a src obj to dst obj.
  * returns -1 on error, 0 if same, 1 if different */
 static int mfu_daos_obj_sync_keys(
@@ -1523,27 +1538,56 @@ static int mfu_daos_obj_sync_keys(
     /* Assume src and dst are equal until found otherwise */
     bool all_dst_equal = true;
 
-    /* loop to enumerate dkeys */
-    daos_anchor_t dkey_anchor = {0}; 
-    int rc;
+    /* dkey enumeration buffer */
+    size_t  dkey_enum_buf_size = ENUM_KEY_BUF;
+    char    dkey_enum_buf_static[ENUM_KEY_BUF] = {0};
+    char*   dkey_enum_buf = dkey_enum_buf_static;
+
+    /* individual dkey buffer */
+    size_t  dkey_buf_size = ENUM_KEY_BUF;
+    char    dkey_buf_static[ENUM_KEY_BUF] = {0};
+    char*   dkey_buf = dkey_buf_static;
+
+    /* akey enumeration buffer */
+    size_t  akey_enum_buf_size = ENUM_KEY_BUF;
+    char    akey_enum_buf_static[ENUM_KEY_BUF] = {0};
+    char*   akey_enum_buf = akey_enum_buf_static;
+
+    /* individual akey buffer */
+    size_t  akey_buf_size = ENUM_KEY_BUF;
+    char    akey_buf_static[ENUM_KEY_BUF] = {0};
+    char*   akey_buf = akey_buf_static;
+
+    /* loop to enumerate dkeys. Start with a small static dkey buffer
+     * and expand the buffer as needed. */
+    daos_anchor_t   dkey_anchor = {0}; 
+    int             rc;
     while (!daos_anchor_is_eof(&dkey_anchor)) {
         d_sg_list_t     dkey_sgl = {0};
         d_iov_t         dkey_iov = {0};
         daos_key_desc_t dkey_kds[ENUM_DESC_NR]       = {0};
         uint32_t        dkey_number                  = ENUM_DESC_NR;
-        char            dkey_enum_buf[ENUM_DESC_BUF] = {0};
-        char            dkey[ENUM_KEY_BUF]           = {0};
 
         dkey_sgl.sg_nr     = 1;
         dkey_sgl.sg_nr_out = 0;
         dkey_sgl.sg_iovs   = &dkey_iov;
 
-        d_iov_set(&dkey_iov, dkey_enum_buf, ENUM_DESC_BUF);
+        d_iov_set(&dkey_iov, dkey_enum_buf, dkey_enum_buf_size);
 
         /* get dkeys */
         rc = daos_obj_list_dkey(*src_oh, DAOS_TX_NONE, &dkey_number, dkey_kds,
                                 &dkey_sgl, &dkey_anchor, NULL);
         if (rc != 0) {
+            if (rc == -DER_KEY2BIG) {
+                /* Increase the buffer size and try again. */
+                expand_static_buf(&dkey_enum_buf, &dkey_enum_buf_size,
+                                  ENUM_KEY_BUF, dkey_kds[0].kd_key_len);
+                if (dkey_enum_buf == NULL) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to allocate dkey buffer.");
+                    goto out_err;
+                }
+                continue;
+            }
             MFU_LOG(MFU_LOG_ERR, "DAOS daos_obj_list_dkey returned with errors "DF_RC, DP_RC(rc));
             goto out_err;
         }
@@ -1560,8 +1604,17 @@ static int mfu_daos_obj_sync_keys(
 
             /* Print enumerated dkeys */
             daos_key_t diov;
-            memcpy(dkey, dkey_ptr, dkey_kds[i].kd_key_len);
-            d_iov_set(&diov, (void*)dkey, dkey_kds[i].kd_key_len);
+            if (dkey_kds[i].kd_key_len > dkey_buf_size) {
+                /* Make sure the buffer is large enough */
+                expand_static_buf(&dkey_buf, &dkey_buf_size,
+                                  ENUM_KEY_BUF, dkey_kds[i].kd_key_len);
+                if (dkey_buf == NULL) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to allocate dkey buffer.");
+                    goto out_err;
+                }
+            }
+            memcpy(dkey_buf, dkey_ptr, dkey_kds[i].kd_key_len);
+            d_iov_set(&diov, (void*)dkey_buf, dkey_kds[i].kd_key_len);
             dkey_ptr += dkey_kds[i].kd_key_len;
 
             /* loop to enumerate akeys */
@@ -1571,19 +1624,27 @@ static int mfu_daos_obj_sync_keys(
                 d_iov_t         akey_iov = {0};
                 daos_key_desc_t akey_kds[ENUM_DESC_NR]       = {0};
                 uint32_t        akey_number                  = ENUM_DESC_NR;
-                char            akey_enum_buf[ENUM_DESC_BUF] = {0};
-                char            akey[ENUM_KEY_BUF]           = {0};
 
                 akey_sgl.sg_nr     = 1;
                 akey_sgl.sg_nr_out = 0;
                 akey_sgl.sg_iovs   = &akey_iov;
 
-                d_iov_set(&akey_iov, akey_enum_buf, ENUM_DESC_BUF);
+                d_iov_set(&akey_iov, akey_enum_buf, akey_enum_buf_size);
 
                 /* get akeys */
                 rc = daos_obj_list_akey(*src_oh, DAOS_TX_NONE, &diov, &akey_number, akey_kds,
                                         &akey_sgl, &akey_anchor, NULL);
                 if (rc != 0) {
+                    if (rc == -DER_KEY2BIG) {
+                        /* Increase the buffer size and try again. */
+                        expand_static_buf(&akey_enum_buf, &akey_enum_buf_size,
+                                          ENUM_KEY_BUF, akey_kds[0].kd_key_len);
+                        if (akey_enum_buf == NULL) {
+                            MFU_LOG(MFU_LOG_ERR, "Failed to allocate akey buffer.");
+                            goto out_err;
+                        }
+                        continue;
+                    }
                     MFU_LOG(MFU_LOG_ERR, "DAOS daos_obj_list_akey returned with errors "DF_RC, DP_RC(rc));
                     goto out_err;
                 }
@@ -1600,8 +1661,17 @@ static int mfu_daos_obj_sync_keys(
                     daos_key_t aiov = {0};
                     daos_iod_t iod = {0};
                     daos_recx_t recx = {0};
-                    memcpy(akey, akey_ptr, akey_kds[j].kd_key_len);
-                    d_iov_set(&aiov, (void*)akey, akey_kds[j].kd_key_len);
+                    if (akey_kds[j].kd_key_len > akey_buf_size) {
+                        /* Make sure the buffer is large enough */
+                        expand_static_buf(&akey_buf, &akey_buf_size,
+                                          ENUM_KEY_BUF, akey_kds[i].kd_key_len);
+                        if (akey_buf == NULL) {
+                            MFU_LOG(MFU_LOG_ERR, "Failed to allocate akey buffer.");
+                            goto out_err;
+                        }
+                    }
+                    memcpy(akey_buf, akey_ptr, akey_kds[j].kd_key_len);
+                    d_iov_set(&aiov, (void*)akey_buf, akey_kds[j].kd_key_len);
 
                     /* set iod values */
                     iod.iod_nr    = 1;
@@ -1652,6 +1722,19 @@ static int mfu_daos_obj_sync_keys(
             /* Increment dkeys traversed */
             stats->total_dkeys++;
         }
+    }
+
+    if (dkey_enum_buf != dkey_enum_buf_static) {
+        mfu_free(&dkey_enum_buf);
+    }
+    if (dkey_buf != dkey_buf_static) {
+        mfu_free(&dkey_buf);
+    }
+    if (akey_enum_buf != akey_enum_buf_static) {
+        mfu_free(&akey_enum_buf);
+    }
+    if (akey_buf != akey_buf_static) {
+        mfu_free(&akey_buf);
     }
 
     /* return 0 if equal, 1 if different */
