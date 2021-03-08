@@ -236,7 +236,8 @@ int daos_connect(
   daos_handle_t* coh,
   bool connect_pool,
   bool create_cont,
-  bool require_new_cont
+  bool require_new_cont,
+  mfu_file_t* mfu_src_file
 );
 
 /* broadcast a pool or cont handle

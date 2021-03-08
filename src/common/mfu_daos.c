@@ -610,6 +610,300 @@ static int daos_any_error(int rank, bool local_daos_error, int flag_daos_args)
     return 0;
 }
 
+/*
+ * Get the user attributes for a container in a format similar
+ * to what daos_cont_set_prop expects.
+ * The last entry is the ACL and is conditionally set only if
+ * the user has permissions.
+ * The properties should remain in the order expected by serialization.
+ * Returns 1 on error, 0 on success.
+ */
+static int cont_get_props(daos_handle_t coh, daos_prop_t** _props, bool get_oid)
+{
+    int             rc;
+    daos_prop_t*    props = NULL;
+    daos_prop_t*    prop_acl = NULL;
+    daos_prop_t*    props_merged = NULL;
+    uint32_t        num_props = 15;
+
+    if (get_oid) {
+        num_props++;
+    }
+
+    /* Allocate space for all props except ACL. */
+    props = daos_prop_alloc(num_props);
+    if (props == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to allocate container properties.");
+        rc = 1;
+        goto out;
+    }
+
+    /* The order of properties MUST match the order expected by serialization. */
+    props->dpp_entries[0].dpe_type = DAOS_PROP_CO_LABEL;
+    props->dpp_entries[1].dpe_type = DAOS_PROP_CO_LAYOUT_TYPE;
+    props->dpp_entries[2].dpe_type = DAOS_PROP_CO_LAYOUT_VER;
+    props->dpp_entries[3].dpe_type = DAOS_PROP_CO_CSUM;
+    props->dpp_entries[4].dpe_type = DAOS_PROP_CO_CSUM_CHUNK_SIZE;
+    props->dpp_entries[5].dpe_type = DAOS_PROP_CO_CSUM_SERVER_VERIFY;
+    props->dpp_entries[6].dpe_type = DAOS_PROP_CO_REDUN_FAC;
+    props->dpp_entries[7].dpe_type = DAOS_PROP_CO_REDUN_LVL;
+    props->dpp_entries[8].dpe_type = DAOS_PROP_CO_SNAPSHOT_MAX;
+    props->dpp_entries[9].dpe_type = DAOS_PROP_CO_COMPRESS;
+    props->dpp_entries[10].dpe_type = DAOS_PROP_CO_ENCRYPT;
+    props->dpp_entries[11].dpe_type = DAOS_PROP_CO_OWNER;
+    props->dpp_entries[12].dpe_type = DAOS_PROP_CO_OWNER_GROUP;
+    props->dpp_entries[13].dpe_type = DAOS_PROP_CO_DEDUP;
+    props->dpp_entries[14].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
+
+    /* Conditionally get the OID. Should always be true for serialization. */
+    if (get_oid) {
+        props->dpp_entries[15].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
+    }
+
+    /* Get all props except ACL first. */
+    rc = daos_cont_query(coh, NULL, props, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to query container: "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+
+    /* Fetch the ACL separately in case user doesn't have access */
+    rc = daos_cont_get_acl(coh, &prop_acl, NULL);
+    if (rc == 0) {
+        /* ACL will be appended to the end */
+        props_merged = daos_prop_merge(props, prop_acl);
+        if (props_merged == NULL) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to set container ACL: "DF_RC, DP_RC(rc));
+            rc = 1;
+            goto out;
+        }
+        daos_prop_free(props);
+        props = props_merged;
+    } else if (rc && rc != -DER_NO_PERM) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to query container ACL: "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+
+    rc = 0;
+    *_props = props;
+
+out:
+    daos_prop_free(prop_acl);
+    if (rc != 0) {
+        daos_prop_free(props);
+    }
+
+    return rc;
+}
+
+/*
+ * Free the user attribute buffers created by cont_get_usr_attrs.
+ */
+static void cont_free_usr_attrs(int n, char*** _names, void*** _buffers,
+                               size_t** _sizes)
+{
+    char**  names = *_names;
+    void**  buffers = *_buffers;
+
+    if (names != NULL) {
+        for (size_t i = 0; i < n; i++) {
+            mfu_free(&names[i]);
+        }
+        mfu_free(_names);
+    }
+    if (buffers != NULL) {
+        for (size_t i = 0; i < n; i++) {
+            mfu_free(&buffers[i]);
+        }
+        mfu_free(_buffers);
+    }
+    mfu_free(_sizes);
+}
+
+/*
+ * Get the user attributes for a container in a format similar
+ * to what daos_cont_set_attr expects.
+ * cont_free_usr_attrs should be called to free the allocations.
+ * Returns 1 on error, 0 on success.
+ */
+static int cont_get_usr_attrs(daos_handle_t coh,
+                              int* _n, char*** _names, void*** _buffers,
+                              size_t** _sizes)
+{
+    int         rc = 0;
+    uint64_t    total_size = 0;
+    uint64_t    cur_size = 0;
+    uint64_t    num_attrs = 0;
+    uint64_t    name_len = 0;
+    char*       name_buf = NULL;
+    char**      names = NULL;
+    void**      buffers = NULL;
+    size_t*     sizes = NULL;
+
+    /* Get the total size needed to store all names */
+    rc = daos_cont_list_attr(coh, NULL, &total_size, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to list user attributes "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+
+    /* no attributes found */
+    if (total_size == 0) {
+        *_n = 0;
+        goto out;
+    }
+
+    /* Allocate a buffer to hold all attribute names */
+    name_buf = MFU_CALLOC(total_size, sizeof(char));
+    if (name_buf == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
+        rc = 1;
+        goto out;
+    }
+
+    /* Get the attribute names */
+    rc = daos_cont_list_attr(coh, name_buf, &total_size, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to list user attributes "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+
+    /* Figure out the number of attributes */
+    while (cur_size < total_size) {
+        name_len = strnlen(name_buf + cur_size, total_size - cur_size);
+        if (name_len == total_size - cur_size) {
+            /* end of buf reached but no end of string, ignoring */
+            break;
+        }
+        num_attrs++;
+        cur_size += name_len + 1;
+    }
+
+    /* Sanity check */
+    if (num_attrs == 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to parse user attributes");
+        rc = 1;
+        goto out;
+    }
+
+    /* Allocate arrays for attribute names, buffers, and sizes */
+    names = MFU_CALLOC(num_attrs, sizeof(char*));
+    if (names == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
+        rc = 1;
+        goto out;
+    }
+    sizes = MFU_CALLOC(num_attrs, sizeof(size_t));
+    if (sizes == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
+        rc = 1;
+        goto out;
+    }
+    buffers = MFU_CALLOC(num_attrs, sizeof(void*));
+    if (buffers == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
+        rc = 1;
+        goto out;
+    }
+
+    /* Create the array of names */
+    cur_size = 0;
+    for (uint64_t i = 0; i < num_attrs; i++) {
+        name_len = strnlen(name_buf + cur_size, total_size - cur_size);
+        if (name_len == total_size - cur_size) {
+            /* end of buf reached but no end of string, ignoring */
+            break;
+        }
+        names[i] = strndup(name_buf + cur_size, name_len + 1);
+        cur_size += name_len + 1;
+    }
+
+    /* Get the buffer sizes */
+    rc = daos_cont_get_attr(coh, num_attrs,
+                            (const char* const*)names,
+                            NULL, sizes, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to get user attribute sizes "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+
+    /* Allocate space for each value */
+    for (uint64_t i = 0; i < num_attrs; i++) {
+        buffers[i] = MFU_CALLOC(sizes[i], sizeof(size_t));
+        if (buffers[i] == NULL) {
+            MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
+            rc = 1;
+            goto out;
+        }
+    }
+
+    /* Get the attribute values */
+    rc = daos_cont_get_attr(coh, num_attrs,
+                            (const char* const*)names,
+                            (void * const*)buffers, sizes,
+                            NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to get user attribute values "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+
+    /* Return values to the caller */
+    *_n = num_attrs;
+    *_names = names;
+    *_buffers = buffers;
+    *_sizes = sizes;
+out:
+    if (rc != 0) {
+        cont_free_usr_attrs(num_attrs, &names, &buffers, &sizes);
+    }
+
+    mfu_free(&name_buf);
+    return rc;
+}
+
+/* Copy all user attributes from one container to another.
+ * Returns 1 on error, 0 on success. */
+static int copy_usr_attrs(daos_handle_t src_coh, daos_handle_t dst_coh)
+{
+    int         num_attrs = 0;
+    char**      names = NULL;
+    void**      buffers = NULL;
+    size_t*     sizes = NULL;
+    int         rc;
+
+    /* Get all user attributes */
+    rc = cont_get_usr_attrs(src_coh, &num_attrs, &names, &buffers, &sizes);
+    if (rc != 0) {
+        rc = 1;
+        goto out;
+    }
+
+    if (num_attrs == 0) {
+        rc = 0;
+        goto out;
+    }
+
+    rc = daos_cont_set_attr(dst_coh, num_attrs,
+                            (char const* const*) names,
+                            (void const* const*) buffers,
+                            sizes, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to set user attrs: "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+
+out:
+    cont_free_usr_attrs(num_attrs, &names, &buffers, &sizes);
+    return rc;
+}
+
 /* Distribute process 0's pool or container handle to others. */
 void daos_bcast_handle(
   int rank,              /* root rank for broadcast */
@@ -684,7 +978,8 @@ int daos_connect(
   daos_handle_t* coh,
   bool connect_pool,
   bool create_cont,
-  bool require_new_cont)
+  bool require_new_cont,
+  mfu_file_t* mfu_src_file)
 {
     /* sanity check */
     if (require_new_cont && !create_cont) {
@@ -694,9 +989,9 @@ int daos_connect(
         return -1;
     }
 
-    /* assume failure until otherwise */
-    int valid = 0;
-    int rc;
+    int             valid = 0; /* assume failure until otherwise */
+    int             rc;
+    daos_prop_t*    props = NULL;
 
     /* have rank 0 connect to the pool and container,
      * we'll then broadcast the handle ids from rank 0 to everyone else */
@@ -727,20 +1022,39 @@ int daos_connect(
                 goto bcast;
             }
 
+            bool have_src_cont = daos_handle_is_valid(da->src_coh);
+
+            /* Get the src container properties. */
+            if (have_src_cont) {
+                if ((mfu_src_file != NULL) && (mfu_src_file->type == DFS)) {
+                    /* Don't get the allocated OID */
+                    rc = cont_get_props(da->src_coh, &props, false);
+                } else {
+                    rc = cont_get_props(da->src_coh, &props, true);
+                }
+                if (rc != 0) {
+                    goto bcast;
+                }
+            }
+
             /* Create a new container. If we don't have a source container,
              * create a POSIX container. Otherwise, create a container of
              * the same type as the source. */
-            /* TODO copy container properties */
-            /* TODO copy user attributes */
-            if (!daos_uuid_valid(da->src_cont_uuid) || da->src_cont_type == DAOS_PROP_CO_LAYOUT_POSIX) {
-                //dfs_attr_t attr; /* TODO set and pass this */
-                rc = dfs_cont_create(*poh, cont_uuid, NULL, NULL, NULL);
+            if (!have_src_cont || (da->src_cont_type == DAOS_PROP_CO_LAYOUT_POSIX)) {
+                dfs_attr_t attr = {0};
+                attr.da_props = props;
+                rc = dfs_cont_create(*poh, cont_uuid, &attr, NULL, NULL);
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to create container: (%d %s)",
+                            rc, strerror(rc));
+                    goto bcast;
+                }
             } else {
-                rc = daos_cont_create(*poh, cont_uuid, NULL, NULL);
-            }
-            if (rc != 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to create container");
-                goto bcast;
+                rc = daos_cont_create(*poh, cont_uuid, props, NULL);
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to create container: "DF_RC, DP_RC(rc));
+                    goto bcast;
+                }
             }
 
             char uuid_str[130];
@@ -753,6 +1067,14 @@ int daos_connect(
                 MFU_LOG(MFU_LOG_ERR, "Failed to open container: "DF_RC, DP_RC(rc));
                 goto bcast;
             }
+
+            /* Copy user attributes from source container */
+            if (have_src_cont) {
+                rc = copy_usr_attrs(da->src_coh, *coh);
+                if (rc != 0) {
+                    goto bcast;
+                }
+            }
         } else if (require_new_cont) {
             /* We successfully opened the container, but it should not exist */
             MFU_LOG(MFU_LOG_ERR, "Destination container already exists");
@@ -763,6 +1085,10 @@ int daos_connect(
         valid = 1;
     }
 bcast:
+    if (rank == 0) {
+        daos_prop_free(props);
+    }
+
     /* broadcast valid from rank 0 */
     MPI_Bcast(&valid, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
@@ -1018,7 +1344,8 @@ int daos_setup(
         }
         tmp_rc = daos_connect(rank, da, da->src_pool_uuid, da->src_cont_uuid,
                               &da->src_poh, &da->src_coh,
-                              connect_pool, create_cont, require_new_cont);
+                              connect_pool, create_cont, require_new_cont,
+                              mfu_src_file);
         if (tmp_rc != 0) {
             /* tmp_rc from daos_connect is collective */
             local_daos_error = true;
@@ -1075,12 +1402,14 @@ int daos_setup(
             connect_pool = false;
             tmp_rc = daos_connect(rank, da, da->dst_pool_uuid, da->dst_cont_uuid,
                                   &da->src_poh, &da->dst_coh,
-                                  connect_pool, create_cont, require_new_cont);
+                                  connect_pool, create_cont, require_new_cont,
+                                  mfu_src_file);
         } else {
             connect_pool = true;
             tmp_rc = daos_connect(rank, da, da->dst_pool_uuid, da->dst_cont_uuid,
                                   &da->dst_poh, &da->dst_coh,
-                                  connect_pool, create_cont, require_new_cont);
+                                  connect_pool, create_cont, require_new_cont,
+                                  mfu_src_file);
         }
         if (tmp_rc != 0) {
             /* tmp_rc from daos_connect is collective */
@@ -2831,175 +3160,6 @@ out:
     return rc;
 }
 
-/*
- * Free the user attribute buffers created by cont_get_usr_attrs.
- */
-static void cont_free_usr_attrs(int n, char*** _names, void*** _buffers,
-                               size_t** _sizes)
-{
-    char**  names = *_names;
-    void**  buffers = *_buffers;
-
-    if (names != NULL) {
-        for (size_t i = 0; i < n; i++) {
-            mfu_free(&names[i]);
-        }
-        mfu_free(_names);
-    }
-    if (buffers != NULL) {
-        for (size_t i = 0; i < n; i++) {
-            mfu_free(&buffers[i]);
-        }
-        mfu_free(_buffers);
-    }
-    mfu_free(_sizes);
-}
-
-/*
- * Get the user attributes for a container in a format similar
- * to what daos_cont_set_attr expects.
- * cont_free_usr_attrs should be called to free the allocations.
- * Returns 1 on error, 0 on success.
- */
-static int cont_get_usr_attrs(daos_handle_t coh,
-                              int* _n, char*** _names, void*** _buffers,
-                              size_t** _sizes)
-{
-    int         rc = 0;
-    uint64_t    total_size = 0;
-    uint64_t    cur_size = 0;
-    uint64_t    num_attrs = 0;
-    uint64_t    name_len = 0;
-    char*       name_buf = NULL;
-    char**      names = NULL;
-    void**      buffers = NULL;
-    size_t*     sizes = NULL;
-
-    /* Get the total size needed to store all names */
-    rc = daos_cont_list_attr(coh, NULL, &total_size, NULL);
-    if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to list user attributes "DF_RC, DP_RC(rc));
-        rc = 1;
-        goto out;
-    }
-
-    /* no attributes found */
-    if (total_size == 0) {
-        *_n = 0;
-        goto out;
-    }
-
-    /* Allocate a buffer to hold all attribute names */
-    name_buf = MFU_CALLOC(total_size, sizeof(char));
-    if (name_buf == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
-        rc = 1;
-        goto out;
-    }
-
-    /* Get the attribute names */
-    rc = daos_cont_list_attr(coh, name_buf, &total_size, NULL);
-    if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to list user attributes "DF_RC, DP_RC(rc));
-        rc = 1;
-        goto out;
-    }
-
-    /* Figure out the number of attributes */
-    while (cur_size < total_size) {
-        name_len = strnlen(name_buf + cur_size, total_size - cur_size);
-        if (name_len == total_size - cur_size) {
-            /* end of buf reached but no end of string, ignoring */
-            break;
-        }
-        num_attrs++;
-        cur_size += name_len + 1;
-    }
-
-    /* Sanity check */
-    if (num_attrs == 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to parse user attributes");
-        rc = 1;
-        goto out;
-    }
-
-    /* Allocate arrays for attribute names, buffers, and sizes */
-    names = MFU_CALLOC(num_attrs, sizeof(char*));
-    if (names == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
-        rc = 1;
-        goto out;
-    }
-    sizes = MFU_CALLOC(num_attrs, sizeof(size_t));
-    if (sizes == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
-        rc = 1;
-        goto out;
-    }
-    buffers = MFU_CALLOC(num_attrs, sizeof(void*));
-    if (buffers == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
-        rc = 1;
-        goto out;
-    }
-
-    /* Create the array of names */
-    cur_size = 0;
-    for (uint64_t i = 0; i < num_attrs; i++) {
-        name_len = strnlen(name_buf + cur_size, total_size - cur_size);
-        if (name_len == total_size - cur_size) {
-            /* end of buf reached but no end of string, ignoring */
-            break;
-        }
-        names[i] = strndup(name_buf + cur_size, name_len + 1);
-        cur_size += name_len + 1;
-    }
-
-    /* Get the buffer sizes */
-    rc = daos_cont_get_attr(coh, num_attrs,
-                            (const char* const*)names,
-                            NULL, sizes, NULL);
-    if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to get user attribute sizes "DF_RC, DP_RC(rc));
-        rc = 1;
-        goto out;
-    }
-
-    /* Allocate space for each value */
-    for (uint64_t i = 0; i < num_attrs; i++) {
-        buffers[i] = MFU_CALLOC(sizes[i], sizeof(size_t));
-        if (buffers[i] == NULL) {
-            MFU_LOG(MFU_LOG_ERR, "failed to allocate user attribute buffer");
-            rc = 1;
-            goto out;
-        }
-    }
-
-    /* Get the attribute values */
-    rc = daos_cont_get_attr(coh, num_attrs,
-                            (const char* const*)names,
-                            (void * const*)buffers, sizes,
-                            NULL);
-    if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to get user attribute values "DF_RC, DP_RC(rc));
-        rc = 1;
-        goto out;
-    }
-
-    /* Return values to the caller */
-    *_n = num_attrs;
-    *_names = names;
-    *_buffers = buffers;
-    *_sizes = sizes;
-out:
-    if (rc != 0) {
-        cont_free_usr_attrs(num_attrs, &names, &buffers, &sizes);
-    }
-
-    mfu_free(&name_buf);
-    return rc;
-}
-
 static int cont_serialize_usr_attrs(struct hdf5_args *hdf5, daos_handle_t cont)
 {
     int         rc = 0;
@@ -3332,52 +3492,16 @@ out:
     return rc;
 }
 
-
 static int cont_serialize_props(struct hdf5_args *hdf5,
                                     daos_handle_t cont)
 {
     int                     rc = 0;
-    daos_prop_t*            prop_query;
-    daos_prop_t*            prop_acl = NULL;
+    daos_prop_t*            prop_query = NULL;
     struct daos_prop_entry* entry;
     char                    cont_str[DAOS_PROP_LABEL_MAX_LEN];
 
-    /*
-     * Get all props except the ACL first.
-     */
-    prop_query = daos_prop_alloc(16);
-    if (prop_query == NULL) {
-        return ENOMEM;
-    }
-
-    prop_query->dpp_entries[0].dpe_type = DAOS_PROP_CO_LABEL;
-    prop_query->dpp_entries[1].dpe_type = DAOS_PROP_CO_LAYOUT_TYPE;
-    prop_query->dpp_entries[2].dpe_type = DAOS_PROP_CO_LAYOUT_VER;
-    prop_query->dpp_entries[3].dpe_type = DAOS_PROP_CO_CSUM;
-    prop_query->dpp_entries[4].dpe_type = DAOS_PROP_CO_CSUM_CHUNK_SIZE;
-    prop_query->dpp_entries[5].dpe_type = DAOS_PROP_CO_CSUM_SERVER_VERIFY;
-    prop_query->dpp_entries[6].dpe_type = DAOS_PROP_CO_REDUN_FAC;
-    prop_query->dpp_entries[7].dpe_type = DAOS_PROP_CO_REDUN_LVL;
-    prop_query->dpp_entries[8].dpe_type = DAOS_PROP_CO_SNAPSHOT_MAX;
-    prop_query->dpp_entries[9].dpe_type = DAOS_PROP_CO_COMPRESS;
-    prop_query->dpp_entries[10].dpe_type = DAOS_PROP_CO_ENCRYPT;
-    prop_query->dpp_entries[11].dpe_type = DAOS_PROP_CO_OWNER;
-    prop_query->dpp_entries[12].dpe_type = DAOS_PROP_CO_OWNER_GROUP;
-    prop_query->dpp_entries[13].dpe_type = DAOS_PROP_CO_DEDUP;
-    prop_query->dpp_entries[14].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
-    prop_query->dpp_entries[15].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
-
-    rc = daos_cont_query(cont, NULL, prop_query, NULL);
+    rc = cont_get_props(cont, &prop_query, true);
     if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to query container "DF_RC, DP_RC(rc));
-        rc = 1;
-        goto out;
-    }
-
-    /* Fetch the ACL separately in case user doesn't have access */
-    rc = daos_cont_get_acl(cont, &prop_acl, NULL);
-    if (rc && rc != -DER_NO_PERM) {
-        MFU_LOG(MFU_LOG_ERR, "failed to query container ACL "DF_RC, DP_RC(rc));
         rc = 1;
         goto out;
     }
@@ -3479,8 +3603,8 @@ static int cont_serialize_props(struct hdf5_args *hdf5,
     }
 
     /* serialize ACL */
-    if (prop_acl != NULL) {
-        entry = &prop_acl->dpp_entries[0];
+    if (prop_query->dpp_nr > 16) {
+        entry = &prop_query->dpp_entries[16];
         rc = cont_serialize_prop_acl(hdf5, entry, "DAOS_PROP_CO_ACL");
         if (rc != 0) {
             goto out;
@@ -3489,7 +3613,6 @@ static int cont_serialize_props(struct hdf5_args *hdf5,
 
 out:
     daos_prop_free(prop_query);
-    daos_prop_free(prop_acl);
     return rc;
 }
 
@@ -4293,11 +4416,25 @@ static int cont_deserialize_prop_acl(struct hdf5_args* hdf5,
     int             ndims = 0;
     const char      **rdata = NULL;
     struct daos_acl *acl;
+    htri_t          acl_exist;
+
+    /* First check if the ACL attribute exists. */
+    acl_exist = H5Aexists(hdf5->file, prop_str);
+    if (acl_exist < 0) {
+        /* Actual error */
+        MFU_LOG(MFU_LOG_ERR, "failed to open property attribute type %s", prop_str);
+        rc = 1;
+        goto out;
+    } else if (acl_exist == 0) {
+        /* Does not exist, but that's okay. */
+        rc = 0;
+        goto out;
+    }
 
     hdf5->cont_attr = H5Aopen(hdf5->file, prop_str, H5P_DEFAULT);
     if (hdf5->cont_attr < 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to open property attribute %s", prop_str);
-        rc = 1;
+        /* Could not open, but that's okay. */
+        rc = 0;
         goto out;
     }
     hdf5->attr_dtype = H5Aget_type(hdf5->cont_attr);
@@ -4435,11 +4572,7 @@ static int cont_deserialize_usr_attrs(struct hdf5_args* hdf5,
     }
 
     /* Set the user attribute buffers */
-    MFU_LOG(MFU_LOG_INFO, "num_attrs = %llu", num_attrs);
     for (int i = 0; i < num_attrs; i++) {
-        MFU_LOG(MFU_LOG_INFO, "attr_data[%llu].attr_name = %s", i, attr_data[i].attr_name);
-        MFU_LOG(MFU_LOG_INFO, "attr_data[%llu].attr_val.p = %s", i, attr_data[i].attr_val.p);
-        MFU_LOG(MFU_LOG_INFO, "attr_data[%llu].attr_val.len = %llu", i, attr_data[i].attr_val.len);
         names[i] = attr_data[i].attr_name;
         buffers[i] = attr_data[i].attr_val.p;
         sizes[i] = attr_data[i].attr_val.len;
@@ -4589,10 +4722,6 @@ static int cont_deserialize_all_props(struct hdf5_args *hdf5, daos_prop_t *prop,
         goto out;
     }
 
-    /* TODO fetch ACL into a different prop and merge the two props
-     * only if the ACL succeeds. Otherwise, if the ACL fails, the entry will
-     * be invalid/NULL */
-    /* Ignore missing ACL in case user didn't have access when serializing */
     entry = &prop->dpp_entries[16];
     /* read acl as a list of strings in deserialize, then convert
      * back to acl for property entry
