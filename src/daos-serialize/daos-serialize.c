@@ -161,6 +161,11 @@ int main(int argc, char** argv)
         rc = 1;
     }
 
+    /* Initialize some stats */
+    mfu_daos_stats_t stats;
+    mfu_daos_stats_init(&stats);
+    mfu_daos_stats_start(&stats);
+
     /* take a snapshot and walk container to get list of objects,
      * returns epoch number of snapshot */
     tmp_rc = mfu_daos_flist_walk(daos_args, daos_args->src_coh, &daos_args->src_epc, flist);
@@ -200,7 +205,7 @@ int main(int argc, char** argv)
     /* don't bother running if this rank doesn't have any oids */
     if (size > 0) {
         tmp_rc = daos_cont_serialize_hdlr(rank, &hdf5, output_path, &files_written,
-                                          daos_args, newflist, size);
+                                          daos_args, newflist, size, &stats);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to serialize container (%d)", rc);
             rc = 1;
@@ -220,6 +225,12 @@ int main(int argc, char** argv)
             rc = 1;
         }
     }
+
+    /* Record end time */
+    mfu_daos_stats_end(&stats);
+
+    /* Sum and print the stats */
+    mfu_daos_stats_print_sum(rank, &stats, true, false, false, false);
 
     /* destroy snapshot after copy */
     /* TODO consider moving this into mfu_flist_copy_daos */

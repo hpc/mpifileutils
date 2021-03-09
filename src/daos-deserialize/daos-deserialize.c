@@ -252,6 +252,11 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    /* Initialize some stats */
+    mfu_daos_stats_t stats;
+    mfu_daos_stats_init(&stats);
+    mfu_daos_stats_start(&stats);
+
     /* TODO: I think maybe this can be adjusted to use
      * libcircle in the case that a user specifies
      * a directory, it could only add regular files
@@ -359,12 +364,18 @@ int main(int argc, char** argv)
         const char *path = mfu_flist_file_get_name(newflist, i);
 
         /* deserialize this hdf5 file to a DAOS container */
-        tmp_rc = daos_cont_deserialize_hdlr(rank, daos_args, path);
+        tmp_rc = daos_cont_deserialize_hdlr(rank, daos_args, path, &stats);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to deserialize container (%d)", rc);
             rc = 1;
         }
     }
+
+    /* Record end time */
+    mfu_daos_stats_end(&stats);
+
+    /* Sum and print the stats */
+    mfu_daos_stats_print_sum(rank, &stats, false, true, false, false);
 
     mfu_flist_free(&newflist);
 
