@@ -47,6 +47,50 @@ typedef struct {
     enum daos_cont_props dst_cont_type; /* type of the destination container */
 } daos_args_t;
 
+/* struct for holding statistics */
+typedef struct mfu_daos_stats {
+    uint64_t total_oids;    /* sum of object ids */
+    uint64_t total_dkeys;   /* sum of dkeys */
+    uint64_t total_akeys;   /* sum of akeys */
+    uint64_t bytes_read;    /* sum of bytes read (src and dst) */
+    uint64_t bytes_written; /* sum of bytes written */
+    time_t   time_started;  /* time when started */
+    time_t   time_ended;    /* time when ended */
+    double   wtime_started; /* relative time when started */
+    double   wtime_ended;   /* relative time when ended */
+} mfu_daos_stats_t;
+
+/* initialize the mfu_daos_stats_t */
+void mfu_daos_stats_init(mfu_daos_stats_t* stats);
+
+/* set the stats start time */
+void mfu_daos_stats_start(mfu_daos_stats_t* stats);
+
+/* set the stats end time */
+void mfu_daos_stats_end(mfu_daos_stats_t* stats);
+
+/* sum the stats into another stats struct */
+void mfu_daos_stats_sum(mfu_daos_stats_t* stats, mfu_daos_stats_t* stats_sum);
+
+/* print the stats */
+void mfu_daos_stats_print(
+    mfu_daos_stats_t* stats,
+    bool print_read,
+    bool print_write,
+    bool print_read_rate,
+    bool print_write_rate
+);
+
+/* sum and printthe stats */
+void mfu_daos_stats_print_sum(
+    int rank,
+    mfu_daos_stats_t* stats,
+    bool print_read,
+    bool print_write,
+    bool print_read_rate,
+    bool print_write_rate
+);
+
 #ifdef HDF5_SUPPORT
 /* for user attr dataset */
 typedef struct {
@@ -210,7 +254,8 @@ int daos_cont_serialize_hdlr(
     uint64_t *files_written,
     daos_args_t *da,
     mfu_flist flist,
-    uint64_t num_oids
+    uint64_t num_oids,
+    mfu_daos_stats_t* stats
 );
 
 /* serialize a container to
@@ -218,7 +263,8 @@ int daos_cont_serialize_hdlr(
 int daos_cont_deserialize_hdlr(
     int rank,
     daos_args_t *da,
-    const char *h5filename
+    const char *h5filename,
+    mfu_daos_stats_t* stats
 );
 
 /* connect to pool, read cont properties because

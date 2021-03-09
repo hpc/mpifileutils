@@ -23,21 +23,10 @@
 
 /*
  * Private definitions.
+ * TODO - Need to reorganize some functions in this file.
  */
 
-typedef struct mfu_daos_copy_stats {
-    uint64_t total_oids;    /* sum of object ids */
-    uint64_t total_dkeys;   /* sum of dkeys */
-    uint64_t total_akeys;   /* sum of akeys */
-    uint64_t bytes_read;    /* sum of bytes read (src and dst) */
-    uint64_t bytes_written; /* sum of bytes written */
-    time_t   time_started;  /* time when copy started */
-    time_t   time_ended;    /* time when copy ended */
-    double   wtime_started; /* relative time when copy started */
-    double   wtime_ended;   /* relative time when copy ended */
-} mfu_daos_copy_stats_t;
-
-static inline void mfu_daos_copy_stats_init(mfu_daos_copy_stats_t* stats)
+void mfu_daos_stats_init(mfu_daos_stats_t* stats)
 {
     stats->total_oids = 0;
     stats->total_dkeys = 0;
@@ -49,19 +38,19 @@ static inline void mfu_daos_copy_stats_init(mfu_daos_copy_stats_t* stats)
     stats->wtime_ended = 0;
 }
 
-static inline void mfu_daos_copy_stats_start(mfu_daos_copy_stats_t* stats)
+void mfu_daos_stats_start(mfu_daos_stats_t* stats)
 {
     time(&stats->time_started);
     stats->wtime_started = MPI_Wtime();
 }
 
-static inline void mfu_daos_copy_stats_end(mfu_daos_copy_stats_t* stats)
+void mfu_daos_stats_end(mfu_daos_stats_t* stats)
 {
     time(&stats->time_ended);
     stats->wtime_ended = MPI_Wtime();
 }
 
-static void mfu_daos_copy_stats_sum(mfu_daos_copy_stats_t* stats, mfu_daos_copy_stats_t* stats_sum)
+void mfu_daos_stats_sum(mfu_daos_stats_t* stats, mfu_daos_stats_t* stats_sum)
 {
     int num_values = 5;
     /* put local values into buffer */
@@ -89,7 +78,12 @@ static void mfu_daos_copy_stats_sum(mfu_daos_copy_stats_t* stats, mfu_daos_copy_
     stats_sum->wtime_ended = stats->wtime_ended;
 }
 
-static void mfu_daos_copy_stats_print(mfu_daos_copy_stats_t* stats)
+void mfu_daos_stats_print(
+    mfu_daos_stats_t* stats,
+    bool print_read,
+    bool print_write,
+    bool print_read_rate,
+    bool print_write_rate)
 {
     /* format start time */
     char starttime_str[256];
@@ -109,48 +103,73 @@ static void mfu_daos_copy_stats_print(mfu_daos_copy_stats_t* stats)
     const char* read_size_units;
     mfu_format_bytes(stats->bytes_read, &read_size_tmp, &read_size_units);
 
-    /* compute read rate */
-    double read_rate = 0;
-    if (stats->bytes_read > 0) {
-        read_rate = (double) stats->bytes_read / rel_time;
-    }
-
-    /* convert read rate to units */
-    double read_rate_tmp;
-    const char* read_rate_units;
-    mfu_format_bw(read_rate, &read_rate_tmp, &read_rate_units);
-
     /* convert write size to units */
     double write_size_tmp;
     const char* write_size_units;
     mfu_format_bytes(stats->bytes_written, &write_size_tmp, &write_size_units);
 
-    /* compute write rate */
-    double write_rate = 0;
-    if (stats->bytes_written > 0) {
-        write_rate = (double) stats->bytes_written / rel_time;
+    MFU_LOG(MFU_LOG_INFO, "Started       : %s", starttime_str);
+    MFU_LOG(MFU_LOG_INFO, "Completed     : %s", endtime_str);
+    MFU_LOG(MFU_LOG_INFO, "Seconds       : %.3lf", rel_time);
+    MFU_LOG(MFU_LOG_INFO, "Objects       : %" PRId64, stats->total_oids);
+    MFU_LOG(MFU_LOG_INFO, "  D-Keys      : %" PRId64, stats->total_dkeys);
+    MFU_LOG(MFU_LOG_INFO, "  A-Keys      : %" PRId64, stats->total_akeys);
+
+    if (print_read) {
+        MFU_LOG(MFU_LOG_INFO, "Bytes read    : %.3lf %s (%" PRId64 " bytes)",
+                read_size_tmp, read_size_units, stats->bytes_read);
+    }
+    if (print_write) {
+        MFU_LOG(MFU_LOG_INFO, "Bytes written : %.3lf %s (%" PRId64 " bytes)",
+                write_size_tmp, write_size_units, stats->bytes_written);
     }
 
-    /* convert write rate to units */
-    double write_rate_tmp;
-    const char* write_rate_units;
-    mfu_format_bw(write_rate, &write_rate_tmp, &write_rate_units);
+    if (print_read_rate) {
+        /* Compute read rate */
+        double read_rate = 0;
+        if (rel_time > 0) {
+            read_rate = (double) stats->bytes_read / rel_time;
+        }
 
-    MFU_LOG(MFU_LOG_INFO, "Started    : %s", starttime_str);
-    MFU_LOG(MFU_LOG_INFO, "Completed  : %s", endtime_str);
-    MFU_LOG(MFU_LOG_INFO, "Seconds    : %.3lf", rel_time);
-    MFU_LOG(MFU_LOG_INFO, "Objects    : %" PRId64, stats->total_oids);
-    MFU_LOG(MFU_LOG_INFO, "  D-Keys   : %" PRId64, stats->total_dkeys);
-    MFU_LOG(MFU_LOG_INFO, "  A-Keys   : %" PRId64, stats->total_akeys);
+        /* Convert read rate to units */
+        double read_rate_tmp;
+        const char* read_rate_units;
+        mfu_format_bw(read_rate, &read_rate_tmp, &read_rate_units);
 
-    MFU_LOG(MFU_LOG_INFO, "Bytes read    : %.3lf %s (%" PRId64 " bytes)",
-            read_size_tmp, read_size_units, stats->bytes_read);
-    MFU_LOG(MFU_LOG_INFO, "Bytes written : %.3lf %s (%" PRId64 " bytes)",
-            write_size_tmp, write_size_units, stats->bytes_written);
-    MFU_LOG(MFU_LOG_INFO, "Read rate  : %.3lf %s",
-            read_rate_tmp, read_rate_units);
-    MFU_LOG(MFU_LOG_INFO, "Write rate : %.3lf %s",
-            write_rate_tmp, write_rate_units);
+        MFU_LOG(MFU_LOG_INFO, "Read rate     : %.3lf %s",
+                read_rate_tmp, read_rate_units);
+    }
+
+    if (print_write_rate) {
+        /* Compute write rate */
+        double write_rate = 0;
+        if (rel_time > 0) {
+            write_rate = (double) stats->bytes_written / rel_time;
+        }
+
+        /* Convert write rate to units */
+        double write_rate_tmp;
+        const char* write_rate_units;
+        mfu_format_bw(write_rate, &write_rate_tmp, &write_rate_units);
+
+        MFU_LOG(MFU_LOG_INFO, "Write rate    : %.3lf %s",
+                write_rate_tmp, write_rate_units);
+    }
+}
+
+void mfu_daos_stats_print_sum(
+    int rank,
+    mfu_daos_stats_t* stats,
+    bool print_read,
+    bool print_write,
+    bool print_read_rate,
+    bool print_write_rate)
+{
+    mfu_daos_stats_t stats_sum;
+    mfu_daos_stats_sum(stats, &stats_sum);
+    if (rank == 0) {
+        mfu_daos_stats_print(&stats_sum, print_read, print_write, print_read_rate, print_write_rate);
+    }
 }
 
 bool daos_uuid_valid(const uuid_t uuid)
@@ -1213,7 +1232,7 @@ static int mfu_daos_obj_sync_recx_single(
     daos_iod_t *iod,
     bool compare_dst,
     bool write_dst,
-    mfu_daos_copy_stats_t* stats)
+    mfu_daos_stats_t* stats)
 {
     bool        dst_equal = false;  /* equal until found otherwise */
     uint64_t    src_buf_len = (*iod).iod_size;
@@ -1345,7 +1364,7 @@ static int mfu_daos_obj_sync_recx_array(
     daos_iod_t *iod,
     bool compare_dst,
     bool write_dst,
-    mfu_daos_copy_stats_t* stats)
+    mfu_daos_stats_t* stats)
 {
     bool        all_dst_equal = true;   /* equal until found otherwise */
     uint32_t    max_number = 5;         /* max recxs per fetch */
@@ -1488,7 +1507,7 @@ static int mfu_daos_obj_sync_keys(
   daos_handle_t* dst_oh,
   bool compare_dst,
   bool write_dst,
-  mfu_daos_copy_stats_t* stats)
+  mfu_daos_stats_t* stats)
 {
     /* Assume src and dst are equal until found otherwise */
     bool all_dst_equal = true;
@@ -1642,7 +1661,7 @@ static int mfu_daos_obj_sync(
     daos_obj_id_t oid,
     bool compare_dst,             /* Whether to compare the src and dst before writing */
     bool write_dst,               /* Whether to write to the dst */
-    mfu_daos_copy_stats_t* stats)
+    mfu_daos_stats_t* stats)
 {
     int rc = 0;
 
@@ -1696,7 +1715,7 @@ static int mfu_daos_flist_obj_sync(
   daos_handle_t dst_coh,
   bool compare_dst,
   bool write_dst,
-  mfu_daos_copy_stats_t* stats)
+  mfu_daos_stats_t* stats)
 {
     int rc = 0;
 
@@ -1850,9 +1869,9 @@ int mfu_daos_flist_sync(
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     /* Initialize some stats */
-    mfu_daos_copy_stats_t stats;
-    mfu_daos_copy_stats_init(&stats);
-    mfu_daos_copy_stats_start(&stats);
+    mfu_daos_stats_t stats;
+    mfu_daos_stats_init(&stats);
+    mfu_daos_stats_start(&stats);
 
     /* evenly spread the objects across all ranks */
     mfu_flist newflist = mfu_flist_spread(flist);
@@ -1877,14 +1896,10 @@ int mfu_daos_flist_sync(
     }
 
     /* Record end time */
-    mfu_daos_copy_stats_end(&stats);
+    mfu_daos_stats_end(&stats);
 
     /* Sum and print the stats */
-    mfu_daos_copy_stats_t stats_sum;
-    mfu_daos_copy_stats_sum(&stats, &stats_sum);
-    if (rank == 0) {
-        mfu_daos_copy_stats_print(&stats_sum);
-    }
+    mfu_daos_stats_print_sum(rank, &stats, true, true, true, true);
 
     mfu_flist_free(&newflist);
 
@@ -1930,12 +1945,12 @@ static inline void init_hdf5_args(struct hdf5_args *hdf5)
 static int serialize_recx_single(struct hdf5_args *hdf5, 
                                  daos_key_t *dkey,
                                  daos_handle_t *oh,
-                                 daos_iod_t *iod)
+                                 daos_iod_t *iod,
+                                 mfu_daos_stats_t* stats)
 {
     /* if iod_type is single value just fetch iod size from source
      * and update in destination object */
     int         buf_len = (int)(*iod).iod_size;
-    //void        *buf[buf_len * 2];
     void        *buf;
     d_sg_list_t sgl;
     d_iov_t     iov;
@@ -1962,6 +1977,8 @@ static int serialize_recx_single(struct hdf5_args *hdf5,
         goto out;
     }
 
+    stats->bytes_read += buf_len;
+
     /* write single val record to dataset */
     err = H5Dwrite(hdf5->single_dset, hdf5->single_dtype, H5S_ALL,
                    hdf5->single_dspace, H5P_DEFAULT, sgl.sg_iovs[0].iov_buf);
@@ -1980,7 +1997,8 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
                                 char *rec_name,
                                 uint64_t *ak_index,
                                 daos_handle_t *oh,
-                                daos_iod_t *iod)
+                                daos_iod_t *iod,
+                                mfu_daos_stats_t* stats)
 {
     int                 rc = 0;
     int                 i = 0;
@@ -2102,6 +2120,8 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
                 rc = 1;
                 goto out;
             }
+
+            stats->bytes_read += buf_len;
 
             /* write data to record dset */
             hdf5->mem_dims[0] = recxs[i].rx_nr;
@@ -2320,8 +2340,8 @@ static int serialize_akeys(struct hdf5_args *hdf5,
                            daos_key_t diov,
                            uint64_t *dk_index,
                            uint64_t *ak_index,
-                           uint64_t *total_akeys,
-                           daos_handle_t *oh)
+                           daos_handle_t *oh,
+                           mfu_daos_stats_t*stats)
 {
     int             rc = 0;
     herr_t          err = 0;
@@ -2367,7 +2387,7 @@ static int serialize_akeys(struct hdf5_args *hdf5,
         if (akey_number == 0)
             continue;
 
-        size = (akey_number + *total_akeys) * sizeof(akey_t);
+        size = (akey_number + stats->total_akeys) * sizeof(akey_t);
         *hdf5->ak = realloc(*hdf5->ak, size);
         if (*hdf5->ak == NULL) {
             rc = ENOMEM;
@@ -2427,7 +2447,7 @@ static int serialize_akeys(struct hdf5_args *hdf5,
             }
             if ((int)iod.iod_size == 0) {
                 rc = serialize_recx_array(hdf5, &diov, &aiov, rec_name,
-                                          ak_index, oh, &iod);
+                                          ak_index, oh, &iod, stats);
                 if (rc != 0) {
                     MFU_LOG(MFU_LOG_ERR, "failed to serialize recx array: %d",
                             rc);
@@ -2453,7 +2473,7 @@ static int serialize_akeys(struct hdf5_args *hdf5,
                     goto out;
                 }
                 rc = serialize_recx_single(hdf5, &diov, oh,
-                                           &iod);
+                                           &iod, stats);
                 if (rc != 0) {
                     MFU_LOG(MFU_LOG_ERR, "failed to serialize recx single: %d",
                             rc);
@@ -2476,7 +2496,7 @@ static int serialize_akeys(struct hdf5_args *hdf5,
             akey_ptr += akey_kds[j].kd_key_len;
             (*ak_index)++;
         }
-        *total_akeys = (*total_akeys) + akey_number;
+        stats->total_akeys += akey_number;
     }
 out:
     return rc;
@@ -2485,10 +2505,9 @@ out:
 static int serialize_dkeys(struct hdf5_args *hdf5,
                            uint64_t *dk_index,
                            uint64_t *ak_index,
-                           uint64_t *total_dkeys,
-                           uint64_t *total_akeys,
                            daos_handle_t *oh,
-                           int *oid_index)
+                           int *oid_index,
+                           mfu_daos_stats_t* stats)
 {
     int             rc = 0;
     herr_t          err = 0;
@@ -2537,7 +2556,7 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
         if (dkey_number == 0)
             continue;
         *hdf5->dk = realloc(*hdf5->dk,
-                            (dkey_number + *total_dkeys) * sizeof(dkey_t));
+                            (dkey_number + stats->total_dkeys) * sizeof(dkey_t));
         if (*hdf5->dk == NULL) {
             rc = ENOMEM;
             goto out;
@@ -2560,7 +2579,7 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
                    (uint64_t)dkey_kds[i].kd_key_len);
             dkey_val->len = (uint64_t)dkey_kds[i].kd_key_len; 
             rc = serialize_akeys(hdf5, diov, dk_index, ak_index,
-                                 total_akeys, oh); 
+                                 oh, stats); 
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to list akeys: %d", rc);
                 rc = 1;
@@ -2569,7 +2588,7 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
             dkey_ptr += dkey_kds[i].kd_key_len;
             (*dk_index)++;
         }
-        *total_dkeys = (*total_dkeys) + dkey_number;
+        stats->total_dkeys += dkey_number;
     }
     err = H5Sclose(hdf5->rx_dspace);
     if (err < 0) {
@@ -3445,13 +3464,12 @@ out:
 
 int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
                              uint64_t *files_written, daos_args_t *da,
-                             mfu_flist flist, uint64_t num_oids)
+                             mfu_flist flist, uint64_t num_oids,
+                             mfu_daos_stats_t* stats)
 {
     int             rc = 0;
     int             i = 0;
     int             path_len = 0;
-    uint64_t        total_dkeys = 0;
-    uint64_t        total_akeys = 0;
     uint64_t        dk_index = 0;
     uint64_t        ak_index = 0;
     daos_handle_t   toh;
@@ -3533,12 +3551,11 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
         (*hdf5->oid)[i].oid_low = oid.lo;
         rc = daos_obj_open(da->src_coh, oid, 0, &oh, NULL);
         if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to open object: %d", rc);
+            MFU_LOG(MFU_LOG_ERR, "failed to open object: "DF_RC, DP_RC(rc));
             goto out;
         }
         rc = serialize_dkeys(hdf5, &dk_index, &ak_index,
-                             &total_dkeys, &total_akeys,
-                             &oh, &i);
+                             &oh, &i, stats);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "failed to serialize keys: %d", rc);
             goto out;
@@ -3546,9 +3563,12 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
         /* close source and destination object */
         rc = daos_obj_close(oh, NULL);
         if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to close object: %d", rc);
+            MFU_LOG(MFU_LOG_ERR, "failed to close object: "DF_RC, DP_RC(rc));
             goto out;
         }
+
+        /* Increment as we go */
+        stats->total_oids++;
     }
 
     /* write container version as attribute */
@@ -3586,7 +3606,7 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
         rc = 1;
         goto out;
     }
-    hdf5->dkey_dims[0] = total_dkeys;     
+    hdf5->dkey_dims[0] = stats->total_dkeys;     
     hdf5->dkey_dspace = H5Screate_simple(1, hdf5->dkey_dims, NULL);
     if (hdf5->dkey_dspace < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create dkey dspace");
@@ -3602,7 +3622,7 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
         rc = 1;
         goto out;
     }
-    hdf5->akey_dims[0] = total_akeys;     
+    hdf5->akey_dims[0] = stats->total_akeys;     
     hdf5->akey_dspace = H5Screate_simple(1, hdf5->akey_dims, NULL);
     if (hdf5->akey_dspace < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create akey dspace");
@@ -3641,6 +3661,7 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
         rc = 1;
         goto out;
     }
+
 out:
     if (hdf5->oid_dset > 0)
         H5Dclose(hdf5->oid_dset);
@@ -3800,7 +3821,8 @@ static int cont_deserialize_recx(struct hdf5_args *hdf5,
                                  daos_key_t diov,
                                  int num_attrs,
                                  uint64_t ak_off,
-                                 int k)
+                                 int k,
+                                 mfu_daos_stats_t* stats)
 {
     int             rc = 0;
     hid_t           status = 0;
@@ -3956,7 +3978,8 @@ static int cont_deserialize_recx(struct hdf5_args *hdf5,
         sgl.sg_nr     = 1;
         sgl.sg_iovs   = &iov;
 
-        d_iov_set(&iov, recx_data, recx_len * rx_dtype_size); 
+        uint64_t buf_size = recx_len * rx_dtype_size;
+        d_iov_set(&iov, recx_data, buf_size); 
 
         /* update fetched recx values and place in destination object */
         rc = daos_obj_update(*oh, DAOS_TX_NONE, 0, &diov, 1, &iod,
@@ -3965,6 +3988,9 @@ static int cont_deserialize_recx(struct hdf5_args *hdf5,
             MFU_LOG(MFU_LOG_ERR, "failed to update object: %d", rc);
             goto out;
         }
+
+        stats->bytes_written += buf_size;
+
         H5Aclose(aid);
         mfu_free(&rx_range);
         mfu_free(&recx_data);
@@ -3977,7 +4003,8 @@ out:
 static int cont_deserialize_keys(struct hdf5_args *hdf5,
                                  uint64_t *total_dkeys_this_oid,
                                  uint64_t *dk_off,
-                                 daos_handle_t *oh)
+                                 daos_handle_t *oh,
+                                 mfu_daos_stats_t* stats)
 {
     int             rc = 0;
     hid_t           status = 0;
@@ -4071,7 +4098,7 @@ static int cont_deserialize_keys(struct hdf5_args *hdf5,
             }
             if (num_attrs > 0) {
                 rc = cont_deserialize_recx(hdf5, oh, diov,
-                                           num_attrs, ak_off, k);
+                                           num_attrs, ak_off, k, stats);
                 if (rc != 0) {
                     MFU_LOG(MFU_LOG_ERR, "failed to deserialize recx");
                     rc = 1;
@@ -4123,13 +4150,18 @@ static int cont_deserialize_keys(struct hdf5_args *hdf5,
                     goto out;
                 }
 
+                stats->bytes_written += single_tsize;
+
                 mfu_free(&single_data);
             }
-            H5Pclose(hdf5->plist);  
-            H5Tclose(hdf5->rx_dtype);   
-            H5Sclose(hdf5->rx_dspace);  
-            H5Dclose(hdf5->rx_dset);    
+            H5Pclose(hdf5->plist);
+            H5Tclose(hdf5->rx_dtype);
+            H5Sclose(hdf5->rx_dspace);
+            H5Dclose(hdf5->rx_dset);
+
+            stats->total_akeys++;
         }
+        stats->total_dkeys++;
     }
 out:
     mfu_free(&single_data);
@@ -4612,7 +4644,7 @@ out:
     return rc;
 }
 
-int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename)
+int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename, mfu_daos_stats_t* stats)
 {
     int                     rc = 0;
     int                     i = 0;
@@ -4692,7 +4724,7 @@ int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename
         oid.hi = hdf5.oid_data[i].oid_hi;
         rc = daos_obj_open(da->src_coh, oid, 0, &oh, NULL);
         if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to open object: %d", rc);
+            MFU_LOG(MFU_LOG_ERR, "failed to open object: "DF_RC, DP_RC(rc));
             goto out;
         }
         dk_off = hdf5.oid_data[i].dkey_offset;
@@ -4704,16 +4736,19 @@ int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename
         } else if (i == ((int)hdf5.oid_dims[0] - 1)){
             total_dkeys_this_oid = (int)hdf5.dkey_dims[0] - (dk_off);
         } 
-        rc = cont_deserialize_keys(&hdf5, &total_dkeys_this_oid, &dk_off, &oh);
+        rc = cont_deserialize_keys(&hdf5, &total_dkeys_this_oid, &dk_off, &oh, stats);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "failed to deserialize keys: %d", rc);
             goto out;
         }
         rc = daos_obj_close(oh, NULL);
         if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to close object: %d", rc);
+            MFU_LOG(MFU_LOG_ERR, "failed to close object: "DF_RC, DP_RC(rc));
             goto out;
         }
+
+        /* Increment as we go */
+        stats->total_oids++;
     }
 out:
     if (hdf5.oid_dset > 0) {
