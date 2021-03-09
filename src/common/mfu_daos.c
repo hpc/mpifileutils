@@ -153,7 +153,7 @@ static void mfu_daos_copy_stats_print(mfu_daos_copy_stats_t* stats)
             write_rate_tmp, write_rate_units);
 }
 
-static bool daos_uuid_valid(const uuid_t uuid)
+bool daos_uuid_valid(const uuid_t uuid)
 {
     return uuid && !uuid_is_null(uuid);
 }
@@ -262,13 +262,12 @@ int daos_parse_path(
     char* path,
     size_t path_len,
     uuid_t* p_uuid,
-    uuid_t* c_uuid,
-    bool daos_no_prefix)
+    uuid_t* c_uuid)
 {
     struct duns_attr_t  dattr = {0};
     int                 rc;
 
-    dattr.da_no_prefix = daos_no_prefix;
+    /* Check if this path represents a daos pool and/or container. */
     rc = duns_resolve_path(path, &dattr);
     if (rc == 0) {
         /* daos:// or UNS path */
@@ -279,7 +278,7 @@ int daos_parse_path(
         } else {
             strncpy(path, dattr.da_rel_path, path_len);
         }
-    } else if (strncmp(path, "daos:", 5) == 0 || daos_no_prefix == false) {
+    } else if (strncmp(path, "daos:", 5) == 0) {
         /* Actual error, since we expect a daos path */
         rc = -1;
     } else {
@@ -303,7 +302,9 @@ static int daos_set_paths(
     int     rc = 0;
     bool    prefix_on_src = false;
     bool    prefix_on_dst = false;
-    bool    daos_no_prefix = false;
+    char*   prefix_path = NULL;
+    char*   src_path = NULL;
+    char*   dst_path = NULL;
 
     /* find out if a dfs_prefix is being used,
      * if so, then that means that the container
@@ -315,7 +316,7 @@ static int daos_set_paths(
         int     prefix_rc;
 
         size_t prefix_len = strlen(da->dfs_prefix);
-        char* prefix_path = strndup(da->dfs_prefix, prefix_len);
+        prefix_path = strndup(da->dfs_prefix, prefix_len);
         if (prefix_path == NULL) {
             MFU_LOG(MFU_LOG_ERR, "Unable to allocate space for DAOS prefix.");
             rc = 1;
@@ -327,11 +328,9 @@ static int daos_set_paths(
 
         /* Get the pool/container uuids from the prefix */
         prefix_rc = daos_parse_path(prefix_path, prefix_len,
-                                    &prefix_p_uuid, &prefix_c_uuid,
-                                    daos_no_prefix);
-        if (prefix_rc != 0 || prefix_p_uuid == NULL || prefix_c_uuid == NULL) {
+                                    &prefix_p_uuid, &prefix_c_uuid);
+        if (prefix_rc != 0 || !daos_uuid_valid(prefix_p_uuid) || !daos_uuid_valid(prefix_c_uuid)) {
             MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS Prefix UNS path");
-            mfu_free(&prefix_path);
             rc = 1;
             goto out;
         }
@@ -339,7 +338,6 @@ static int daos_set_paths(
         /* In case the user tries to give a sub path in the UNS path */
         if (strcmp(prefix_path, "/") != 0) {
             MFU_LOG(MFU_LOG_ERR, "DAOS prefix must be a UNS path");
-            mfu_free(&prefix_path);
             rc = 1;
             goto out;
         }
@@ -362,7 +360,6 @@ static int daos_set_paths(
 
         if (!prefix_on_src && !prefix_on_dst) {
             MFU_LOG(MFU_LOG_ERR, "DAOS prefix does not match source or destination");
-            mfu_free(&prefix_path);
             rc = 1;
             goto out;
         }
@@ -375,21 +372,28 @@ static int daos_set_paths(
      */
     if (!prefix_on_src) {
         size_t src_len = strlen(argpaths[0]);
-        char* src_path = strndup(argpaths[0], src_len);
+        src_path = strndup(argpaths[0], src_len);
         if (src_path == NULL) {
             MFU_LOG(MFU_LOG_ERR, "Unable to allocate space for source path.");
             rc = 1;
             goto out;
         }
         int src_rc = daos_parse_path(src_path, src_len,
-                                     &da->src_pool_uuid, &da->src_cont_uuid,
-                                     daos_no_prefix);
+                                     &da->src_pool_uuid, &da->src_cont_uuid);
         if (src_rc == 0) {
+            if (!daos_uuid_valid(da->src_cont_uuid)) {
+                MFU_LOG(MFU_LOG_ERR, "Source pool requires a source container.");
+                rc = 1;
+                goto out;
+            }
             argpaths[0] = da->src_path = strdup(src_path);
-            mfu_free(&src_path);
+            if (argpaths[0] == NULL) {
+                MFU_LOG(MFU_LOG_ERR, "Unable to allocate space for source path.");
+                rc = 1;
+                goto out;
+            }
         } else if (src_rc == -1) {
             MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS source path: daos://<pool>/<cont>[/<path>]");
-            mfu_free(&src_path);
             rc = 1;
             goto out;
         }
@@ -397,61 +401,36 @@ static int daos_set_paths(
 
     if (!prefix_on_dst) {
         size_t dst_len = strlen(argpaths[1]);
-        char* dst_path = strndup(argpaths[1], dst_len);
+        dst_path = strndup(argpaths[1], dst_len);
+        if (dst_path == NULL) {
+            MFU_LOG(MFU_LOG_ERR, "Unable to allocate space for destination path.");
+            rc = 1;
+            goto out;
+        }
         int dst_rc = daos_parse_path(dst_path, dst_len,
-                                     &da->dst_pool_uuid, &da->dst_cont_uuid,
-                                     daos_no_prefix);
+                                     &da->dst_pool_uuid, &da->dst_cont_uuid);
         if (dst_rc == 0) {
             argpaths[1] = da->dst_path = strdup(dst_path);
-            mfu_free(&dst_path);
+            if (argpaths[1] == NULL) {
+                MFU_LOG(MFU_LOG_ERR, "Unable to allocate space for destination path.");
+                rc = 1;
+                goto out;
+            }
+            /* Generate a new container uuid if only a pool was given. */
+            if (!daos_uuid_valid(da->dst_cont_uuid)) {
+                uuid_generate(da->dst_cont_uuid);
+            }
         } else if (dst_rc == -1) {
-            /* The destination has a daos: prefix, so try to parse just the pool uuid. */
-            char* saveptr;
-            char* t = strtok_r(dst_path, "/", &saveptr);
-            if (t == NULL) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS destination path: daos://<pool>/<cont>[/<path>]");
-                rc = 1;
-                goto dst_out;
-            }
-            /* Skip over the daos: prefix */
-            t = strtok_r(NULL, "/", &saveptr);
-            if (t == NULL) {
-                /* No pool provided, so use the source pool uuid */
-                if (!daos_uuid_valid(da->src_pool_uuid)) {
-                    MFU_LOG(MFU_LOG_ERR, "Destination pool and/or container expected.");
-                    rc = 1;
-                    goto dst_out;
-                }
-                uuid_copy(da->dst_pool_uuid, da->src_pool_uuid);
-            } else {
-                /* Make sure the provided pool uuid is valid */
-                dst_rc = uuid_parse(t, da->dst_pool_uuid);
-                if (dst_rc != 0) {
-                    MFU_LOG(MFU_LOG_ERR, "Failed to parse destination pool UUID");
-                    rc = 1;
-                    goto dst_out;
-                }
-            }
-            /* The pool uuid should have been last */
-            t = strtok_r(NULL, "/", &saveptr);
-            if (t != NULL) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS destination path: daos://<pool>/<cont>[/<path>]");
-                rc = 1;
-                goto dst_out;
-            }
-            /* Generate a new container uuid */
-            uuid_generate(da->dst_cont_uuid);
-            argpaths[1] = da->dst_path = strndup("/", 1);
-
-            rc = 0;
-
-dst_out:
-            mfu_free(&dst_path);
+            MFU_LOG(MFU_LOG_ERR, "Failed to parse DAOS destination path: daos://<pool>/<cont>[/<path>]");
+            rc = 1;
             goto out;
         }
     }
 
 out:
+    mfu_free(&prefix_path);
+    mfu_free(&src_path);
+    mfu_free(&dst_path);
     return rc;
 }
 

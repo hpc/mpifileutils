@@ -19,10 +19,10 @@
 void print_usage(void)
 {
     printf("\n");
-    printf("Usage: daos-serialize [options] /<pool>/<cont>\n");
+    printf("Usage: daos-serialize [options] daos://<pool>/<cont>\n");
     printf("\n");
     printf("DAOS paths can be specified as:\n");
-    printf("       /<pool>/<cont> | <UNS path>\n");
+    printf("       daos://<pool>/<cont> | <UNS path>\n");
     printf("\n");
     printf("Options:\n");
     printf("  -o  --output-path        - path to output serialized hdf5 files\n");
@@ -140,16 +140,10 @@ int main(int argc, char** argv)
 
     int len = strlen(argpaths[0]); 
 
-    /* default to no daos prefix, but allow someone to use one */
-    bool daos_no_prefix = true;
-    if (strncmp(argpaths[0], "daos://", 7) == 0) {
-        daos_no_prefix = false; 
-    }
-
     int tmp_rc;
     tmp_rc = daos_parse_path(argpaths[0], len, &daos_args->src_pool_uuid,
-                         &daos_args->src_cont_uuid, daos_no_prefix);
-    if (tmp_rc != 0 || daos_args->src_pool_uuid == NULL || daos_args->src_cont_uuid == NULL) {
+                         &daos_args->src_cont_uuid);
+    if (tmp_rc != 0 || !daos_uuid_valid(daos_args->src_pool_uuid) || !daos_uuid_valid(daos_args->src_cont_uuid)) {
         MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS path");
          rc = 1;
     }

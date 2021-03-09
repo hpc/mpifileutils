@@ -135,6 +135,9 @@ struct hdf5_args {
 };
 #endif
 
+/* Check whether a uuid is valid */
+bool daos_uuid_valid(const uuid_t uuid);
+
 /* Return a newly allocated daos_args_t structure.
  * Set default values on its fields. */
 daos_args_t* daos_args_new(void);
@@ -172,8 +175,7 @@ int daos_parse_path(
     char *path,
     size_t path_len,
     uuid_t *p_uuid,
-    uuid_t *c_uuid,
-    bool daos_no_prefix
+    uuid_t *c_uuid
 );
 
 /* connect to DAOS pool,
