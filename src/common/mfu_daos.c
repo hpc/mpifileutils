@@ -2289,7 +2289,10 @@ static int init_recx_data(struct hdf5_args *hdf5)
     hdf5->single_dims[0] = 1;
     hdf5->rx_dims[0] = 0;
     hdf5->rx_max_dims[0] = H5S_UNLIMITED;
-    hdf5->rx_chunk_dims[0] = 131072;
+
+    /* TODO consider other chunk sizes or possibly use different
+     * chunk sizes for different dkeys/akeys. */
+    hdf5->rx_chunk_dims[0] = 1024;
 
     hdf5->plist = H5Pcreate(H5P_DATASET_CREATE);
     if (hdf5->plist < 0) {
