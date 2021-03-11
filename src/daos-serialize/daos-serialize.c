@@ -275,9 +275,10 @@ int main(int argc, char** argv)
                 "serializing: " MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS));
     }
 
-    rc = daos_fini();
+    tmp_rc = daos_fini();
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to finalize DAOS "DF_RC, DP_RC(rc));
+        rc = 1;
     }
 
     mfu_finalize();
