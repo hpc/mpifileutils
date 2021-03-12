@@ -358,14 +358,21 @@ int main(int argc, char** argv)
 
 #ifdef DAOS_SUPPORT
     /* Set up DAOS arguments, containers, dfs, etc. */
-    rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
-    if (rc != 0) {
-        daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
+    if (daos_args->api != DAOS_API_HDF5) {
+        rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
+    }
+
+    /* if hdf5 API is specified, then h5repack is used */
+    if (daos_args->api == DAOS_API_HDF5) {
+        rc = mfu_daos_hdf5_copy(argpaths, daos_args);
+        if (rc != 0) {
+            rc = 1;
+        }
         mfu_finalize();
         MPI_Finalize();
-        return 1;
+        return rc;
     }
-    
+
     /* TODO add support for this */
     if (inputname && mfu_src_file->type == DFS) {
         MFU_LOG(MFU_LOG_ERR, "--input is not supported with DAOS"
@@ -415,7 +422,7 @@ int main(int argc, char** argv)
             mfu_param_path_free_all(numpaths, paths);
             mfu_free(&paths);
 #ifdef DAOS_SUPPORT
-	    daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
+            daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
 #endif
             mfu_finalize();
             MPI_Finalize();
