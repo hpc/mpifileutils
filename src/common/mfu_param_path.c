@@ -537,8 +537,8 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
 
             /* check that dest is writable */
             if(mfu_file_access(destpath->path, W_OK, mfu_dst_file) < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Destination is not writable `%s'",
-                    destpath->path);
+                MFU_LOG(MFU_LOG_ERR, "Destination is not writable `%s' (errno=%d %s)",
+                    destpath->path, errno, strerror(errno));
                 valid = 0;
                 goto bcast;
             }
@@ -555,8 +555,8 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
 
             /* check that parent is writable */
             if(mfu_file_access(parent_str, W_OK, mfu_dst_file) < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Destination parent directory is not writable `%s'",
-                    parent_str);
+                MFU_LOG(MFU_LOG_ERR, "Destination parent directory is not writable `%s' (errno=%d %s)",
+                    parent_str, errno, strerror(errno));
                 valid = 0;
                 mfu_free(&parent_str);
                 goto bcast;

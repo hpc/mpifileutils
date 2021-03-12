@@ -8,6 +8,18 @@ extern "C" {
 #ifndef MFU_ERRORS_H
 #define MFU_ERRORS_H
 
+#include <errno.h>
+
+/* Given a system error code, set errno and return -1 on error */
+static inline int mfu_errno2rc(int err)
+{
+    if (err == 0) {
+        return 0;
+    }
+    errno = err;
+    return -1;
+}
+
 /* Generic error codes */
 #define MFU_ERR           1000
 #define MFU_ERR_INVAL_ARG 1001

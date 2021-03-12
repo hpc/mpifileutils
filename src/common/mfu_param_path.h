@@ -58,10 +58,10 @@ typedef struct {
     int                  fd;
 #ifdef DAOS_SUPPORT
     /* DAOS specific variables for I/O */
-    daos_off_t           offset;
-    dfs_obj_t*           obj;
-    dfs_t*               dfs;
-    struct d_hash_table* dfs_hash;
+    daos_off_t           offset;  /* file offset */
+    dfs_obj_t*           obj;     /* open object handle */
+    dfs_sys_t*           dfs_sys; /* handle for high-level file operations */
+    dfs_t*               dfs;     /* handle for lower-level file operations */
 #endif
 } mfu_file_t;
 

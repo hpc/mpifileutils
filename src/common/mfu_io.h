@@ -37,6 +37,7 @@ extern "C" {
 #ifdef DAOS_SUPPORT
 #include <daos.h>
 #include <daos_fs.h>
+#include <daos_fs_sys.h>
 #endif
 
 #include "mfu_param_path.h"
@@ -95,7 +96,7 @@ int daos_stat(const char* path, struct stat* buf, mfu_file_t* mfu_file);
 
 /* call mknod, retry a few times on EINTR or EIO */
 int mfu_file_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file);
-int daos_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file);
+int daos_mknod(const char* path, mode_t mode, mfu_file_t* mfu_file);
 int mfu_mknod(const char* path, mode_t mode, dev_t dev);
 
 /* call remove, retry a few times on EINTR or EIO */

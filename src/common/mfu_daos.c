@@ -1165,12 +1165,18 @@ static int mfu_dfs_mount(
   daos_handle_t* poh,
   daos_handle_t* coh)
 {
-    /* Mount dfs */
-    int rc = dfs_mount(*poh, *coh, O_RDWR, &mfu_file->dfs);
-    if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): "
-                MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
+    /* Mount dfs_sys */
+    int rc = dfs_sys_mount(*poh, *coh, O_RDWR, DFS_SYS_NO_LOCK, &mfu_file->dfs_sys);
+    if (rc !=0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): %s", strerror(rc));
         rc = -1;
+    }
+    rc = dfs_sys2base(mfu_file->dfs_sys, &mfu_file->dfs);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to get DAOS filesystem (DFS) base: %s", strerror(rc));
+	rc = -1;
+	dfs_sys_umount(mfu_file->dfs_sys);
+	mfu_file->dfs_sys = NULL;
     }
 
     return rc;
@@ -1181,19 +1187,13 @@ static int mfu_dfs_mount(
 static int mfu_dfs_umount(
   mfu_file_t* mfu_file)
 {
-    /* Unmount dfs */
-    int rc = dfs_umount(mfu_file->dfs);
+    /* Unmount dfs_sys */
+    int rc = dfs_sys_umount(mfu_file->dfs_sys);
     if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to unmount DFS namespace");
+        MFU_LOG(MFU_LOG_ERR, "Failed to unmount DAOS filesystem (DFS): %s", strerror(rc));
         rc = -1;
     }
-    mfu_file->dfs = NULL;
-
-    /* Clean up the hash */
-    if (mfu_file->dfs_hash != NULL) {
-        d_hash_table_destroy(mfu_file->dfs_hash, true);
-        mfu_file->dfs_hash = NULL;
-    }
+    mfu_file->dfs_sys = NULL;
 
     return rc;
 }
@@ -1206,8 +1206,7 @@ static inline int mfu_daos_destroy_snap(daos_handle_t coh, daos_epoch_t epoch)
 
     int rc = daos_cont_destroy_snap(coh, epr, NULL);
     if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "DAOS destroy snapshot failed: ", MFU_ERRF,
-                MFU_ERRP(-MFU_ERR_DAOS));
+        MFU_LOG(MFU_LOG_ERR, "DAOS destroy snapshot failed: "DF_RC, DP_RC(rc));
     }
 
     return rc;
@@ -1688,7 +1687,7 @@ int daos_cleanup(
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* Unmount source DFS container */
-    if (mfu_src_file->dfs != NULL) {
+    if (mfu_src_file->dfs_sys != NULL) {
         tmp_rc = mfu_dfs_umount(mfu_src_file);
         if (tmp_rc != 0) {
             rc = 1;
@@ -1708,7 +1707,7 @@ int daos_cleanup(
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* Unmount destination DFS container */
-    if ((mfu_dst_file != NULL) && (mfu_dst_file->dfs != NULL)) {
+    if (mfu_dst_file->dfs_sys != NULL) {
         tmp_rc = mfu_dfs_umount(mfu_dst_file);
         if (tmp_rc != 0) {
             rc = 1;
