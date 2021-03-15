@@ -712,10 +712,12 @@ int daos_connect(
                 goto bcast;
             }
 
-            /* Create a new container. */
+            /* Create a new container. If we don't have a source container,
+             * create a POSIX container. Otherwise, create a container of
+             * the same type as the source. */
             /* TODO copy container properties */
             /* TODO copy user attributes */
-            if (da->src_cont_type == DAOS_PROP_CO_LAYOUT_POSIX) {
+            if (!daos_uuid_valid(da->src_cont_uuid) || da->src_cont_type == DAOS_PROP_CO_LAYOUT_POSIX) {
                 //dfs_attr_t attr; /* TODO set and pass this */
                 rc = dfs_cont_create(*poh, cont_uuid, NULL, NULL, NULL);
             } else {
