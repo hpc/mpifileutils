@@ -182,11 +182,18 @@ bool daos_uuid_valid(const uuid_t uuid)
 static int daos_check_args(
     int rank,
     char** argpaths,
+    int numpaths,
     daos_args_t* da,
     int* flag_daos_args)
 {
-    char* src_path = argpaths[0];
-    char* dst_path = argpaths[1];
+    char* src_path = NULL;
+    char* dst_path = NULL;
+    if (numpaths > 0) {
+        src_path = argpaths[0];
+    }
+    if (numpaths > 1) {
+        dst_path = argpaths[1];
+    }
 
     bool have_src_path  = src_path != NULL;
     bool have_dst_path  = dst_path != NULL;
@@ -317,9 +324,11 @@ int daos_parse_path(
 static int daos_set_paths(
   int rank,
   char** argpaths,
+  int numpaths,
   daos_args_t* da)
 {
     int     rc = 0;
+    bool    have_dst = numpaths > 1;
     bool    prefix_on_src = false;
     bool    prefix_on_dst = false;
     char*   prefix_path = NULL;
@@ -370,12 +379,14 @@ static int daos_set_paths(
             argpaths[0] = da->src_path;
         }
 
-        /* Check if the prefix matches the destination */
-        prefix_on_dst = daos_check_prefix(argpaths[1], da->dfs_prefix, &da->dst_path);
-        if (prefix_on_dst) {
-            uuid_copy(da->dst_pool_uuid, prefix_p_uuid);
-            uuid_copy(da->dst_cont_uuid, prefix_c_uuid);
-            argpaths[1] = da->dst_path;
+        if (have_dst) {
+            /* Check if the prefix matches the destination */
+            prefix_on_dst = daos_check_prefix(argpaths[1], da->dfs_prefix, &da->dst_path);
+            if (prefix_on_dst) {
+                uuid_copy(da->dst_pool_uuid, prefix_p_uuid);
+                uuid_copy(da->dst_cont_uuid, prefix_c_uuid);
+                argpaths[1] = da->dst_path;
+            }
         }
 
         if (!prefix_on_src && !prefix_on_dst) {
@@ -419,7 +430,7 @@ static int daos_set_paths(
         }
     }
 
-    if (!prefix_on_dst) {
+    if (have_dst && !prefix_on_dst) {
         size_t dst_len = strlen(argpaths[1]);
         dst_path = strndup(argpaths[1], dst_len);
         if (dst_path == NULL) {
@@ -521,6 +532,8 @@ static int daos_set_api_compat(
     daos_args_t* da,
     char** argpaths)
 {
+    bool have_dst = mfu_dst_file != NULL;
+
     /* Check whether we have pool/cont uuids */
     bool have_src_pool  = daos_uuid_valid(da->src_pool_uuid);
     bool have_src_cont  = daos_uuid_valid(da->src_cont_uuid);
@@ -554,13 +567,15 @@ static int daos_set_api_compat(
             MFU_LOG(MFU_LOG_ERR, "Cannot use path with non-POSIX container.");
             return 1;
         }
-        if (mfu_dst_file->type != DAOS && mfu_dst_file->type != DFS) {
-            MFU_LOG(MFU_LOG_ERR, "Cannot copy non-POSIX container outside DAOS.");
-            return 1;
+        if (have_dst) {
+            if (mfu_dst_file->type != DAOS && mfu_dst_file->type != DFS) {
+                MFU_LOG(MFU_LOG_ERR, "Cannot copy non-POSIX container outside DAOS.");
+                return 1;
+            }
+            mfu_dst_file->type = DAOS;
         }
-        mfu_dst_file->type = DAOS;
     }
-    if (mfu_dst_file->type == DAOS) {
+    if (have_dst && mfu_dst_file->type == DAOS) {
         if (!dst_path_is_root || !src_path_is_root) {
             MFU_LOG(MFU_LOG_ERR, "Cannot use path with non-POSIX container.");
             return 1;
@@ -906,11 +921,13 @@ int daos_parse_epc_str(
 int daos_setup(
     int rank,
     char** argpaths,
+    int numpaths,
     daos_args_t* da,
     mfu_file_t* mfu_src_file,
     mfu_file_t* mfu_dst_file)
 {
     int tmp_rc;
+    bool have_dst = (numpaths > 1) && (mfu_dst_file != NULL);
 
     /* Each process keeps track of whether it had any DAOS errors.
      * If there weren't any daos args, then ignore daos_init errors.
@@ -928,7 +945,7 @@ int daos_setup(
 
     /* Do a preliminary check on the DAOS args */
     if (!local_daos_error) {
-        tmp_rc = daos_check_args(rank, argpaths, da, &flag_daos_args);
+        tmp_rc = daos_check_args(rank, argpaths, numpaths, da, &flag_daos_args);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
                     MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
@@ -941,7 +958,7 @@ int daos_setup(
      * prefix since the path is mapped to the root
      * of the container in the DAOS DFS mount */
     if (!local_daos_error) {
-        tmp_rc = daos_set_paths(rank, argpaths, da);
+        tmp_rc = daos_set_paths(rank, argpaths, numpaths, da);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
                     MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
@@ -951,7 +968,7 @@ int daos_setup(
 
     /* Re-check the required DAOS arguments (if any) */
     if (!local_daos_error) {
-        tmp_rc = daos_check_args(rank, argpaths, da, &flag_daos_args);
+        tmp_rc = daos_check_args(rank, argpaths, numpaths, da, &flag_daos_args);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
                     MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
@@ -1071,11 +1088,13 @@ int daos_setup(
             local_daos_error = true;
             goto out;
         }
-        /* Set the dst api based on the container type */
-        tmp_rc = daos_set_api_cont_type(mfu_dst_file, da->dst_cont_type, da->api);
-        if (tmp_rc != 0) {
-            local_daos_error = true;
-            goto out;
+        if (have_dst) {
+            /* Set the dst api based on the container type */
+            tmp_rc = daos_set_api_cont_type(mfu_dst_file, da->dst_cont_type, da->api);
+            if (tmp_rc != 0) {
+                local_daos_error = true;
+                goto out;
+            }
         }
     }
 
@@ -1095,16 +1114,18 @@ int daos_setup(
         }
     }
 
-    /* Mount destination DFS container */
-    if (mfu_dst_file->type == DFS) {
-        if (same_pool) {
-            tmp_rc = mfu_dfs_mount(mfu_dst_file, &da->src_poh, &da->dst_coh);
-        } else {
-            tmp_rc = mfu_dfs_mount(mfu_dst_file, &da->dst_poh, &da->dst_coh);
-        }
-        if (tmp_rc != 0) {
-            local_daos_error = true;
-            goto out;
+    if (have_dst) {
+        /* Mount destination DFS container */
+        if (mfu_dst_file->type == DFS) {
+            if (same_pool) {
+                tmp_rc = mfu_dfs_mount(mfu_dst_file, &da->src_poh, &da->dst_coh);
+            } else {
+                tmp_rc = mfu_dfs_mount(mfu_dst_file, &da->dst_poh, &da->dst_coh);
+            }
+            if (tmp_rc != 0) {
+                local_daos_error = true;
+                goto out;
+            }
         }
     }
 
@@ -1174,7 +1195,7 @@ int daos_cleanup(
     }
 
     /* Unmount destination DFS container */
-    if (mfu_dst_file->dfs != NULL) {
+    if ((mfu_dst_file != NULL) && (mfu_dst_file->dfs != NULL)) {
         tmp_rc = mfu_dfs_umount(mfu_dst_file);
         MPI_Barrier(MPI_COMM_WORLD);
         if (tmp_rc != 0) {

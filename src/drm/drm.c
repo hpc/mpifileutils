@@ -17,9 +17,14 @@
 
 #include <libgen.h> /* dirname */
 
+#ifdef DAOS_SUPPORT
+#include "mfu_daos.h"
+#endif
+
 #include "libcircle.h"
 #include "dtcmp.h"
 #include "mfu.h"
+#include "mfu_errors.h"
 
 /*****************************
  * Driver functions
@@ -29,6 +34,11 @@ static void print_usage(void)
 {
     printf("\n");
     printf("Usage: drm [options] <path> ...\n");
+#ifdef DAOS_SUPPORT
+    printf("\n");
+    printf("DAOS paths can be specified as:\n");
+    printf("       daos://<pool>/<cont>[/<path>] | <UNS path>\n");
+#endif
     printf("\n");
     printf("Options:\n");
     printf("  -i, --input   <file>   - read list from file\n");
@@ -55,6 +65,7 @@ static void print_usage(void)
 int main(int argc, char** argv)
 {
     int i;
+    int rc = 0;
 
     /* initialize MPI */
     MPI_Init(&argc, &argv);
@@ -78,6 +89,11 @@ int main(int argc, char** argv)
     int dryrun       = 0;
     int traceless    = 0;
     int text         = 0;
+
+#ifdef DAOS_SUPPORT
+    /* DAOS vars */
+    daos_args_t* daos_args = daos_args_new();
+#endif
 
     /* with drm, we don't stat files on walk by default,
      * since that info is not needed to remove items and
@@ -197,28 +213,87 @@ int main(int argc, char** argv)
         usage = 1;
     }
 
+    /* print usage if we need to */
+    if (usage) {
+        if (rank == 0) {
+            print_usage();
+        }
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
+
     /* create new mfu_file objects */
     mfu_file_t* mfu_file = mfu_file_new();
 
-    /* paths to walk come after the options */
-    int numpaths = 0;
+    char** argpaths = &argv[optind];
+
+    /* The remaining arguments are treated as paths */
+    int numpaths = argc - optind;
+
+    /* advance to next set of options */
+    optind += numpaths;
+
+    /* Before processing, make sure we have at least one path to begin with */
+    if (numpaths < 1) {
+        MFU_LOG(MFU_LOG_ERR, "At least one path is needed");
+        if (rank == 0) {
+            print_usage();
+        }
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
+
+#ifdef DAOS_SUPPORT
+    /* Set up DAOS arguments, containers, dfs, etc. */
+    rc = daos_setup(rank, argpaths, numpaths, daos_args, mfu_file, NULL);
+    if (rc != 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Detected one or more DAOS errors: "MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
+        }
+        rc = 1;
+        goto daos_setup_done;
+    }
+
+    if (inputname && mfu_file->type == DFS) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "--input is not supported with DAOS"
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+        }
+        rc = 1;
+        goto daos_setup_done;
+    }
+
+    /* Not yet supported */
+    if (mfu_file->type == DAOS) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "drm only supports DAOS POSIX containers with the DFS API.");
+        }
+        rc = 1;
+        goto daos_setup_done;
+    }
+
+daos_setup_done:
+    if (rc != 0) {
+        daos_cleanup(daos_args, mfu_file, NULL);
+        mfu_file_delete(&mfu_file);
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
+    }
+#endif
+
     mfu_param_path* paths = NULL;
-    if (optind < argc) {
+    if (numpaths > 0) {
         /* got a path to walk */
         walk = 1;
-
-        /* determine number of paths specified by user */
-        numpaths = argc - optind;
 
         /* allocate space for each path */
         paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
 
         /* process each path */
-        const char** argpaths = (const char**)(&argv[optind]);
-        mfu_param_path_set_all(numpaths, argpaths, paths, mfu_file, true);
-
-        /* advance to next set of options */
-        optind += numpaths;
+        mfu_param_path_set_all(numpaths, (const char**)argpaths, paths, mfu_file, true);
 
         /* don't allow input file and walk */
         if (inputname != NULL) {
@@ -229,6 +304,9 @@ int main(int argc, char** argv)
         /* if we're not walking, we must be reading,
          * and for that we need a file */
         if (inputname == NULL) {
+            if (rank == 0) {
+                MFU_LOG(MFU_LOG_ERR, "Either a <path> or --input is required.");
+            }
             usage = 1;
         }
     }
@@ -252,6 +330,9 @@ int main(int argc, char** argv)
         if (rank == 0) {
             print_usage();
         }
+#ifdef DAOS_SUPPORT
+        daos_cleanup(daos_args, mfu_file, NULL);
+#endif
         mfu_file_delete(&mfu_file);
         mfu_finalize();
         MPI_Finalize();
@@ -304,6 +385,10 @@ int main(int argc, char** argv)
         }
     }
 
+#ifdef DAOS_SUPPORT
+    daos_cleanup(daos_args, mfu_file, NULL);
+#endif
+
     /* free list if it was used */
     if (filtered_flist != MFU_FLIST_NULL) {
         /* free the filtered flist (if any) */
@@ -338,5 +423,5 @@ int main(int argc, char** argv)
     mfu_finalize();
     MPI_Finalize();
 
-    return 0;
+    return rc;
 }

@@ -2287,7 +2287,7 @@ int main(int argc, char **argv)
     bool daos_do_exit = false;
     
     /* Set up DAOS arguments, containers, dfs, etc. */
-    int daos_rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
+    int daos_rc = daos_setup(rank, argpaths, numargs, daos_args, mfu_src_file, mfu_dst_file);
     if (daos_rc != 0) {
         daos_do_exit = true;
     }
