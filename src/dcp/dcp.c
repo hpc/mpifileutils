@@ -377,6 +377,10 @@ int main(int argc, char** argv)
     if (inputname && mfu_src_file->type == DFS) {
         MFU_LOG(MFU_LOG_ERR, "--input is not supported with DAOS"
                 MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+        rc = 1;
+    }
+
+    if (rc != 0) {
         daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
         mfu_finalize();
         MPI_Finalize();
