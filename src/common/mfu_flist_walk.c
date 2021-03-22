@@ -93,6 +93,35 @@ static void reduce_fini(const void* buf, size_t size)
     MFU_LOG(MFU_LOG_INFO, "Walked %llu items in %.3lf secs (%.3lf items/sec) ...", val, secs, rate);
 }
 
+/****************************************
+ * Global helper functions
+ ***************************************/
+
+/** Build a full path from a dirname and basename in the form:
+ * <dir> + '/' + <name> + '/0'
+ * up to path_len long.
+ * Returns 0 on success and -1 if the new path is too long. */
+static int build_path(char* path, size_t path_len, const char* dir, const char* name)
+{
+    size_t dir_len = strlen(dir);
+
+    /* Only separate with a '/' if the dir does not have a trailing slash.
+     * Builds a path to at most path_len long. */
+    int new_len;
+    if ((dir_len > 0) && (dir[dir_len - 1] == '/')) {
+        new_len = snprintf(path, path_len, "%s%s", dir, name);
+    } else {
+        new_len = snprintf(path, path_len, "%s/%s", dir, name);
+    }
+    if (new_len > path_len) {
+        MFU_LOG(MFU_LOG_ERR, "Path name is too long, %lu chars exceeds limit %lu: '%s/%s'",
+                new_len, path_len, dir, name);
+        return -1;
+    }
+
+    return 0;
+}
+
 #ifdef LUSTRE_SUPPORT
 /****************************************
  * Walk directory tree using Lustre's MDS stat
@@ -191,13 +220,8 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
                 /* check whether we can define path to item:
                  * <dir> + '/' + <name> + '/0' */
                 char newpath[CIRCLE_MAX_STRING_LEN];
-                size_t len = strlen(dir) + 1 + strlen(name) + 1;
-                if (len < sizeof(newpath)) {
-                    /* build full path to item */
-                    strcpy(newpath, dir);
-                    strcat(newpath, "/");
-                    strcat(newpath, name);
-
+                int rc = build_path(newpath, CIRCLE_MAX_STRING_LEN, dir, name);
+                if (rc == 0) {
                     /* get type of item */
                     char d_type = *(buf + bpos + d->d_reclen - 1);
 
@@ -238,9 +262,6 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
                         /* increment our item count */
                         reduce_items++;
                     }
-                }
-                else {
-                    MFU_LOG(MFU_LOG_ERR, "Path name is too long, %lu chars exceeds limit %lu: '%s/%s'", len, sizeof(newpath), dir, name);
                 }
             }
 
@@ -340,13 +361,8 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
             if ((strncmp(name, ".", 2)) && (strncmp(name, "..", 3))) {
                 /* <dir> + '/' + <name> + '/0' */
                 char newpath[CIRCLE_MAX_STRING_LEN];
-                size_t len = strlen(dir) + 1 + strlen(name) + 1;
-                if (len < sizeof(newpath)) {
-                    /* build full path to item */
-                    strcpy(newpath, dir);
-                    strcat(newpath, "/");
-                    strcat(newpath, name);
-
+                int rc = build_path(newpath, CIRCLE_MAX_STRING_LEN, dir, name);
+                if (rc == 0) {
 #ifdef _DIRENT_HAVE_D_TYPE
                     /* record info for item */
                     mode_t mode;
@@ -392,11 +408,6 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
                         reduce_items++;
                     }
 #endif
-                }
-                else {
-                    /* TODO: print error in correct format */
-                    /* name is too long */
-                    MFU_LOG(MFU_LOG_ERR, "Path name is too long, %lu chars exceeds limit %lu: '%s/%s'", len, sizeof(newpath), dir, name);
                 }
             }
         }
@@ -477,19 +488,10 @@ static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
             if ((strncmp(name, ".", 2)) && (strncmp(name, "..", 3))) {
                 /* <dir> + '/' + <name> + '/0' */
                 char newpath[CIRCLE_MAX_STRING_LEN];
-                size_t len = strlen(dir) + 1 + strlen(name) + 1;
-                if (len < sizeof(newpath)) {
-                    /* build full path to item */
-                    strcpy(newpath, dir);
-                    strcat(newpath, "/");
-                    strcat(newpath, name);
-
+                int rc = build_path(newpath, CIRCLE_MAX_STRING_LEN, dir, name);
+                if (rc == 0) {
                     /* add item to queue */
                     handle->enqueue(newpath);
-                }
-                else {
-                    /* name is too long */
-                    MFU_LOG(MFU_LOG_ERR, "Path name is too long, %lu chars exceeds limit %lu: '%s/%s'", len, sizeof(newpath), dir, name);
                 }
             }
         }
