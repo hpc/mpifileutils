@@ -147,11 +147,12 @@ static void print_usage(void)
     printf("Usage: dfind [options] <path> EXPRESSIONS...\n");
     printf("\n");
     printf("Options:\n");
-    printf("  -i, --input <file>                      - read list from file\n");
-    printf("  -o, --output <file>                     - write processed list to file\n");
-    printf("  -v, --verbose                           - verbose output\n");
-    printf("  -q, --quiet                             - quiet output\n");
-    printf("  -h, --help                              - print usage\n");
+    printf("  -i, --input <file>      - read list from file\n");
+    printf("  -o, --output <file>     - write processed list to file\n");
+    printf("  -t, --text              - use with -o; write processed list to file in ascii format\n");
+    printf("  -v, --verbose           - verbose output\n");
+    printf("  -q, --quiet             - quiet output\n");
+    printf("  -h, --help              - print usage\n");
     printf("\n");
     printf("Tests:\n");
     printf("  --amin N       - last accessed N minutes ago\n");
@@ -301,6 +302,7 @@ int main (int argc, char** argv)
     static struct option long_options[] = {
         {"input",     1, 0, 'i'},
         {"output",    1, 0, 'o'},
+        {"text",      0, 0, 't'},
         {"verbose",   0, 0, 'v'},
         {"quiet",     0, 0, 'q'},
         {"help",      0, 0, 'h'},
@@ -326,7 +328,7 @@ int main (int argc, char** argv)
         { "path",     required_argument, NULL, 'P' },
         { "regex",    required_argument, NULL, 'r' },
         { "size",     required_argument, NULL, 's' },
-        { "type",     required_argument, NULL, 't' },
+        { "type",     required_argument, NULL, 'T' },
 
         { "print",    no_argument,       NULL, 'p' },
         { "exec",     required_argument, NULL, 'e' },
@@ -338,7 +340,7 @@ int main (int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:vqh",
+                    argc, argv, "i:o:tvqh",
                     long_options, NULL
                 );
 
@@ -507,7 +509,7 @@ int main (int argc, char** argv)
     	    mfu_pred_add(pred_head, MFU_PRED_PRINT, NULL);
     	    break;
 
-    	case 't':
+    	case 'T':
             ret = add_type(pred_head, *optarg);
             if (ret != 1) {
                 if (rank == 0) {
@@ -522,6 +524,9 @@ int main (int argc, char** argv)
             break;
         case 'o':
             outputname = MFU_STRDUP(optarg);
+            break;
+        case 't':
+            text = 1;
             break;
         case 'v':
             mfu_debug_level = MFU_LOG_VERBOSE;
