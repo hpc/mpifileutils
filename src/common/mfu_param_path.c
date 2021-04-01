@@ -372,11 +372,14 @@ char* mfu_param_path_copy_dest(const char* name, int numpaths,
     /* get number of components in source path */
     int src_components = mfu_path_components(src);
 
-    /* if copying into directory, keep last component,
+    /* if copying into directory, keep last component.
+     * if path is root, keep last component.
      * otherwise cut all components listed in source path */
     int cut = src_components;
     if (mfu_copy_opts->copy_into_dir && cut > 0) {
-        if ((mfu_copy_opts->do_sync != 1) &&
+        if (strcmp(paths[i].orig, "/") == 0) {
+            cut--;
+        } else if ((mfu_copy_opts->do_sync != 1) &&
             (paths[i].orig[strlen(paths[i].orig) - 1] != '/')) {
             cut--;
         }

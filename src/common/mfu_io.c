@@ -238,13 +238,15 @@ static int parse_filename(const char* path, char** _obj_name, char** _cont_name)
                 }
 	}
 
-	*_obj_name = strdup(fname);
-	if (*_obj_name == NULL) {
-		free(*_cont_name);
-		*_cont_name = NULL;
-                rc = -ENOMEM;
-                goto out;
-	}
+    if (strcmp(fname, "/") != 0) {
+        *_obj_name = strdup(fname);
+        if (*_obj_name == NULL) {
+            free(*_cont_name);
+            *_cont_name = NULL;
+            rc = -ENOMEM;
+            goto out;
+        }
+    }
 
 out:
 	if (f1)
