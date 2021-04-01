@@ -234,17 +234,6 @@ int main(int argc, char** argv)
     /* advance to next set of options */
     optind += numpaths;
 
-    /* Before processing, make sure we have at least one path to begin with */
-    if (numpaths < 1) {
-        MFU_LOG(MFU_LOG_ERR, "At least one path is needed");
-        if (rank == 0) {
-            print_usage();
-        }
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
-
 #ifdef DAOS_SUPPORT
     /* Set up DAOS arguments, containers, dfs, etc. */
     rc = daos_setup(rank, argpaths, numpaths, daos_args, mfu_file, NULL);
