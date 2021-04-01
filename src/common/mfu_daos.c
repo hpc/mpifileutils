@@ -195,13 +195,13 @@ static int daos_check_args(
         dst_path = argpaths[1];
     }
 
-    bool have_src_path  = src_path != NULL;
-    bool have_dst_path  = dst_path != NULL;
+    bool have_src_path  = (src_path != NULL);
+    bool have_dst_path  = (dst_path != NULL);
     bool have_src_pool  = daos_uuid_valid(da->src_pool_uuid);
     bool have_src_cont  = daos_uuid_valid(da->src_cont_uuid);
     bool have_dst_pool  = daos_uuid_valid(da->dst_pool_uuid);
     bool have_dst_cont  = daos_uuid_valid(da->dst_cont_uuid);
-    bool have_prefix    = da->dfs_prefix != NULL;
+    bool have_prefix    = (da->dfs_prefix != NULL);
 
     /* Determine whether any DAOS arguments are supplied. 
      * If not, then there is nothing to check. */
@@ -328,7 +328,7 @@ static int daos_set_paths(
   daos_args_t* da)
 {
     int     rc = 0;
-    bool    have_dst = numpaths > 1;
+    bool    have_dst = (numpaths > 1);
     bool    prefix_on_src = false;
     bool    prefix_on_dst = false;
     char*   prefix_path = NULL;
@@ -532,7 +532,7 @@ static int daos_set_api_compat(
     daos_args_t* da,
     char** argpaths)
 {
-    bool have_dst = mfu_dst_file != NULL;
+    bool have_dst = (mfu_dst_file != NULL);
 
     /* Check whether we have pool/cont uuids */
     bool have_src_pool  = daos_uuid_valid(da->src_pool_uuid);
@@ -553,10 +553,10 @@ static int daos_set_api_compat(
     /* Check whether we have source and destination paths */
     char* src_path = argpaths[0];
     char* dst_path = argpaths[1];
-    bool have_src_path = src_path != NULL;
-    bool have_dst_path = dst_path != NULL;
-    bool src_path_is_root = have_src_path && (strcmp(src_path, "/") == 0);
-    bool dst_path_is_root = have_dst_path && (strcmp(dst_path, "/") == 0);
+    bool have_src_path = (src_path != NULL);
+    bool have_dst_path = (dst_path != NULL);
+    bool src_path_is_root = (have_src_path && (strcmp(src_path, "/") == 0));
+    bool dst_path_is_root = (have_dst_path && (strcmp(dst_path, "/") == 0));
 
     /* If either type is DAOS:
      * Both paths must be root.
@@ -927,7 +927,13 @@ int daos_setup(
     mfu_file_t* mfu_dst_file)
 {
     int tmp_rc;
-    bool have_dst = (numpaths > 1) && (mfu_dst_file != NULL);
+    bool have_src = ((numpaths > 0) && (mfu_src_file != NULL));
+    bool have_dst = ((numpaths > 1) && (mfu_dst_file != NULL));
+
+    /* Sanity check that we have paths */
+    if (!have_src && !have_dst) {
+        return 0;
+    }
 
     /* Each process keeps track of whether it had any DAOS errors.
      * If there weren't any daos args, then ignore daos_init errors.
