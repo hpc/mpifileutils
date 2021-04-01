@@ -483,17 +483,6 @@ int main(int argc, char** argv)
     /* The remaining arguments are treated as paths */
     int numpaths = argc - optind;
 
-    /* Before processing, make sure we have at least one path to begin with */
-    if (numpaths < 1) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "At least one path is needed");
-            print_usage();
-        }
-        mfu_finalize();
-        MPI_Finalize();
-        return 1;
-    }
-
     /* create new mfu_file object */
     mfu_file_t* mfu_file = mfu_file_new();
 
