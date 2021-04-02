@@ -209,6 +209,7 @@ int daos_parse_epc_str(
 int daos_setup(
   int rank,
   char** argpaths,
+  int numpaths,
   daos_args_t* da,
   mfu_file_t* mfu_src_file,
   mfu_file_t* mfu_dst_file

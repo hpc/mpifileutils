@@ -2877,6 +2877,7 @@ static int dsync_daos_setup(
     int rank,
     daos_args_t* daos_args,
     char** argpaths,
+    int numpaths,
     mfu_file_t* mfu_src_file,
     mfu_file_t* mfu_dst_file)
 {
@@ -2888,7 +2889,7 @@ static int dsync_daos_setup(
     daos_args->allow_exist_dst_cont = true;
 
     /* Set up DAOS arguments, containers, dfs, etc. */
-    int daos_rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
+    int daos_rc = daos_setup(rank, argpaths, numpaths, daos_args, mfu_src_file, mfu_dst_file);
     if (daos_rc != 0) {
         return 1;
     }
@@ -3206,7 +3207,7 @@ int main(int argc, char **argv)
     char** argpaths = &argv[optind];
 
 #ifdef DAOS_SUPPORT
-    int daos_rc = dsync_daos_setup(rank, daos_args, argpaths, mfu_src_file, mfu_dst_file);
+    int daos_rc = dsync_daos_setup(rank, daos_args, argpaths, numargs, mfu_src_file, mfu_dst_file);
     if (daos_rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "Detected one or more DAOS errors: "MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
         rc = 1;

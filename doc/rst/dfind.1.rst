@@ -29,6 +29,11 @@ OPTIONS
 
    Write the processed list to a file.
 
+.. option:: -t, --text
+
+   Must be used with the --output option. Write processed list of files to
+   FILE in ascii text format.
+
 .. option:: -v, --verbose
 
    Run in verbose mode.

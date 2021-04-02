@@ -359,7 +359,7 @@ int main(int argc, char** argv)
 #ifdef DAOS_SUPPORT
     /* Set up DAOS arguments, containers, dfs, etc. */
     if (daos_args->api != DAOS_API_HDF5) {
-        rc = daos_setup(rank, argpaths, daos_args, mfu_src_file, mfu_dst_file);
+        rc = daos_setup(rank, argpaths, numpaths, daos_args, mfu_src_file, mfu_dst_file);
     }
 
     /* if hdf5 API is specified, then h5repack is used */
