@@ -2443,7 +2443,7 @@ static int serialize_akeys(struct hdf5_args *hdf5,
                 (*hdf5->ak)[*ak_index].rec_single_val.len = 0;
 
                 /* create a record dset only for array types */
-                memset(&rec_name, FILENAME_LEN, sizeof(rec_name));
+                memset(&rec_name, 0, sizeof(rec_name));
                 path_len = snprintf(rec_name, FILENAME_LEN, "%lu", *ak_index);
                 if (path_len > FILENAME_LEN) {
                     MFU_LOG(MFU_LOG_ERR, "record name too long");
