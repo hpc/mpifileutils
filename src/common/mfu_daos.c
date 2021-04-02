@@ -697,7 +697,7 @@ int daos_connect(
                     poh, &pool_info, NULL);
 #endif
             if (rc != 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to connect to pool");
+                MFU_LOG(MFU_LOG_ERR, "Failed to connect to pool: "DF_RC, DP_RC(rc));
                 goto bcast;
             }
         }
@@ -708,7 +708,7 @@ int daos_connect(
         rc = daos_cont_open(*poh, cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
         if (rc != 0) {
             if (rc != -DER_NONEXIST || !create_cont) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to open container "DF_RC, DP_RC(rc));
+                MFU_LOG(MFU_LOG_ERR, "Failed to open container: "DF_RC, DP_RC(rc));
                 goto bcast;
             }
 
@@ -735,7 +735,7 @@ int daos_connect(
             /* try to open it again */
             rc = daos_cont_open(*poh, cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
             if (rc != 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to open container");
+                MFU_LOG(MFU_LOG_ERR, "Failed to open container: "DF_RC, DP_RC(rc));
                 goto bcast;
             }
         } else if (require_new_cont) {
@@ -1156,64 +1156,64 @@ int daos_cleanup(
     /* Unmount source DFS container */
     if (mfu_src_file->dfs != NULL) {
         tmp_rc = mfu_dfs_umount(mfu_src_file);
-        MPI_Barrier(MPI_COMM_WORLD);
         if (tmp_rc != 0) {
             rc = 1;
         }
     }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     /* Close source container */
     if (daos_handle_is_valid(da->src_coh)) {
         tmp_rc = daos_cont_close(da->src_coh, NULL);
-        MPI_Barrier(MPI_COMM_WORLD);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to close source container "DF_RC, DP_RC(tmp_rc));
             rc = 1;
         }
         da->src_coh = DAOS_HDL_INVAL;
     }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     /* Unmount destination DFS container */
     if (mfu_dst_file->dfs != NULL) {
         tmp_rc = mfu_dfs_umount(mfu_dst_file);
-        MPI_Barrier(MPI_COMM_WORLD);
         if (tmp_rc != 0) {
             rc = 1;
         }
     }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     /* Close destination container */
     if (daos_handle_is_valid(da->dst_coh)) {
         tmp_rc = daos_cont_close(da->dst_coh, NULL);
-        MPI_Barrier(MPI_COMM_WORLD);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to close destination container "DF_RC, DP_RC(tmp_rc));
             rc = 1;
         }
         da->dst_coh = DAOS_HDL_INVAL;
     }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     /* Close source pool */
     if (daos_handle_is_valid(da->src_poh)) {
         tmp_rc = daos_pool_disconnect(da->src_poh, NULL);
-        MPI_Barrier(MPI_COMM_WORLD);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to disconnect from source pool "DF_RC, DP_RC(tmp_rc));
             rc = 1;
         }
         da->src_poh = DAOS_HDL_INVAL;
     }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     /* Close destination pool */
     if (daos_handle_is_valid(da->dst_poh) && !same_pool) {
         tmp_rc = daos_pool_disconnect(da->dst_poh, NULL);
-        MPI_Barrier(MPI_COMM_WORLD);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to disconnect from destination pool "DF_RC, DP_RC(tmp_rc));
             rc = 1;
         }
         da->dst_poh = DAOS_HDL_INVAL;
     }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     /* Finalize DAOS */
     tmp_rc = daos_fini();
@@ -4603,7 +4603,7 @@ int daos_cont_deserialize_connect(daos_args_t *daos_args,
                            &daos_args->src_poh, &pool_info, NULL);
 #endif
     if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to connect to pool");
+        MFU_LOG(MFU_LOG_ERR, "Failed to connect to pool: "DF_RC, DP_RC(rc));
         goto out;
     }
 
@@ -4640,7 +4640,7 @@ int daos_cont_deserialize_connect(daos_args_t *daos_args,
     rc = daos_cont_open(daos_args->src_poh, daos_args->src_cont_uuid,
                         DAOS_COO_RW, &daos_args->src_coh, &co_info, NULL);
     if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to open container: %d", rc);
+        MFU_LOG(MFU_LOG_ERR, "failed to open container: "DF_RC, DP_RC(rc));
         goto out;
     }
     daos_prop_free(prop);
