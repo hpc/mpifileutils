@@ -2358,7 +2358,8 @@ static int serialize_akeys(struct hdf5_args *hdf5,
     char            *akey_ptr = NULL;
     daos_key_t      aiov;
     daos_iod_t      iod;
-    char            rec_name[32];
+    size_t          rec_name_len = 32;
+    char            rec_name[rec_name_len];
     int             path_len = 0;
     int             size = 0;
     hvl_t           *akey_val;
@@ -2443,8 +2444,8 @@ static int serialize_akeys(struct hdf5_args *hdf5,
                 (*hdf5->ak)[*ak_index].rec_single_val.len = 0;
 
                 /* create a record dset only for array types */
-                memset(&rec_name, 0, sizeof(rec_name));
-                path_len = snprintf(rec_name, FILENAME_LEN, "%lu", *ak_index);
+                memset(&rec_name, 0, rec_name_len);
+                path_len = snprintf(rec_name, rec_name_len, "%lu", *ak_index);
                 if (path_len > FILENAME_LEN) {
                     MFU_LOG(MFU_LOG_ERR, "record name too long");
                     rc = 1;
