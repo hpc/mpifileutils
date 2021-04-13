@@ -2538,6 +2538,9 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
                            uint64_t *ak_index,
                            daos_handle_t *oh,
                            int *oid_index,
+                           daos_args_t *da,
+                           daos_obj_id_t oid,
+                           daos_ofeat_t ofeat,
                            mfu_daos_stats_t* stats)
 {
     int             rc = 0;
@@ -2592,6 +2595,7 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
             rc = ENOMEM;
             goto out;
         }
+
         /* parse out individual dkeys based on key length and
          * number of dkeys returned
          */
@@ -2609,12 +2613,65 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
             memcpy(dkey_val->p, (void*)dkey_ptr,
                    (uint64_t)dkey_kds[i].kd_key_len);
             dkey_val->len = (uint64_t)dkey_kds[i].kd_key_len; 
-            rc = serialize_akeys(hdf5, diov, dk_index, ak_index,
-                                 oh, stats); 
-            if (rc != 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to list akeys: %d", rc);
-                rc = 1;
+            /* if DAOS_OF_ARRAY skip enumerating akeys */
+            if (ofeat & DAOS_OF_ARRAY) {
+                /* TODO: use daos_array.h for DAOS_OF_ARRAY and write dataset id directly
+                * to the oid dataset. Iterating dkeys/akseys is not necessary for
+                * this case */
+                /* TODO: use daos_kv.h for DAOS_OF_KV_FLAT */
+                daos_size_t cell_size = 0;
+                daos_size_t array_size  = 0;
+                daos_size_t chunk_size = 0;
+	            daos_array_iod_t iod;
+            	d_sg_list_t	sgl;
+            	daos_range_t	rg;
+            	d_iov_t		iov;
+
+                rc = daos_array_open(da->src_coh, oid, DAOS_TX_NONE, DAOS_OO_RW,
+			                         &cell_size, &chunk_size, oh, NULL);
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to open array object: "DF_RC, DP_RC(rc));
+                }
+                /* get the size of the array */
+	            rc = daos_array_get_size(*oh, DAOS_TX_NONE, &array_size, NULL);
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to get array size: "DF_RC, DP_RC(rc));
+                }
+                printf("OBJ DAOS_OF_ARRAY, cell size: %d, chunk_size: %d, array_size: %d\n",
+                       (int)cell_size, (int)chunk_size, (int)array_size);
+                /* TODO: read array data, then write to hdf5 file */
+	            /** set array location */
+	            char rbuf[array_size];
+            	iod.arr_nr = 1;
+            	rg.rg_len = array_size;
+            	rg.rg_idx = 0;
+            	iod.arr_rgs = &rg;
+
+            	/** set memory location */
+            	sgl.sg_nr = 1;
+	            d_iov_set(&iov, rbuf, array_size);
+	            sgl.sg_iovs = &iov;
+
+	            rc = daos_array_read(*oh, DAOS_TX_NONE, &iod, &sgl, NULL);
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to read array: "DF_RC, DP_RC(rc));
+                }
+                printf("BUF READ: %s\n", sgl.sg_iovs[0].iov_buf);
+                rc = daos_array_close(*oh, NULL);
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to close array: "DF_RC, DP_RC(rc));
+                }
+                /* TODO: serialize the array that was read */
+                /* TODO: serialize the chunk_size */
                 goto out;
+            } else {
+                rc = serialize_akeys(hdf5, diov, dk_index, ak_index,
+                                     oh, stats); 
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to list akeys: %d", rc);
+                    rc = 1;
+                    goto out;
+                }
             }
             dkey_ptr += dkey_kds[i].kd_key_len;
             (*dk_index)++;
@@ -2741,6 +2798,15 @@ static int init_hdf5_file(struct hdf5_args *hdf5, char *filename) {
                              HOFFSET(dkey_t, dkey_val), hdf5->dkey_vtype);
     if (hdf5->status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to insert dkey value");
+        rc = 1;
+        goto out;
+    }
+
+    hdf5->status = H5Tinsert(hdf5->dkey_memtype, "Array Dataset ID",
+                             HOFFSET(dkey_t, array_rec_dset_id),
+                             H5T_NATIVE_UINT64);
+    if (hdf5->status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to insert array record dset id");
         rc = 1;
         goto out;
     }
@@ -3493,6 +3559,15 @@ out:
     return rc;
 }
 
+static inline daos_ofeat_t
+daos_obj_id2feat(daos_obj_id_t oid)
+{
+	daos_ofeat_t ofeat;
+
+	ofeat = (oid.hi & OID_FMT_FEAT_MASK) >> OID_FMT_FEAT_SHIFT;
+	return ofeat;
+}
+
 int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
                              uint64_t *files_written, daos_args_t *da,
                              mfu_flist flist, uint64_t num_oids,
@@ -3511,6 +3586,7 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
     char            filename[FILENAME_LEN];
     char            cont_str[FILENAME_LEN];
     char            rank_str[FILENAME_LEN];
+    daos_ofeat_t    ofeat;
 
     /* init HDF5 args */
     init_hdf5_args(hdf5);
@@ -3580,22 +3656,26 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
         oid.lo = mfu_flist_file_get_oid_low(flist, i);
         (*hdf5->oid)[i].oid_hi = oid.hi;
         (*hdf5->oid)[i].oid_low = oid.lo;
+
         rc = daos_obj_open(da->src_coh, oid, 0, &oh, NULL);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "failed to open object: "DF_RC, DP_RC(rc));
             goto out;
         }
+        ofeat = (oid.hi & OID_FMT_FEAT_MASK) >> OID_FMT_FEAT_SHIFT;
         rc = serialize_dkeys(hdf5, &dk_index, &ak_index,
-                             &oh, &i, stats);
+                             &oh, &i, da, oid, ofeat, stats);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "failed to serialize keys: %d", rc);
             goto out;
         }
         /* close source and destination object */
-        rc = daos_obj_close(oh, NULL);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to close object: "DF_RC, DP_RC(rc));
-            goto out;
+        if (!(ofeat & DAOS_OF_ARRAY)) {
+            rc = daos_obj_close(oh, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to close object: "DF_RC, DP_RC(rc));
+                goto out;
+            }
         }
 
         /* Increment as we go */
