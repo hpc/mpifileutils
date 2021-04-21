@@ -1977,6 +1977,7 @@ static int serialize_recx_single(struct hdf5_args *hdf5,
                                  daos_key_t *dkey,
                                  daos_handle_t *oh,
                                  daos_iod_t *iod,
+                                 uint64_t *ak_index,
                                  mfu_daos_stats_t* stats)
 {
     /* if iod_type is single value just fetch iod size from source
@@ -1987,6 +1988,8 @@ static int serialize_recx_single(struct hdf5_args *hdf5,
     d_iov_t     iov;
     int         rc;
     herr_t      err;
+    hvl_t       *single_val;
+
     buf = MFU_CALLOC(1, buf_len);
 
     /* set sgl values */
@@ -2010,13 +2013,15 @@ static int serialize_recx_single(struct hdf5_args *hdf5,
 
     stats->bytes_read += buf_len;
 
-    /* write single val record to dataset */
-    err = H5Dwrite(hdf5->single_dset, hdf5->single_dtype, H5S_ALL,
-                   hdf5->single_dspace, H5P_DEFAULT, sgl.sg_iovs[0].iov_buf);
-    if (err < 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to write single record dataset");
+    /* store the single values inside of the akey dataset */
+    single_val = &(*hdf5->ak)[*ak_index].rec_single_val;
+    single_val->p = MFU_CALLOC(1, (uint64_t)(*iod).iod_size);
+    if (single_val->p == NULL) {
+        rc = ENOMEM;
         goto out;
     }
+    memcpy(single_val->p, sgl.sg_iovs[0].iov_buf, (uint64_t)(*iod).iod_size);
+    single_val->len = (uint64_t)(*iod).iod_size; 
 out:
     mfu_free(&buf);
     return rc;
@@ -2316,7 +2321,6 @@ static int init_recx_data(struct hdf5_args *hdf5)
     int     rc = 0;
     herr_t  err = 0;
 
-    hdf5->single_dims[0] = 1;
     hdf5->rx_dims[0] = 0;
     hdf5->rx_max_dims[0] = H5S_UNLIMITED;
 
@@ -2333,12 +2337,6 @@ static int init_recx_data(struct hdf5_args *hdf5)
     hdf5->rx_dspace = H5Screate_simple(1, hdf5->rx_dims, hdf5->rx_max_dims);
     if (hdf5->rx_dspace < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create rx_dspace");
-        rc = 1;
-        goto out;
-    }
-    hdf5->single_dspace = H5Screate_simple(1, hdf5->single_dims, NULL);
-    if (hdf5->single_dspace < 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to create single_dspace");
         rc = 1;
         goto out;
     }
@@ -2387,7 +2385,8 @@ static int serialize_akeys(struct hdf5_args *hdf5,
     char            *akey_ptr = NULL;
     daos_key_t      aiov;
     daos_iod_t      iod;
-    char            rec_name[32];
+    size_t          rec_name_len = 32;
+    char            rec_name[rec_name_len];
     int             path_len = 0;
     int             size = 0;
     hvl_t           *akey_val;
@@ -2466,17 +2465,20 @@ static int serialize_akeys(struct hdf5_args *hdf5,
             /* if iod_size == 0 then this is a
              * DAOS_IOD_ARRAY type
              */
-            /* TODO: create a record dset for each
-             * akey
-             */
-            memset(&rec_name, FILENAME_LEN, sizeof(rec_name));
-            path_len = snprintf(rec_name, FILENAME_LEN, "%lu", *ak_index);
-            if (path_len > FILENAME_LEN) {
-                MFU_LOG(MFU_LOG_ERR, "record name too long");
-                rc = 1;
-                goto out;
-            }
             if ((int)iod.iod_size == 0) {
+                /* set single value field to NULL, 0 for array types */
+                (*hdf5->ak)[*ak_index].rec_single_val.p = NULL;
+                (*hdf5->ak)[*ak_index].rec_single_val.len = 0;
+
+                /* create a record dset only for array types */
+                memset(&rec_name, 0, rec_name_len);
+                path_len = snprintf(rec_name, rec_name_len, "%lu", *ak_index);
+                if (path_len > FILENAME_LEN) {
+                    MFU_LOG(MFU_LOG_ERR, "record name too long");
+                    rc = 1;
+                    goto out;
+                }
+
                 rc = serialize_recx_array(hdf5, &diov, &aiov, rec_name,
                                           ak_index, oh, &iod, stats);
                 if (rc != 0) {
@@ -2485,41 +2487,11 @@ static int serialize_akeys(struct hdf5_args *hdf5,
                     goto out;
                 }
             } else {
-                hdf5->single_dtype = H5Tcreate(H5T_OPAQUE, iod.iod_size);
-                if (hdf5->single_dtype < 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to create single record dtype");
-                    rc = 1;
-                    goto out;
-                }
-                hdf5->single_dset = H5Dcreate(hdf5->file,
-                                              rec_name,
-                                              hdf5->single_dtype,
-                                              hdf5->single_dspace,
-                                              H5P_DEFAULT,
-                                              H5P_DEFAULT,
-                                              H5P_DEFAULT);
-                if (hdf5->single_dset < 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed create single record dataset");
-                    rc = 1;
-                    goto out;
-                }
                 rc = serialize_recx_single(hdf5, &diov, oh,
-                                           &iod, stats);
+                                           &iod, ak_index, stats);
                 if (rc != 0) {
                     MFU_LOG(MFU_LOG_ERR, "failed to serialize recx single: %d",
                             rc);
-                    goto out;
-                }
-                err = H5Dclose(hdf5->single_dset);
-                if (err < 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to close recx single");
-                    rc = 1;
-                    goto out;
-                }
-                err = H5Tclose(hdf5->single_dtype);
-                if (err < 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to close single_dtype");
-                    rc = 1;
                     goto out;
                 }
             }
@@ -2624,12 +2596,6 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
     err = H5Sclose(hdf5->rx_dspace);
     if (err < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to close rx_dspace");
-        rc = 1;
-        goto out;
-    }
-    err = H5Sclose(hdf5->single_dspace);
-    if (err < 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to close single_dspace");
         rc = 1;
         goto out;
     }
@@ -2763,6 +2729,14 @@ static int init_hdf5_file(struct hdf5_args *hdf5, char *filename) {
                              H5T_NATIVE_UINT64);
     if (hdf5->status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to insert record dset id");
+        rc = 1;
+        goto out;
+    }
+    hdf5->status = H5Tinsert(hdf5->akey_memtype, "Record Single Value",
+                             HOFFSET(akey_t, rec_single_val),
+                             hdf5->akey_vtype);
+    if (hdf5->status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to insert record single value");
         rc = 1;
         goto out;
     }
@@ -3585,8 +3559,7 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
             MFU_LOG(MFU_LOG_ERR, "failed to open object: "DF_RC, DP_RC(rc));
             goto out;
         }
-        rc = serialize_dkeys(hdf5, &dk_index, &ak_index,
-                             &oh, &i, stats);
+        rc = serialize_dkeys(hdf5, &dk_index, &ak_index, &oh, &i, stats);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "failed to serialize keys: %d", rc);
             goto out;
@@ -3694,6 +3667,14 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
     }
 
 out:
+    /* free dkey, akey values and single record values */
+    for (i = 0; i < stats->total_dkeys; i++) {
+        mfu_free(&((*hdf5->dk)[i].dkey_val.p));
+    }
+    for (i = 0; i < stats->total_akeys; i++) {
+        mfu_free(&((*hdf5->ak)[i].akey_val.p));
+        mfu_free(&((*hdf5->ak)[i].rec_single_val.p));
+    }
     if (hdf5->oid_dset > 0)
         H5Dclose(hdf5->oid_dset);
     if (hdf5->dkey_dset > 0)
@@ -4083,63 +4064,68 @@ static int cont_deserialize_keys(struct hdf5_args *hdf5,
             d_iov_set(&aiov, (void*)hdf5->akey_data[ak_off + k].akey_val.p,
                   hdf5->akey_data[ak_off + k].akey_val.len);
 
-            /* read record data for each akey */
-            index = ak_off + k;
-            len = snprintf(NULL, 0, "%lu", index);
-            char dset_name[len + 1];    
-            snprintf(dset_name, len + 1, "%lu", index);
-            hdf5->rx_dset = H5Dopen(hdf5->file, dset_name,
+            /* if the len of the single value is set to zero,
+             * then this akey points to an array record dataset */
+            if (hdf5->akey_data[ak_off + k].rec_single_val.len == 0) {
+                index = ak_off + k;
+                len = snprintf(NULL, 0, "%lu", index);
+                char dset_name[len + 1];    
+                snprintf(dset_name, len + 1, "%lu", index);
+                hdf5->rx_dset = H5Dopen(hdf5->file, dset_name,
                                     H5P_DEFAULT);
-            if (hdf5->rx_dset < 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to read rx_dset");
-                rc = 1;
-                goto out;
-            }
-            hdf5->rx_dspace = H5Dget_space(hdf5->rx_dset);
-            if (hdf5->rx_dspace < 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to read rx_dspace");
-                rc = 1;
-                goto out;
-            }
-            hdf5->rx_dtype = H5Dget_type(hdf5->rx_dset);
-            if (hdf5->rx_dtype < 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to read rx_dtype");
-                rc = 1;
-                goto out;
-            }
-            hdf5->plist = H5Dget_create_plist(hdf5->rx_dset);
-            if (hdf5->plist < 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to get plist");
-                rc = 1;
-                goto out;
-            }
-            rx_ndims = H5Sget_simple_extent_dims(hdf5->rx_dspace,
-                                                 hdf5->rx_dims,
-                                                 NULL);
-            if (rx_ndims < 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to get rx_ndims");
-                rc = 1;
-                goto out;
-            }
-            num_attrs = H5Aget_num_attrs(hdf5->rx_dset);
-            if (num_attrs < 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to get num attrs");
-                rc = 1;
-                goto out;
-            }
-            if (num_attrs > 0) {
-                rc = cont_deserialize_recx(hdf5, oh, diov,
-                                           num_attrs, ak_off, k, stats);
+                if (hdf5->rx_dset < 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to read rx_dset");
+                    rc = 1;
+                    goto out;
+                }
+                hdf5->rx_dspace = H5Dget_space(hdf5->rx_dset);
+                if (hdf5->rx_dspace < 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to read rx_dspace");
+                    rc = 1;
+                    goto out;
+                }
+                hdf5->rx_dtype = H5Dget_type(hdf5->rx_dset);
+                if (hdf5->rx_dtype < 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to read rx_dtype");
+                    rc = 1;
+                    goto out;
+                }
+                hdf5->plist = H5Dget_create_plist(hdf5->rx_dset);
+                if (hdf5->plist < 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to get plist");
+                    rc = 1;
+                    goto out;
+                }
+                rx_ndims = H5Sget_simple_extent_dims(hdf5->rx_dspace,
+                                                     hdf5->rx_dims,
+                                                     NULL);
+                if (rx_ndims < 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to get rx_ndims");
+                    rc = 1;
+                    goto out;
+                }
+                num_attrs = H5Aget_num_attrs(hdf5->rx_dset);
+                if (num_attrs < 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to get num attrs");
+                    rc = 1;
+                    goto out;
+                }
+                rc = cont_deserialize_recx(hdf5, oh, diov, num_attrs, ak_off, k, stats);
                 if (rc != 0) {
                     MFU_LOG(MFU_LOG_ERR, "failed to deserialize recx");
                     rc = 1;
                     goto out;
                 }
+                H5Pclose(hdf5->plist);
+                H5Tclose(hdf5->rx_dtype);
+                H5Sclose(hdf5->rx_dspace);
+                H5Dclose(hdf5->rx_dset);
             } else {
                 memset(&sgl, 0, sizeof(sgl));
                 memset(&iov, 0, sizeof(iov));
                 memset(&iod, 0, sizeof(iod));
-                single_tsize = H5Tget_size(hdf5->rx_dtype);
+
+                single_tsize = hdf5->akey_data[ak_off + k].rec_single_val.len;
                 if (single_tsize == 0) {
                     rc = 1;
                     MFU_LOG(MFU_LOG_ERR, "failed to get size of type in single "
@@ -4150,14 +4136,8 @@ static int cont_deserialize_keys(struct hdf5_args *hdf5,
                     rc = ENOMEM;
                     goto out;
                 }
-                status = H5Dread(hdf5->rx_dset, hdf5->rx_dtype,
-                                 H5S_ALL, hdf5->rx_dspace,
-                                 H5P_DEFAULT, single_data);
-                if (status < 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to read record");
-                    rc = 1;
-                    goto out;
-                }
+                memcpy(single_data, hdf5->akey_data[ak_off + k].rec_single_val.p,
+                       hdf5->akey_data[ak_off + k].rec_single_val.len);
 
                 /* set iod values */
                 iod.iod_type  = DAOS_IOD_SINGLE;
@@ -4185,11 +4165,6 @@ static int cont_deserialize_keys(struct hdf5_args *hdf5,
 
                 mfu_free(&single_data);
             }
-            H5Pclose(hdf5->plist);
-            H5Tclose(hdf5->rx_dtype);
-            H5Sclose(hdf5->rx_dspace);
-            H5Dclose(hdf5->rx_dset);
-
             stats->total_akeys++;
         }
         stats->total_dkeys++;

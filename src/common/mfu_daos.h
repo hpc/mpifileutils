@@ -119,6 +119,7 @@ typedef struct {
 	/* array of vlen structure */
 	hvl_t akey_val;
 	uint64_t rec_dset_id;
+	hvl_t rec_single_val;
 } akey_t;
 
 struct hdf5_args {
@@ -150,14 +151,11 @@ struct hdf5_args {
     hid_t attr_dspace;
     hid_t attr_dtype;
     hid_t rx_dset;
-    hid_t single_dspace;
-    hid_t single_dset;
     hid_t rx_dtype;
     hid_t usr_attr;
     hid_t cont_attr;
     hid_t selection_attr;
     hid_t version_attr;
-    hid_t single_dtype;
     hid_t version_attr_dspace;
     hid_t version_attr_type;
     /* dims for dsets */
@@ -169,7 +167,6 @@ struct hdf5_args {
     hsize_t attr_dims[1];
     hsize_t rx_chunk_dims[1];
     hsize_t rx_max_dims[1];
-    hsize_t single_dims[1];
     hsize_t version_attr_dims[1];
     /* data for keys */
     oid_t *oid_data;
