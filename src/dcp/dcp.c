@@ -475,12 +475,14 @@ int main(int argc, char** argv)
                                          &daos_args->src_epc, flist);
         if (tmp_rc != 0) {
             rc = 1;
+            goto daos_cleanup;
         }
 
         /* Collectively copy all objects */
         tmp_rc = mfu_daos_flist_sync(daos_args, flist, false, true);
         if (tmp_rc != 0) {
             rc = 1;
+            goto daos_cleanup;
         }
 
         /* Rank 0 prints success if needed */
@@ -489,6 +491,7 @@ int main(int argc, char** argv)
         }
     }
 
+daos_cleanup:
     /* Cleanup DAOS-related variables, etc. */
     daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
 #endif
