@@ -362,6 +362,7 @@ int main(int argc, char** argv)
         rc = daos_setup(rank, argpaths, numpaths, daos_args, mfu_src_file, mfu_dst_file);
     }
 
+#ifdef HDF5_SUPPORT
     /* if hdf5 API is specified, then h5repack is used */
     if (daos_args->api == DAOS_API_HDF5) {
         rc = mfu_daos_hdf5_copy(argpaths, daos_args);
@@ -372,6 +373,7 @@ int main(int argc, char** argv)
         MPI_Finalize();
         return rc;
     }
+#endif
 
     /* TODO add support for this */
     if (inputname && mfu_src_file->type == DFS) {
