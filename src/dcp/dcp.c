@@ -82,6 +82,10 @@ void print_usage(void)
 #ifdef DAOS_SUPPORT
     printf("      --daos-prefix        - DAOS prefix for unified namespace path\n");
     printf("      --daos-api           - DAOS API in {DFS, DAOS} (default uses DFS for POSIX containers)\n");
+#ifdef HDF5_SUPPORT
+    printf("      --daos-preserve      - preserve DAOS container properties and user attributes, a filename "
+    					 "to write the metadata to is expected\n");
+#endif
 #endif
     printf("  -i, --input <file>       - read source list from file\n");
     printf("  -L, --dereference        - copy original files instead of links\n");
@@ -143,6 +147,7 @@ int main(int argc, char** argv)
         {"grouplock"            , required_argument, 0, 'g'}, // untested
         {"daos-prefix"          , required_argument, 0, 'X'},
         {"daos-api"             , required_argument, 0, 'x'},
+        {"daos-preserve"        , required_argument, 0, 'D'},
         {"input"                , required_argument, 0, 'i'},
         {"chunksize"            , required_argument, 0, 'k'},
         {"dereference"          , no_argument      , 0, 'L'},
@@ -245,6 +250,13 @@ int main(int argc, char** argv)
                     usage = 1;
                 }
                 break;
+#ifdef HDF5_SUPPORT
+            /* daos_preserve needs hdf5 support */
+            case 'D':
+                daos_args->daos_preserve      = true;
+                daos_args->daos_preserve_path = MFU_STRDUP(optarg);
+                break;
+#endif
 #endif
             case 'i':
                 inputname = MFU_STRDUP(optarg);

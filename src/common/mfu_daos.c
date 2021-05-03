@@ -979,6 +979,7 @@ int daos_connect(
   bool connect_pool,
   bool create_cont,
   bool require_new_cont,
+  bool preserve,
   mfu_file_t* mfu_src_file)
 {
     /* sanity check */
@@ -992,10 +993,24 @@ int daos_connect(
     int             valid = 0; /* assume failure until otherwise */
     int             rc;
     daos_prop_t*    props = NULL;
+#ifdef HDF5_SUPPORT
+    struct hdf5_args hdf5;
+#endif
 
     /* have rank 0 connect to the pool and container,
      * we'll then broadcast the handle ids from rank 0 to everyone else */
     if (rank == 0) {
+#ifdef HDF5_SUPPORT
+        /* initialization for hdf5 file for preserve option */
+        if (preserve) {
+            hdf5.file = H5Fopen(da->daos_preserve_path, H5F_ACC_RDONLY, H5P_DEFAULT);
+            if (hdf5.file < 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to open hdf5 file");
+                rc = 1;
+                goto bcast;
+            }
+        }
+#endif
         /* Connect to DAOS pool */
         if (connect_pool) {
             daos_pool_info_t pool_info = {0};
@@ -1027,7 +1042,6 @@ int daos_connect(
             /* Get the src container properties. */
             if (have_src_cont) {
                 if ((mfu_src_file != NULL) && (mfu_src_file->type == DFS)) {
-                    /* Don't get the allocated OID */
                     rc = cont_get_props(da->src_coh, &props, false);
                 } else {
                     rc = cont_get_props(da->src_coh, &props, true);
@@ -1041,6 +1055,19 @@ int daos_connect(
              * create a POSIX container. Otherwise, create a container of
              * the same type as the source. */
             if (!have_src_cont || (da->src_cont_type == DAOS_PROP_CO_LAYOUT_POSIX)) {
+#ifdef HDF5_SUPPORT
+                /* read container properties in hdf5 file when moving data
+                 * back to DAOS if the preserve option has been set */
+                if (preserve) {
+                    daos_cont_layout_t ctype = DAOS_PROP_CO_LAYOUT_POSIX;
+                    MFU_LOG(MFU_LOG_INFO, "Reading metadata file: %s", da->daos_preserve_path);
+                    rc = cont_deserialize_all_props(&hdf5, props, &ctype);
+                    if (rc != 0) {
+                        MFU_LOG(MFU_LOG_ERR, "Failed to read cont props: "DF_RC, DP_RC(rc));
+                        goto bcast;
+                    }
+                }
+#endif
                 dfs_attr_t attr = {0};
                 attr.da_props = props;
                 rc = dfs_cont_create(*poh, cont_uuid, &attr, NULL, NULL);
@@ -1068,6 +1095,22 @@ int daos_connect(
                 goto bcast;
             }
 
+#ifdef HDF5_SUPPORT
+            /* need to wait until destination container is valid to set user
+             * attributes, preserve is only set true when destination is a DFS
+             * copy */
+            if (preserve) { 
+                /* deserialize and set the user attributes if they exist */
+                htri_t usr_attrs_exist = H5Lexists(hdf5.file, "User Attributes", H5P_DEFAULT);
+                if (usr_attrs_exist > 0) {
+                    rc = cont_deserialize_usr_attrs(&hdf5, *coh);
+                    if (rc != 0) {
+                        goto bcast;
+                    }
+                }
+            }
+#endif
+
             /* Copy user attributes from source container */
             if (have_src_cont) {
                 rc = copy_usr_attrs(da->src_coh, *coh);
@@ -1087,6 +1130,14 @@ int daos_connect(
 bcast:
     if (rank == 0) {
         daos_prop_free(props);
+#ifdef HDF5_SUPPORT
+        if (preserve) {
+            /* only close if handle is open */
+            if (hdf5.file > 0) {
+                H5Fclose(hdf5.file);
+            }
+        }
+#endif
     }
 
     /* broadcast valid from rank 0 */
@@ -1197,6 +1248,10 @@ daos_args_t* daos_args_new(void)
     da->src_cont_type = DAOS_PROP_CO_LAYOUT_UNKOWN;
     da->dst_cont_type = DAOS_PROP_CO_LAYOUT_UNKOWN;
 
+    /* by default do not preserve daos metadata */
+    da->daos_preserve = false;
+    da->daos_preserve_path = NULL;
+
     return da;
 }
 
@@ -1207,6 +1262,7 @@ void daos_args_delete(daos_args_t** pda)
         mfu_free(&da->dfs_prefix);
         mfu_free(&da->src_path);
         mfu_free(&da->dst_path);
+        mfu_free(&da->daos_preserve_path);
         mfu_free(pda);
     }
 }
@@ -1243,6 +1299,93 @@ int daos_parse_epc_str(
 
     return 0;
 }
+
+#ifdef HDF5_SUPPORT
+static int serialize_daos_metadata(char *filename,
+                                   daos_args_t* da)
+{
+    int    rc = 0;
+    hid_t  status = 0;
+    struct hdf5_args hdf5 = {0};
+
+    MFU_LOG(MFU_LOG_INFO, "Writing metadata file: %s", da->daos_preserve_path);
+
+    /* TODO: much of this HDF5 setup should get moved into the HDF5 user
+     * interface */
+    hdf5.file = H5Fcreate(da->daos_preserve_path, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    if (hdf5.file < 0) {
+        rc = 1;
+        MFU_LOG(MFU_LOG_ERR, "failed to create hdf5 file");
+        goto out;
+    }
+    rc = cont_serialize_props(&hdf5, da->src_coh);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to serialize cont layout: "DF_RC, DP_RC(rc));
+        goto out;
+    }
+
+    /* create User Attributes Dataset in daos_metadata file */
+    hdf5.usr_attr_memtype = H5Tcreate(H5T_COMPOUND, sizeof(usr_attr_t));
+    if (hdf5.usr_attr_memtype < 0) {
+        rc = 1;
+        MFU_LOG(MFU_LOG_ERR, "failed to create user attr memtype");
+        goto out;
+    }
+    hdf5.usr_attr_name_vtype = H5Tcopy(H5T_C_S1);
+    if (hdf5.usr_attr_name_vtype < 0) {
+        rc = 1;
+        MFU_LOG(MFU_LOG_ERR, "failed to create user attr name vtype");
+        goto out;
+    }
+    status = H5Tset_size(hdf5.usr_attr_name_vtype, H5T_VARIABLE);
+    if (status < 0) {
+        rc = 1;
+        MFU_LOG(MFU_LOG_ERR, "failed to create user attr name vtype");
+        goto out;
+    }
+    hdf5.usr_attr_val_vtype = H5Tvlen_create(H5T_NATIVE_OPAQUE);
+    if (hdf5.usr_attr_val_vtype < 0) {
+        rc = 1;
+        MFU_LOG(MFU_LOG_ERR, "failed to create user attr val vtype");
+        goto out;
+    }
+    status = H5Tinsert(hdf5.usr_attr_memtype, "Attribute Name",
+                       HOFFSET(usr_attr_t, attr_name), hdf5.usr_attr_name_vtype);
+    if (status < 0) {
+        rc = 1;
+        MFU_LOG(MFU_LOG_ERR, "failed to insert user attr name");
+        goto out;
+    }
+    status = H5Tinsert(hdf5.usr_attr_memtype, "Attribute Value",
+                       HOFFSET(usr_attr_t, attr_val), hdf5.usr_attr_val_vtype);
+    if (status < 0) {
+        rc = 1;
+        MFU_LOG(MFU_LOG_ERR, "failed to insert user attr val");
+        goto out;
+    }
+
+    /* serialize the DAOS user attributes*/
+    rc = cont_serialize_usr_attrs(&hdf5, da->src_coh);
+    if (rc != 0) {
+       MFU_LOG(MFU_LOG_ERR, "failed to serialize user attributes: "DF_RC, DP_RC(rc));
+       goto out;
+    }
+    status = H5Tclose(hdf5.usr_attr_name_vtype);
+    if (status < 0) {
+       rc = 1;
+       MFU_LOG(MFU_LOG_ERR, "failed to close user attr name datatype");
+        
+    }
+    status = H5Tclose(hdf5.usr_attr_val_vtype);
+    if (status < 0) {
+       rc = 1;
+       MFU_LOG(MFU_LOG_ERR, "failed to close user attr value datatype");
+    }
+out:
+    mfu_free(&filename);
+    return rc;
+}
+#endif
 
 int daos_setup(
     int rank,
@@ -1331,6 +1474,7 @@ int daos_setup(
     bool connect_pool = true;
     bool create_cont = false;
     bool require_new_cont = false;
+    bool preserve = false;
 
     /* connect to DAOS source pool if uuid is valid */
     if (have_src_cont) {
@@ -1345,7 +1489,7 @@ int daos_setup(
         tmp_rc = daos_connect(rank, da, da->src_pool_uuid, da->src_cont_uuid,
                               &da->src_poh, &da->src_coh,
                               connect_pool, create_cont, require_new_cont,
-                              mfu_src_file);
+                              preserve, mfu_src_file);
         if (tmp_rc != 0) {
             /* tmp_rc from daos_connect is collective */
             local_daos_error = true;
@@ -1397,19 +1541,38 @@ int daos_setup(
             }
         }
 
+        /* TODO: pass daos_preserve bool here to daos_connect=true */
         create_cont = true;
+        /* do check that src is POSIX and since dst has a pool,
+         * then the dst *should* always be DFS, but this is not set
+         * on the destintaion until after daos_connect is called, and
+         * we should read the properties *before* the container is
+         * created. We do not have the destination container type
+         * here yet which is why extra check is used then passed
+         * to daos_connect */
+        if (da->daos_preserve) {
+            if (mfu_src_file->type == POSIX) {
+                preserve = true; 
+            } else {
+                local_daos_error = true;
+                MFU_LOG(MFU_LOG_ERR, "Cannot use daos-preserve if source and destination"
+                                     " are DAOS. DAOS metadata is copied by default "
+                                     "when both the source and destination is DAOS");
+                goto out;
+            }
+        }
         if (same_pool) {
             connect_pool = false;
             tmp_rc = daos_connect(rank, da, da->dst_pool_uuid, da->dst_cont_uuid,
                                   &da->src_poh, &da->dst_coh,
                                   connect_pool, create_cont, require_new_cont,
-                                  mfu_src_file);
+                                  preserve, mfu_src_file);
         } else {
             connect_pool = true;
             tmp_rc = daos_connect(rank, da, da->dst_pool_uuid, da->dst_cont_uuid,
                                   &da->dst_poh, &da->dst_coh,
                                   connect_pool, create_cont, require_new_cont,
-                                  mfu_src_file);
+                                  preserve, mfu_src_file);
         }
         if (tmp_rc != 0) {
             /* tmp_rc from daos_connect is collective */
@@ -1464,8 +1627,23 @@ int daos_setup(
         }
     }
 
+    /* check daos_preserve
+     * if src cont is DFS and dst is POSIX, then write 
+     * cont props and user attrs */
+#ifdef HDF5_SUPPORT
+    char *filename = NULL;
+    if (da->daos_preserve && rank == 0) {
+        if (mfu_src_file->type == DFS && mfu_dst_file->type == POSIX) {
+            tmp_rc = serialize_daos_metadata(filename, da);
+            if (tmp_rc != 0) {
+                local_daos_error = true;
+                MFU_LOG(MFU_LOG_ERR, "failed serialize DAOS metadata: "DF_RC,
+                        DP_RC(tmp_rc));
+            }
+        }
+    }
+#endif
 out:
-
     /* Return if any process had a daos error */
     if (daos_any_error(rank, local_daos_error, flag_daos_args)) {
         return 1;
@@ -3231,7 +3409,7 @@ out:
     return rc;
 }
 
-static int cont_serialize_usr_attrs(struct hdf5_args *hdf5, daos_handle_t cont)
+int cont_serialize_usr_attrs(struct hdf5_args *hdf5, daos_handle_t cont)
 {
     int         rc = 0;
     hid_t       status = 0;
@@ -3302,6 +3480,7 @@ out:
     cont_free_usr_attrs(num_attrs, &names, &buffers, &sizes);
     mfu_free(&attr_data);
     H5Dclose(dset);
+    H5Tclose(hdf5->usr_attr_memtype);
     H5Sclose(dspace);
 out_no_attrs:
     return rc;
@@ -3316,6 +3495,11 @@ static int cont_serialize_prop_acl(struct hdf5_args* hdf5,
 	struct daos_acl     *acl = NULL;
     char                **acl_strs = NULL;
     size_t              len_acl = 0;
+    hsize_t             attr_dims[1];
+    hid_t               attr_dtype;
+    hid_t               attr_dspace;
+    hid_t               usr_attr;
+
 
     if (entry == NULL || entry->dpe_val_ptr == NULL) {
         goto out;
@@ -3328,47 +3512,53 @@ static int cont_serialize_prop_acl(struct hdf5_args* hdf5,
         MFU_LOG(MFU_LOG_ERR, "failed to convert acl to strs");
         goto out;
     }
-    hdf5->attr_dims[0] = len_acl;
-    hdf5->attr_dtype = H5Tcopy(H5T_C_S1);
-    if (hdf5->attr_dtype < 0) {
+    attr_dims[0] = len_acl;
+    attr_dtype = H5Tcopy(H5T_C_S1);
+    if (attr_dtype < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create acl type");
         rc = 1;
         goto out;
     }
-    status = H5Tset_size(hdf5->attr_dtype, H5T_VARIABLE);
+    status = H5Tset_size(attr_dtype, H5T_VARIABLE);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to set acl dtype size");
         rc = 1;
         goto out;
     }
-    hdf5->attr_dspace = H5Screate_simple(1, hdf5->attr_dims,
-                                         NULL);
-    if (hdf5->attr_dspace < 0) {
+    attr_dspace = H5Screate_simple(1, attr_dims, NULL);
+    if (attr_dspace < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create version attribute");
         rc = 1;
         goto out;
     }
-    hdf5->usr_attr = H5Acreate2(hdf5->file,
-                                prop_str,
-                                hdf5->attr_dtype,
-                                hdf5->attr_dspace,
-                                H5P_DEFAULT,
-                                H5P_DEFAULT);
-    if (hdf5->usr_attr < 0) {
+    usr_attr = H5Acreate2(hdf5->file, prop_str, attr_dtype, attr_dspace,
+                                H5P_DEFAULT, H5P_DEFAULT);
+    if (usr_attr < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create attribute");
         rc = 1;
         goto out;
     }   
-    status = H5Awrite(hdf5->usr_attr, hdf5->attr_dtype,
-                      acl_strs);
+    status = H5Awrite(usr_attr, attr_dtype, acl_strs);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to write attribute");
         rc = 1;
         goto out;
     }
-    status = H5Aclose(hdf5->usr_attr);
+    status = H5Aclose(usr_attr);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to close attribute");
+        rc = 1;
+        goto out;
+    }
+    status = H5Tclose(attr_dtype);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to close dtype");
+        rc = 1;
+        goto out;
+    }
+    status = H5Sclose(attr_dspace);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to close dspace");
         rc = 1;
         goto out;
     }
@@ -3380,8 +3570,12 @@ static int cont_serialize_prop_str(struct hdf5_args* hdf5,
                                    struct daos_prop_entry* entry,
                                    const char* prop_str)
 {
-    int rc = 0;
-    hid_t status = 0;
+    int     rc = 0;
+    hid_t   status = 0;
+    hsize_t attr_dims[1];
+    hid_t   attr_dtype;
+    hid_t   attr_dspace;
+    hid_t   usr_attr;
 
     if (entry == NULL || entry->dpe_str == NULL) {
         MFU_LOG(MFU_LOG_ERR, "Property %s not found", prop_str);
@@ -3389,57 +3583,62 @@ static int cont_serialize_prop_str(struct hdf5_args* hdf5,
         goto out;
     }
 
-    hdf5->attr_dims[0] = 1;
-    hdf5->attr_dtype = H5Tcopy(H5T_C_S1);
-    if (hdf5->attr_dtype < 0) {
+    attr_dims[0] = 1;
+    attr_dtype = H5Tcopy(H5T_C_S1);
+    if (attr_dtype < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create usr attr type");
         rc = 1;
         goto out;
     }
-    status = H5Tset_size(hdf5->attr_dtype, strlen(entry->dpe_str) + 1);
+    status = H5Tset_size(attr_dtype, strlen(entry->dpe_str) + 1);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to set dtype size");
         rc = 1;
         goto out;
     }
-    status = H5Tset_strpad(hdf5->attr_dtype, H5T_STR_NULLTERM);
+    status = H5Tset_strpad(attr_dtype, H5T_STR_NULLTERM);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to set null terminator");
         rc = 1;
         goto out;
     }
-    hdf5->attr_dspace = H5Screate_simple(1, hdf5->attr_dims,
-                                         NULL);
-    if (hdf5->attr_dspace < 0) {
+    attr_dspace = H5Screate_simple(1, attr_dims, NULL);
+    if (attr_dspace < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create version attribute dataspace");
         rc = 1;
         goto out;
     }
-    hdf5->usr_attr = H5Acreate2(hdf5->file,
-                                prop_str,
-                                hdf5->attr_dtype,
-                                hdf5->attr_dspace,
-                                H5P_DEFAULT,
-                                H5P_DEFAULT);
-    if (hdf5->usr_attr < 0) {
+    usr_attr = H5Acreate2(hdf5->file, prop_str, attr_dtype, attr_dspace,
+                          H5P_DEFAULT, H5P_DEFAULT);
+    if (usr_attr < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create attribute");
         rc = 1;
         goto out;
     }   
-    status = H5Awrite(hdf5->usr_attr, hdf5->attr_dtype,
-                      entry->dpe_str);
+    status = H5Awrite(usr_attr, attr_dtype, entry->dpe_str);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to write attribute");
         rc = 1;
         goto out;
     }
-    status = H5Aclose(hdf5->usr_attr);
+    status = H5Aclose(usr_attr);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to close attribute");
         rc = 1;
         goto out;
     }
-
+    status = H5Tclose(attr_dtype);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to close dtype");
+        rc = 1;
+        goto out;
+    }
+    status = H5Sclose(attr_dspace);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to close dspace");
+        rc = 1;
+        goto out;
+    }
 out:
     return rc;
 }
@@ -3507,6 +3706,11 @@ static int cont_serialize_prop_uint(struct hdf5_args *hdf5,
 {
     int     rc = 0;
     hid_t   status = 0;
+    hsize_t attr_dims[1];
+    hid_t   attr_dtype;
+    hid_t   attr_dspace;
+    hid_t   usr_attr;
+
 
     if (entry == NULL) {
         MFU_LOG(MFU_LOG_ERR, "Property %s not found", prop_str);
@@ -3514,57 +3718,62 @@ static int cont_serialize_prop_uint(struct hdf5_args *hdf5,
         goto out;
     }
 
-    hdf5->attr_dims[0] = 1;
-    hdf5->attr_dtype = H5Tcopy(H5T_NATIVE_UINT64);
-    status = H5Tset_size(hdf5->attr_dtype, 8);
+    attr_dims[0] = 1;
+    attr_dtype = H5Tcopy(H5T_NATIVE_UINT64);
+    status = H5Tset_size(attr_dtype, 8);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create version dtype");
         rc = 1;
         goto out;
     }
-    if (hdf5->attr_dtype < 0) {
+    if (attr_dtype < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create usr attr type");
         rc = 1;
         goto out;
     }
-    hdf5->attr_dspace = H5Screate_simple(1, hdf5->attr_dims,
-                                         NULL);
-    if (hdf5->attr_dspace < 0) {
+    attr_dspace = H5Screate_simple(1, attr_dims, NULL);
+    if (attr_dspace < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create version attr dspace");
         rc = 1;
         goto out;
     }
-    hdf5->usr_attr = H5Acreate2(hdf5->file,
-                                prop_str,
-                                hdf5->attr_dtype,
-                                hdf5->attr_dspace,
-                                H5P_DEFAULT,
-                                H5P_DEFAULT);
-    if (hdf5->usr_attr < 0) {
+    usr_attr = H5Acreate2(hdf5->file, prop_str, attr_dtype,
+                          attr_dspace, H5P_DEFAULT, H5P_DEFAULT);
+    if (usr_attr < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create attr");
         rc = 1;
         goto out;
     }   
-    status = H5Awrite(hdf5->usr_attr, hdf5->attr_dtype,
-                      &entry->dpe_val);
+    status = H5Awrite(usr_attr, attr_dtype, &entry->dpe_val);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to write attr");
         rc = 1;
         goto out;
     }
-    status = H5Aclose(hdf5->usr_attr);
+    status = H5Aclose(usr_attr);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to close attr");
         rc = 1;
         goto out;
     }
-
+    status = H5Tclose(attr_dtype);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to close dtype");
+        rc = 1;
+        goto out;
+    }
+    status = H5Sclose(attr_dspace);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to close dspace");
+        rc = 1;
+        goto out;
+    }
 out:
     return rc;
 }
 
-static int cont_serialize_props(struct hdf5_args *hdf5,
-                                    daos_handle_t cont)
+int cont_serialize_props(struct hdf5_args *hdf5,
+                         daos_handle_t cont)
 {
     int                     rc = 0;
     daos_prop_t*            prop_query = NULL;
@@ -4251,7 +4460,7 @@ static int cont_deserialize_recx(struct hdf5_args *hdf5,
         rc = daos_obj_update(*oh, DAOS_TX_NONE, 0, &diov, 1, &iod,
                              &sgl, NULL);
         if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to update object: %d", rc);
+            MFU_LOG(MFU_LOG_ERR, "failed to update object: "DF_RC, DP_RC(rc));
             goto out;
         }
 
@@ -4474,20 +4683,22 @@ static int cont_deserialize_prop_str(struct hdf5_args* hdf5,
 {
     hid_t   status = 0;
     int     rc = 0;
+    hid_t   attr_dtype;
+    hid_t   cont_attr;
 
-    hdf5->cont_attr = H5Aopen(hdf5->file, prop_str, H5P_DEFAULT);
-    if (hdf5->cont_attr < 0) {
+    cont_attr = H5Aopen(hdf5->file, prop_str, H5P_DEFAULT);
+    if (cont_attr < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to open property attribute %s", prop_str);
         rc = 1;
         goto out;
     }
-    hdf5->attr_dtype = H5Aget_type(hdf5->cont_attr);
-    if (hdf5->attr_dtype < 0) {
+    attr_dtype = H5Aget_type(cont_attr);
+    if (attr_dtype < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to open property attribute type %s", prop_str);
         rc = 1;
         goto out;
     }
-    size_t buf_size = H5Tget_size(hdf5->attr_dtype);
+    size_t buf_size = H5Tget_size(attr_dtype);
     if (buf_size <= 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to get size for property attribute %s", prop_str);
         rc = 1;
@@ -4499,19 +4710,24 @@ static int cont_deserialize_prop_str(struct hdf5_args* hdf5,
         rc = 1;
         goto out;
     }
-    status = H5Aread(hdf5->cont_attr, hdf5->attr_dtype, entry->dpe_str);
+    status = H5Aread(cont_attr, attr_dtype, entry->dpe_str);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to read property attribute %s", prop_str);
         rc = 1;
         goto out;
     }
-    status = H5Aclose(hdf5->cont_attr);
+    status = H5Aclose(cont_attr);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to close property attribute %s", prop_str);
         rc = 1;
         goto out;
     }
-
+    status = H5Tclose(attr_dtype);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to close attribute datatype");
+        rc = 1;
+        goto out;
+    }
 out:
     return rc;
 }
@@ -4522,32 +4738,39 @@ static int cont_deserialize_prop_uint(struct hdf5_args* hdf5,
 {
     hid_t   status = 0;
     int     rc = 0;
+    hid_t   cont_attr;
+    hid_t   attr_dtype;
 
-    hdf5->cont_attr = H5Aopen(hdf5->file, prop_str, H5P_DEFAULT);
-    if (hdf5->cont_attr < 0) {
+    cont_attr = H5Aopen(hdf5->file, prop_str, H5P_DEFAULT);
+    if (cont_attr < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to open property attribute %s", prop_str);
         rc = 1;
         goto out;
     }
-    hdf5->attr_dtype = H5Aget_type(hdf5->cont_attr);
-    if (hdf5->attr_dtype < 0) {
+    attr_dtype = H5Aget_type(cont_attr);
+    if (attr_dtype < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to open property attribute type %s", prop_str);
         rc = 1;
         goto out;
     }
-    status = H5Aread(hdf5->cont_attr, hdf5->attr_dtype, &entry->dpe_val);
+    status = H5Aread(cont_attr, attr_dtype, &entry->dpe_val);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to read property attribute %s", prop_str);
         rc = 1;
         goto out;
     }
-    status = H5Aclose(hdf5->cont_attr);
+    status = H5Aclose(cont_attr);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to close property attribute %s", prop_str);
         rc = 1;
         goto out;
     }
-
+    status = H5Tclose(attr_dtype);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to close attribute datatype", prop_str);
+        rc = 1;
+        goto out;
+    }
 out:
     return rc;
 }
@@ -4563,6 +4786,10 @@ static int cont_deserialize_prop_acl(struct hdf5_args* hdf5,
     const char      **rdata = NULL;
     struct daos_acl *acl;
     htri_t          acl_exist;
+    hid_t           cont_attr;
+    hid_t           attr_dtype;
+    hid_t           attr_dspace;
+    hsize_t         attr_dims[1];
 
     /* First check if the ACL attribute exists. */
     acl_exist = H5Aexists(hdf5->file, prop_str);
@@ -4577,63 +4804,75 @@ static int cont_deserialize_prop_acl(struct hdf5_args* hdf5,
         goto out;
     }
 
-    hdf5->cont_attr = H5Aopen(hdf5->file, prop_str, H5P_DEFAULT);
-    if (hdf5->cont_attr < 0) {
+    cont_attr = H5Aopen(hdf5->file, prop_str, H5P_DEFAULT);
+    if (cont_attr < 0) {
         /* Could not open, but that's okay. */
         rc = 0;
         goto out;
     }
-    hdf5->attr_dtype = H5Aget_type(hdf5->cont_attr);
-    if (hdf5->attr_dtype < 0) {
+    attr_dtype = H5Aget_type(cont_attr);
+    if (attr_dtype < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to open property attribute type %s", prop_str);
         rc = 1;
         goto out;
     }
-    hdf5->attr_dspace = H5Aget_space(hdf5->cont_attr);
+    attr_dspace = H5Aget_space(cont_attr);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to read acl dspace");
         rc = 1;
         goto out;
     }
-    ndims = H5Sget_simple_extent_dims(hdf5->attr_dspace, hdf5->attr_dims, NULL);
+    ndims = H5Sget_simple_extent_dims(attr_dspace, attr_dims, NULL);
     if (ndims < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to get dimensions of dspace");
         rc = 1;
         goto out;
     }
-    rdata = MFU_CALLOC(hdf5->attr_dims[0], sizeof(char*));
+    rdata = MFU_CALLOC(attr_dims[0], sizeof(char*));
     if (rdata == NULL) {
         rc = ENOMEM;
         goto out;
     }
-    hdf5->attr_dtype = H5Tcopy(H5T_C_S1);
+    attr_dtype = H5Tcopy(H5T_C_S1);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create dtype");
         rc = 1;
         goto out;
     }
-    status = H5Tset_size(hdf5->attr_dtype, H5T_VARIABLE);
+    status = H5Tset_size(attr_dtype, H5T_VARIABLE);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to set acl dtype size");
         rc = 1;
         goto out;
     }
-    status = H5Aread(hdf5->cont_attr, hdf5->attr_dtype, rdata);
+    status = H5Aread(cont_attr, attr_dtype, rdata);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to read property attribute %s", prop_str);
         rc = 1;
         goto out;
     }
     /* convert acl strings back to struct acl, then store in entry */
-    rc = daos_acl_from_strs(rdata, (size_t)hdf5->attr_dims[0], &acl);
+    rc = daos_acl_from_strs(rdata, (size_t)attr_dims[0], &acl);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to convert acl strs");
         goto out;
     }
     entry->dpe_val_ptr = (void*)acl;
-    status = H5Aclose(hdf5->cont_attr);
+    status = H5Aclose(cont_attr);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to close property attribute %s", prop_str);
+        rc = 1;
+        goto out;
+    }
+    status = H5Tclose(attr_dtype);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to close attribute datatype");
+        rc = 1;
+        goto out;
+    }
+    status = H5Sclose(attr_dspace);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to close attribute dataspace");
         rc = 1;
         goto out;
     }
@@ -4642,8 +4881,8 @@ out:
     return rc;
 }
 
-static int cont_deserialize_usr_attrs(struct hdf5_args* hdf5,
-                                      daos_handle_t coh)
+int cont_deserialize_usr_attrs(struct hdf5_args* hdf5,
+                               daos_handle_t coh)
 {
     hid_t       status = 0;
     int         rc = 0;
@@ -4743,11 +4982,11 @@ out:
     return rc;
 }
 
-static int cont_deserialize_all_props(struct hdf5_args *hdf5, daos_prop_t *prop, 
-                                      struct daos_prop_entry *entry,
-                                      daos_cont_layout_t *cont_type)
+int cont_deserialize_all_props(struct hdf5_args *hdf5, daos_prop_t *prop, 
+                               daos_cont_layout_t *cont_type)
 {
     int rc = 0;
+    struct daos_prop_entry *entry;
 
     prop = daos_prop_alloc(17);
     if (prop == NULL) {
@@ -4887,8 +5126,7 @@ out:
 int daos_cont_deserialize_connect(daos_args_t *daos_args,
                                   struct hdf5_args *hdf5,
                                   daos_prop_t *prop,
-                                  daos_cont_layout_t *cont_type,
-                                  struct daos_prop_entry *entry)
+                                  daos_cont_layout_t *cont_type)
 {
     int rc = 0;
 
@@ -4911,7 +5149,7 @@ int daos_cont_deserialize_connect(daos_args_t *daos_args,
 
     /* need to read cont props before creating container, then
      * broadcast handles to the rest of the ranks */
-    rc = cont_deserialize_all_props(hdf5, prop, entry, cont_type);
+    rc = cont_deserialize_all_props(hdf5, prop, cont_type);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to deserialize container properties");
         goto out;
