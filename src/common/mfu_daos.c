@@ -2302,6 +2302,51 @@ static inline void init_hdf5_args(struct hdf5_args *hdf5)
     hdf5->ak = NULL;
 }
 
+static int serialize_kv_rec(struct hdf5_args *hdf5, 
+                            daos_key_t dkey,
+                            daos_handle_t *oh,
+                            uint64_t *dk_index,
+                            char *dkey_val,
+                            mfu_daos_stats_t* stats)
+{
+    void        *buf;
+    int         rc;
+    herr_t      err;
+    hvl_t       *kv_val;
+    daos_size_t size = 0;
+
+    /* get the size of the value */
+    rc = daos_kv_get(*oh, DAOS_TX_NONE, 0, dkey_val, &size, buf, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to fetch object "DF_RC, DP_RC(rc));
+        goto out;
+    }
+    buf = MFU_CALLOC(1, size);
+    if (buf == NULL) {
+        rc = -DER_NOMEM;
+        goto out;
+    }
+
+    rc = daos_kv_get(*oh, DAOS_TX_NONE, 0, dkey_val, &size, buf, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to fetch object "DF_RC, DP_RC(rc));
+        goto out;
+    }
+
+    stats->bytes_read += size;
+    kv_val = &(*hdf5->dk)[*dk_index].rec_kv_val;
+    kv_val->p = MFU_CALLOC(1, (uint64_t)size);
+    if (kv_val->p == NULL) {
+        rc = -DER_NOMEM;
+        goto out;
+    }
+    memcpy(kv_val->p, buf, (uint64_t)size);
+    kv_val->len = (uint64_t)size; 
+out:
+    mfu_free(&buf);
+    return rc;
+}
+
 static int serialize_recx_single(struct hdf5_args *hdf5, 
                                  daos_key_t *dkey,
                                  daos_handle_t *oh,
@@ -2839,6 +2884,9 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
                            uint64_t *ak_index,
                            daos_handle_t *oh,
                            int *oid_index,
+                           daos_args_t *da,
+                           daos_obj_id_t oid,
+                           bool is_kv_flat,
                            mfu_daos_stats_t* stats)
 {
     int             rc = 0;
@@ -2876,14 +2924,22 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
 
         d_iov_set(&dkey_iov, dkey_enum_buf, ENUM_DESC_BUF);
 
-        /* get dkeys */
-        rc = daos_obj_list_dkey(*oh, DAOS_TX_NONE, &dkey_number,
-                                dkey_kds, &dkey_sgl, &dkey_anchor,
-                                NULL);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to list dkeys: %d", rc);
-            goto out;
+        if (is_kv_flat) {
+            rc = daos_kv_list(*oh, DAOS_TX_NONE, &dkey_number,
+                              dkey_kds, &dkey_sgl, &dkey_anchor, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to list dkeys: "DF_RC, DP_RC(rc));
+                goto out;
+            }
+        } else {
+            rc = daos_obj_list_dkey(*oh, DAOS_TX_NONE, &dkey_number,
+                                    dkey_kds, &dkey_sgl, &dkey_anchor, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to list dkeys: "DF_RC, DP_RC(rc));
+                goto out;
+            }
         }
+
         /* if no dkeys were returned move on */
         if (dkey_number == 0)
             continue;
@@ -2893,6 +2949,7 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
             rc = ENOMEM;
             goto out;
         }
+
         /* parse out individual dkeys based on key length and
          * number of dkeys returned
          */
@@ -2910,12 +2967,43 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
             memcpy(dkey_val->p, (void*)dkey_ptr,
                    (uint64_t)dkey_kds[i].kd_key_len);
             dkey_val->len = (uint64_t)dkey_kds[i].kd_key_len; 
-            rc = serialize_akeys(hdf5, diov, dk_index, ak_index,
-                                 oh, stats); 
-            if (rc != 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to list akeys: %d", rc);
-                rc = 1;
-                goto out;
+            (*hdf5->dk)[*dk_index].rec_kv_val.p = NULL;
+            (*hdf5->dk)[*dk_index].rec_kv_val.len = 0;
+            if (is_kv_flat) {
+                /* akey offset will not be used in this case */
+                (*hdf5->dk)[*dk_index].akey_offset = 0;
+
+    	        /** create the KV store */
+                rc = daos_kv_open(da->src_coh, oid, DAOS_OO_RW, oh, NULL);
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to open kv object: "DF_RC, DP_RC(rc));
+                    rc = 1;
+                    goto out;
+                }
+
+                /* daos_kv_get takes a char *key */
+                char key_val[ENUM_LARGE_KEY_BUF];
+                path_len = snprintf(key_val, ENUM_LARGE_KEY_BUF, "%s", dkey_val->p);
+                if (path_len > ENUM_LARGE_KEY_BUF) {
+                    rc = 1;
+                    goto out;
+                }
+
+                /* TODO: serialize the array that was read */
+                rc = serialize_kv_rec(hdf5, diov, oh, dk_index, key_val, stats);
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to serialize kv record: "DF_RC, DP_RC(rc));
+                    rc = 1;
+                    goto out;
+                }
+            } else {
+                rc = serialize_akeys(hdf5, diov, dk_index, ak_index,
+                                     oh, stats); 
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to list akeys: %d", rc);
+                    rc = 1;
+                    goto out;
+                }
             }
             dkey_ptr += dkey_kds[i].kd_key_len;
             (*dk_index)++;
@@ -3036,6 +3124,15 @@ static int init_hdf5_file(struct hdf5_args *hdf5, char *filename) {
                              HOFFSET(dkey_t, dkey_val), hdf5->dkey_vtype);
     if (hdf5->status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to insert dkey value");
+        rc = 1;
+        goto out;
+    }
+
+    hdf5->status = H5Tinsert(hdf5->dkey_memtype, "Record KV Value",
+                             HOFFSET(dkey_t, rec_kv_val),
+                             hdf5->dkey_vtype);
+    if (hdf5->status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to insert record KV value");
         rc = 1;
         goto out;
     }
@@ -3608,6 +3705,8 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
     char            filename[FILENAME_LEN];
     char            cont_str[FILENAME_LEN];
     char            rank_str[FILENAME_LEN];
+    daos_ofeat_t    ofeat;
+    bool            is_kv_flat = false;
 
     /* init HDF5 args */
     init_hdf5_args(hdf5);
@@ -3677,23 +3776,53 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
         oid.lo = mfu_flist_file_get_oid_low(flist, i);
         (*hdf5->oid)[i].oid_hi = oid.hi;
         (*hdf5->oid)[i].oid_low = oid.lo;
-        rc = daos_obj_open(da->src_coh, oid, 0, &oh, NULL);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to open object: "DF_RC, DP_RC(rc));
-            goto out;
-        }
-        rc = serialize_dkeys(hdf5, &dk_index, &ak_index, &oh, &i, stats);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to serialize keys: %d", rc);
-            goto out;
-        }
-        /* close source and destination object */
-        rc = daos_obj_close(oh, NULL);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to close object: "DF_RC, DP_RC(rc));
-            goto out;
-        }
 
+        /* TODO: DAOS_OF_KV_FLAT uses daos_kv_* functions, and
+         * other object types use daos_obj_* functions. Maybe there is
+         * a better way to organize this with swtich statements, or
+         * creating "daos_obj" wrappers, etc. */
+        ofeat = (oid.hi & OID_FMT_FEAT_MASK) >> OID_FMT_FEAT_SHIFT;
+        if ((ofeat & DAOS_OF_KV_FLAT) &&
+            !(ofeat & DAOS_OF_ARRAY_BYTE) && !(ofeat & DAOS_OF_ARRAY)) {
+            is_kv_flat = true;
+        }
+        if (is_kv_flat) {
+            rc = daos_kv_open(da->src_coh, oid, DAOS_OO_RW, &oh, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to open kv object: "DF_RC, DP_RC(rc));
+                goto out;
+            }
+            rc = serialize_dkeys(hdf5, &dk_index, &ak_index,
+                                 &oh, &i, da, oid, is_kv_flat, stats);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to serialize keys: %d", rc);
+                goto out;
+            }
+            /* close source and destination object */
+            rc = daos_kv_close(oh, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to close kv object: "DF_RC, DP_RC(rc));
+                goto out;
+            }
+        } else {
+            rc = daos_obj_open(da->src_coh, oid, 0, &oh, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to open object: "DF_RC, DP_RC(rc));
+                goto out;
+            }
+            rc = serialize_dkeys(hdf5, &dk_index, &ak_index,
+                                 &oh, &i, da, oid, is_kv_flat, stats);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to serialize keys: %d", rc);
+                goto out;
+            }
+            /* close source and destination object */
+            rc = daos_obj_close(oh, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to close object: "DF_RC, DP_RC(rc));
+                goto out;
+            }
+        }
         /* Increment as we go */
         stats->total_oids++;
     }
@@ -3935,17 +4064,19 @@ static int hdf5_read_key_data(struct hdf5_args *hdf5)
         rc = 1;
         goto out;
     }
-    hdf5->akey_data = MFU_CALLOC(hdf5->akey_dims[0], sizeof(akey_t));
-    if (hdf5->akey_data == NULL) {
-        rc = ENOMEM;
-        goto out;
-    }
-    status = H5Dread(hdf5->akey_dset, hdf5->akey_vtype, H5S_ALL, H5S_ALL,
-                     H5P_DEFAULT, hdf5->akey_data);
-    if (status < 0) {
-        MFU_LOG(MFU_LOG_ERR, "failed to read akey data");
-        rc = 1;
-        goto out;
+    if (hdf5->akey_dims[0] > 0) {
+        hdf5->akey_data = MFU_CALLOC(hdf5->akey_dims[0], sizeof(akey_t));
+        if (hdf5->akey_data == NULL) {
+            rc = ENOMEM;
+            goto out;
+        }
+        status = H5Dread(hdf5->akey_dset, hdf5->akey_vtype, H5S_ALL, H5S_ALL,
+                         H5P_DEFAULT, hdf5->akey_data);
+        if (status < 0) {
+            MFU_LOG(MFU_LOG_ERR, "failed to read akey data");
+            rc = 1;
+            goto out;
+        }
     }
 out:
     return rc;
@@ -4135,6 +4266,141 @@ out:
     return rc;
 }
 
+static int cont_deserialize_akeys(struct hdf5_args *hdf5,
+                                  daos_key_t diov,
+                                  uint64_t *ak_off,
+                                  int k,
+                                  daos_handle_t *oh,
+                                  mfu_daos_stats_t* stats)
+{
+    int             rc = 0;
+    hid_t           status = 0;
+    daos_key_t      aiov;
+    char            akey[ENUM_KEY_BUF] = {0};
+    int             rx_ndims;
+    uint64_t        index = 0;
+    int             len = 0;
+    int             num_attrs;
+    size_t          single_tsize;
+    void            *single_data = NULL;
+    d_sg_list_t     sgl;
+    d_iov_t         iov;
+    daos_iod_t      iod;
+    hvl_t           *rec_kv_val;
+    hvl_t           *akey_val;
+    hvl_t           *rec_single_val;
+    
+    memset(&aiov, 0, sizeof(aiov));
+    akey_val = &(hdf5->akey_data)[*ak_off + k].akey_val;
+    rec_single_val = &(hdf5->akey_data)[*ak_off + k].rec_single_val;
+    memcpy(akey, akey_val->p, akey_val->len);
+    d_iov_set(&aiov, (void*)akey_val->p, akey_val->len);
+
+    /* if the len of the single value is set to zero,
+     * then this akey points to an array record dataset */
+    if (rec_single_val->len == 0) {
+        index = *ak_off + k;
+        len = snprintf(NULL, 0, "%lu", index);
+        char *dset_name = NULL;
+        dset_name = MFU_CALLOC(1, len + 1);
+        snprintf(dset_name, len + 1, "%lu", index);
+        hdf5->rx_dset = H5Dopen(hdf5->file, dset_name,
+                                H5P_DEFAULT);
+        if (hdf5->rx_dset < 0) {
+            MFU_LOG(MFU_LOG_ERR, "failed to read rx_dset");
+            rc = 1;
+            goto out;
+        }
+        hdf5->rx_dspace = H5Dget_space(hdf5->rx_dset);
+        if (hdf5->rx_dspace < 0) {
+            MFU_LOG(MFU_LOG_ERR, "failed to read rx_dspace");
+            rc = 1;
+            goto out;
+        }
+        hdf5->rx_dtype = H5Dget_type(hdf5->rx_dset);
+        if (hdf5->rx_dtype < 0) {
+            MFU_LOG(MFU_LOG_ERR, "failed to read rx_dtype");
+            rc = 1;
+            goto out;
+        }
+        hdf5->plist = H5Dget_create_plist(hdf5->rx_dset);
+        if (hdf5->plist < 0) {
+            MFU_LOG(MFU_LOG_ERR, "failed to get plist");
+            rc = 1;
+            goto out;
+        }
+        rx_ndims = H5Sget_simple_extent_dims(hdf5->rx_dspace,
+                                             hdf5->rx_dims,
+                                             NULL);
+        if (rx_ndims < 0) {
+            MFU_LOG(MFU_LOG_ERR, "failed to get rx_ndims");
+            rc = 1;
+            goto out;
+        }
+        num_attrs = H5Aget_num_attrs(hdf5->rx_dset);
+        if (num_attrs < 0) {
+            MFU_LOG(MFU_LOG_ERR, "failed to get num attrs");
+            rc = 1;
+            goto out;
+        }
+        rc = cont_deserialize_recx(hdf5, oh, diov, num_attrs, *ak_off, k, stats);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "failed to deserialize recx");
+            rc = 1;
+            goto out;
+        }
+        H5Pclose(hdf5->plist);
+        H5Tclose(hdf5->rx_dtype);
+        H5Sclose(hdf5->rx_dspace);
+        H5Dclose(hdf5->rx_dset);
+        mfu_free(&dset_name);
+    } else {
+        memset(&sgl, 0, sizeof(sgl));
+        memset(&iov, 0, sizeof(iov));
+        memset(&iod, 0, sizeof(iod));
+        single_tsize = rec_single_val->len;
+        if (single_tsize == 0) {
+            MFU_LOG(MFU_LOG_ERR, "failed to get size of type in single "
+                    "record datatype");
+            rc = 1;
+            goto out;
+        }
+        single_data = MFU_CALLOC(1, single_tsize);
+        if (single_data == NULL) {
+            rc = ENOMEM;
+            goto out;
+        }
+        memcpy(single_data, rec_single_val->p, rec_single_val->len);
+
+        /* set iod values */
+        iod.iod_type  = DAOS_IOD_SINGLE;
+        iod.iod_size  = single_tsize;
+        iod.iod_nr    = 1;
+        iod.iod_recxs = NULL;
+        iod.iod_name  = aiov;
+
+        /* set sgl values */
+        sgl.sg_nr     = 1;
+        sgl.sg_nr_out = 0;
+        sgl.sg_iovs   = &iov;
+        d_iov_set(&iov, single_data, single_tsize);
+
+        /* update fetched recx values and place in destination object */
+        rc = daos_obj_update(*oh, DAOS_TX_NONE, 0,
+                             &diov, 1, &iod, &sgl, NULL);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "failed to update object: "DF_RC, DP_RC(rc));
+            goto out;
+        }
+        stats->bytes_written += single_tsize;
+        mfu_free(&single_data);
+    }
+    stats->total_akeys++;
+out:
+    mfu_free(&single_data);
+    return rc;
+}
+
 static int cont_deserialize_keys(struct hdf5_args *hdf5,
                                  uint64_t *total_dkeys_this_oid,
                                  uint64_t *dk_off,
@@ -4150,25 +4416,16 @@ static int cont_deserialize_keys(struct hdf5_args *hdf5,
     uint64_t        ak_next = 0;
     uint64_t        total_akeys_this_dkey = 0;
     int             k = 0;
-    daos_key_t      aiov;
-    char            akey[ENUM_KEY_BUF] = {0};
-    int             rx_ndims;
-    uint64_t        index = 0;
-    int             len = 0;
-    int             num_attrs;
-    size_t          single_tsize;
-    void            *single_data = NULL;
-    d_sg_list_t     sgl;
-    d_iov_t         iov;
-    daos_iod_t      iod;
+    hvl_t           *dkey_val;
+    hvl_t           *rec_kv_val;
     
     for(j = 0; j < *total_dkeys_this_oid; j++) {
         memset(&diov, 0, sizeof(diov));
         memset(dkey, 0, sizeof(dkey));
-        memcpy(dkey, hdf5->dkey_data[*dk_off + j].dkey_val.p,
-               hdf5->dkey_data[*dk_off + j].dkey_val.len);
-        d_iov_set(&diov, (void*)hdf5->dkey_data[*dk_off + j].dkey_val.p,
-                  hdf5->dkey_data[*dk_off + j].dkey_val.len);
+        dkey_val = &(hdf5->dkey_data)[*dk_off + j].dkey_val;
+        rec_kv_val = &(hdf5->dkey_data)[*dk_off + j].rec_kv_val;
+        memcpy(dkey, dkey_val->p, dkey_val->len);
+        d_iov_set(&diov, (void*)dkey_val->p, dkey_val->len);
         ak_off = hdf5->dkey_data[*dk_off + j].akey_offset;
         ak_next = 0;
         total_akeys_this_dkey = 0;
@@ -4179,121 +4436,35 @@ static int cont_deserialize_keys(struct hdf5_args *hdf5,
             total_akeys_this_dkey = ((int)hdf5->akey_dims[0]) - ak_off;
         }
 
-        for(k = 0; k < total_akeys_this_dkey; k++) {
-            memset(&aiov, 0, sizeof(aiov));
-            memset(akey, 0, sizeof(akey));
-            memcpy(akey, hdf5->akey_data[ak_off + k].akey_val.p,
-                   hdf5->akey_data[ak_off + k].akey_val.len);
-            d_iov_set(&aiov, (void*)hdf5->akey_data[ak_off + k].akey_val.p,
-                  hdf5->akey_data[ak_off + k].akey_val.len);
+        /* if rec_kv_val.len != 0 then skip akey iteration, we can
+         * write data back into DAOS using the daos_kv.h API using just
+         * oid, dkey, and key value (stored in dkey dataset) */
 
-            /* if the len of the single value is set to zero,
-             * then this akey points to an array record dataset */
-            if (hdf5->akey_data[ak_off + k].rec_single_val.len == 0) {
-                index = ak_off + k;
-                len = snprintf(NULL, 0, "%lu", index);
-                char dset_name[len + 1];    
-                snprintf(dset_name, len + 1, "%lu", index);
-                hdf5->rx_dset = H5Dopen(hdf5->file, dset_name,
-                                    H5P_DEFAULT);
-                if (hdf5->rx_dset < 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to read rx_dset");
-                    rc = 1;
-                    goto out;
-                }
-                hdf5->rx_dspace = H5Dget_space(hdf5->rx_dset);
-                if (hdf5->rx_dspace < 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to read rx_dspace");
-                    rc = 1;
-                    goto out;
-                }
-                hdf5->rx_dtype = H5Dget_type(hdf5->rx_dset);
-                if (hdf5->rx_dtype < 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to read rx_dtype");
-                    rc = 1;
-                    goto out;
-                }
-                hdf5->plist = H5Dget_create_plist(hdf5->rx_dset);
-                if (hdf5->plist < 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to get plist");
-                    rc = 1;
-                    goto out;
-                }
-                rx_ndims = H5Sget_simple_extent_dims(hdf5->rx_dspace,
-                                                     hdf5->rx_dims,
-                                                     NULL);
-                if (rx_ndims < 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to get rx_ndims");
-                    rc = 1;
-                    goto out;
-                }
-                num_attrs = H5Aget_num_attrs(hdf5->rx_dset);
-                if (num_attrs < 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to get num attrs");
-                    rc = 1;
-                    goto out;
-                }
-                rc = cont_deserialize_recx(hdf5, oh, diov, num_attrs, ak_off, k, stats);
-                if (rc != 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to deserialize recx");
-                    rc = 1;
-                    goto out;
-                }
-                H5Pclose(hdf5->plist);
-                H5Tclose(hdf5->rx_dtype);
-                H5Sclose(hdf5->rx_dspace);
-                H5Dclose(hdf5->rx_dset);
-            } else {
-                memset(&sgl, 0, sizeof(sgl));
-                memset(&iov, 0, sizeof(iov));
-                memset(&iod, 0, sizeof(iod));
-
-                single_tsize = hdf5->akey_data[ak_off + k].rec_single_val.len;
-                if (single_tsize == 0) {
-                    rc = 1;
-                    MFU_LOG(MFU_LOG_ERR, "failed to get size of type in single "
-                                         "record datatype");
-                }
-                single_data = MFU_CALLOC(1, single_tsize);
-                if (single_data == NULL) {
-                    rc = ENOMEM;
-                    goto out;
-                }
-                memcpy(single_data, hdf5->akey_data[ak_off + k].rec_single_val.p,
-                       hdf5->akey_data[ak_off + k].rec_single_val.len);
-
-                /* set iod values */
-                iod.iod_type  = DAOS_IOD_SINGLE;
-                iod.iod_size  = single_tsize;
-                iod.iod_nr    = 1;
-                iod.iod_recxs = NULL;
-                iod.iod_name  = aiov;
-
-                /* set sgl values */
-                sgl.sg_nr     = 1;
-                sgl.sg_nr_out = 0;
-                sgl.sg_iovs   = &iov;
-
-                d_iov_set(&iov, single_data, single_tsize);
-
-                /* update fetched recx values and place in destination object */
-                rc = daos_obj_update(*oh, DAOS_TX_NONE, 0,
-                                     &diov, 1, &iod, &sgl, NULL);
-                if (rc != 0) {
-                    MFU_LOG(MFU_LOG_ERR, "failed to update object: "DF_RC, DP_RC(rc));
-                    goto out;
-                }
-
-                stats->bytes_written += single_tsize;
-
-                mfu_free(&single_data);
+        /* run daos_kv_put on rec_kv_val (dkey val) and key (dkey) */
+        /* skip akey iteration for DAOS_OF_KV_FLAT objects */
+        if (rec_kv_val->len > 0) {
+            daos_size_t kv_single_size = 0;
+            kv_single_size = rec_kv_val->len;
+            rc = daos_kv_put(*oh, DAOS_TX_NONE, 0, dkey, kv_single_size,
+                             rec_kv_val->p, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to put kv object: "DF_RC, DP_RC(rc));
+                goto out;
             }
-            stats->total_akeys++;
+            stats->bytes_written += kv_single_size;
+        } else {
+            for (k = 0; k < total_akeys_this_dkey; k++) {
+                rc = cont_deserialize_akeys(hdf5, diov, &ak_off, k, oh, stats);
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "failed to deserialize akeys: "DF_RC,
+                            DP_RC(rc));
+                    goto out;
+                }
+            }
         }
         stats->total_dkeys++;
     }
 out:
-    mfu_free(&single_data);
     return rc;
 }
 
@@ -4779,7 +4950,8 @@ out:
     return rc;
 }
 
-int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename, mfu_daos_stats_t* stats)
+int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename,
+                               mfu_daos_stats_t* stats)
 {
     int                     rc = 0;
     int                     i = 0;
@@ -4795,6 +4967,7 @@ int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename
     daos_cont_layout_t      cont_type;
     daos_prop_t*            prop;
     struct daos_prop_entry  *entry;
+    bool                    is_kv_flat = false;
 
     /* init HDF5 args */
     init_hdf5_args(&hdf5);
@@ -4853,14 +5026,28 @@ int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename
         rc = 1;
         goto out;
     }
-    
+    daos_ofeat_t ofeat; 
     for (i = 0; i < (int)hdf5.oid_dims[0]; i++) {
         oid.lo = hdf5.oid_data[i].oid_low;
         oid.hi = hdf5.oid_data[i].oid_hi;
-        rc = daos_obj_open(da->src_coh, oid, 0, &oh, NULL);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to open object: "DF_RC, DP_RC(rc));
-            goto out;
+        ofeat = (oid.hi & OID_FMT_FEAT_MASK) >> OID_FMT_FEAT_SHIFT;
+        if ((ofeat & DAOS_OF_KV_FLAT) &&
+            !(ofeat & DAOS_OF_ARRAY_BYTE) && !(ofeat & DAOS_OF_ARRAY)) {
+            is_kv_flat = true;
+        }
+        if (is_kv_flat) {
+            rc = daos_kv_open(da->src_coh, oid, DAOS_OO_RW, &oh, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "Failed to open kv object: "DF_RC, DP_RC(rc));
+                rc = 1;
+                goto out;
+            }
+        } else {
+            rc = daos_obj_open(da->src_coh, oid, 0, &oh, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to open object: "DF_RC, DP_RC(rc));
+                goto out;
+            }
         }
         dk_off = hdf5.oid_data[i].dkey_offset;
         dk_next = 0;
@@ -4876,10 +5063,18 @@ int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename
             MFU_LOG(MFU_LOG_ERR, "failed to deserialize keys: %d", rc);
             goto out;
         }
-        rc = daos_obj_close(oh, NULL);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to close object: "DF_RC, DP_RC(rc));
-            goto out;
+        if (is_kv_flat) {
+            rc = daos_kv_close(oh, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to close kv object: "DF_RC, DP_RC(rc));
+                goto out;
+            }
+        } else {
+            rc = daos_obj_close(oh, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "failed to close object: "DF_RC, DP_RC(rc));
+                goto out;
+            }
         }
 
         /* Increment as we go */

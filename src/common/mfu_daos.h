@@ -112,6 +112,9 @@ typedef struct {
 	/* array of vlen structure */
 	hvl_t dkey_val;
 	uint64_t akey_offset;
+    /* for for kv values that can be
+     * written with daos_kv.h */
+	hvl_t rec_kv_val;
 } dkey_t;
 
 /* for akey dataset */
