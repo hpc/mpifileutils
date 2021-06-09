@@ -150,7 +150,7 @@ int main(int argc, char** argv)
     
     tmp_rc = daos_connect(rank, daos_args, daos_args->src_pool_uuid,
                           daos_args->src_cont_uuid, &daos_args->src_poh,
-                          &daos_args->src_coh, true, false, false, NULL);
+                          &daos_args->src_coh, true, false, false, false, NULL);
     if (tmp_rc != 0) {
         rc = 1;
     }
