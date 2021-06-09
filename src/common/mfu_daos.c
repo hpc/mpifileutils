@@ -1174,19 +1174,22 @@ static int mfu_dfs_mount(
     rc = dfs_sys2base(mfu_file->dfs_sys, &mfu_file->dfs);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to get DAOS filesystem (DFS) base: %s", strerror(rc));
-	rc = -1;
-	dfs_sys_umount(mfu_file->dfs_sys);
-	mfu_file->dfs_sys = NULL;
+        rc = -1;
+        dfs_sys_umount(mfu_file->dfs_sys);
+        mfu_file->dfs_sys = NULL;
     }
 
     return rc;
 }
 
-/* Unmount DAOS dfs.
- * Cleanup up hash */
+/* Unmount DAOS dfs */
 static int mfu_dfs_umount(
   mfu_file_t* mfu_file)
 {
+    if ((mfu_file == NULL) || (mfu_file->dfs_sys == NULL)) {
+        return 0;
+    }
+
     /* Unmount dfs_sys */
     int rc = dfs_sys_umount(mfu_file->dfs_sys);
     if (rc != 0) {
@@ -1687,12 +1690,18 @@ int daos_cleanup(
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* Unmount source DFS container */
-    if (mfu_src_file->dfs_sys != NULL) {
-        tmp_rc = mfu_dfs_umount(mfu_src_file);
-        if (tmp_rc != 0) {
-            rc = 1;
-        }
+    tmp_rc = mfu_dfs_umount(mfu_src_file);
+    if (tmp_rc != 0) {
+        rc = 1;
     }
+
+    /* Unmount destination DFS container */
+    tmp_rc = mfu_dfs_umount(mfu_dst_file);
+    if (tmp_rc != 0) {
+        rc = 1;
+    }
+
+    /* Wait for unmount */
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* Close source container */
@@ -1704,16 +1713,6 @@ int daos_cleanup(
         }
         da->src_coh = DAOS_HDL_INVAL;
     }
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    /* Unmount destination DFS container */
-    if (mfu_dst_file->dfs_sys != NULL) {
-        tmp_rc = mfu_dfs_umount(mfu_dst_file);
-        if (tmp_rc != 0) {
-            rc = 1;
-        }
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
 
     /* Close destination container */
     if (daos_handle_is_valid(da->dst_coh)) {
@@ -1724,6 +1723,8 @@ int daos_cleanup(
         }
         da->dst_coh = DAOS_HDL_INVAL;
     }
+
+    /* Wait for container close */
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* Close source pool */
@@ -1735,7 +1736,6 @@ int daos_cleanup(
         }
         da->src_poh = DAOS_HDL_INVAL;
     }
-    MPI_Barrier(MPI_COMM_WORLD);
 
     /* Close destination pool */
     if (daos_handle_is_valid(da->dst_poh) && !same_pool) {
@@ -1746,6 +1746,8 @@ int daos_cleanup(
         }
         da->dst_poh = DAOS_HDL_INVAL;
     }
+
+    /* Wait for pool close */
     MPI_Barrier(MPI_COMM_WORLD);
 
     /* Finalize DAOS */
@@ -2170,7 +2172,7 @@ static int mfu_daos_obj_sync_keys(
                     /* Increment akeys traversed */
                     stats->total_akeys++;
 
-                    /* advance to next akey returned */	
+                    /* advance to next akey returned */
                     akey_ptr += akey_kds[j].kd_key_len;
                 }
             }
@@ -3150,7 +3152,7 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
                 /* akey offset will not be used in this case */
                 (*hdf5->dk)[*dk_index].akey_offset = 0;
 
-    	        /** create the KV store */
+                /** create the KV store */
                 rc = daos_kv_open(da->src_coh, oid, DAOS_OO_RW, oh, NULL);
                 if (rc != 0) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to open kv object: "DF_RC, DP_RC(rc));
@@ -3491,7 +3493,7 @@ static int cont_serialize_prop_acl(struct hdf5_args* hdf5,
 {
     int                 rc = 0;
     hid_t               status = 0;
-	struct daos_acl     *acl = NULL;
+    struct daos_acl     *acl = NULL;
     char                **acl_strs = NULL;
     size_t              len_acl = 0;
     hsize_t             attr_dims[1];
