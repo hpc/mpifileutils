@@ -618,15 +618,24 @@ static int daos_any_error(int rank, bool local_daos_error, int flag_daos_args)
  * The properties should remain in the order expected by serialization.
  * Returns 1 on error, 0 on success.
  */
-static int cont_get_props(daos_handle_t coh, daos_prop_t** _props, bool get_oid)
+static int cont_get_props(daos_handle_t coh, daos_prop_t** _props,
+                          bool get_oid, bool get_label)
 {
     int             rc;
     daos_prop_t*    props = NULL;
     daos_prop_t*    prop_acl = NULL;
     daos_prop_t*    props_merged = NULL;
-    uint32_t        num_props = 15;
+    uint32_t        num_props = 14;
 
     if (get_oid) {
+        num_props++;
+    }
+
+    /* container label is required to be unique, so do not
+     * retrieve it for copies. The label is retrieved for
+     * serialization, but only deserialized if the label
+     * no longer exists in the pool */
+    if (get_label) {
         num_props++;
     }
 
@@ -639,25 +648,28 @@ static int cont_get_props(daos_handle_t coh, daos_prop_t** _props, bool get_oid)
     }
 
     /* The order of properties MUST match the order expected by serialization. */
-    props->dpp_entries[0].dpe_type = DAOS_PROP_CO_LABEL;
-    props->dpp_entries[1].dpe_type = DAOS_PROP_CO_LAYOUT_TYPE;
-    props->dpp_entries[2].dpe_type = DAOS_PROP_CO_LAYOUT_VER;
-    props->dpp_entries[3].dpe_type = DAOS_PROP_CO_CSUM;
-    props->dpp_entries[4].dpe_type = DAOS_PROP_CO_CSUM_CHUNK_SIZE;
-    props->dpp_entries[5].dpe_type = DAOS_PROP_CO_CSUM_SERVER_VERIFY;
-    props->dpp_entries[6].dpe_type = DAOS_PROP_CO_REDUN_FAC;
-    props->dpp_entries[7].dpe_type = DAOS_PROP_CO_REDUN_LVL;
-    props->dpp_entries[8].dpe_type = DAOS_PROP_CO_SNAPSHOT_MAX;
-    props->dpp_entries[9].dpe_type = DAOS_PROP_CO_COMPRESS;
-    props->dpp_entries[10].dpe_type = DAOS_PROP_CO_ENCRYPT;
-    props->dpp_entries[11].dpe_type = DAOS_PROP_CO_OWNER;
-    props->dpp_entries[12].dpe_type = DAOS_PROP_CO_OWNER_GROUP;
-    props->dpp_entries[13].dpe_type = DAOS_PROP_CO_DEDUP;
-    props->dpp_entries[14].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
+    props->dpp_entries[0].dpe_type = DAOS_PROP_CO_LAYOUT_TYPE;
+    props->dpp_entries[1].dpe_type = DAOS_PROP_CO_LAYOUT_VER;
+    props->dpp_entries[2].dpe_type = DAOS_PROP_CO_CSUM;
+    props->dpp_entries[3].dpe_type = DAOS_PROP_CO_CSUM_CHUNK_SIZE;
+    props->dpp_entries[4].dpe_type = DAOS_PROP_CO_CSUM_SERVER_VERIFY;
+    props->dpp_entries[5].dpe_type = DAOS_PROP_CO_REDUN_FAC;
+    props->dpp_entries[6].dpe_type = DAOS_PROP_CO_REDUN_LVL;
+    props->dpp_entries[7].dpe_type = DAOS_PROP_CO_SNAPSHOT_MAX;
+    props->dpp_entries[8].dpe_type = DAOS_PROP_CO_COMPRESS;
+    props->dpp_entries[9].dpe_type = DAOS_PROP_CO_ENCRYPT;
+    props->dpp_entries[10].dpe_type = DAOS_PROP_CO_OWNER;
+    props->dpp_entries[11].dpe_type = DAOS_PROP_CO_OWNER_GROUP;
+    props->dpp_entries[12].dpe_type = DAOS_PROP_CO_DEDUP;
+    props->dpp_entries[13].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
 
     /* Conditionally get the OID. Should always be true for serialization. */
     if (get_oid) {
-        props->dpp_entries[15].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
+        props->dpp_entries[14].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
+    }
+
+    if (get_label) {
+        props->dpp_entries[15].dpe_type = DAOS_PROP_CO_LABEL;
     }
 
     /* Get all props except ACL first. */
@@ -1042,9 +1054,10 @@ int daos_connect(
             /* Get the src container properties. */
             if (have_src_cont) {
                 if ((mfu_src_file != NULL) && (mfu_src_file->type == DFS)) {
-                    rc = cont_get_props(da->src_coh, &props, false);
+                    /* Don't get the allocated OID */
+                    rc = cont_get_props(da->src_coh, &props, false, false);
                 } else {
-                    rc = cont_get_props(da->src_coh, &props, true);
+                    rc = cont_get_props(da->src_coh, &props, true, false);
                 }
                 if (rc != 0) {
                     goto bcast;
@@ -1061,7 +1074,7 @@ int daos_connect(
                 if (preserve) {
                     daos_cont_layout_t ctype = DAOS_PROP_CO_LAYOUT_POSIX;
                     MFU_LOG(MFU_LOG_INFO, "Reading metadata file: %s", da->daos_preserve_path);
-                    rc = cont_deserialize_all_props(&hdf5, props, &ctype);
+                    rc = cont_deserialize_all_props(&hdf5, &props, &ctype, *poh);
                     if (rc != 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to read cont props: "DF_RC, DP_RC(rc));
                         goto bcast;
@@ -3780,104 +3793,104 @@ int cont_serialize_props(struct hdf5_args *hdf5,
     struct daos_prop_entry* entry;
     char                    cont_str[DAOS_PROP_LABEL_MAX_LEN];
 
-    rc = cont_get_props(cont, &prop_query, true);
+    rc = cont_get_props(cont, &prop_query, true, true);
     if (rc != 0) {
         rc = 1;
         goto out;
     }
 
     entry = &prop_query->dpp_entries[0];
-    rc = cont_serialize_prop_str(hdf5, entry, "DAOS_PROP_CO_LABEL");
-    if (rc != 0) {
-        goto out;
-    }
-
-    entry = &prop_query->dpp_entries[1];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_LAYOUT_TYPE");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[2];
+    entry = &prop_query->dpp_entries[1];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_LAYOUT_VER");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[3];
+    entry = &prop_query->dpp_entries[2];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_CSUM");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[4];
+    entry = &prop_query->dpp_entries[3];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_CSUM_CHUNK_SIZE");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[5];
+    entry = &prop_query->dpp_entries[4];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_CSUM_SERVER_VERIFY");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[6];
+    entry = &prop_query->dpp_entries[5];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_REDUN_FAC");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[7];
+    entry = &prop_query->dpp_entries[6];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_REDUN_LVL");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[8];
+    entry = &prop_query->dpp_entries[7];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_SNAPSHOT_MAX");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[9];
+    entry = &prop_query->dpp_entries[8];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_COMPRESS");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[10];
+    entry = &prop_query->dpp_entries[9];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ENCRYPT");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[11];
+    entry = &prop_query->dpp_entries[10];
     rc = cont_serialize_prop_str(hdf5, entry, "DAOS_PROP_CO_OWNER");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[12];
+    entry = &prop_query->dpp_entries[11];
     rc = cont_serialize_prop_str(hdf5, entry, "DAOS_PROP_CO_OWNER_GROUP");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[13];
+    entry = &prop_query->dpp_entries[12];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_DEDUP");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[14];
+    entry = &prop_query->dpp_entries[13];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_DEDUP_THRESHOLD");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop_query->dpp_entries[15];
+    entry = &prop_query->dpp_entries[14];
     rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ALLOCED_OID");
+    if (rc != 0) {
+        goto out;
+    }
+
+    entry = &prop_query->dpp_entries[15];
+    rc = cont_serialize_prop_str(hdf5, entry, "DAOS_PROP_CO_LABEL");
     if (rc != 0) {
         goto out;
     }
@@ -4982,132 +4995,174 @@ out:
     return rc;
 }
 
-int cont_deserialize_all_props(struct hdf5_args *hdf5, daos_prop_t *prop, 
-                               daos_cont_layout_t *cont_type)
+int cont_deserialize_all_props(struct hdf5_args *hdf5, 
+                               daos_prop_t **_prop,
+                               daos_cont_layout_t *cont_type,
+                               daos_handle_t poh)
 {
-    int rc = 0;
-    struct daos_prop_entry *entry;
+    int                     rc = 0;
+    bool                    deserialize_label = false;
+    uint32_t                num_props = 16;
+    daos_prop_t             *label = NULL;
+    daos_prop_t             *prop = NULL;
+    struct daos_prop_entry  *entry;
+    struct daos_prop_entry  *label_entry;
+    daos_handle_t           coh;
+    daos_cont_info_t        cont_info = {0};
 
-    prop = daos_prop_alloc(17);
-    if (prop == NULL) {
+    label = daos_prop_alloc(1);
+    if (label == NULL) {
         return ENOMEM;
     }
+    label->dpp_entries[0].dpe_type = DAOS_PROP_CO_LABEL; 
 
-    prop->dpp_entries[0].dpe_type = DAOS_PROP_CO_LABEL; 
-    prop->dpp_entries[1].dpe_type = DAOS_PROP_CO_LAYOUT_TYPE;
-    prop->dpp_entries[2].dpe_type = DAOS_PROP_CO_LAYOUT_VER;
-    prop->dpp_entries[3].dpe_type = DAOS_PROP_CO_CSUM;
-    prop->dpp_entries[4].dpe_type = DAOS_PROP_CO_CSUM_CHUNK_SIZE;
-    prop->dpp_entries[5].dpe_type = DAOS_PROP_CO_CSUM_SERVER_VERIFY;
-    prop->dpp_entries[6].dpe_type = DAOS_PROP_CO_REDUN_FAC;
-    prop->dpp_entries[7].dpe_type = DAOS_PROP_CO_REDUN_LVL;
-    prop->dpp_entries[8].dpe_type = DAOS_PROP_CO_SNAPSHOT_MAX;
-    prop->dpp_entries[9].dpe_type = DAOS_PROP_CO_COMPRESS;
-    prop->dpp_entries[10].dpe_type = DAOS_PROP_CO_ENCRYPT;
-    prop->dpp_entries[11].dpe_type = DAOS_PROP_CO_OWNER;
-    prop->dpp_entries[12].dpe_type = DAOS_PROP_CO_OWNER_GROUP;
-    prop->dpp_entries[13].dpe_type = DAOS_PROP_CO_DEDUP;
-    prop->dpp_entries[14].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
-    prop->dpp_entries[15].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
-    prop->dpp_entries[16].dpe_type = DAOS_PROP_CO_ACL;
-
-    entry = &prop->dpp_entries[0];
-    rc = cont_deserialize_prop_str(hdf5, entry, "DAOS_PROP_CO_LABEL");
+    /* read the container label entry to decide if it should be added
+     * to property list. The container label is required to be unique in
+     * DAOS, which is why it is handled differently than the other 
+     * container properties. If the label already  exists in the
+     * pool then this property will be skipped for deserialization */
+    label_entry = &label->dpp_entries[0];
+    rc = cont_deserialize_prop_str(hdf5, label_entry, "DAOS_PROP_CO_LABEL");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[1];
+    rc = daos_cont_open_by_label(poh, label_entry->dpe_str, DAOS_COO_RW,
+                                 &coh, &cont_info, NULL);
+    if (rc == -DER_NONEXIST) {
+        /* doesn't exist so ok to deserialize this container label */
+        deserialize_label = true;
+    } else if (rc != 0) {
+        goto out;
+    }  else {
+        /* if this succeeds then label already exists, close container after
+         * checking */
+        rc = daos_cont_close(coh, NULL);
+        if (rc != 0) {
+            goto out;
+        }
+    }
+
+    if (deserialize_label) {
+        num_props++;
+    }
+
+    prop = daos_prop_alloc(num_props);
+    if (prop == NULL) {
+        return ENOMEM;
+    }
+
+    prop->dpp_entries[0].dpe_type = DAOS_PROP_CO_LAYOUT_TYPE;
+    prop->dpp_entries[1].dpe_type = DAOS_PROP_CO_LAYOUT_VER;
+    prop->dpp_entries[2].dpe_type = DAOS_PROP_CO_CSUM;
+    prop->dpp_entries[3].dpe_type = DAOS_PROP_CO_CSUM_CHUNK_SIZE;
+    prop->dpp_entries[4].dpe_type = DAOS_PROP_CO_CSUM_SERVER_VERIFY;
+    prop->dpp_entries[5].dpe_type = DAOS_PROP_CO_REDUN_FAC;
+    prop->dpp_entries[6].dpe_type = DAOS_PROP_CO_REDUN_LVL;
+    prop->dpp_entries[7].dpe_type = DAOS_PROP_CO_SNAPSHOT_MAX;
+    prop->dpp_entries[8].dpe_type = DAOS_PROP_CO_COMPRESS;
+    prop->dpp_entries[9].dpe_type = DAOS_PROP_CO_ENCRYPT;
+    prop->dpp_entries[10].dpe_type = DAOS_PROP_CO_OWNER;
+    prop->dpp_entries[11].dpe_type = DAOS_PROP_CO_OWNER_GROUP;
+    prop->dpp_entries[12].dpe_type = DAOS_PROP_CO_DEDUP;
+    prop->dpp_entries[13].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
+    prop->dpp_entries[14].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
+    prop->dpp_entries[15].dpe_type = DAOS_PROP_CO_ACL;
+    if (deserialize_label) {
+        prop->dpp_entries[16].dpe_type = DAOS_PROP_CO_LABEL; 
+    }
+
+    entry = &prop->dpp_entries[0];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_LAYOUT_TYPE");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[2];
+    entry = &prop->dpp_entries[1];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_LAYOUT_VER");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[3];
+    entry = &prop->dpp_entries[2];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_CSUM");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[4];
+    entry = &prop->dpp_entries[3];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_CSUM_CHUNK_SIZE");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[5];
+    entry = &prop->dpp_entries[4];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_CSUM_SERVER_VERIFY");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[6];
+    entry = &prop->dpp_entries[5];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_REDUN_FAC");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[7];
+    entry = &prop->dpp_entries[6];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_REDUN_LVL");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[8];
+    entry = &prop->dpp_entries[7];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_SNAPSHOT_MAX");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[9];
+    entry = &prop->dpp_entries[8];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_COMPRESS");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[10];
+    entry = &prop->dpp_entries[9];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ENCRYPT");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[11];
+    entry = &prop->dpp_entries[10];
     rc = cont_deserialize_prop_str(hdf5, entry, "DAOS_PROP_CO_OWNER");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[12];
+    entry = &prop->dpp_entries[11];
     rc = cont_deserialize_prop_str(hdf5, entry, "DAOS_PROP_CO_OWNER_GROUP");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[13];
+    entry = &prop->dpp_entries[12];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_DEDUP");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[14];
+    entry = &prop->dpp_entries[13];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_DEDUP_THRESHOLD");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[15];
+    entry = &prop->dpp_entries[14];
     rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ALLOCED_OID");
     if (rc != 0) {
         goto out;
     }
 
-    entry = &prop->dpp_entries[16];
+    entry = &prop->dpp_entries[15];
     /* read acl as a list of strings in deserialize, then convert
      * back to acl for property entry
      */
@@ -5115,8 +5170,14 @@ int cont_deserialize_all_props(struct hdf5_args *hdf5, daos_prop_t *prop,
     if (rc != 0) {
         goto out;
     }
-    *cont_type = prop->dpp_entries[1].dpe_val;
+
+    if (deserialize_label) {
+        prop->dpp_entries[16].dpe_str = strdup(label_entry->dpe_str);
+    }
+    *cont_type = prop->dpp_entries[0].dpe_val;
+    *_prop = prop;
 out:
+    daos_prop_free(label);
     return rc;
 }
 
@@ -5125,10 +5186,10 @@ out:
  * and then broadcast handles to all ranks */
 int daos_cont_deserialize_connect(daos_args_t *daos_args,
                                   struct hdf5_args *hdf5,
-                                  daos_prop_t *prop,
                                   daos_cont_layout_t *cont_type)
 {
     int rc = 0;
+    daos_prop_t *prop = NULL;
 
     /* generate container UUID */
     uuid_generate(daos_args->src_cont_uuid);
@@ -5149,7 +5210,8 @@ int daos_cont_deserialize_connect(daos_args_t *daos_args,
 
     /* need to read cont props before creating container, then
      * broadcast handles to the rest of the ranks */
-    rc = cont_deserialize_all_props(hdf5, prop, cont_type);
+    rc = cont_deserialize_all_props(hdf5, &prop, cont_type,
+                                    daos_args->src_poh);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to deserialize container properties");
         goto out;

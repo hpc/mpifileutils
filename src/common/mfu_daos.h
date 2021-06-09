@@ -210,7 +210,6 @@ int daos_cont_deserialize_hdlr(
 int daos_cont_deserialize_connect(
     daos_args_t *daos_args,
     struct hdf5_args *hdf5,
-    daos_prop_t *prop,
     daos_cont_layout_t *cont_type
 );
 
@@ -235,8 +234,10 @@ int cont_serialize_props(struct hdf5_args *hdf5,
 int cont_serialize_usr_attrs(struct hdf5_args *hdf5,
                              daos_handle_t cont);
 
-int cont_deserialize_all_props(struct hdf5_args *hdf5, daos_prop_t *prop, 
-                               daos_cont_layout_t *cont_type);
+int cont_deserialize_all_props(struct hdf5_args *hdf5,
+                               daos_prop_t **prop, 
+                               daos_cont_layout_t *cont_type,
+                               daos_handle_t poh);
 
 int cont_deserialize_usr_attrs(struct hdf5_args* hdf5,
                                daos_handle_t coh);
