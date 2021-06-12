@@ -3220,8 +3220,8 @@ mfu_file_t* mfu_file_new(void)
     mfile->fd         = -1;
 #ifdef DAOS_SUPPORT
     mfile->obj        = NULL;
+    mfile->dfs_sys    = NULL;
     mfile->dfs        = NULL;
-    mfile->dfs_hash   = NULL;
 #endif
     return mfile;
 }
