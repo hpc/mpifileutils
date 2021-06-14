@@ -272,7 +272,6 @@ int main(int argc, char** argv)
         uint64_t                files_generated = 0;
         hid_t                   status;
         struct                  hdf5_args hdf5;
-        daos_prop_t             *prop = NULL;
         daos_cont_layout_t      cont_type;
 
         char **paths = NULL;
@@ -327,7 +326,7 @@ int main(int argc, char** argv)
             mfu_flist_file_set_cont(tmplist, idx, paths[i]);
         }
 
-        tmp_rc = daos_cont_deserialize_connect(daos_args, &hdf5, prop, &cont_type);
+        tmp_rc = daos_cont_deserialize_connect(daos_args, &hdf5, &cont_type);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "failed to connect to container\n");
             rc = 1;
