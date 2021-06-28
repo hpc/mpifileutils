@@ -239,7 +239,6 @@ int main(int argc, char** argv)
             rc = 1;
         }
     }
-    MPI_Bcast(&rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
     /* free newflist that was created for non-posix copy */
     mfu_flist_free(&newflist);
@@ -275,12 +274,15 @@ int main(int argc, char** argv)
         rc = 1;
     }
 
+    int global_rc;
+    MPI_Allreduce(&rc, &global_rc, 1, MPI_INT, MPI_LOR, MPI_COMM_WORLD);
+
     mfu_finalize();
 
     /* shut down MPI */
     MPI_Finalize();
 
-    if (rc != 0) {
+    if (global_rc != 0) {
         return 1;
     }
     return 0;

@@ -396,7 +396,7 @@ int main(int argc, char** argv)
     /* Alert the user if there were copy errors */
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "One or more errors were detected while "
-                "serializing: " MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS));
+                "deserializing: " MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS));
     }
 
     tmp_rc = daos_fini();
