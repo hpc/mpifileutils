@@ -64,7 +64,6 @@ static void print_usage(void)
     printf("      --bufsize <SIZE>    - IO buffer size in bytes (default " MFU_BUFFER_SIZE_STR ")\n");
     printf("      --chunksize <SIZE>  - minimum work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
 #ifdef DAOS_SUPPORT
-    printf("      --daos-prefix       - DAOS prefix for unified namespace path \n");
     printf("      --daos-api          - DAOS API in {DFS, DAOS} (default uses DFS for POSIX containers)\n");
 #endif
     printf("  -c, --contents          - read and compare file contents rather than compare size and mtime\n");
