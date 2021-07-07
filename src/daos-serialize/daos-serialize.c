@@ -240,8 +240,9 @@ int main(int argc, char** argv)
         }
     }
 
-    /* free newflist that was created for non-posix copy */
+    /* free flists */
     mfu_flist_free(&newflist);
+    mfu_flist_free(&flist);
 
     /* free output path for hdf5 files */
     mfu_free(&output_path);
@@ -261,7 +262,10 @@ int main(int argc, char** argv)
         MFU_LOG(MFU_LOG_ERR, "Failed to disconnect pool (%d)", rc);
         rc = 1;
     }
-    
+   
+    /* free daos_args */
+    daos_args_delete(&daos_args);
+
     /* Alert the user if there were copy errors */
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "One or more errors were detected while "
