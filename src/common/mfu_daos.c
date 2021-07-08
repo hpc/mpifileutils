@@ -2692,7 +2692,7 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
             continue;
         for (i = 0; i < number; i++) {
             buf_len = recxs[i].rx_nr * size;
-            buf = MFU_CALLOC(1, buf_len);
+            buf = MFU_CALLOC(buf_len, 1);
 
             memset(&sgl, 0, sizeof(sgl));
             memset(&iov, 0, sizeof(iov));
@@ -2797,9 +2797,8 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
             }
             /* created attribute in HDF5 file with encoded
              * dataspace for this record extent */
-            memset(attr_name, 0, ATTR_NAME_LEN);
-            path_len = snprintf(number_str, ATTR_NAME_LEN, "%d",
-                                (int)(*ak_index));
+            path_len = snprintf(number_str, ATTR_NAME_LEN, "%lu",
+                                (*ak_index));
             if (path_len >= ATTR_NAME_LEN) {
                 MFU_LOG(MFU_LOG_ERR, "number_str is too long");
                 rc = 1;
@@ -3932,7 +3931,6 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
     herr_t          err = 0;
     char            *filename = NULL;
     char            cont_str[FILENAME_LEN];
-    char            rank_str[FILENAME_LEN];
     daos_ofeat_t    ofeat;
     bool            is_kv_flat = false;
     int             size = 0;
