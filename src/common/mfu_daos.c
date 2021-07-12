@@ -2607,21 +2607,22 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
     int                 attr_num = 0;
     int                 buf_len = 0;
     int                 path_len = 0;
-    int                 encode_buf_len;
+    int                 encode_buf_len = 0;
     uint32_t            number = 5;
-    size_t              nalloc;
+    size_t              nalloc = 0;
     daos_anchor_t       recx_anchor = {0}; 
     daos_anchor_t       fetch_anchor = {0}; 
-    daos_epoch_range_t  eprs[5];
-    daos_recx_t         recxs[5];
+    daos_epoch_range_t  eprs[5] = {0};
+    daos_recx_t         recxs[5] = {0};
     daos_size_t         size = 0;
-    char                attr_name[ATTR_NAME_LEN];
-    char                number_str[ATTR_NAME_LEN];
-    char                attr_num_str[ATTR_NAME_LEN];
+    char                attr_name[ATTR_NAME_LEN] = {0};
+    char                number_str[ATTR_NAME_LEN] = {0};
+    char                attr_num_str[ATTR_NAME_LEN] = {0};
     unsigned char       *encode_buf = NULL;
-    d_sg_list_t         sgl;
-    d_iov_t             iov;
+    d_sg_list_t         sgl = {0};
+    d_iov_t             iov = {0};
     hid_t               status = 0;
+    char                *buf = NULL;
 
     hdf5->rx_dset = 0;
     hdf5->selection_attr = 0;
@@ -2691,7 +2692,7 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
             continue;
         for (i = 0; i < number; i++) {
             buf_len = recxs[i].rx_nr * size;
-            char buf[buf_len];
+            buf = MFU_CALLOC(buf_len, 1);
 
             memset(&sgl, 0, sizeof(sgl));
             memset(&iov, 0, sizeof(iov));
@@ -2796,11 +2797,8 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
             }
             /* created attribute in HDF5 file with encoded
              * dataspace for this record extent */
-            memset(attr_name, 0, ATTR_NAME_LEN);
-            memset(number_str, 0, ATTR_NAME_LEN);
-            memset(attr_num_str, 0, ATTR_NAME_LEN);
-            path_len = snprintf(number_str, ATTR_NAME_LEN, "%d",
-                                (int)(*ak_index));
+            path_len = snprintf(number_str, ATTR_NAME_LEN, "%lu",
+                                (*ak_index));
             if (path_len >= ATTR_NAME_LEN) {
                 MFU_LOG(MFU_LOG_ERR, "number_str is too long");
                 rc = 1;
@@ -2812,8 +2810,8 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
                 rc = 1;
                 goto out;
             }
-            path_len = snprintf(attr_name, ATTR_NAME_LEN, "%s%s%s", "A-",
-                                number_str, attr_num_str);
+            path_len = snprintf(attr_name, ATTR_NAME_LEN, "%s%lu%d", "A-",
+                                *ak_index, attr_num);
             if (path_len >= ATTR_NAME_LEN) {
                 MFU_LOG(MFU_LOG_ERR, "attr name is too long");
                 rc = 1;
@@ -2860,6 +2858,7 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
                 H5Tclose(hdf5->attr_dtype);
             }
             mfu_free(&encode_buf);
+            mfu_free(&buf);
             attr_num++;
         }
     }
@@ -2936,7 +2935,7 @@ static int serialize_akeys(struct hdf5_args *hdf5,
                            uint64_t *dk_index,
                            uint64_t *ak_index,
                            daos_handle_t *oh,
-                           mfu_daos_stats_t*stats)
+                           mfu_daos_stats_t *stats)
 {
     int             rc = 0;
     herr_t          err = 0;
@@ -2949,8 +2948,8 @@ static int serialize_akeys(struct hdf5_args *hdf5,
     char            akey_enum_buf[ENUM_DESC_BUF] = {0};
     char            akey[ENUM_KEY_BUF] = {0};
     char            *akey_ptr = NULL;
-    daos_key_t      aiov;
-    daos_iod_t      iod;
+    daos_key_t      aiov = {0};
+    daos_iod_t      iod = {0};
     size_t          rec_name_len = 32;
     char            rec_name[rec_name_len];
     int             path_len = 0;
@@ -2995,7 +2994,7 @@ static int serialize_akeys(struct hdf5_args *hdf5,
          */
         for (akey_ptr = akey_enum_buf, j = 0; j < akey_number; j++) {
             memcpy(akey, akey_ptr, akey_kds[j].kd_key_len);
-            memset(&aiov, 0, sizeof(diov));
+            memset(&aiov, 0, sizeof(aiov));
             d_iov_set(&aiov, (void*)akey,
                       akey_kds[j].kd_key_len);
             akey_val = &(*hdf5->ak)[*ak_index].akey_val;
@@ -3513,6 +3512,7 @@ static int cont_serialize_prop_acl(struct hdf5_args* hdf5,
     hid_t               attr_dtype;
     hid_t               attr_dspace;
     hid_t               usr_attr;
+    int                 i = 0;
 
 
     if (entry == NULL || entry->dpe_val_ptr == NULL) {
@@ -3577,6 +3577,10 @@ static int cont_serialize_prop_acl(struct hdf5_args* hdf5,
         goto out;
     }
 out:
+    for (i = 0; i < len_acl; i++) {
+        mfu_free(&acl_strs[i]);
+    }
+    mfu_free(&acl_strs);
     return rc;
 }
 
@@ -3925,32 +3929,19 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
     daos_handle_t   oh;
     float           version = 0.0;
     herr_t          err = 0;
-    char            filename[FILENAME_LEN];
+    char            *filename = NULL;
     char            cont_str[FILENAME_LEN];
-    char            rank_str[FILENAME_LEN];
     daos_ofeat_t    ofeat;
     bool            is_kv_flat = false;
+    int             size = 0;
 
     /* init HDF5 args */
     init_hdf5_args(hdf5);
 
-    memset(rank_str, 0, FILENAME_LEN);
-    memset(cont_str, 0, FILENAME_LEN);
-    memset(filename, 0, FILENAME_LEN);
-    path_len = snprintf(rank_str, FILENAME_LEN, "%d", rank);
-    if (path_len >= FILENAME_LEN) {
-        MFU_LOG(MFU_LOG_ERR, "filename is too long");
-        rc = 1;
-        goto out;
-    }
     uuid_unparse(da->src_cont_uuid, cont_str);
 
-    /* if output dir is given, then write to that directory,
-     * the default is to write into the current working directory */
-    path_len = snprintf(filename, FILENAME_LEN, "%s/%s%s%s%s%s", output_dir,
-                        cont_str, "_", "rank", rank_str, ".h5");
-    if (path_len >= FILENAME_LEN) {
-        MFU_LOG(MFU_LOG_ERR, "filename is too long");
+    size = asprintf(&filename, "%s/%s%s%s%d%s", output_dir, cont_str, "_", "rank", rank, ".h5");
+    if (size == -1) {
         rc = 1;
         goto out;
     }
@@ -4171,6 +4162,7 @@ out:
     mfu_free(&hdf5->oid_data);
     mfu_free(&hdf5->dkey_data);
     mfu_free(&hdf5->akey_data);
+    mfu_free(&filename);
     /* dont close file until the files generated is serialized */
     return rc;
 }
