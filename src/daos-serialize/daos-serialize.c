@@ -127,8 +127,6 @@ int main(int argc, char** argv)
     /* create an empty file list */
     mfu_flist flist = mfu_flist_new();
 
-    printf("daos-serialize: calling daos_init\n");
-    fflush(stdout);
     rc = daos_init();
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to initialize daos");
@@ -142,8 +140,6 @@ int main(int argc, char** argv)
 
     int len = strlen(argpaths[0]); 
 
-    printf("daos-serialize: calling daos_parse_path\n");
-    fflush(stdout);
     int tmp_rc;
     tmp_rc = daos_parse_path(argpaths[0], len, &daos_args->src_pool_uuid,
                          &daos_args->src_cont_uuid);
@@ -152,8 +148,6 @@ int main(int argc, char** argv)
          rc = 1;
     }
     
-    printf("daos-serialize: calling daos_connect\n");
-    fflush(stdout);
     tmp_rc = daos_connect(rank, daos_args, daos_args->src_pool_uuid,
                           daos_args->src_cont_uuid, &daos_args->src_poh,
                           &daos_args->src_coh, true, false, false, false, NULL);
@@ -168,8 +162,6 @@ int main(int argc, char** argv)
 
     /* take a snapshot and walk container to get list of objects,
      * returns epoch number of snapshot */
-    printf("daos-serialize: calling mfu_daos_flist_walk\n");
-    fflush(stdout);
     tmp_rc = mfu_daos_flist_walk(daos_args, daos_args->src_coh, &daos_args->src_epc, flist);
     if (tmp_rc != 0) {
         rc = 1;
@@ -177,8 +169,6 @@ int main(int argc, char** argv)
 
     /* all objects are on rank 0 at this point,
      * evenly spread them among the ranks */
-    printf("daos-serialize: calling mfu_flist_spread\n");
-    fflush(stdout);
     mfu_flist newflist = mfu_flist_spread(flist);
 
     /* get size of local list for each rank */
@@ -206,8 +196,6 @@ int main(int argc, char** argv)
         }
     }
 
-    printf("daos-serialize: calling daos_cont_serialize_hdlr\n");
-    fflush(stdout);
     /* don't bother running if this rank doesn't have any oids */
     if (size > 0) {
         tmp_rc = daos_cont_serialize_hdlr(rank, &hdf5, output_path, &files_written,
