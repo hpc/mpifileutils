@@ -27,6 +27,7 @@ void print_usage(void)
     printf("Options:\n");
     printf("  -o  --output-path        - path to output serialized hdf5 files\n");
     printf("  -v, --verbose            - verbose output\n");
+    printf("  -f, --force              - force serialization even if container has unhealthy status\n");
     printf("  -q, --quiet              - quiet output\n");
     printf("  -h, --help               - print usage\n");
     printf("For more information see https://mpifileutils.readthedocs.io.\n");
@@ -54,6 +55,7 @@ int main(int argc, char** argv)
     static struct option long_options[] = {
         {"output-path"          , required_argument, 0, 'o'},
         {"verbose"              , no_argument      , 0, 'v'},
+        {"force"                , no_argument      , 0, 'f'},
         {"quiet"                , no_argument      , 0, 'q'},
         {"help"                 , no_argument      , 0, 'h'},
         {0                      , 0                , 0, 0  }
@@ -63,9 +65,10 @@ int main(int argc, char** argv)
     unsigned long long bytes = 0;
     int usage = 0;
     char *output_path = NULL;
+    bool force_serialize = false;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "o:vqh",
+                    argc, argv, "o:vfqh",
                     long_options, &option_index
                 );
 
@@ -79,6 +82,9 @@ int main(int argc, char** argv)
                 break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
+                break;
+            case 'f':
+                force_serialize = true;
                 break;
             case 'q':
                 mfu_debug_level = MFU_LOG_NONE;
@@ -150,9 +156,13 @@ int main(int argc, char** argv)
     
     tmp_rc = daos_connect(rank, daos_args, daos_args->src_pool_uuid,
                           daos_args->src_cont_uuid, &daos_args->src_poh,
-                          &daos_args->src_coh, true, false, false, false, NULL);
+                          &daos_args->src_coh, force_serialize, true,
+                          false, false, false, NULL);
     if (tmp_rc != 0) {
-        rc = 1;
+        daos_fini();
+        mfu_finalize();
+        MPI_Finalize();
+        return 1;
     }
 
     /* Initialize some stats */

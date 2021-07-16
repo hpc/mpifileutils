@@ -96,6 +96,15 @@ void mfu_daos_stats_print_sum(
 );
 
 #ifdef HDF5_SUPPORT
+/* daos_obj_id_t type defined for hdf5 attribute. The DAOS_PROP_CO_ROOTS
+ * points to an array of daos_obj_id_t, which is a struct that contains
+ * hi, lo uint64_t's. In order to write these to an hdf5 file a similar
+ * type has to be defined to describe it to hdf5 */
+typedef struct {
+    uint64_t hi;
+    uint64_t lo;
+} obj_id_t;
+
 /* for user attr dataset */
 typedef struct {
     char* attr_name;
@@ -236,6 +245,7 @@ int cont_serialize_usr_attrs(struct hdf5_args *hdf5,
 
 int cont_deserialize_all_props(struct hdf5_args *hdf5,
                                daos_prop_t **prop, 
+                               struct daos_prop_co_roots *roots,
                                daos_cont_layout_t *cont_type,
                                daos_handle_t poh);
 
@@ -296,6 +306,7 @@ int daos_connect(
   uuid_t cont_uuid,
   daos_handle_t* poh,
   daos_handle_t* coh,
+  bool force_serialize,
   bool connect_pool,
   bool create_cont,
   bool require_new_cont,
