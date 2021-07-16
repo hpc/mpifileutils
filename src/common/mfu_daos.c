@@ -5020,8 +5020,7 @@ int cont_deserialize_all_props(struct hdf5_args *hdf5,
         goto out;
     }
 
-    rc = daos_cont_open_by_label(poh, label_entry->dpe_str, DAOS_COO_RW,
-                                 &coh, &cont_info, NULL);
+    rc = daos_cont_open(poh, label_entry->dpe_str, DAOS_COO_RW, &coh, &cont_info, NULL);
     if (rc == -DER_NONEXIST) {
         /* doesn't exist so ok to deserialize this container label */
         deserialize_label = true;
