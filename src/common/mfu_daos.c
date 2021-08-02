@@ -492,6 +492,42 @@ static int daos_get_cont_type(
     return 0;
 }
 
+/* check if cont status is unhealthy */
+static int daos_check_cont_status(daos_handle_t coh, bool *status_healthy)
+{
+    daos_prop_t*            prop = daos_prop_alloc(1);
+    struct daos_prop_entry  *entry;
+    struct daos_co_status   stat = {0};
+    int                     rc = 0;
+    
+    if (prop == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to allocate prop: "DF_RC, DP_RC(rc));
+        rc = ENOMEM;
+        goto out;
+    }
+
+    prop->dpp_entries[0].dpe_type = DAOS_PROP_CO_STATUS;
+
+    rc = daos_cont_query(coh, NULL, prop, NULL);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "daos_cont_query() failed "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+
+    entry = &prop->dpp_entries[0];
+    daos_prop_val_2_co_status(entry->dpe_val, &stat);                            
+    if (stat.dcs_status == DAOS_PROP_CO_HEALTHY) {
+        *status_healthy = true;
+    } else {
+        *status_healthy = false;
+    }
+
+out:
+    daos_prop_free(prop);
+    return rc;
+}
+
 /*
  * Try to set the file type based on the container type,
  * using api as a guide.
@@ -619,16 +655,20 @@ static int daos_any_error(int rank, bool local_daos_error, int flag_daos_args)
  * Returns 1 on error, 0 on success.
  */
 static int cont_get_props(daos_handle_t coh, daos_prop_t** _props,
-                          bool get_oid, bool get_label)
+                          bool get_oid, bool get_label, bool get_roots)
 {
     int             rc;
     daos_prop_t*    props = NULL;
     daos_prop_t*    prop_acl = NULL;
     daos_prop_t*    props_merged = NULL;
-    uint32_t        num_props = 14;
+    /* total amount of properties to allocate */
+    uint32_t        total_props = 15;
+    /* minimum number of properties that are always allocated/used to start
+     * count */
+    int             prop_index = 15;
 
     if (get_oid) {
-        num_props++;
+        total_props++;
     }
 
     /* container label is required to be unique, so do not
@@ -636,11 +676,15 @@ static int cont_get_props(daos_handle_t coh, daos_prop_t** _props,
      * serialization, but only deserialized if the label
      * no longer exists in the pool */
     if (get_label) {
-        num_props++;
+        total_props++;
+    }
+
+    if (get_roots) {
+        total_props++;
     }
 
     /* Allocate space for all props except ACL. */
-    props = daos_prop_alloc(num_props);
+    props = daos_prop_alloc(total_props);
     if (props == NULL) {
         MFU_LOG(MFU_LOG_ERR, "Failed to allocate container properties.");
         rc = 1;
@@ -662,14 +706,21 @@ static int cont_get_props(daos_handle_t coh, daos_prop_t** _props,
     props->dpp_entries[11].dpe_type = DAOS_PROP_CO_OWNER_GROUP;
     props->dpp_entries[12].dpe_type = DAOS_PROP_CO_DEDUP;
     props->dpp_entries[13].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
+    props->dpp_entries[14].dpe_type = DAOS_PROP_CO_EC_CELL_SZ;
 
     /* Conditionally get the OID. Should always be true for serialization. */
     if (get_oid) {
-        props->dpp_entries[14].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
+        props->dpp_entries[prop_index].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
+        prop_index++;
     }
 
     if (get_label) {
-        props->dpp_entries[15].dpe_type = DAOS_PROP_CO_LABEL;
+        props->dpp_entries[prop_index].dpe_type = DAOS_PROP_CO_LABEL;
+        prop_index++;
+    }
+
+    if (get_roots) {
+        props->dpp_entries[prop_index].dpe_type = DAOS_PROP_CO_ROOTS;
     }
 
     /* Get all props except ACL first. */
@@ -988,6 +1039,7 @@ int daos_connect(
   uuid_t cont_uuid,
   daos_handle_t* poh,
   daos_handle_t* coh,
+  bool force_serialize,
   bool connect_pool,
   bool create_cont,
   bool require_new_cont,
@@ -1002,9 +1054,10 @@ int daos_connect(
         return -1;
     }
 
-    int             valid = 0; /* assume failure until otherwise */
-    int             rc;
-    daos_prop_t*    props = NULL;
+    int                         valid = 0; /* assume failure until otherwise */
+    int                         rc;
+    daos_prop_t                 *props = NULL;
+    struct daos_prop_co_roots   roots = {0};
 #ifdef HDF5_SUPPORT
     struct hdf5_args hdf5;
 #endif
@@ -1055,9 +1108,9 @@ int daos_connect(
             if (have_src_cont) {
                 if ((mfu_src_file != NULL) && (mfu_src_file->type == DFS)) {
                     /* Don't get the allocated OID */
-                    rc = cont_get_props(da->src_coh, &props, false, false);
+                    rc = cont_get_props(da->src_coh, &props, false, false, false);
                 } else {
-                    rc = cont_get_props(da->src_coh, &props, true, false);
+                    rc = cont_get_props(da->src_coh, &props, true, false, true);
                 }
                 if (rc != 0) {
                     goto bcast;
@@ -1074,7 +1127,7 @@ int daos_connect(
                 if (preserve) {
                     daos_cont_layout_t ctype = DAOS_PROP_CO_LAYOUT_POSIX;
                     MFU_LOG(MFU_LOG_INFO, "Reading metadata file: %s", da->daos_preserve_path);
-                    rc = cont_deserialize_all_props(&hdf5, &props, &ctype, *poh);
+                    rc = cont_deserialize_all_props(&hdf5, &props, &roots, &ctype, *poh);
                     if (rc != 0) {
                         MFU_LOG(MFU_LOG_ERR, "Failed to read cont props: "DF_RC, DP_RC(rc));
                         goto bcast;
@@ -1085,8 +1138,7 @@ int daos_connect(
                 attr.da_props = props;
                 rc = dfs_cont_create(*poh, cont_uuid, &attr, NULL, NULL);
                 if (rc != 0) {
-                    MFU_LOG(MFU_LOG_ERR, "Failed to create container: (%d %s)",
-                            rc, strerror(rc));
+                    MFU_LOG(MFU_LOG_ERR, "Failed to create container: (%d %s)", rc, strerror(rc));
                     goto bcast;
                 }
             } else {
@@ -1137,12 +1189,25 @@ int daos_connect(
             goto bcast;
         }
 
+        /* check container status, and if unhealthy do not continue unless --force
+         * option is used (only for serialization, never for copies) */
+        bool status_healthy;
+        rc = daos_check_cont_status(*coh, &status_healthy);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Checking DAOS container status failed\n");
+            goto bcast;
+        } else if (!status_healthy && !force_serialize) {
+            MFU_LOG(MFU_LOG_ERR, "Container status is unhealthy, stopping\n");
+            goto bcast;
+        }
+
         /* everything looks good so far */
         valid = 1;
     }
 bcast:
     if (rank == 0) {
         daos_prop_free(props);
+        mfu_free(&roots);
 #ifdef HDF5_SUPPORT
         if (preserve) {
             /* only close if handle is open */
@@ -1502,7 +1567,7 @@ int daos_setup(
             goto out;
         }
         tmp_rc = daos_connect(rank, da, da->src_pool_uuid, da->src_cont_uuid,
-                              &da->src_poh, &da->src_coh,
+                              &da->src_poh, &da->src_coh, false,
                               connect_pool, create_cont, require_new_cont,
                               preserve, mfu_src_file);
         if (tmp_rc != 0) {
@@ -1579,13 +1644,13 @@ int daos_setup(
         if (same_pool) {
             connect_pool = false;
             tmp_rc = daos_connect(rank, da, da->dst_pool_uuid, da->dst_cont_uuid,
-                                  &da->src_poh, &da->dst_coh,
+                                  &da->src_poh, &da->dst_coh, false,
                                   connect_pool, create_cont, require_new_cont,
                                   preserve, mfu_src_file);
         } else {
             connect_pool = true;
             tmp_rc = daos_connect(rank, da, da->dst_pool_uuid, da->dst_cont_uuid,
-                                  &da->dst_poh, &da->dst_coh,
+                                  &da->dst_poh, &da->dst_coh, false,
                                   connect_pool, create_cont, require_new_cont,
                                   preserve, mfu_src_file);
         }
@@ -3499,6 +3564,84 @@ out_no_attrs:
     return rc;
 }
 
+static int cont_serialize_prop_roots(struct hdf5_args* hdf5,
+                                     struct daos_prop_entry* entry,
+                                     const char* prop_str)
+{
+    int                         rc = 0;
+    hid_t                       status = 0;
+    struct daos_prop_co_roots   *roots;
+    obj_id_t                    root_oids[4];
+    hsize_t                     attr_dims[1];
+    /* HDF5 returns non-negative identifiers if successfully opened/created */
+    hid_t                       attr_dtype = -1;
+    hid_t                       attr_dspace = -1;
+    hid_t                       usr_attr = -1;
+    int                         i = 0;
+
+    if (entry == NULL || entry->dpe_val_ptr == NULL) {
+        goto out;
+    }
+
+    roots = entry->dpe_val_ptr;
+    attr_dims[0] = 4;
+
+    for (i = 0; i < 4; i++) {
+        root_oids[i].hi = roots->cr_oids[i].hi;
+        root_oids[i].lo = roots->cr_oids[i].lo;
+    }
+
+    attr_dtype = H5Tcreate(H5T_COMPOUND, sizeof(obj_id_t));
+    if (attr_dtype < 0) {
+        rc = 1;
+        MFU_LOG(MFU_LOG_ERR, "failed to create attr dtype");
+        goto out;
+    }
+    status = H5Tinsert(attr_dtype, "hi", HOFFSET(obj_id_t, hi), H5T_NATIVE_UINT64);
+    if (hdf5->status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to insert oid hi");
+        rc = 1;
+        goto out;
+    }
+    status = H5Tinsert(attr_dtype, "lo", HOFFSET(obj_id_t, lo), H5T_NATIVE_UINT64);
+    if (hdf5->status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to insert oid low");
+        rc = 1;
+        goto out;
+    }
+
+    attr_dspace = H5Screate_simple(1, attr_dims, NULL);
+    if (attr_dspace < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create version attribute");
+        rc = 1;
+        goto out;
+    }
+    usr_attr = H5Acreate2(hdf5->file, prop_str, attr_dtype, attr_dspace,
+                          H5P_DEFAULT, H5P_DEFAULT);
+    if (usr_attr < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create attribute");
+        rc = 1;
+        goto out;
+    }   
+    status = H5Awrite(usr_attr, attr_dtype, root_oids);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to write attribute");
+        rc = 1;
+        goto out;
+    }
+out:
+    if (usr_attr >= 0) {
+        H5Aclose(usr_attr);
+    }
+    if (attr_dtype >= 0) {
+        H5Tclose(attr_dtype);
+    }
+    if (attr_dspace >= 0) {
+        H5Sclose(attr_dspace);
+    }
+    return rc;
+}
+
 static int cont_serialize_prop_acl(struct hdf5_args* hdf5,
                                    struct daos_prop_entry* entry,
                                    const char* prop_str)
@@ -3798,7 +3941,7 @@ int cont_serialize_props(struct hdf5_args *hdf5,
     struct daos_prop_entry* entry;
     char                    cont_str[DAOS_PROP_LABEL_MAX_LEN];
 
-    rc = cont_get_props(cont, &prop_query, true, true);
+    rc = cont_get_props(cont, &prop_query, true, true, true);
     if (rc != 0) {
         rc = 1;
         goto out;
@@ -3889,20 +4032,32 @@ int cont_serialize_props(struct hdf5_args *hdf5,
     }
 
     entry = &prop_query->dpp_entries[14];
-    rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ALLOCED_OID");
+    rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_EC_CELL_SZ");
     if (rc != 0) {
         goto out;
     }
 
     entry = &prop_query->dpp_entries[15];
+    rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ALLOCED_OID");
+    if (rc != 0) {
+        goto out;
+    }
+
+    entry = &prop_query->dpp_entries[16];
     rc = cont_serialize_prop_str(hdf5, entry, "DAOS_PROP_CO_LABEL");
     if (rc != 0) {
         goto out;
     }
 
+    entry = &prop_query->dpp_entries[17];
+    rc = cont_serialize_prop_roots(hdf5, entry, "DAOS_PROP_CO_ROOTS");
+    if (rc != 0) {
+        goto out;
+    }
+
     /* serialize ACL */
-    if (prop_query->dpp_nr > 16) {
-        entry = &prop_query->dpp_entries[16];
+    if (prop_query->dpp_nr > 18) {
+        entry = &prop_query->dpp_entries[18];
         rc = cont_serialize_prop_acl(hdf5, entry, "DAOS_PROP_CO_ACL");
         if (rc != 0) {
             goto out;
@@ -4781,6 +4936,101 @@ out:
     return rc;
 }
 
+static int cont_deserialize_prop_roots(struct hdf5_args* hdf5,
+                                       struct daos_prop_entry* entry,
+                                       const char* prop_str,
+                                       struct daos_prop_co_roots *roots)
+{
+    hid_t                       status = 0;
+    int                         rc = 0;
+    int                         i = 0;
+    int                         ndims = 0;
+    obj_id_t                    *root_oids;
+    htri_t                      roots_exist;
+    hid_t                       cont_attr = -1;
+    hid_t                       attr_dtype = -1;
+    hid_t                       attr_dspace = -1;
+    hsize_t                     attr_dims[1];
+    size_t                      attr_dtype_size;
+
+    /* First check if the ACL attribute exists. */
+    roots_exist = H5Aexists(hdf5->file, prop_str);
+    if (roots_exist < 0) {
+        /* Actual error */
+        MFU_LOG(MFU_LOG_ERR, "failed to open property attribute type %s", prop_str);
+        rc = 1;
+        goto out;
+    } else if (roots_exist == 0) {
+        /* Does not exist, but that's okay. */
+        rc = 0;
+        goto out;
+    }
+    cont_attr = H5Aopen(hdf5->file, prop_str, H5P_DEFAULT);
+    if (cont_attr < 0) {
+        /* Could not open, but that's okay. */
+        rc = 0;
+        goto out;
+    }
+    attr_dtype = H5Aget_type(cont_attr);
+    if (attr_dtype < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to open property attribute type %s", prop_str);
+        rc = 1;
+        goto out;
+    }
+    attr_dtype_size = H5Tget_size(attr_dtype);
+    if (attr_dtype_size < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to open property attribute type %s", prop_str);
+        rc = 1;
+        goto out;
+    }
+    attr_dspace = H5Aget_space(cont_attr);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to read acl dspace");
+        rc = 1;
+        goto out;
+    }
+    ndims = H5Sget_simple_extent_dims(attr_dspace, attr_dims, NULL);
+    if (ndims < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to get dimensions of dspace");
+        rc = 1;
+        goto out;
+    }
+    root_oids = MFU_CALLOC(attr_dims[0], sizeof(obj_id_t));
+    if (root_oids == NULL) {
+        rc = ENOMEM;
+        goto out;
+    }
+    /* freed ahead of daos_prop_free in daos_cont_deserialize_connect */
+    roots = MFU_CALLOC(1, sizeof(struct daos_prop_co_roots));
+    if (roots == NULL) {
+        rc = ENOMEM;
+        goto out;
+    }
+    status = H5Aread(cont_attr, attr_dtype, root_oids);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to read property attribute %s", prop_str);
+        rc = 1;
+        goto out;
+    }
+    entry->dpe_val_ptr = (void*)roots;
+    for (i = 0; i < 4; i++) {
+        roots->cr_oids[i].hi = root_oids[i].hi;
+        roots->cr_oids[i].lo = root_oids[i].lo;
+    }
+out:
+    if (cont_attr >= 0) {
+        status = H5Aclose(cont_attr);
+    }
+    if (attr_dtype >= 0) {
+        status = H5Tclose(attr_dtype);
+    }
+    if (attr_dspace >= 0) {
+        status = H5Sclose(attr_dspace);
+    }
+    mfu_free(&root_oids);
+    return rc;
+}
+
 static int cont_deserialize_prop_acl(struct hdf5_args* hdf5,
                                      struct daos_prop_entry* entry,
                                      const char* prop_str)
@@ -4990,12 +5240,13 @@ out:
 
 int cont_deserialize_all_props(struct hdf5_args *hdf5, 
                                daos_prop_t **_prop,
+                               struct daos_prop_co_roots *roots,
                                daos_cont_layout_t *cont_type,
                                daos_handle_t poh)
 {
     int                     rc = 0;
     bool                    deserialize_label = false;
-    uint32_t                num_props = 16;
+    uint32_t                num_props = 18;
     daos_prop_t             *label = NULL;
     daos_prop_t             *prop = NULL;
     struct daos_prop_entry  *entry;
@@ -5025,6 +5276,7 @@ int cont_deserialize_all_props(struct hdf5_args *hdf5,
         /* doesn't exist so ok to deserialize this container label */
         deserialize_label = true;
     } else if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "daos_cont_open failed: "DF_RC, DP_RC(rc));
         goto out;
     }  else {
         /* if this succeeds then label already exists, close container after
@@ -5058,10 +5310,12 @@ int cont_deserialize_all_props(struct hdf5_args *hdf5,
     prop->dpp_entries[11].dpe_type = DAOS_PROP_CO_OWNER_GROUP;
     prop->dpp_entries[12].dpe_type = DAOS_PROP_CO_DEDUP;
     prop->dpp_entries[13].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
-    prop->dpp_entries[14].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
-    prop->dpp_entries[15].dpe_type = DAOS_PROP_CO_ACL;
+    prop->dpp_entries[14].dpe_type = DAOS_PROP_CO_EC_CELL_SZ;
+    prop->dpp_entries[15].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
+    prop->dpp_entries[16].dpe_type = DAOS_PROP_CO_ACL;
+    prop->dpp_entries[17].dpe_type = DAOS_PROP_CO_ROOTS;
     if (deserialize_label) {
-        prop->dpp_entries[16].dpe_type = DAOS_PROP_CO_LABEL; 
+        prop->dpp_entries[18].dpe_type = DAOS_PROP_CO_LABEL; 
     }
 
     entry = &prop->dpp_entries[0];
@@ -5149,12 +5403,18 @@ int cont_deserialize_all_props(struct hdf5_args *hdf5,
     }
 
     entry = &prop->dpp_entries[14];
-    rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ALLOCED_OID");
+    rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_EC_CELL_SZ");
     if (rc != 0) {
         goto out;
     }
 
     entry = &prop->dpp_entries[15];
+    rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ALLOCED_OID");
+    if (rc != 0) {
+        goto out;
+    }
+
+    entry = &prop->dpp_entries[16];
     /* read acl as a list of strings in deserialize, then convert
      * back to acl for property entry
      */
@@ -5163,8 +5423,14 @@ int cont_deserialize_all_props(struct hdf5_args *hdf5,
         goto out;
     }
 
+    entry = &prop->dpp_entries[17];
+    rc = cont_deserialize_prop_roots(hdf5, entry, "DAOS_PROP_CO_ROOTS", roots);
+    if (rc != 0) {
+        goto out;
+    }
+
     if (deserialize_label) {
-        prop->dpp_entries[16].dpe_str = strdup(label_entry->dpe_str);
+        prop->dpp_entries[18].dpe_str = strdup(label_entry->dpe_str);
     }
     *cont_type = prop->dpp_entries[0].dpe_val;
     *_prop = prop;
@@ -5180,8 +5446,9 @@ int daos_cont_deserialize_connect(daos_args_t *daos_args,
                                   struct hdf5_args *hdf5,
                                   daos_cont_layout_t *cont_type)
 {
-    int rc = 0;
-    daos_prop_t *prop = NULL;
+    int                         rc = 0;
+    daos_prop_t                 *prop = NULL;
+    struct daos_prop_co_roots   roots = {0};
 
     /* generate container UUID */
     uuid_generate(daos_args->src_cont_uuid);
@@ -5202,30 +5469,17 @@ int daos_cont_deserialize_connect(daos_args_t *daos_args,
 
     /* need to read cont props before creating container, then
      * broadcast handles to the rest of the ranks */
-    rc = cont_deserialize_all_props(hdf5, &prop, cont_type,
+    rc = cont_deserialize_all_props(hdf5, &prop, &roots, cont_type,
                                     daos_args->src_poh);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to deserialize container properties");
         goto out;
     }
 
-    if (*cont_type == DAOS_PROP_CO_LAYOUT_POSIX) {
-        dfs_attr_t attr;
-        attr.da_id = 0;
-        attr.da_props = prop;
-        attr.da_oclass_id = OC_UNKNOWN; /* TODO serialize this? */
-        attr.da_chunk_size = 0; /* TODO serialize this? */
-        rc = dfs_cont_create(daos_args->src_poh, daos_args->src_cont_uuid, &attr, NULL, NULL);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to create posix container: %d", rc);
-            goto out;
-        }
-    } else {
-        rc = daos_cont_create(daos_args->src_poh, daos_args->src_cont_uuid, prop, NULL);
-        if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "failed to create container: %d", rc);
-            goto out;
-        }
+    rc = daos_cont_create(daos_args->src_poh, daos_args->src_cont_uuid, prop, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create container: "DF_RC, DP_RC(rc));
+        goto out;
     }
 
     char cont_str[130];
@@ -5237,6 +5491,7 @@ int daos_cont_deserialize_connect(daos_args_t *daos_args,
         MFU_LOG(MFU_LOG_ERR, "failed to open container: "DF_RC, DP_RC(rc));
         goto out;
     }
+    mfu_free(&roots);
     daos_prop_free(prop);
 out:
     return rc;
