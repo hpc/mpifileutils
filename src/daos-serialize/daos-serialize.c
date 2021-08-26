@@ -147,17 +147,16 @@ int main(int argc, char** argv)
     int len = strlen(argpaths[0]); 
 
     int tmp_rc;
-    tmp_rc = daos_parse_path(argpaths[0], len, &daos_args->src_pool_uuid,
-                         &daos_args->src_cont_uuid);
-    if (tmp_rc != 0 || !daos_uuid_valid(daos_args->src_pool_uuid) || !daos_uuid_valid(daos_args->src_cont_uuid)) {
+    tmp_rc = daos_parse_path(argpaths[0], len, &daos_args->src_pool, &daos_args->src_cont);
+    if (tmp_rc != 0 || daos_args->src_cont == NULL) {
         MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS path");
          rc = 1;
     }
     
-    tmp_rc = daos_connect(rank, daos_args, daos_args->src_pool_uuid,
-                          daos_args->src_cont_uuid, &daos_args->src_poh,
+    tmp_rc = daos_connect(rank, daos_args, &daos_args->src_pool,
+                          &daos_args->src_cont, &daos_args->src_poh,
                           &daos_args->src_coh, force_serialize, true,
-                          false, false, false, NULL);
+                          false, false, false, NULL, true);
     if (tmp_rc != 0) {
         daos_fini();
         mfu_finalize();
