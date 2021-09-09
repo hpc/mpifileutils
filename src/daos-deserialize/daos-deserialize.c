@@ -23,6 +23,7 @@ void print_usage(void)
     printf("\n");
     printf("Options:\n");
     printf("  -p, --pool               - pool uuid for containers\n");
+    printf("  -l, --cont-label         - use a label name for deserialize container\n");
     printf("  -v, --verbose            - verbose output\n");
     printf("  -q, --quiet              - quiet output\n");
     printf("  -h, --help               - print usage\n");
@@ -166,6 +167,7 @@ int main(int argc, char** argv)
     int option_index = 0;
     static struct option long_options[] = {
         {"pool"                 , required_argument , 0, 'p'},
+        {"cont-label"           , required_argument , 0, 'l'},
         {"verbose"              , no_argument       , 0, 'v'},
         {"quiet"                , no_argument       , 0, 'q'},
         {"help"                 , no_argument       , 0, 'h'},
@@ -177,11 +179,13 @@ int main(int argc, char** argv)
 
     /* DAOS vars */ 
     daos_args_t* daos_args = daos_args_new();    
+    /* option to deserialize container with label name */
+    char *cont_label = NULL;
 
     int usage = 0;
     while(1) {
         int c = getopt_long(
-                    argc, argv, "p:vqh",
+                    argc, argv, "p:l:vqh",
                     long_options, &option_index
                 );
 
@@ -191,7 +195,10 @@ int main(int argc, char** argv)
 
         switch(c) {
             case 'p':
-                uuid_parse(optarg, daos_args->src_pool_uuid);
+                snprintf(daos_args->src_pool, DAOS_PROP_LABEL_MAX_LEN + 1, "%s", optarg);
+                break;
+            case 'l':
+                cont_label = MFU_STRDUP(optarg);
                 break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
@@ -232,7 +239,7 @@ int main(int argc, char** argv)
     /* advance to next set of options */
     optind += numpaths;
 
-    if (numpaths < 1 || uuid_is_null(daos_args->src_pool_uuid)) {
+    if (numpaths < 1 || daos_args->src_pool ==  NULL) {
         MFU_LOG(MFU_LOG_ERR, "At least one file or directory and "
                 "a pool UUID is required:"
                 MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
@@ -326,7 +333,7 @@ int main(int argc, char** argv)
             mfu_flist_file_set_cont(tmplist, idx, paths[i]);
         }
 
-        tmp_rc = daos_cont_deserialize_connect(daos_args, &hdf5, &cont_type);
+        tmp_rc = daos_cont_deserialize_connect(daos_args, &hdf5, &cont_type, cont_label);
         if (tmp_rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "failed to connect to container\n");
             rc = 1;
@@ -375,6 +382,7 @@ int main(int argc, char** argv)
     mfu_daos_stats_print_sum(rank, &stats, false, true, false, false);
 
     mfu_flist_free(&newflist);
+    mfu_free(&cont_label);
 
     /* don't close anything until all ranks are done using handles */
     MPI_Barrier(MPI_COMM_WORLD);
