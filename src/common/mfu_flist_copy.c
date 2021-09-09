@@ -1342,14 +1342,14 @@ static void create_progress_fn(const uint64_t* vals, int count, int complete, in
 
     /* compute percentage of items created */
     double percent = 0.0;
-    if (mkdir_total_count > 0) {
-        percent = (double)items * 100.0 / (double)mkdir_total_count;
+    if (mknod_total_count > 0) {
+        percent = (double)items * 100.0 / (double)mknod_total_count;
     }
 
     /* estimate seconds remaining */
     double secs_remaining = -1.0;
     if (item_rate > 0.0) {
-        secs_remaining = (double)(mkdir_total_count - items) / item_rate;
+        secs_remaining = (double)(mknod_total_count - items) / item_rate;
     }
 
     if (complete < ranks) {
