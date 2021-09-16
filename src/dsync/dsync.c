@@ -1923,6 +1923,10 @@ static int dsync_strmap_compare(
         }
     }
 
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Completed updating timestamps");
+    }
+
     /* done with our list of files for refreshing metadata */
     strmap_delete(&metadata_refresh);
 
@@ -3397,6 +3401,10 @@ dsync_common_cleanup:
     /* delete file objects */
     mfu_file_delete(&mfu_src_file);
     mfu_file_delete(&mfu_dst_file);
+
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Completed sync");
+    }
 
     /* shut down */
     mfu_finalize();
