@@ -842,6 +842,7 @@ ssize_t daos_read(const char* file, void* buf, size_t size, mfu_file_t* mfu_file
     int rc = dfs_sys_read(mfu_file->dfs_sys, mfu_file->obj, buf, mfu_file->offset, &got_size, NULL);
     if (rc != 0) {
         errno = rc;
+        return -1;
     } else {
         /* update file pointer with number of bytes read */
         mfu_file->offset += (daos_off_t)got_size;
@@ -945,6 +946,7 @@ ssize_t daos_write(const char* file, const void* buf, size_t size, mfu_file_t* m
     int rc = dfs_sys_write(mfu_file->dfs_sys, mfu_file->obj, buf, mfu_file->offset, &write_size, NULL);
     if (rc != 0) {
         errno = rc;
+        return -1;
     } else {
         /* update file pointer with number of bytes written */
         mfu_file->offset += write_size;
@@ -977,6 +979,8 @@ ssize_t daos_pread(const char* file, void* buf, size_t size, off_t offset, mfu_f
     int rc = dfs_sys_read(mfu_file->dfs_sys, mfu_file->obj, buf, offset, &got_size, NULL);
     if (rc != 0) {
         errno = rc;
+        /* return -1 if dfs_sys_read encounters error */
+        return -1;
     }
     return (ssize_t)got_size;
 #else
@@ -1061,6 +1065,8 @@ ssize_t daos_pwrite(const char* file, const void* buf, size_t size, off_t offset
     int rc = dfs_sys_write(mfu_file->dfs_sys, mfu_file->obj, buf, offset, &write_size, NULL);
     if (rc != 0) {
         errno = rc;
+        /* report -1 if dfs_sys_write encounters error */
+        return -1;
     }
     return (ssize_t)write_size;
 #else

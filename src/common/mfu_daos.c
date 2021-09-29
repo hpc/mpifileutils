@@ -218,10 +218,32 @@ static int daos_check_args(
         return 0;
     }
     
+    /* if passed in values for src/dst are both uuids ignore the case when comparing */
+
     /* Determine whether the source and destination
      * use the same pool and container */
-    bool same_pool = (strcmp(da->src_pool, da->dst_pool) == 0);
-    bool same_cont = same_pool && (strcmp(da->src_cont, da->dst_cont) == 0);
+    int rc1, rc2;
+    bool same_pool = false;
+    uuid_t src_pool;
+    uuid_t dst_pool;
+    rc1 = uuid_parse(da->src_pool, src_pool); 
+    rc2 = uuid_parse(da->dst_pool, dst_pool); 
+    if (rc1 == 0 && rc2 == 0) {
+        same_pool = (strcasecmp(da->src_pool, da->dst_pool) == 0);
+    } else {
+        same_pool = (strcmp(da->src_pool, da->dst_pool) == 0);
+    }
+
+    bool same_cont = false;
+    uuid_t src_cont;
+    uuid_t dst_cont;
+    rc1 = uuid_parse(da->src_cont, src_cont); 
+    rc2 = uuid_parse(da->dst_cont, dst_cont); 
+    if (rc1 == 0 && rc2 == 0) {
+        same_cont = same_pool && (strcasecmp(da->src_cont, da->dst_cont) == 0);
+    } else {
+        same_cont = same_pool && (strcmp(da->src_cont, da->dst_cont) == 0);
+    }
 
     /* Determine whether the source and destination paths are the same.
      * Assume NULL == NULL. */
@@ -412,7 +434,7 @@ static int daos_set_paths(
         }
         int src_rc = daos_parse_path(src_path, src_len, &da->src_pool, &da->src_cont);
         if (src_rc == 0) {
-            if (da->src_cont == NULL) {
+            if (strlen(da->src_cont) == 0) {
                 MFU_LOG(MFU_LOG_ERR, "Source pool requires a source container.");
                 rc = 1;
                 goto out;
