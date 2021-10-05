@@ -17,6 +17,8 @@
 #include <getopt.h>
 #include <time.h> /* asctime / localtime */
 #include <regex.h>
+#include <attr/libattr.h>
+#include <attr/error_context.h>
 
 /* These headers are needed to query the Lustre MDS for stat
  * information.  This information may be incomplete, but it
@@ -330,18 +332,40 @@ static int mfu_copy_xattrs(
     /* iterate over list and copy values to new object lgetxattr/lsetxattr */
     if(got_list) {
         char* name = list;
+        struct error_context ctx;
 
         while(name < list + list_size) {
             /* start with a reasonable buffer,
              * allocate something bigger as needed */
             size_t val_bufsize = 1024;
             void* val = (void*) MFU_MALLOC(val_bufsize);
+            int copy_xattr;
 
             /* lookup value for name */
             ssize_t val_size;
             int got_val = 0;
 
-            while(! got_val) {
+            copy_xattr = 1; /* copy unless indicated below not to */
+            if (copy_opts->copy_xattrs == XATTR_USE_LIBATTR) {
+                if (attr_copy_action(name, &ctx) == ATTR_ACTION_SKIP) {
+                    copy_xattr = 0;
+                }
+            } else if (copy_opts->copy_xattrs == XATTR_SKIP_LUSTRE) {
+                /* ignore xattrs lustre treats specially */
+                /* list from lustre source file lustre_idl.h */
+                if (    strncmp(name,"lustre.",strlen("lustre.")) == 0 ||
+                        strcmp(name,"trusted.som") == 0 || strcmp(name,"trusted.lov") == 0 ||
+                        strcmp(name,"trusted.lma") == 0 || strcmp(name,"trusted.lmv") == 0 ||
+                        strcmp(name,"trusted.dmv") == 0 || strcmp(name,"trusted.link") == 0 ||
+                        strcmp(name,"trusted.fid") == 0 || strcmp(name,"trusted.version") == 0 ||
+                        strcmp(name,"trusted.hsm") == 0 || strcmp(name,"trusted.lfsck_bitmap") == 0 ||
+                        strcmp(name,"trusted.dummy") == 0)
+                {
+                    copy_xattr = 0;
+                }
+            }
+
+            while(! got_val && copy_xattr) {
                 errno = 0;
                 if (copy_opts->dereference) {
                     /* getxattr of dereferenced symbolic links */
@@ -390,7 +414,7 @@ static int mfu_copy_xattrs(
             }
 
             /* set attribute on destination object */
-            if(got_val) {
+            if(got_val && copy_xattr) {
                 errno = 0;
                 /* lsetxattr of symbolic link itself. No need to dereference here */
                 int setrc = mfu_file_lsetxattr(dest_path, name, val, (size_t) val_size, 0, mfu_dst_file);
@@ -923,9 +947,9 @@ static int mfu_copy_set_metadata_dirs(
 
 /* creates dir in destpath for specified item, identifies source path
  * that contains source dir, computes relative path to dir under source path,
- * and creates dir at same relative path under destpath, copies xattrs
- * when preserving permissions, which contains file striping info on Lustre,
- * returns 0 on success and -1 on error */
+ * and creates dir at same relative path under destpath, optionally copies
+ * xattrs (which contain striping information under Lustre), optionally
+ * preserves permissions, returns 0 on success and -1 on error */
 static int mfu_create_directory(
     mfu_flist list,                 /* flist holding target directory */
     uint64_t idx,                   /* index of target directory within its list */
@@ -993,7 +1017,7 @@ static int mfu_create_directory(
      * creating / striping files in the directory */
 
     /* copy extended attributes on directory */
-    if (copy_opts->preserve) {
+    if (copy_opts->copy_xattrs != XATTR_COPY_NONE) {
         int tmp_rc = mfu_copy_xattrs(list, idx, dest_path, copy_opts, mfu_src_file, mfu_dst_file);
         if (tmp_rc < 0) {
             rc = -1;
@@ -1166,8 +1190,8 @@ static int mfu_create_link(
         }
     }
 
-    /* set permissions on link */
-    if (copy_opts->preserve) {
+    /* set xattrs on link */
+    if (copy_opts->copy_xattrs != XATTR_COPY_NONE) {
         int xattr_rc = mfu_copy_xattrs(list, idx, dest_path, copy_opts, mfu_src_file, mfu_dst_file);
         if (xattr_rc < 0) {
             rc = -1;
@@ -1185,9 +1209,9 @@ static int mfu_create_link(
 
 /* creates inode in destpath for specified file, identifies source path
  * that contains source file, computes relative path to file under source path,
- * and creates file at same relative path under destpath, copies xattrs
- * when preserving permissions, which contains file striping info on Lustre,
- * returns 0 on success and -1 on error */
+ * and creates file at same relative path under destpath, optionally copies
+ * xattrs (which contain striping information under Lustre), optionally
+ * preserves permissions, returns 0 on success and -1 on error */
 static int mfu_create_file(
     mfu_flist list,
     uint64_t idx,
@@ -1240,7 +1264,7 @@ static int mfu_create_file(
     /* copy extended attributes, important to do this first before
      * writing data because some attributes tell file system how to
      * stripe data, e.g., Lustre */
-    if (copy_opts->preserve) {
+    if (copy_opts->copy_xattrs != XATTR_COPY_NONE) {
         int tmp_rc = mfu_copy_xattrs(list, idx, dest_path, copy_opts, mfu_src_file, mfu_dst_file);
         if (tmp_rc < 0) {
             rc = -1;
@@ -3253,6 +3277,9 @@ mfu_copy_opts_t* mfu_copy_opts_new(void)
 
     /* By default, don't bother to preserve all attributes. */
     opts->preserve = false;
+
+    /* By default, do not copy special to Lustre (which set striping) */
+    opts->copy_xattrs = XATTR_SKIP_LUSTRE;
 
     /* By default, don't dereference source symbolic links. 
      * This is not a perfect opposite of no_dereference */

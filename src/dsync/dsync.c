@@ -63,6 +63,7 @@ static void print_usage(void)
     printf("  -b  --batch-files <N>   - batch files into groups of N during copy\n");
     printf("      --bufsize <SIZE>    - IO buffer size in bytes (default " MFU_BUFFER_SIZE_STR ")\n");
     printf("      --chunksize <SIZE>  - minimum work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
+    printf("  -X, --xattrs <OPT>      - copy xattrs (none, all, non-lustre, libattr)\n");
 #ifdef DAOS_SUPPORT
     printf("      --daos-api          - DAOS API in {DFS, DAOS} (default uses DFS for POSIX containers)\n");
 #endif
@@ -3020,6 +3021,7 @@ int main(int argc, char **argv)
         {"batch-files",    1, 0, 'b'},
         {"bufsize",        1, 0, 'B'},
         {"chunksize",      1, 0, 'k'},
+        {"xattrs",         1, 0, 'X'},
         {"daos-prefix",    1, 0, 'Y'},
         {"daos-api",       1, 0, 'y'},
         {"contents",       0, 0, 'c'},
@@ -3050,7 +3052,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDso:LPSvqh",
+            argc, argv, "b:cDso:LPSvqhX:",
             long_options, &option_index
         );
 
@@ -3082,6 +3084,15 @@ int main(int argc, char **argv)
                 usage = 1;
             } else {
                 copy_opts->chunk_size = bytes;
+            }
+            break;
+        case 'X':
+            copy_opts->copy_xattrs = parse_copy_xattrs_option(optarg);
+            if (copy_opts->copy_xattrs == XATTR_COPY_INVAL) {
+                if (rank == 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Unrecognized option '%s' for --xattrs", optarg);
+                }
+                usage = 1;
             }
             break;
 #ifdef DAOS_SUPPORT

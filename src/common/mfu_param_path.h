@@ -115,25 +115,40 @@ typedef struct {
     int dereference;    /* flag option to dereference symbolic links */
 } mfu_walk_opts_t;
 
+typedef enum {
+    XATTR_COPY_INVAL,
+    XATTR_COPY_NONE,
+    XATTR_SKIP_LUSTRE,
+    XATTR_USE_LIBATTR,
+    XATTR_COPY_ALL,
+} attr_copy_t;
+
 /* options passed to mfu_ */
 typedef struct {
-    int    copy_into_dir;  /* flag indicating whether copying into existing dir */
-    int    do_sync;        /* flag option to sync src dir with dest dir */ 
-    char*  dest_path;      /* prefex of destination directory */
-    char*  input_file;     /* file name of input list */
-    bool   preserve;       /* whether to preserve timestamps, ownership, permissions, etc. */
-    int    dereference;    /* if true, dereference symbolic links in the source.
-                            * this is not a perfect opposite of no_dereference */
-    int    no_dereference; /* if true, don't dereference source symbolic links */
-    bool   direct;         /* whether to use O_DIRECT */
-    bool   sparse;         /* whether to create sparse files */
-    size_t chunk_size;     /* size to chunk files by */
-    size_t buf_size;       /* buffer size to read/write to file system */
-    char*  block_buf1;     /* buffer to read / write data */
-    char*  block_buf2;     /* another buffer to read / write data */
-    int    grouplock_id;   /* Lustre grouplock ID */
-    uint64_t batch_files;  /* max batch size to copy files, 0 implies no limit */
+    int          copy_into_dir;    /* flag indicating whether copying into existing dir */
+    int          do_sync;          /* flag option to sync src dir with dest dir */
+    char*        dest_path;        /* prefex of destination directory */
+    char*        input_file;       /* file name of input list */
+    bool         preserve;         /* whether to preserve timestamps, ownership, permissions, etc. */
+    attr_copy_t  copy_xattrs;      /* which xattrs to copy; important for Lustre */
+    int          dereference;      /* if true, dereference symbolic links in the source.
+                                    * this is not a perfect opposite of no_dereference */
+    int          no_dereference;   /* if true, don't dereference source symbolic links */
+    bool         direct;           /* whether to use O_DIRECT */
+    bool         sparse;           /* whether to create sparse files */
+    size_t       chunk_size;       /* size to chunk files by */
+    size_t       buf_size;         /* buffer size to read/write to file system */
+    char*        block_buf1;       /* buffer to read / write data */
+    char*        block_buf2;       /* another buffer to read / write data */
+    int          grouplock_id;     /* Lustre grouplock ID */
+    uint64_t     batch_files;      /* max batch size to copy files, 0 implies no limit */
 } mfu_copy_opts_t;
+
+/*
+ * Parse an option string provided by the user to determine
+ * which xattrs to copy from source to destination.
+ */
+attr_copy_t parse_copy_xattrs_option(char *optarg);
 
 /* Given a source item name, determine which source path this item
  * is contained within, extract directory components from source
