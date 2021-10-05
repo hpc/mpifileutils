@@ -39,6 +39,16 @@ OPTIONS
    "GB" can immediately follow the number without spaces (e.g. 64MB).
    The default chunksize is 4MB.
 
+.. option:: --xattrs WHICH
+
+    Copy extended attributes ("xattrs") from source files to target files.
+    WHICH determines which xattrs are copied.  Options are to copy no xattrs,
+    all xattrs, xattrs not excluded by /etc/xattr.conf, or all xattrs except
+    those which have special meaning to Lustre.  Certain xattrs control Lustre
+    features on a file-by-file basis, such as how the file data is distributed
+    across Lustre servers.  Values must be in {none, all, libattr, non-lustre}.
+    The default is non-lustre.
+
 .. option:: --daos-api API
 
    Specify the DAOS API to be used. By default, the API is automatically
