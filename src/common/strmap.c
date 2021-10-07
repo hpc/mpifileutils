@@ -765,17 +765,20 @@ int strmap_unset(strmap* tree, const char* key)
 
             /* found it, identify the node to replace it */
             if (node->left != NULL && node->right != NULL) {
-                /* we have two children, extract the rightmost node in
-                 * our left subtree */
+                /* we have two children, identify rightmost node of left subtree */
                 strmap_node* replacement = (strmap_node*) strmap_node_rightmost(node->left);
-                strmap_node_extract_single(replacement);
 
-                /* update the left child of this node to point to our left child,
-                 * (note that this works correctly even if the replacement is our
-                 * original left child, because the extract call would update our
-                 * left child to be our left grandchild) */
-                replacement->left = node->left;
-                node->left->parent = replacement;
+                /* if the rightmost node of our left subtree is not our left child,
+                 * extract it and promote it to be our replacement */ 
+                if (replacement != node->left) {
+                    /* since this is a rightmost node, it has at most one child,
+                     * so safe to use extract_single  */
+                    strmap_node_extract_single(replacement);
+
+                    /* update the left child of this node to point to our replacement */
+                    replacement->left = node->left;
+                    node->left->parent = replacement;
+                }
 
                 /* update the right child of this node to point to our right child,
                  * (we're guaranteed that the rightmost node from our left subtree
