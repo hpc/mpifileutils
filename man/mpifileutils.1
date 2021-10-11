@@ -352,7 +352,6 @@ cmake ../mpifileutils \e
   \-DWITH_DTCMP_PREFIX=../install \e
   \-DWITH_LibCircle_PREFIX=../install \e
   \-DCMAKE_INSTALL_PREFIX=../install \e
-  \-DWITH_CART_PREFIX=</path/to/daos/> \e
   \-DWITH_DAOS_PREFIX=</path/to/daos/> \e
   \-DENABLE_DAOS=ON
 make install
@@ -362,8 +361,7 @@ make install
 .UNINDENT
 .sp
 The above build with DAOS option also assumes you have already installed DAOS. If
-CART and DAOS are installed under a standard system path then specifying the CART
-and DAOS paths is unnecessary.
+DAOS is installed under a standard system path then specifying the DAOS path is unnecessary.
 .sp
 To enable Lustre, GPFS, and experimental tools, add the following flags during CMake:
 .INDENT 0.0

@@ -125,8 +125,8 @@ Build everything directly with DAOS support
 -------------------------------------------
 
 To build with DAOS support, first install the dependenies as mentioned above,
-and make sure DAOS is installed. If CART and DAOS are installed under a standard
-system path then specifying the CART and DAOS paths is unnecessary.
+and make sure DAOS is installed. If DAOS is installed under a standard
+system path then specifying the DAOS path is unnecessary.
 
 .. code-block:: Bash
 
@@ -137,7 +137,6 @@ system path then specifying the CART and DAOS paths is unnecessary.
      -DWITH_DTCMP_PREFIX=../install \
      -DWITH_LibCircle_PREFIX=../install \
      -DCMAKE_INSTALL_PREFIX=../install \
-     -DWITH_CART_PREFIX=</path/to/daos/> \
      -DWITH_DAOS_PREFIX=</path/to/daos/> \
      -DENABLE_DAOS=ON
    make install
