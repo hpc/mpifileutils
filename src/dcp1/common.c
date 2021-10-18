@@ -335,7 +335,7 @@ void DCOPY_copy_xattrs(
     char* src_path = op->operand;
 
     /* start with a reasonable buffer, we'll allocate more as needed */
-    size_t list_bufsize = 1204;
+    size_t list_bufsize = 1024;
     char* list = (char*) MFU_MALLOC(list_bufsize);
 
     /* get list, if list_size == ERANGE, try again */
