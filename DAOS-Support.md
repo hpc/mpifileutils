@@ -25,7 +25,7 @@ When both the source and the destination are DAOS non-POSIX containers
 (of the same type),
 the DAOS Object API will be used to perform the copy/sync operations.
 
-When DAOS support is enabled, mpiFileUtils also provides the
+When DAOS and HDF5 support is enabled, mpiFileUtils also provides the
 daos-serialize and daos-deserialize commands.
 These commands can be used to save the contents of a DAOS container
 and its associated metadata into a POSIX filesystem,
@@ -63,7 +63,7 @@ to store the container information as extended attributes in a DUNS path.
 Note: The DUNS path should be a directory in a globally accessible filesystem.
 All nodes in the MPI job that execute the dcp command will need to
 extract the DAOS pool and container information.
-If the path given to the `daos cont create` command is in a loca
+If the path given to the `daos cont create` command is in a local
  filesystem on the node that runs this daos command
 (like a node-local /tmp), that information will only be visible locally
 on that node and the DUNS lookup on other nodes will fail.
