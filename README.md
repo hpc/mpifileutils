@@ -8,7 +8,7 @@ Documentation is available on [ReadTheDocs](http://mpifileutils.readthedocs.io).
 mpiFileUtils supports a DAOS backend for dcp, dsync, and dcmp. Custom serialization and deserialization for DAOS containers to and from a POSIX filesystem is provided with daos-serialize and daos-deserialize. Details and usage examples are provided in [DAOS Support](DAOS-Support.md).
  
 ## Contributors
-We welcome contributions to the project.  For details on how to help, see our [Contributor Guide](.github/CONTRIBUTING.md)
+We welcome contributions to the project.  For details on how to help, see our [Contributor Guide](CONTRIBUTING.md)
 
 ### Copyrights
 
