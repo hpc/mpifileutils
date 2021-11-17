@@ -22,6 +22,14 @@
 #endif
 #endif
 
+#if defined(DAOS_API_VERSION_MAJOR) && defined(DAOS_API_VERSION_MINOR)
+#define CHECK_DAOS_API_VERSION(major, minor)                            \
+        ((DAOS_API_VERSION_MAJOR > (major))                             \
+         || (DAOS_API_VERSION_MAJOR == (major) && DAOS_API_VERSION_MINOR >= (minor)))
+#else
+#define CHECK_DAOS_API_VERSION(major, minor) 0
+#endif
+
 /*
  * Private definitions.
  * TODO - Need to reorganize some functions in this file.
@@ -3209,7 +3217,7 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
                            int *oid_index,
                            daos_args_t *da,
                            daos_obj_id_t oid,
-                           bool is_kv_flat,
+                           bool is_kv,
                            mfu_daos_stats_t* stats)
 {
     int             rc = 0;
@@ -3247,7 +3255,7 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
 
         d_iov_set(&dkey_iov, dkey_enum_buf, ENUM_DESC_BUF);
 
-        if (is_kv_flat) {
+        if (is_kv) {
             rc = daos_kv_list(*oh, DAOS_TX_NONE, &dkey_number,
                               dkey_kds, &dkey_sgl, &dkey_anchor, NULL);
             if (rc != 0) {
@@ -3292,7 +3300,7 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
             dkey_val->len = (uint64_t)dkey_kds[i].kd_key_len; 
             (*hdf5->dk)[*dk_index].rec_kv_val.p = NULL;
             (*hdf5->dk)[*dk_index].rec_kv_val.len = 0;
-            if (is_kv_flat) {
+            if (is_kv) {
                 /* akey offset will not be used in this case */
                 (*hdf5->dk)[*dk_index].akey_offset = 0;
 
@@ -4136,6 +4144,23 @@ out:
     return rc;
 }
 
+static bool obj_is_kv(daos_obj_id_t oid)
+{
+
+#if CHECK_DAOS_API_VERSION(2, 0)
+	return daos_obj_id2type(oid) == DAOS_OT_KV_HASHED;
+#else
+	daos_ofeat_t ofeat;
+
+        ofeat = (oid.hi & OID_FMT_FEAT_MASK) >> OID_FMT_FEAT_SHIFT;
+        if ((ofeat & DAOS_OF_KV_FLAT) &&
+            !(ofeat & DAOS_OF_ARRAY_BYTE) && !(ofeat & DAOS_OF_ARRAY)) {
+		return true;
+        }
+	return false;
+#endif
+}
+
 int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
                              uint64_t *files_written, daos_args_t *da,
                              mfu_flist flist, uint64_t num_oids,
@@ -4153,8 +4178,7 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
     herr_t          err = 0;
     char            *filename = NULL;
     char            cont_str[FILENAME_LEN];
-    daos_ofeat_t    ofeat;
-    bool            is_kv_flat = false;
+    bool            is_kv = false;
     int             size = 0;
 
     /* init HDF5 args */
@@ -4213,23 +4237,20 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
         (*hdf5->oid)[i].oid_hi = oid.hi;
         (*hdf5->oid)[i].oid_low = oid.lo;
 
+	is_kv = obj_is_kv(oid);
         /* TODO: DAOS_OF_KV_FLAT uses daos_kv_* functions, and
          * other object types use daos_obj_* functions. Maybe there is
          * a better way to organize this with swtich statements, or
          * creating "daos_obj" wrappers, etc. */
-        ofeat = (oid.hi & OID_FMT_FEAT_MASK) >> OID_FMT_FEAT_SHIFT;
-        if ((ofeat & DAOS_OF_KV_FLAT) &&
-            !(ofeat & DAOS_OF_ARRAY_BYTE) && !(ofeat & DAOS_OF_ARRAY)) {
-            is_kv_flat = true;
-        }
-        if (is_kv_flat) {
+
+        if (is_kv) {
             rc = daos_kv_open(da->src_coh, oid, DAOS_OO_RW, &oh, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to open kv object: "DF_RC, DP_RC(rc));
                 goto out;
             }
             rc = serialize_dkeys(hdf5, &dk_index, &ak_index,
-                                 &oh, &i, da, oid, is_kv_flat, stats);
+                                 &oh, &i, da, oid, is_kv, stats);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to serialize keys: %d", rc);
                 goto out;
@@ -4247,7 +4268,7 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
                 goto out;
             }
             rc = serialize_dkeys(hdf5, &dk_index, &ak_index,
-                                 &oh, &i, da, oid, is_kv_flat, stats);
+                                 &oh, &i, da, oid, is_kv, stats);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to serialize keys: %d", rc);
                 goto out;
@@ -5591,7 +5612,7 @@ int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename
     daos_cont_layout_t      cont_type;
     daos_prop_t*            prop;
     struct daos_prop_entry  *entry;
-    bool                    is_kv_flat = false;
+    bool                    is_kv = false;
 
     /* init HDF5 args */
     init_hdf5_args(&hdf5);
@@ -5650,16 +5671,11 @@ int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename
         rc = 1;
         goto out;
     }
-    daos_ofeat_t ofeat; 
     for (i = 0; i < (int)hdf5.oid_dims[0]; i++) {
         oid.lo = hdf5.oid_data[i].oid_low;
         oid.hi = hdf5.oid_data[i].oid_hi;
-        ofeat = (oid.hi & OID_FMT_FEAT_MASK) >> OID_FMT_FEAT_SHIFT;
-        if ((ofeat & DAOS_OF_KV_FLAT) &&
-            !(ofeat & DAOS_OF_ARRAY_BYTE) && !(ofeat & DAOS_OF_ARRAY)) {
-            is_kv_flat = true;
-        }
-        if (is_kv_flat) {
+	is_kv = obj_is_kv(oid);
+        if (is_kv) {
             rc = daos_kv_open(da->src_coh, oid, DAOS_OO_RW, &oh, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to open kv object: "DF_RC, DP_RC(rc));
@@ -5687,7 +5703,7 @@ int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename
             MFU_LOG(MFU_LOG_ERR, "failed to deserialize keys: %d", rc);
             goto out;
         }
-        if (is_kv_flat) {
+        if (is_kv) {
             rc = daos_kv_close(oh, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to close kv object: "DF_RC, DP_RC(rc));
