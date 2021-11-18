@@ -1,0 +1,24 @@
+###########################################
+mpiFileUtils
+###########################################
+
+This is a release package of mpiFileUtils.
+It contains source for mpiFileUtils and several of its dependencies,
+including LWGRP, DTCMP, and libcircle.
+All included source files are compiled into a single library.
+
+For documentation, refer to:
+
+    https://mpifileutils.readthedocs.io
+
+For a simple build, one may run the following commands:
+
+    mkdir build
+    cd build
+    cmake -DCMAKE_INSTALL_PREFIX=../install ..
+    make -j install
+
+For details on available build flags,
+refer to the "Build" section ofi the documentation:
+
+    https://mpifileutils.readthedocs.io/en/latest/build.html

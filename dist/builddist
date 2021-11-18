@@ -1,0 +1,124 @@
+#!/bin/bash
+
+print_usage() {
+    echo "Usage: builddist <tag>"
+    echo ""
+    echo "Tags:"
+    echo "  main  - build tarball of latest"
+    echo "  v0.11 - build tarball of v0.11"
+}
+
+# check that we got an argument or print usage
+if [ $# -ne 1 ] ; then
+    print_usage
+    exit 1
+fi
+
+# for a given release, define tags for each component
+if [ "$1" == "main" ] ; then
+    # to build from latest branch of all repos
+    ORGS=(
+        "lwgrp"        "llnl" "main"
+        "dtcmp"        "llnl" "main"
+        "libcircle"    "hpc"  "master"
+        "mpifileutils" "hpc"  "master"
+    )
+elif [ "$1" == "v0.11" ] ; then
+    # to build from latest branch of all repos
+    ORGS=(
+        "lwgrp"        "llnl" "v1.0.3"
+        "dtcmp"        "llnl" "v1.1.1"
+        "libcircle"    "hpc"  "v0.3"
+        "mpifileutils" "hpc"  "v0.11"
+    )
+else
+    echo "Error: unknown tag: $1"
+    echo ""
+    print_usage
+    exit 1
+fi
+
+set -x
+
+# we assume everything is hosted at github
+REPOHOST=https://github.com
+
+# create a temporary directory to package things up
+rm -rf dist
+mkdir dist
+cd dist
+
+ARCH_DIR="archive"
+rm -rf $ARCH_DIR
+mkdir -p $ARCH_DIR
+
+len=${#ORGS[@]}
+for (( i=0; i<${len}; i=$(($i + 3)) )); do
+    # component name
+    component=${ORGS[$i]}
+
+    # github path to component
+    j=$(($i + 1))
+    repo=$REPOHOST/${ORGS[$j]}/$component
+
+    # repo tag to checkout
+    j=$(($i + 2))
+    TAG=${ORGS[$j]}
+
+    # clone the repo
+    git clone --depth 1 --branch $TAG $repo
+
+    # git archive the source files into a tarfile
+    cd $component
+        #TAG=`git describe --tags $(git rev-list --tags --max-count=1)`
+        git archive --format=tar --prefix=$component/ $TAG | gzip > $component-$TAG.tar.gz 2> /dev/null
+    cd ..
+
+    # unpack source files for this component in a directory with other components
+    cd $ARCH_DIR
+        tar -zxf ../$component/$component-$TAG.tar.gz
+
+        # hack out include of autotools config.h (not used anyway)
+        if [ "$component" == "lwgrp" ] ; then
+            sed -i 's@#include "../config/config.h"@@g' lwgrp/src/lwgrp_internal.h
+        fi
+        if [ "$component" == "libcircle" ] ; then
+            sed -i 's@#include <config.h>@@g' libcircle/libcircle/lib.h
+        fi
+
+        # hack out common dir for library (maybe could leave this in)
+        if [ "$component" == "mpifileutils" ] ; then
+            sed -i 's@ADD_SUBDIRECTORY(common)@#ADD_SUBDIRECTORY(common)@g' mpifileutils/src/CMakeLists.txt
+        fi
+
+        # remove doc and test directories for a smaller tarball
+        rm -rf ${component}/doc
+        rm -rf ${component}/doc-dev
+        if [ "$component" != "mpifileutils" ] ; then
+          rm -rf ${component}/test
+        fi
+    cd ..
+done
+
+# NOTE: last TAG is from SCR
+# rename archive directory to mpifileutils-TAG
+mv $ARCH_DIR mpifileutils-$TAG
+
+# copy in top-level CMake files
+cp -r ../CMakeLists.txt ../../cmake mpifileutils-$TAG
+
+# copy in README
+cp ../README.dist mpifileutils-$TAG/README
+
+# drop FindDTCMP and FindLWGRP cmake files
+#rm -f mpifileutils-$TAG/cmake/{FindDTCMP.cmake,FindLibCircle.cmake}
+
+# delete original CMakeLists to avoid confusion
+rm -rf mpifileutils-$TAG/mpifileutils/CMakeLists.txt mpifileutils-$TAG/mpifileutils/cmake
+
+# zip up release tarball
+tar -czf ../mpifileutils-${TAG}.tgz mpifileutils-$TAG
+
+# delete prep directory
+cd ..
+rm -rf dist
