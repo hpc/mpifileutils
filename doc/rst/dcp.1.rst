@@ -32,12 +32,6 @@ OPTIONS
    "GB" can immediately follow the number without spaces (e.g. 64MB).
    The default chunksize is 4MB.
 
-.. option:: --daos-prefix PREFIX
-
-   Specify the DAOS prefix to be used. This is only necessary
-   if copying a subset of a POSIX container in DAOS using a
-   Unified Namespace path.
-
 .. option:: --daos-api API
 
    Specify the DAOS API to be used. By default, the API is automatically

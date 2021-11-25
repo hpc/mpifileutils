@@ -80,7 +80,6 @@ void print_usage(void)
     printf("  -b, --bufsize <SIZE>     - IO buffer size in bytes (default " MFU_BUFFER_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>   - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
 #ifdef DAOS_SUPPORT
-    printf("      --daos-prefix        - DAOS prefix for unified namespace path\n");
     printf("      --daos-api           - DAOS API in {DFS, DAOS} (default uses DFS for POSIX containers)\n");
 #ifdef HDF5_SUPPORT
     printf("      --daos-preserve      - preserve DAOS container properties and user attributes, a filename "

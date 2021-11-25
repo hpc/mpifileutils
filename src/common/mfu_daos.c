@@ -14,6 +14,7 @@
 #include <daos_uns.h>
 #include <gurt/common.h>
 #include <gurt/hash.h>
+#include <libgen.h>
 
 #ifdef HDF5_SUPPORT
 #include <hdf5.h>
@@ -323,8 +324,13 @@ int daos_parse_path(
 {
     struct duns_attr_t  dattr = {0};
     int                 rc;
+    char*               tmp_path1 = NULL;
+    char*               path_dirname = NULL;
+    char*               tmp_path2 = NULL;
+    char*               path_basename = NULL;
+    char*               tmp = NULL;
 
-    /* Check if this path represents a daos pool and/or container. */
+    /* check first if duns_resolve_path succeeds on regular path */
     rc = duns_resolve_path(path, &dattr);
     if (rc == 0) {
         /* daos:// or UNS path */
@@ -335,17 +341,66 @@ int daos_parse_path(
         } else {
             strncpy(path, dattr.da_rel_path, path_len);
         }
-    } else if (strncmp(path, "daos:", 5) == 0) {
-        /* Actual error, since we expect a daos path */
-        rc = -1;
     } else {
-        /* We didn't parse a daos path,
-         * but we weren't necessarily looking for one */
-        rc = 1;
+        /* If basename does not exist yet then duns_resolve_path will fail even
+        * if dirname is a UNS path */
+
+        /* get dirname */
+        tmp_path1 = strdup(path);
+        if (tmp_path1 == NULL) {
+            rc = -ENOMEM;
+            goto out;
+        }
+        path_dirname = dirname(tmp_path1);
+
+        /* reset before calling duns_resolve_path with new string */
+        memset(&dattr, 0, sizeof(struct duns_attr_t));
+
+        /* Check if this path represents a daos pool and/or container. */
+        rc = duns_resolve_path(path_dirname, &dattr);
+        /* if it succeeds get the basename and append it to the rel_path */
+        if (rc == 0) {
+            /* if duns_resolve_path succeeds then concat basename to 
+            * da_rel_path */
+            tmp_path2 = strdup(path);
+            if (tmp_path2 == NULL) {
+                rc = -ENOMEM;
+                goto out;
+            }
+            path_basename = basename(tmp_path2);
+   
+            /* dirname might be root uns path, if that is the case,
+             * then da_rel_path might be NULL */
+            if (dattr.da_rel_path == NULL) {
+                tmp = MFU_CALLOC(path_len, sizeof(char));
+            } else {
+                tmp = realloc(dattr.da_rel_path, path_len);
+            }
+            if (tmp == NULL) {
+                rc = -ENOMEM;
+                goto out;
+            }
+            dattr.da_rel_path = tmp;
+            strcat(dattr.da_rel_path, "/");
+            strcat(dattr.da_rel_path, path_basename);
+
+            snprintf(*pool_str, DAOS_PROP_LABEL_MAX_LEN + 1, "%s", dattr.da_pool);
+            snprintf(*cont_str, DAOS_PROP_LABEL_MAX_LEN + 1, "%s", dattr.da_cont);
+            strncpy(path, dattr.da_rel_path, path_len);
+        } else if (strncmp(path, "daos:", 5) == 0) {
+            /* Actual error, since we expect a daos path */
+            rc = -1;
+        } else {
+            /* We didn't parse a daos path,
+            * but we weren't necessarily looking for one */
+            rc = 1;
+        }
     }
-
+out:
+    mfu_free(&tmp_path1);
+    mfu_free(&tmp_path2);
     mfu_free(&dattr.da_rel_path);
-
+    duns_destroy_attr(&dattr);
     return rc;
 }
 
