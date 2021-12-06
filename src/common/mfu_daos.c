@@ -1380,7 +1380,10 @@ static int mfu_dfs_mount(
     if (rc !=0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): %s", strerror(rc));
         rc = -1;
+        goto out;
     }
+
+    /* Get underlying DFS base for DFS API calls */
     rc = dfs_sys2base(mfu_file->dfs_sys, &mfu_file->dfs);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to get DAOS filesystem (DFS) base: %s", strerror(rc));
@@ -1389,6 +1392,7 @@ static int mfu_dfs_mount(
         mfu_file->dfs_sys = NULL;
     }
 
+out:
     return rc;
 }
 
