@@ -17,8 +17,10 @@
 #include <getopt.h>
 #include <time.h> /* asctime / localtime */
 #include <regex.h>
+
+#ifdef HAVE_LIBATTR
 #include <attr/libattr.h>
-#include <attr/error_context.h>
+#endif /* HAVE_LIBATTR */
 
 /* These headers are needed to query the Lustre MDS for stat
  * information.  This information may be incomplete, but it
@@ -332,8 +334,6 @@ static int mfu_copy_xattrs(
     /* iterate over list and copy values to new object lgetxattr/lsetxattr */
     if(got_list) {
         char* name = list;
-        struct error_context ctx;
-
         while(name < list + list_size) {
             /* start with a reasonable buffer,
              * allocate something bigger as needed */
@@ -347,9 +347,11 @@ static int mfu_copy_xattrs(
 
             copy_xattr = 1; /* copy unless indicated below not to */
             if (copy_opts->copy_xattrs == XATTR_USE_LIBATTR) {
-                if (attr_copy_action(name, &ctx) == ATTR_ACTION_SKIP) {
+#ifdef HAVE_LIBATTR
+                if (attr_copy_action(name, NULL) == ATTR_ACTION_SKIP) {
                     copy_xattr = 0;
                 }
+#endif /* HAVE_LIBATTR */
             } else if (copy_opts->copy_xattrs == XATTR_SKIP_LUSTRE) {
                 /* ignore xattrs lustre treats specially */
                 /* list from lustre source file lustre_idl.h */
