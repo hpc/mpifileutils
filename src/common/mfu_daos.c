@@ -1631,7 +1631,7 @@ int daos_setup(
      * Later, ignore if no daos args supplied */
     tmp_rc = daos_init();
     if (tmp_rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to initialize daos");
+        MFU_LOG(MFU_LOG_ERR, "Failed to initialize daos: "DF_RC, DP_RC(tmp_rc));
         local_daos_error = true;
     }
 
