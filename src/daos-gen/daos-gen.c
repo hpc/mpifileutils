@@ -106,7 +106,7 @@ int main(int argc, char** argv)
 
         switch(c) {
             case 'p':
-                uuid_parse(optarg, daos_args->src_pool_uuid);
+                strncpy(daos_args->src_pool, optarg, DAOS_PROP_LABEL_MAX_LEN);
                 break;
             case 'o':
                 num_objects = atoi(optarg);
@@ -182,14 +182,14 @@ int main(int argc, char** argv)
     /* connect to pool/cont then broadcast to rest of ranks */
     if (rank == 0) {
         /* generate container UUID */
-        uuid_generate(daos_args->src_cont_uuid);
+        uuid_generate(daos_args->src_cont);
         daos_pool_info_t pool_info = {0};
         daos_cont_info_t co_info = {0};
 #if DAOS_API_VERSION_MAJOR < 1
-        rc = daos_pool_connect(daos_args->src_pool_uuid, NULL, NULL, DAOS_PC_RW,
+        rc = daos_pool_connect(daos_args->src_pool, NULL, NULL, DAOS_PC_RW,
                                &(daos_args->src_poh), &pool_info, NULL);
 #else
-        rc = daos_pool_connect(daos_args->src_pool_uuid, NULL, DAOS_PC_RW,
+        rc = daos_pool_connect(daos_args->src_pool, NULL, DAOS_PC_RW,
                                &(daos_args->src_poh), &pool_info, NULL);
 #endif
         if (rc != 0) {
@@ -199,13 +199,13 @@ int main(int argc, char** argv)
         }
 
         /* create cont and open */
-        rc = daos_cont_create(daos_args->src_poh, daos_args->src_cont_uuid, NULL, NULL);
+        rc = daos_cont_create(daos_args->src_poh, daos_args->src_cont, NULL, NULL);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to create cont: "DF_RC, DP_RC(rc));
             rc = 1;
             goto err_cont;
         }
-        rc = daos_cont_open(daos_args->src_poh, daos_args->src_cont_uuid,
+        rc = daos_cont_open(daos_args->src_poh, daos_args->src_cont,
                             DAOS_COO_RW, &daos_args->src_coh, &co_info, NULL);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open container: "DF_RC, DP_RC(rc));
@@ -261,7 +261,7 @@ int main(int argc, char** argv)
      * generates same amount */
     if (rank == 0) {
         int total_num_objects = size * num_objects; 
-        uuid_unparse(daos_args->src_cont_uuid, uuid_str);
+        uuid_unparse(daos_args->src_cont, uuid_str);
         printf("Container UUID: %s\n\ttotal objects:%d\n"
                "\tkeys per object:%d\n", uuid_str, total_num_objects, keys_per_object);
     }
