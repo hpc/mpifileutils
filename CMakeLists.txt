@@ -190,7 +190,10 @@ ENDIF("${isSystemDir}" STREQUAL "-1")
 
 # Subdirectories
 INCLUDE(MFU_ADD_TOOL)
-INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/src/common)
+
+# use BEFORE to place build directory first when searching for header files
+# otherwise the build can use old header files from the install path instead
+INCLUDE_DIRECTORIES(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/src/common)
 
 ADD_SUBDIRECTORY(src)
 ADD_SUBDIRECTORY(test)
