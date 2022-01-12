@@ -19,6 +19,6 @@ For a simple build, one may run the following commands:
     make -j install
 
 For details on available build flags,
-refer to the "Build" section ofi the documentation:
+refer to the "Build" section of the documentation:
 
     https://mpifileutils.readthedocs.io/en/latest/build.html

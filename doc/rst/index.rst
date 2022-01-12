@@ -3,14 +3,14 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-===================================
-**Documentation for mpiFileUtils**
-===================================
+================
+**mpiFileUtils**
+================
 
 Overview
 *************
 
-mpiFileUtils provides both a library called libmfu and a suite of MPI-based
+mpiFileUtils provides a library named libmfu and a suite of MPI-based
 tools to manage large datasets, which may vary from large directory trees to
 large files. High-performance computing users often generate large datasets with
 parallel applications that run with many processes (millions in some cases).
@@ -28,10 +28,10 @@ User Guide
 .. toctree::
    :maxdepth: 3
 
+   build.rst
    proj-design.rst
    tools.rst
    libmfu.rst
-   build.rst
 
 Man Pages
 ***************************
@@ -54,9 +54,3 @@ Man Pages
    dgrep.1
    dparallel.1
    dtar.1
-
-Indices and tables
-*********************
-
-* :ref:`genindex`
-* :ref:`search`
