@@ -335,6 +335,7 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
             struct stat st;
             mfu_file_t* mfu_file = *CURRENT_PFILE;
             int status = mfu_file_lstat(dir, &st, mfu_file);
+            // TODO handle status != 0
             // turn on the usr read & execute bits
             st.st_mode |= S_IRUSR;
             st.st_mode |= S_IXUSR;

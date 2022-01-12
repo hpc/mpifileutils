@@ -557,9 +557,8 @@ static int daos_get_cont_type(
     daos_handle_t coh,
     enum daos_cont_props* type)
 {
-    daos_prop_t*            prop = daos_prop_alloc(1);
-    struct daos_prop_entry  entry;
-    int                     rc;
+    daos_prop_t*    prop = daos_prop_alloc(1);
+    int             rc;
 
     if (prop == NULL) {
         MFU_LOG(MFU_LOG_ERR, "Failed to allocate prop (%d)", rc);
@@ -659,12 +658,8 @@ static int daos_set_api_compat(
     bool have_dst = (mfu_dst_file != NULL);
 
     /* Check whether we have pool/cont uuids */
-    bool have_src_pool  = strlen(da->src_pool) ? true : false;
     bool have_src_cont  = strlen(da->src_cont) ? true : false;
-    bool have_dst_pool  = strlen(da->dst_pool) ? true : false;
     bool have_dst_cont  = strlen(da->dst_cont) ? true : false;
-
-    int rc;
 
     /* Containers must be the same type */
     if (have_src_cont && have_dst_cont) {
@@ -1680,7 +1675,6 @@ int daos_setup(
     bool have_src_pool  = strlen(da->src_pool) > 0 ? true : false;
     bool have_src_cont  = strlen(da->src_cont) > 0 ? true : false;
     bool have_dst_pool  = strlen(da->dst_pool) > 0 ? true : false;
-    bool have_dst_cont  = strlen(da->dst_cont) > 0 ? true : false;
 
     /* Check if containers are in the same pool */
     bool same_pool = (strcmp(da->src_pool, da->dst_pool) == 0);
@@ -2339,7 +2333,6 @@ static int mfu_daos_obj_sync_keys(
                 for (akey_ptr = akey_enum_buf, j = 0; j < akey_number; j++) {
                     daos_key_t aiov = {0};
                     daos_iod_t iod = {0};
-                    daos_recx_t recx = {0};
                     memcpy(akey, akey_ptr, akey_kds[j].kd_key_len);
                     d_iov_set(&aiov, (void*)akey, akey_kds[j].kd_key_len);
 
@@ -2363,7 +2356,7 @@ static int mfu_daos_obj_sync_keys(
                         rc = mfu_daos_obj_sync_recx_array(&diov, &aiov, src_oh, dst_oh,
                                                           &iod, compare_dst, write_dst, stats);
                         if (rc == -1) {
-                            MFU_LOG(MFU_LOG_ERR, "DAOS mfu_daos_obj_sync_recx_array returned with errors: ",
+                            MFU_LOG(MFU_LOG_ERR, "DAOS mfu_daos_obj_sync_recx_array returned with errors: "
                                     MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
                             goto out_err;
                         } else if (rc == 1) {
@@ -2373,7 +2366,7 @@ static int mfu_daos_obj_sync_keys(
                         rc = mfu_daos_obj_sync_recx_single(&diov, src_oh, dst_oh,
                                                            &iod, compare_dst, write_dst, stats);
                         if (rc == -1) {
-                            MFU_LOG(MFU_LOG_ERR, "DAOS mfu_daos_obj_sync_recx_single returned with errors: ",
+                            MFU_LOG(MFU_LOG_ERR, "DAOS mfu_daos_obj_sync_recx_single returned with errors: "
                                     MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
                             goto out_err;
                         } else if (rc == 1) {
@@ -2420,7 +2413,7 @@ static int mfu_daos_obj_sync(
     daos_handle_t src_oh;
     rc = daos_obj_open(src_coh, oid, DAOS_OO_RO, &src_oh, NULL);
     if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "DAOS object open returned with errors: ", MFU_ERRF,
+        MFU_LOG(MFU_LOG_ERR, "DAOS object open returned with errors: " MFU_ERRF,
                 MFU_ERRP(-MFU_ERR_DAOS));
         goto out_err;
     }
@@ -2429,7 +2422,7 @@ static int mfu_daos_obj_sync(
     daos_handle_t dst_oh;
     rc = daos_obj_open(dst_coh, oid, DAOS_OO_EXCL, &dst_oh, NULL);
     if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "DAOS object open returned with errors: ", MFU_ERRF,
+        MFU_LOG(MFU_LOG_ERR, "DAOS object open returned with errors: " MFU_ERRF,
                 MFU_ERRP(-MFU_ERR_DAOS));
         /* make sure to close the source if opening dst fails */
         daos_obj_close(src_oh, NULL);
@@ -2437,7 +2430,7 @@ static int mfu_daos_obj_sync(
     }
     int copy_rc = mfu_daos_obj_sync_keys(&src_oh, &dst_oh, compare_dst, write_dst, stats);
     if (copy_rc == -1) {
-        MFU_LOG(MFU_LOG_ERR, "DAOS copy list keys returned with errors: ", MFU_ERRF,
+        MFU_LOG(MFU_LOG_ERR, "DAOS copy list keys returned with errors: " MFU_ERRF,
                 MFU_ERRP(-MFU_ERR_DAOS));
         /* cleanup object handles on failure */
         daos_obj_close(src_oh, NULL);
@@ -2516,7 +2509,6 @@ static int mfu_daos_obj_list_oids(
     }
     memset(&oids, 0, OID_ARR_SIZE*sizeof(daos_obj_id_t));
     memset(&anchor, 0, sizeof(anchor));
-    flist_t* flist = (flist_t*) bflist;
 
     /* list and store all object ids in flist for this epoch */
     while (1) {
@@ -2637,7 +2629,7 @@ int mfu_daos_flist_sync(
         /* someone failed, so return failure on all ranks */
         rc = 1;
         if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "DAOS object copy failed: ",
+            MFU_LOG(MFU_LOG_ERR, "DAOS object copy failed: "
                     MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
         }
     } else {
@@ -2702,7 +2694,6 @@ static int serialize_kv_rec(struct hdf5_args *hdf5,
 {
     void        *buf;
     int         rc;
-    herr_t      err;
     hvl_t       *kv_val;
     daos_size_t size = 0;
 
@@ -2752,7 +2743,6 @@ static int serialize_recx_single(struct hdf5_args *hdf5,
     d_sg_list_t sgl;
     d_iov_t     iov;
     int         rc;
-    herr_t      err;
     hvl_t       *single_val;
 
     buf = MFU_CALLOC(1, buf_len);
@@ -2806,7 +2796,6 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
     int                 attr_num = 0;
     int                 buf_len = 0;
     int                 path_len = 0;
-    int                 encode_buf_len = 0;
     uint32_t            number = 5;
     size_t              nalloc = 0;
     daos_anchor_t       recx_anchor = {0}; 
@@ -2949,7 +2938,6 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
                 rc = 1;
                 goto out;
             }
-            hsize_t dset_size = H5Sget_simple_extent_npoints(hdf5->rx_dspace);
             hsize_t start = (hsize_t)recxs[i].rx_idx;
             hsize_t count = (hsize_t)recxs[i].rx_nr;
             status = H5Sselect_hyperslab(hdf5->rx_dspace,
@@ -3137,7 +3125,6 @@ static int serialize_akeys(struct hdf5_args *hdf5,
                            mfu_daos_stats_t *stats)
 {
     int             rc = 0;
-    herr_t          err = 0;
     int             j = 0;
     daos_anchor_t   akey_anchor = {0}; 
     d_sg_list_t     akey_sgl;
@@ -3293,7 +3280,6 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
     daos_key_t      diov;
     int             path_len = 0;
     hvl_t           *dkey_val;
-    int             size = 0;
 
     rc = init_recx_data(hdf5);
     if (rc != 0) {
@@ -3627,7 +3613,6 @@ int cont_serialize_usr_attrs(struct hdf5_args *hdf5, daos_handle_t cont)
     hid_t       status = 0;
     hid_t       dset = 0;
     hid_t       dspace = 0;
-    hid_t       vtype = 0;
     hsize_t     dims[1];
     usr_attr_t* attr_data = NULL;
     int         num_attrs = 0;
@@ -4073,7 +4058,6 @@ int cont_serialize_props(struct hdf5_args *hdf5,
     int                     rc = 0;
     daos_prop_t*            prop_query = NULL;
     struct daos_prop_entry* entry;
-    char                    cont_str[DAOS_PROP_LABEL_MAX_LEN];
 
     rc = cont_get_props(cont, &prop_query, true, true, true);
     if (rc != 0) {
@@ -4227,14 +4211,10 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
 {
     int             rc = 0;
     int             i = 0;
-    int             path_len = 0;
     uint64_t        dk_index = 0;
     uint64_t        ak_index = 0;
-    daos_handle_t   toh;
-    daos_epoch_t    epoch;
     daos_handle_t   oh;
     float           version = 0.0;
-    herr_t          err = 0;
     char            *filename = NULL;
     char            cont_str[FILENAME_LEN];
     bool            is_kv = false;
@@ -4791,7 +4771,6 @@ static int cont_deserialize_akeys(struct hdf5_args *hdf5,
                                   mfu_daos_stats_t* stats)
 {
     int             rc = 0;
-    hid_t           status = 0;
     daos_key_t      aiov;
     char            akey[ENUM_KEY_BUF] = {0};
     int             rx_ndims;
@@ -4803,7 +4782,6 @@ static int cont_deserialize_akeys(struct hdf5_args *hdf5,
     d_sg_list_t     sgl;
     d_iov_t         iov;
     daos_iod_t      iod;
-    hvl_t           *rec_kv_val;
     hvl_t           *akey_val;
     hvl_t           *rec_single_val;
     
@@ -4925,7 +4903,6 @@ static int cont_deserialize_keys(struct hdf5_args *hdf5,
                                  mfu_daos_stats_t* stats)
 {
     int             rc = 0;
-    hid_t           status = 0;
     int             j = 0;
     daos_key_t      diov;
     char            dkey[ENUM_KEY_BUF] = {0};
@@ -5184,7 +5161,6 @@ static int cont_deserialize_prop_acl(struct hdf5_args* hdf5,
 {
     hid_t           status = 0;
     int             rc = 0;
-    int             i = 0;
     int             ndims = 0;
     const char      **rdata = NULL;
     struct daos_acl *acl;
@@ -5659,7 +5635,6 @@ int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename
 {
     int                     rc = 0;
     int                     i = 0;
-    daos_cont_info_t        cont_info;
     struct                  hdf5_args hdf5;
     daos_obj_id_t           oid;
     daos_handle_t           oh;
@@ -5668,9 +5643,6 @@ int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename
     uint64_t                total_dkeys_this_oid = 0;
     hid_t                   status = 0;
     float                   version;
-    daos_cont_layout_t      cont_type;
-    daos_prop_t*            prop;
-    struct daos_prop_entry  *entry;
     bool                    is_kv = false;
 
     /* init HDF5 args */

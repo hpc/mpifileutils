@@ -258,13 +258,13 @@ int mfu_decompress_bz2_libcircle(const char* src, const char* dst)
     }
 
     /* extract values from footer into local variables */
-    block_meta  = (int64_t)footer[0]; /* offset to start of block metadata */
-    block_total = (int64_t)footer[1]; /* number of blocks */
+    block_meta  = (int64_t)footer[0];         /* offset to start of block metadata */
+    block_total = (int64_t)footer[1];         /* number of blocks */
     block_size          = (int64_t)footer[2]; /* max uncompressed size of a block */
-    int64_t data_size   = (int64_t)footer[3]; /* uncompressed size of all blocks */
+                                              /* unused - uncompressed size of all blocks */
     uint64_t version    = footer[4];          /* dbz2 file format footer version */
     uint64_t magic      = footer[5];          /* dbz2 file format magic value */
-    int64_t filesize    = (int64_t)footer[6]; /* file size of compressed file */
+                                              /* unused - file size of compressed file */
 
     /* check that we got correct magic value */
     if (magic != 0x3141314131413141) {
