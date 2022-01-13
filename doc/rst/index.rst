@@ -10,47 +10,32 @@
 Overview
 *************
 
-mpiFileUtils provides a library named libmfu and a suite of MPI-based
-tools to manage large datasets, which may vary from large directory trees to
-large files. High-performance computing users often generate large datasets with
-parallel applications that run with many processes (millions in some cases).
-However those users are then stuck with single-process tools like cp and rm to
-manage their datasets. This suite provides MPI-based tools to handle typical
-jobs like copy, remove, and compare for such datasets, providing speedups of up
-to 50x. The libmfu library simplifies the creation of new tools
-and it can be called directly from within HPC applications.
+High-performance computing users generate large datasets using parallel applications that can run with thousands of processes.
+However, users are often stuck managing those datasets using traditional single-process tools like cp and rm.
+This mismatch in scale makes it impractical for users to work with their data.
+
+The mpiFileUtils suite solves this problem by offering MPI-based tools for basic tasks like copy, remove, and compare for such datasets,
+delivering orders of magnitude in performance speedup over their single-process counterparts.
+Furthermore, the libmfu library packages common functionality to simplify the creation of new tools,
+and it can even be invoked directly from within HPC applications.
 
 Video Overview: `"Scalable Management of HPC Datasets with mpiFileUtils" <https://youtu.be/cxjPOUS-ZBY>`_, HPCKP'20.
+
+The figure below, taken from the above presentation, illustrates the potential performance improvement that one can achieve
+when scaling a tool like dcp to utilize more compute resources.
+
+.. figure:: dcp_sierra.png
+
+   dcp scaling performance on the Sierra cluster at LLNL using 40 processes/node.  Shows the time required to copy a single directory of 200k files totaling 24.4 TiB of data.  The minimum time of 93 seconds at 64 nodes is 495x faster than the 12.75 hours taken by the cp command.
 
 User Guide
 ***************************
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
 
    build.rst
    proj-design.rst
    tools.rst
    libmfu.rst
 
-Man Pages
-***************************
-
-.. toctree::
-   :maxdepth: 1
-
-   dbcast.1
-   dbz2.1
-   dchmod.1
-   dcmp.1
-   dcp.1
-   ddup.1
-   dfind.1
-   dreln.1
-   drm.1
-   dstripe.1
-   dsync.1
-   dwalk.1
-   dgrep.1
-   dparallel.1
-   dtar.1

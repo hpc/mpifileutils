@@ -1,5 +1,5 @@
 ========================
-libmfu
+Common Library - libmfu
 ========================
 
 Functionality that is common to multiple tools is moved to the common library,
