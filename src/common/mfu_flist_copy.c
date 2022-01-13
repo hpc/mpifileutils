@@ -3115,7 +3115,7 @@ int mfu_flist_hardlink(
 
     /* sum values across processes */
     int64_t sums[3];
-    MPI_Allreduce(values, sums, 4, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(values, sums, 3, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* extract results from allreduce */
     int64_t agg_dirs   = sums[0];
