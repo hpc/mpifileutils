@@ -264,7 +264,7 @@ int mfu_decompress_bz2_libcircle(const char* src, const char* dst)
                                               /* (int64_t)footer[3] - unused - uncompressed size of all blocks */
     uint64_t version    = footer[4];          /* dbz2 file format footer version */
     uint64_t magic      = footer[5];          /* dbz2 file format magic value */
-                                              /* (int64_t)footer[5] - unused - file size of compressed file */
+                                              /* (int64_t)footer[6] - unused - file size of compressed file */
 
     /* check that we got correct magic value */
     if (magic != 0x3141314131413141) {
