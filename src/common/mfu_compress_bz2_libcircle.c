@@ -182,7 +182,6 @@ static void find_wave_size(int64_t size, int opts_memory)
      * memory required to do compression, keep 128B for variables,etc.
      * The block itself must be in memory before compression. */
     int64_t wave_size_approx = mem_limit - (int64_t)info.totalram * 2 / 100 - 8 * size - 400 * 1024 - 128 - size;
-    int64_t waves_blocks_approx = wave_size_approx / comp_buff_size;
     int64_t wave_size = wave_size_approx - 2 * tot_blocks * sizeof(struct block_info);
     blocks_pn_pw = (int64_t)(0.4 * wave_size / comp_buff_size);
     if (blocks_pn_pw > 800) {

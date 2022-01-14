@@ -159,10 +159,6 @@ static int mfu_copy_open_file(
     char* name = cache->name;
     if (name != NULL) {
         /* we have a cached file descriptor */
-        int fd = cache->fd;
-#ifdef DAOS_SUPPORT
-        dfs_obj_t* obj = cache->obj;
-#endif
         if (strcmp(name, file) == 0 && cache->read == read_flag) {
             /* the file we're trying to open matches name and read/write mode,
              * so just return the cached descriptor */
@@ -244,9 +240,6 @@ static int mfu_copy_close_file(
     char* name = cache->name;
     if (name != NULL) {
         int fd = cache->fd;
-#ifdef DAOS_SUPPORT
-        dfs_obj_t* obj = cache->obj;
-#endif
         /* if open for write, fsync */
         int read_flag = cache->read;
         if (! read_flag && mfu_file->type == POSIX) {
@@ -1053,9 +1046,6 @@ static int mfu_create_directories(
     /* assume we'll succeed */
     int rc = 0;
 
-    /* determine whether we should print status messages */
-    int verbose = (mfu_debug_level >= MFU_LOG_VERBOSE);
-
     /* get current rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -1104,7 +1094,6 @@ static int mfu_create_directories(
         /* create each directory we have at this level */
         uint64_t idx;
         uint64_t size = mfu_flist_size(list);
-        uint64_t count = 0;
         for (idx = 0; idx < size; idx++) {
             /* check whether we have a directory */
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
@@ -1402,9 +1391,6 @@ static int mfu_create_files(
 {
     int rc = 0;
 
-    /* determine whether we should print status messages */
-    int verbose = (mfu_debug_level >= MFU_LOG_VERBOSE);
-
     /* get current rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -1506,9 +1492,6 @@ static int mfu_create_hardlinks(
 {
     int rc = 0;
 
-    /* determine whether we should print status messages */
-    int verbose = (mfu_debug_level >= MFU_LOG_VERBOSE);
-
     /* get current rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -1556,7 +1539,6 @@ static int mfu_create_hardlinks(
         /* iterate over items and create hardlink for each */
         uint64_t idx;
         uint64_t size = mfu_flist_size(list);
-        uint64_t count = 0;
         for (idx = 0; idx < size; idx++) {
             /* get type of item */
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
@@ -3126,23 +3108,19 @@ int mfu_flist_hardlink(
                       mfu_copy_stats.wtime_started;
 
     /* prep our values into buffer */
-    int64_t values[5];
+    int64_t values[3];
     values[0] = mfu_copy_stats.total_dirs;
     values[1] = mfu_copy_stats.total_files;
     values[2] = mfu_copy_stats.total_links;
-    values[3] = mfu_copy_stats.total_size;
-    values[4] = mfu_copy_stats.total_bytes_copied;
 
     /* sum values across processes */
-    int64_t sums[5];
-    MPI_Allreduce(values, sums, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+    int64_t sums[3];
+    MPI_Allreduce(values, sums, 3, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* extract results from allreduce */
     int64_t agg_dirs   = sums[0];
     int64_t agg_files  = sums[1];
     int64_t agg_links  = sums[2];
-    int64_t agg_size   = sums[3];
-    int64_t agg_copied = sums[4];
 
     if(rank == 0) {
         /* format start time */
@@ -3255,7 +3233,6 @@ mfu_file_t* mfu_file_new(void)
 void mfu_file_delete(mfu_file_t** pfile)
 {
   if (pfile != NULL) {
-    mfu_file_t* mfile = *pfile;
     mfu_free(pfile);
   }
 }

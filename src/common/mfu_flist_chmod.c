@@ -1311,8 +1311,6 @@ mfu_chmod_opts_t* mfu_chmod_opts_new(void)
 void mfu_chmod_opts_delete(mfu_chmod_opts_t** popts)
 {
   if (popts != NULL) {
-    mfu_chmod_opts_t* opts = *popts;
-
     mfu_free(popts);
   }
 }

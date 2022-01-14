@@ -83,9 +83,6 @@ void mfu_flist_mkdir(mfu_flist flist, mfu_create_opts_t* opts)
 {
     int rc = 0;
 
-    /* determine whether we should print status messages */
-    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
-
     /* get current rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -293,11 +290,6 @@ static int create_file(mfu_flist list, uint64_t idx, mfu_create_opts_t* opts)
 /* create inodes for all regular files in flist, assumes directories exist */
 void mfu_flist_mknod(mfu_flist flist, mfu_create_opts_t* opts)
 {
-    int rc = 0;
-
-    /* determine whether we should print status messages */
-    int verbose = (mfu_debug_level <= MFU_LOG_INFO);
-
     /* get current rank */
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);

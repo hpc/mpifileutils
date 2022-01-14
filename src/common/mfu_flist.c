@@ -73,7 +73,6 @@ mfu_walk_opts_t* mfu_walk_opts_new(void)
 void mfu_walk_opts_delete(mfu_walk_opts_t** popts)
 {
   if (popts != NULL) {
-    mfu_walk_opts_t* opts = *popts;
     mfu_free(popts);
   }
 }
