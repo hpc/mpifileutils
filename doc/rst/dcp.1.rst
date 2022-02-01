@@ -76,7 +76,7 @@ OPTIONS
 
 .. option:: -p, --preserve
 
-   Preserve permissions, group, timestamps, and extended attributes.
+   Preserve permissions, group, and timestamps.
 
 .. option:: -s, --direct
 

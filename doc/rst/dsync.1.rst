@@ -15,6 +15,9 @@ dsync makes DEST match SRC, adding missing entries from DEST, and updating
 existing entries in DEST as necessary so that SRC and DEST have identical
 content, ownership, timestamps, and permissions.
 
+dsync is similar to :manpage:`rsync(1)` archive mode for creating and
+then maintaining an identical copy of a source directory tree.
+
 OPTIONS
 -------
 
@@ -91,10 +94,10 @@ OPTIONS
    in /src.bak will instead be hardlinked to the file in /src.bak:
 
    # initial backup of /src
-   dsync /src /src.bak
+   ``dsync /src /src.bak``
 
    # incremental backup of /src
-   dsync --link-dest /src.bak /src /src.bak.inc
+   ``dsync --link-dest /src.bak /src /src.bak.inc``
 
 .. option:: -S, --sparse
 

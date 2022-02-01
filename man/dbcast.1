@@ -35,12 +35,15 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 \fBdbcast [OPTION] SRC DEST\fP
 .SH DESCRIPTION
 .sp
-Parallel MPI application to recursively broadcast a single file from a
+Parallel MPI application to broadcast a single file from a
 global file system to node\-local storage, like ramdisk or an SSD.
 .sp
 The file is logically sliced into chunks and collectively copied from a
-global file system to node\-local storage. The source file SRC must be
-readable by all MPI processes. The destination file DEST should be the
+global file system to node\-local storage. The bytes of the source file
+are read from the global file system once and the data are forwarded
+through MPI to be written to storage on all compute nodes.
+The source file SRC must be readable by all MPI processes.
+The destination file DEST should be the
 full path of the file in node\-local storage. If needed, parent
 directories for the destination file will be created as part of the
 broadcast.

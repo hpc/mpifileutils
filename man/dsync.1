@@ -40,6 +40,9 @@ Parallel MPI application to synchronize two files or two directory trees.
 dsync makes DEST match SRC, adding missing entries from DEST, and updating
 existing entries in DEST as necessary so that SRC and DEST have identical
 content, ownership, timestamps, and permissions.
+.sp
+dsync is similar to \fBrsync(1)\fP archive mode for creating and
+then maintaining an identical copy of a source directory tree.
 .SH OPTIONS
 .INDENT 0.0
 .TP
@@ -126,10 +129,10 @@ For example in the following, any file that would be copied from
 in /src.bak will instead be hardlinked to the file in /src.bak:
 .sp
 # initial backup of /src
-dsync /src /src.bak
+\fBdsync /src /src.bak\fP
 .sp
 # incremental backup of /src
-dsync –link\-dest /src.bak /src /src.bak.inc
+\fBdsync \-\-link\-dest /src.bak /src /src.bak.inc\fP
 .UNINDENT
 .INDENT 0.0
 .TP
