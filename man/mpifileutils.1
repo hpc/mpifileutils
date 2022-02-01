@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "MPIFILEUTILS" "1" "Jan 26, 2021" "0.11.0" "mpiFileUtils"
+.TH "MPIFILEUTILS" "1" "Jan 31, 2022" "0.11.1" "mpiFileUtils"
 .SH NAME
 mpifileutils \- mpiFileUtils Documentation
 .
@@ -32,18 +32,282 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 ..
 .SH OVERVIEW
 .sp
-mpiFileUtils provides both a library called libmfu and a suite of MPI\-based
-tools to manage large datasets, which may vary from large directory trees to
-large files. High\-performance computing users often generate large datasets with
-parallel applications that run with many processes (millions in some cases).
-However those users are then stuck with single\-process tools like cp and rm to
-manage their datasets. This suite provides MPI\-based tools to handle typical
-jobs like copy, remove, and compare for such datasets, providing speedups of up
-to 50x. The libmfu library simplifies the creation of new tools
-and it can be called directly from within HPC applications.
+High\-performance computing users generate large datasets using parallel applications that can run with thousands of processes.
+However, users are often stuck managing those datasets using traditional single\-process tools like cp and rm.
+This mismatch in scale makes it impractical for users to work with their data.
+.sp
+The mpiFileUtils suite solves this problem by offering MPI\-based tools for basic tasks like copy, remove, and compare for such datasets,
+delivering orders of magnitude in performance speedup over their single\-process counterparts.
+Furthermore, the libmfu library packages common functionality to simplify the creation of new tools,
+and it can even be invoked directly from within HPC applications.
 .sp
 Video Overview: \fI\%“Scalable Management of HPC Datasets with mpiFileUtils”\fP, HPCKP‘20.
+.sp
+The figure below, taken from the above presentation, illustrates the potential performance improvement that one can achieve
+when scaling a tool like dcp to utilize more compute resources.
+.INDENT 0.0
+.INDENT 2.5
+[image]
+dcp scaling performance on the Sierra cluster at LLNL using 40 processes/node.  Shows the time required to copy a single directory of 200k files totaling 24.4 TiB of data.  The minimum time of 93 seconds at 64 nodes is 495x faster than the 12.75 hours taken by the cp command..UNINDENT
+.UNINDENT
 .SH USER GUIDE
+.SS Build
+.sp
+mpiFileUtils and its dependencies can be installed with CMake or Spack.
+Several build variations are described in this section:
+.INDENT 0.0
+.IP \(bu 2
+CMake
+.IP \(bu 2
+Spack
+.IP \(bu 2
+development build with CMake
+.IP \(bu 2
+development build with Spack
+.UNINDENT
+.SS CMake
+.sp
+mpiFileUtils requires CMake 3.1 or higher.
+Before running cmake, ensure that the MPI wrapper scripts like mpicc are loaded in your environment.
+.sp
+The simplest mpiFileUtils install for many users is to build from a release package.
+This packages the source for a specific version of mpiFileUtils along with the corresponding source for several of its dependencies in a single tarball.
+mpiFileUtils release packages are available as attachments from their respective GitHub Releases page:
+.sp
+\fI\%https://github.com/hpc/mpifileutils/releases\fP
+.sp
+mpiFileUtils optionally depends on libarchive, version 3.5.1.
+If new enough, the system install of libarchive may be sufficient,
+though even newer versions may be incompatible with the required version.
+To be certain of compatibility, it is recommended that one install libarchive\-3.5.1 with commands like the following
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+#!/bin/bash
+mkdir install
+installdir=\(gapwd\(ga/install
+
+wget https://github.com/libarchive/libarchive/releases/download/3.5.1/libarchive\-3.5.1.tar.gz
+tar \-zxf libarchive\-3.5.1.tar.gz
+cd libarchive\-3.5.1
+  ./configure \-\-prefix=$installdir
+  make install
+cd ..
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+To build on PowerPC, one may need to add \fB\-\-build=powerpc64le\-redhat\-linux\-gnu\fP to the configure command.
+.sp
+Assuming libarchive has been installed to an \fIinstall\fP directory as shown above,
+one can then build mpiFileUtils from a release like v0.11 with commands like the following:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+wget https://github.com/hpc/mpifileutils/releases/download/v0.11/mpifileutils\-v0.11.tgz
+tar \-zxf mpifileutils\-v0.11.tgz
+cd mpifileutils\-v0.11
+  mkdir build
+  cd build
+    cmake .. \e
+      \-DWITH_LibArchive_PREFIX=../../install \e
+      \-DCMAKE_INSTALL_PREFIX=../../install
+    make \-j install
+  cd ..
+cd ..
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Additional CMake options:
+.INDENT 0.0
+.IP \(bu 2
+\fB\-DENABLE_LIBARCHIVE=[ON/OFF]\fP : use libarchive and build tools requiring libarchive like dtar, defaults to \fBON\fP
+.IP \(bu 2
+\fB\-DENABLE_XATTRS=[ON/OFF]\fP : use extended attributes and libattr, defaults to \fBON\fP
+.IP \(bu 2
+\fB\-DENABLE_LUSTRE=[ON/OFF]\fP : specialization for Lustre, defaults to \fBOFF\fP
+.IP \(bu 2
+\fB\-DENABLE_GPFS=[ON/OFF]\fP : specialization for GPFS, defaults to \fBOFF\fP
+.IP \(bu 2
+\fB\-DENABLE_EXPERIMENTAL=[ON/OFF]\fP : build experimental tools, defaults to \fBOFF\fP
+.UNINDENT
+.SS DAOS support
+.sp
+To build with DAOS support, first install mpiFileUtils dependencies as mentioned above,
+and also make sure DAOS is installed. If DAOS is installed under a standard
+system path then specifying the DAOS path with \fB\-DWITH_DAOS_PREFIX\fP is unnecessary.
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+cmake ../mpifileutils \e
+  \-DCMAKE_INSTALL_PREFIX=../install \e
+  \-DWITH_DAOS_PREFIX=</path/to/daos/> \e
+  \-DENABLE_DAOS=ON
+make \-j install
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+Some DAOS\-enabled tools require HDF5.
+To use the \fIdaos\-serialize\fP and \fIdaos\-deserialize\fP tools, HDF5 1.2+ is required.
+To copy HDF5 containers with \fIdcp\fP, HDF5 1.8+ is required, along with the daos\-vol.
+.sp
+To build with HDF5 support, add the following flags during CMake.
+If HDF5 is installed under a standard system path then specifying the HDF5 path with \fB\-DWITH_HDF5_PREFIX\fP is unnecessary.
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+\-DENABLE_HDF5=ON \e
+\-DWITH_HDF5_PREFIX=</path/to/hdf5>
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.SS Spack
+.sp
+To use \fI\%Spack\fP, it is recommended that one first create a \fIpackages.yaml\fP file to list system\-provided packages, like MPI.
+Without doing this, Spack will fetch and install an MPI library that may not work on your system.
+Make sure that you’ve set up spack in your shell (see \fI\%these instructions\fP).
+.sp
+Once Spack has been configured, mpiFileUtils can be installed as:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+spack install mpifileutils
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+or to enable all features:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+spack install mpifileutils +lustre +gpfs +experimental
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.SS Development build with CMake
+.sp
+To make changes to mpiFileUtils, one may wish to build from a clone of the repository.
+This requires that one installs the mpiFileUtils dependencies separately,
+which can be done with the following commands:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+#!/bin/bash
+mkdir install
+installdir=\(gapwd\(ga/install
+
+mkdir deps
+cd deps
+  wget https://github.com/hpc/libcircle/releases/download/v0.3/libcircle\-0.3.0.tar.gz
+  wget https://github.com/llnl/lwgrp/releases/download/v1.0.3/lwgrp\-1.0.3.tar.gz
+  wget https://github.com/llnl/dtcmp/releases/download/v1.1.1/dtcmp\-1.1.1.tar.gz
+  wget https://github.com/libarchive/libarchive/releases/download/3.5.1/libarchive\-3.5.1.tar.gz
+
+  tar \-zxf libcircle\-0.3.0.tar.gz
+  cd libcircle\-0.3.0
+    ./configure \-\-prefix=$installdir
+    make install
+  cd ..
+
+  tar \-zxf lwgrp\-1.0.3.tar.gz
+  cd lwgrp\-1.0.3
+    ./configure \-\-prefix=$installdir
+    make install
+  cd ..
+
+  tar \-zxf dtcmp\-1.1.1.tar.gz
+  cd dtcmp\-1.1.1
+    ./configure \-\-prefix=$installdir \-\-with\-lwgrp=$installdir
+    make install
+  cd ..
+
+  tar \-zxf libarchive\-3.5.1.tar.gz
+  cd libarchive\-3.5.1
+    ./configure \-\-prefix=$installdir
+    make install
+  cd ..
+cd ..
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+One can then clone, build, and install mpiFileUtils:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+git clone https://github.com/hpc/mpifileutils
+mkdir build
+cd build
+cmake ../mpifileutils \e
+  \-DWITH_DTCMP_PREFIX=../install \e
+  \-DWITH_LibCircle_PREFIX=../install \e
+  \-DWITH_LibArchive_PREFIX=../install \e
+  \-DCMAKE_INSTALL_PREFIX=../install
+make \-j install
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+The same CMake options as described in earlier sections are available.
+.SS Development build with Spack
+.sp
+One can also build from a clone of the mpiFileUtils repository
+after using Spack to install its dependencies via the \fIspack.yaml\fP file that is distributed with mpiFileUtils.
+From the root directory of mpiFileUtils, run the command \fIspack find\fP to determine which packages Spack will install.
+Next, run \fIspack concretize\fP to have Spack perform dependency analysis.
+Finally, run \fIspack install\fP to build the dependencies.
+.sp
+There are two ways to tell CMake about the dependencies.
+First, you can use \fIspack load [depname]\fP to put the installed dependency into your environment paths.
+Then, at configure time, CMake will automatically detect the location of these dependencies.
+Thus, the commands to build become:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+git clone https://github.com/hpc/mpifileutils
+mkdir build install
+cd mpifileutils
+spack install
+spack load dtcmp
+spack load libcircle
+spack load libarchive
+cd ../build
+cmake ../mpifileutils
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+The other way to use spack is to create a “view” to the installed dependencies.
+Details on this are coming soon.
 .SS Project Design Principles
 .sp
 The following principles drive design decisions in the project.
@@ -128,7 +392,7 @@ dsh \- List and remove files with interactive commands.
 .IP \(bu 2
 dfilemaker \- Generate random files.
 .UNINDENT
-.SS libmfu
+.SS Common Library \- libmfu
 .sp
 Functionality that is common to multiple tools is moved to the common library,
 libmfu. This goal of this library is to make it easy to develop new tools and
@@ -205,2068 +469,9 @@ should consider adding the missing wrapper.
 .sp
 The \fI\%mfu_util.h\fP
 functions provide wrappers for error reporting and memory allocation.
-.SS Build
-.sp
-mpiFileUtils and its dependencies can be installed with and without Spack.
-There are several common variations described here:
-.INDENT 0.0
-.IP \(bu 2
-install both mpiFileUtils and its dependencies with Spack
-.IP \(bu 2
-install both mpiFileUtils and its dependencies directly
-.IP \(bu 2
-install mpiFileUtis directly after installing its dependencies with Spack
-.UNINDENT
-.SS Build everything with Spack
-.sp
-To use \fI\%Spack\fP, it is recommended that one first create a \fIpackages.yaml\fP file to list system\-provided packages, like MPI.
-Without doing this, Spack will fetch and install an MPI library that may not work on your system.
-Make sure that you’ve set up spack in your shell (see \fI\%these instructions\fP).
-.sp
-Once Spack has been configured, mpiFileUtils can be installed as:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-spack install mpifileutils
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.sp
-or to enable all features:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-spack install mpifileutils +lustre +gpfs +experimental
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.SS Build everything directly
-.sp
-To build directly, mpiFileUtils requires CMake 3.1 or higher.
-First ensure MPI wrapper scripts like mpicc are loaded in your environment.
-Then to install the dependencies, run the following commands:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-#!/bin/bash
-mkdir install
-installdir=\(gapwd\(ga/install
-
-mkdir deps
-cd deps
-  wget https://github.com/hpc/libcircle/releases/download/v0.3/libcircle\-0.3.0.tar.gz
-  wget https://github.com/llnl/lwgrp/releases/download/v1.0.3/lwgrp\-1.0.3.tar.gz
-  wget https://github.com/llnl/dtcmp/releases/download/v1.1.1/dtcmp\-1.1.1.tar.gz
-  wget https://github.com/libarchive/libarchive/releases/download/3.5.1/libarchive\-3.5.1.tar.gz
-
-  tar \-zxf libcircle\-0.3.0.tar.gz
-  cd libcircle\-0.3.0
-    ./configure \-\-prefix=$installdir
-    make install
-  cd ..
-
-  tar \-zxf lwgrp\-1.0.3.tar.gz
-  cd lwgrp\-1.0.3
-    ./configure \-\-prefix=$installdir
-    make install
-  cd ..
-
-  tar \-zxf dtcmp\-1.1.1.tar.gz
-  cd dtcmp\-1.1.1
-    ./configure \-\-prefix=$installdir \-\-with\-lwgrp=$installdir
-    make install
-  cd ..
-
-  tar \-zxf libarchive\-3.5.1.tar.gz
-  cd libarchive\-3.5.1
-    ./configure \-\-prefix=$installdir
-    make install
-  cd ..
-cd ..
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.sp
-To build on PowerPC, one may need to add \fB\-\-build=powerpc64le\-redhat\-linux\-gnu\fP
-to the configure commands.
-.sp
-Assuming the dependencies have been placed in
-an \fIinstall\fP directory as shown above, build mpiFileUtils from a release like v0.10:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-wget https://github.com/hpc/mpifileutils/archive/v0.10.tar.gz
-tar \-zxf v0.10.tar.gz
-mkdir build install
-cd build
-cmake ../mpifileutils\-0.10 \e
-  \-DWITH_DTCMP_PREFIX=../install \e
-  \-DWITH_LibCircle_PREFIX=../install \e
-  \-DCMAKE_INSTALL_PREFIX=../install
-make install
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.sp
-or to build the latest mpiFileUtils from the master branch:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-git clone \-\-depth 1 https://github.com/hpc/mpifileutils
-mkdir build install
-cd build
-cmake ../mpifileutils \e
-  \-DWITH_DTCMP_PREFIX=../install \e
-  \-DWITH_LibCircle_PREFIX=../install \e
-  \-DCMAKE_INSTALL_PREFIX=../install
-make install
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.sp
-build latest mpiFileUtils from the master branch with DAOS Support:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-git clone \-\-depth 1 https://github.com/hpc/mpifileutils
-mkdir build install
-cd build
-cmake ../mpifileutils \e
-  \-DWITH_DTCMP_PREFIX=../install \e
-  \-DWITH_LibCircle_PREFIX=../install \e
-  \-DCMAKE_INSTALL_PREFIX=../install \e
-  \-DWITH_DAOS_PREFIX=</path/to/daos/> \e
-  \-DENABLE_DAOS=ON
-make install
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.sp
-The above build with DAOS option also assumes you have already installed DAOS. If
-DAOS is installed under a standard system path then specifying the DAOS path is unnecessary.
-.sp
-To enable Lustre, GPFS, and experimental tools, add the following flags during CMake:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-\-DENABLE_LUSTRE=ON
-\-DENABLE_GPFS=ON
-\-DENABLE_EXPERIMENTAL=ON
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.sp
-To disable linking against libarchive, and tools requiring libarchive, add the following flag during CMake:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-\-DENABLE_LIBARCHIVE=OFF
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.SS Build mpiFileUtils directly, build its dependencies with Spack
-.sp
-One can use Spack to install mpiFileUtils dependencies using the \fIspack.yaml\fP file distributed with mpiFileUtils.
-From the root directory of mpiFileUtils, run the command \fIspack find\fP to determine which packages spack will install.
-Next, run \fIspack concretize\fP to have spack perform dependency analysis.
-Finally, run \fIspack install\fP to build the dependencies.
-.sp
-There are two ways to tell CMake about the dependencies.
-First, you can use \fIspack load [depname]\fP to put the installed dependency into your environment paths.
-Then, at configure time, CMake will automatically detect the location of these dependencies.
-Thus, the commands to build become:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-git clone \-\-depth 1 https://github.com/hpc/mpifileutils
-mkdir build install
-cd mpifileutils
-spack install
-spack load dtcmp
-spack load libcircle
-spack load libarchive
-cd ../build
-cmake ../mpifileutils
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.sp
-The other way to use spack is to create a “view” to the installed dependencies.
-Details on this are coming soon.
-.SH MAN PAGES
-.SS dbcast
-.SS SYNOPSIS
-.sp
-\fBdbcast [OPTION] SRC DEST\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to recursively broadcast a single file from a
-global file system to node\-local storage, like ramdisk or an SSD.
-.sp
-The file is logically sliced into chunks and collectively copied from a
-global file system to node\-local storage. The source file SRC must be
-readable by all MPI processes. The destination file DEST should be the
-full path of the file in node\-local storage. If needed, parent
-directories for the destination file will be created as part of the
-broadcast.
-.sp
-In the current implementation, dbcast requires at least two MPI
-processes per compute node, and all compute nodes must run an equal
-number of MPI processes.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-s, \-\-size SIZE
-The chunk size in bytes used to segment files during the broadcast.
-Units like “MB” and “GB” should be immediately follow the number
-without spaces (ex. 2MB). The default size is 1MB. It is recommended
-to use the stripe size of a file if this is known.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the command usage, and the list of options available.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-To broadcast a file to /ssd on each node:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dbcast /global/path/to/filenane /ssd/filename\fP
-.INDENT 0.0
-.IP 2. 3
-Same thing, but slicing at 10MB chunks:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dbcast \-s 10MB /global/path/to/filenane /ssd/filename\fP
-.INDENT 0.0
-.IP 3. 3
-To read the current striping parameters of a file on Lustre:
-.UNINDENT
-.sp
-\fBlfs getstripe /global/path/to/filename\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dbz2
-.SS SYNOPSIS
-.sp
-\fBdbz2 [OPTIONS] [\-z|\-d] FILE\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to compress or decompress a file.
-.sp
-When compressing, a new file will be created with a .dbz2 extension.
-When decompressing, the .dbz2 extension will be dropped from the file name.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-z, \-\-compress
-Compress the file
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-d, \-\-decompress
-Decompress the file
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-k, \-\-keep
-Keep the input file.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-f, \-\-force
-Overwrite the output file, if it exists.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-b, \-\-blocksize SIZE
-Set the compression block size, from 1 to 9.
-Where 1=100kB … and 9=900kB. Default is 9.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Verbose output (optional).
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Quiet output
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print usage.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-To compress a file:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dbz2 \-\-compress /path/to/file\fP
-.INDENT 0.0
-.IP 2. 3
-To compress a file and overwrite any existing output file:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dbz2 \-\-force \-\-compress /path/to/file\fP
-.INDENT 0.0
-.IP 3. 3
-To decompress a file:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dbz2 \-\-decompress /path/to/file.dbz2\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dchmod
-.SS SYNOPSIS
-.sp
-\fBdchmod [OPTION] PATH …\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to recursively change permissions and/or group
-from a top level directory.
-.sp
-dchmod provides functionality similar to \fBchmod(1)\fP, \fBchown(1)\fP, and \fBchgrp(1)\fP\&.
-Like \fBchmod(1)\fP, the tool supports the use of octal or symbolic mode to
-change the permissions.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-i, \-\-input FILE
-Read source list from FILE. FILE must be generated by another tool
-from the mpiFileUtils suite.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-u, \-\-owner USER
-Change owner to specified USER name or numeric user id.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-g, \-\-group GROUP
-Change group to specified GROUP name or numeric group id.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-m, \-\-mode MODE
-The mode to apply to each item. MODE may be octal or symbolic syntax
-similar to \fBchmod(1)\fP\&. In symbolic notation, “ugoa” are supported
-as are “rwxX”. As with chmod, if no leading letter “ugoa” is provided,
-mode bits are combined with umask to determine the actual mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-f, \-\-force
-Attempt to change every item.  By default, dchmod avoids unncessary
-chown and chmod calls, for example trying to change the group
-on an item that already has the correct group, or trying to change
-the group on an item that is not owned by the user running the tool.
-With –force, dchmod executes chown/chmod calls on every item.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-s, \-\-silent
-Suppress EPERM error messages, which is useful when running dchmod
-on large directories with files owned by other users.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-exclude REGEX
-Do not modify items whose full path matches REGEX, processed by
-\fBregexec(3)\fP\&.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-match REGEX
-Only modify items whose full path matches REGEX, processed by
-\fBregexec(3)\fP\&.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-n, \-\-name
-Change –exclude and –match to apply to item name rather than its
-full path.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-progress N
-Print progress message to stdout approximately every N seconds.
-The number of seconds must be a non\-negative integer.
-A value of 0 disables progress messages.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode. Prints a list of statistics including the
-number of files walked, the number of levels there are in the
-directory tree, and the number of files the command operated on, and
-the files/sec rate for each of those.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the command usage, and the list of options available.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-Use octal mode to change permissions:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dchmod \-\-mode 755 /directory\fP
-.INDENT 0.0
-.IP 2. 3
-Set group and mode in a single command using symbolic mode:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dchmod \-\-group mygroup \-\-mode u+r,g+rw /directory\fP
-.INDENT 0.0
-.IP 3. 3
-Set owner and group, leaving permissions the same:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dchmod \-\-owner user1 \-\-group mygroup /directory\fP
-.INDENT 0.0
-.IP 4. 3
-Change permissions to u+rw on all items EXCEPT those whose name match
-regex:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dchmod \-\-name \-\-exclude ‘afilename’ \-\-mode u+rw /directory\fP
-.sp
-Note: You can use –match to change file permissions on all of the
-files/directories that match the regex.
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dcmp
-.SS SYNOPSIS
-.sp
-\fBdcmp [OPTION] SRC DEST\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to compare two files or to recursively compare
-files with same relative paths within two different directories.
-.sp
-dcmp provides functionality similar to a recursive \fBcmp(1)\fP\&. It reports
-how many files in two different directories are the same or different.
-.sp
-dcmp can be configured to compare a number of different file properties.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-o, \-\-output EXPR:FILE
-Writes list of files matching expression EXPR to specified FILE.
-The expression consists of a set of fields and states described below.
-More than one \-o option is allowed in a single invocation,
-in which case, each option should provide a different output file name.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-t, \-\-text
-Change –output to write files in text format rather than binary.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-b, \-\-base
-Enable base checks and normal stdout results when –output is used.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-bufsize SIZE
-Set the I/O buffer to be SIZE bytes.  Units like “MB” and “GB” may
-immediately follow the number without spaces (eg. 8MB). The default
-bufsize is 64MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-chunksize SIZE
-Multiple processes copy a large file in parallel by dividing it into chunks.
-Set chunk to be at minimum SIZE bytes.  Units like “MB” and
-“GB” can immediately follow the number without spaces (eg. 64MB).
-The default chunksize is 64MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-daos\-prefix PREFIX
-Specify the DAOS prefix to be used. This is only necessary
-if copying a subset of a POSIX container in DAOS using a
-Unified Namespace path.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-daos\-api API
-Specify the DAOS API to be used. By default, the API is automatically
-determined based on the container type, where POSIX containers use the
-DFS API, and all other containers use the DAOS object API.
-Values must be in {DFS, DAOS}.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-s, \-\-direct
-Use O_DIRECT to avoid caching file data.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-progress N
-Print progress message to stdout approximately every N seconds.
-The number of seconds must be a non\-negative integer.
-A value of 0 disables progress messages.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode. Prints a list of statistics/timing data for the
-command. Files walked, started, completed, seconds, files, bytes
-read, byte rate, and file rate.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-l, \-\-lite
-lite mode does a comparison of file modification time and size. If
-modification time and size are the same, then the contents are assumed
-to be the same. Similarly, if the modification time or size is different,
-then the contents are assumed to be different. The lite mode does no comparison
-of data/content in the file.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the command usage, and the list of options available.
-.UNINDENT
-.SS EXPRESSIONS
-.sp
-An expression is made up of one or more conditions, where each condition specifies a field and a state.
-A single condition consists of a field name, an ‘=’ sign, and a state name.
-.sp
-Valid fields are listed below, along with the property of the entry that is checked.
-.TS
-center;
-|l|l|.
-_
-T{
-Field
-T}	T{
-Property of entry
-T}
-_
-T{
-EXIST
-T}	T{
-whether entry exists
-T}
-_
-T{
-TYPE
-T}	T{
-type of entry, e.g., regular file, directory, symlink
-T}
-_
-T{
-SIZE
-T}	T{
-size of entry in bytes, if a regular file
-T}
-_
-T{
-UID
-T}	T{
-user id of entry
-T}
-_
-T{
-GID
-T}	T{
-group id of entry
-T}
-_
-T{
-ATIME
-T}	T{
-time of last access
-T}
-_
-T{
-MTIME
-T}	T{
-time of last modification
-T}
-_
-T{
-CTIME
-T}	T{
-time of last status change
-T}
-_
-T{
-PERM
-T}	T{
-permission bits of entry
-T}
-_
-T{
-ACL
-T}	T{
-ACLs associated with entry, if any
-T}
-_
-T{
-CONTENT
-T}	T{
-file contents of entry, byte\-for\-byte comparision, if a regular file
-T}
-_
-.TE
-.sp
-Valid conditions for the EXIST field are:
-.TS
-center;
-|l|l|.
-_
-T{
-Condition
-T}	T{
-Meaning
-T}
-_
-T{
-EXIST=ONLY_SRC
-T}	T{
-entry exists only in source path
-T}
-_
-T{
-EXIST=ONLY_DEST
-T}	T{
-entry exists only in destination path
-T}
-_
-T{
-EXIST=DIFFER
-T}	T{
-entry exists in either source or destination, but not both
-T}
-_
-T{
-EXIST=COMMON
-T}	T{
-entry exists in both source and destination
-T}
-_
-.TE
-.sp
-All other fields may only specify the DIFFER and COMMON states.
-.sp
-Conditions can be joined together with AND (@) and OR (,) operators without spaces to build complex expressions.
-For example, the following expression reports entries that exist in both source and destination paths, but are of different types:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-EXIST=COMMON@TYPE=DIFFER
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.sp
-The AND operator binds with higher precedence than the OR operator.
-For example, the following expression matches on entries which either (exist in both source and destination and whose types differ) or (only exist in the source):
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.sp
-Some conditions imply others.
-For example, for CONTENT to be considered the same,
-the entry must exist in both source and destination, the types must match, the sizes must match, and finally the contents must match:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-SIZE=COMMON    => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON
-CONTENT=COMMON => EXISTS=COMMON@TYPE=COMMON@SIZE=COMMON@CONTENT=COMMON
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.sp
-A successful check on any other field also implies that EXIST=COMMON.
-.sp
-When used with the \-o option, one must also specify a file name at the end of the expression, separated with a ‘:’.
-The list of any entries that match the expression are written to the named file.
-For example, to list any entries matching the above expression to a file named outfile1,
-one should use the following option:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-\-o EXIST=COMMON@TYPE=DIFFER:outfile1
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.sp
-If the –base option is given or when no output option is specified,
-the following expressions are checked and numeric results are reported to stdout:
-.INDENT 0.0
-.INDENT 3.5
-.sp
-.nf
-.ft C
-EXIST=COMMON
-EXIST=DIFFER
-EXIST=COMMON@TYPE=COMMON
-EXIST=COMMON@TYPE=DIFFER
-EXIST=COMMON@CONTENT=COMMON
-EXIST=COMMON@CONTENT=DIFFER
-.ft P
-.fi
-.UNINDENT
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-Compare two files in different directories:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dcmp /src1/file1 /src2/file2\fP
-.INDENT 0.0
-.IP 2. 3
-Compare two directories with verbose output. The verbose output prints timing and number of bytes read:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dcmp \-v /src1 /src2\fP
-.INDENT 0.0
-.IP 3. 3
-Write list of entries to outfile1 that are only in src1 or whose names exist in both src1 and src2 but whose types differ:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC:outfile1 /src1 /src2\fP
-.INDENT 0.0
-.IP 4. 3
-Same as above but also write list of entries to outfile2 that exist in either src1 or src2 but not both:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dcmp \-o EXIST=COMMON@TYPE=DIFFER,EXIST=ONLY_SRC:outfile1 \-o EXIST=DIFFER:outfile2 /src1 /src2\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dcp
-.SS SYNOPSIS
-.sp
-\fBdcp [OPTION] SRC DEST\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to recursively copy files and directories.
-.sp
-dcp is a file copy tool in the spirit of \fBcp(1)\fP that evenly
-distributes the work of scanning the directory tree, and copying file
-data across a large cluster without any centralized state.  It is
-designed for copying files that are located on a distributed parallel
-file system, and it splits large file copies across multiple processes.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-\-bufsize SIZE
-Set the I/O buffer to be SIZE bytes.  Units like “MB” and “GB” may
-immediately follow the number without spaces (eg. 8MB). The default
-bufsize is 64MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-chunksize SIZE
-Multiple processes copy a large file in parallel by dividing it into chunks.
-Set chunk to be at minimum SIZE bytes.  Units like “MB” and
-“GB” can immediately follow the number without spaces (eg. 64MB).
-The default chunksize is 64MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-daos\-prefix PREFIX
-Specify the DAOS prefix to be used. This is only necessary
-if copying a subset of a POSIX container in DAOS using a
-Unified Namespace path.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-daos\-api API
-Specify the DAOS API to be used. By default, the API is automatically
-determined based on the container type, where POSIX containers use the
-DFS API, and all other containers use the DAOS object API.
-Values must be in {DFS, DAOS}.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-i, \-\-input FILE
-Read source list from FILE. FILE must be generated by another tool
-from the mpiFileUtils suite.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-L, \-\-dereference
-Dereference symbolic links and copy the target file or directory
-that each symbolic link refers to.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-P, \-\-no\-dereference
-Do not follow symbolic links in source paths. Effectviely allows
-symbolic links to be copied when the link target is not valid
-or there is not permission to read the link’s target.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-p, \-\-preserve
-Preserve permissions, group, timestamps, and extended attributes.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-s, \-\-direct
-Use O_DIRECT to avoid caching file data.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-S, \-\-sparse
-Create sparse files when possible.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-progress N
-Print progress message to stdout approximately every N seconds.
-The number of seconds must be a non\-negative integer.
-A value of 0 disables progress messages.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print a brief message listing the \fBdcp(1)\fP options and usage.
-.UNINDENT
-.SS RESTRICTIONS
-.sp
-If a long\-running copy is interrupted, one should delete the partial
-copy and run dcp again from the beginning. One may use drm to quickly
-remove a partial copy of a large directory tree.
-.sp
-To ensure the copy is successful, one should run dcmp after dcp
-completes to verify the copy, especially if dcp was not run with the \-s
-option.
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-To copy dir1 as dir2:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dcp /source/dir1 /dest/dir2\fP
-.INDENT 0.0
-.IP 2. 3
-To copy contents of dir1 into dir2:
-.UNINDENT
-.sp
-\fBmkdir /dest/dir2 mpirun \-np 128 dcp /source/dir1/\e* /dest/dir2\fP
-.INDENT 0.0
-.IP 3. 3
-To copy while preserving permissions, group, timestamps, and
-attributes:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dcp \-p /source/dir1/ /dest/dir2\fP
-.SS KNOWN BUGS
-.sp
-Using the \-S option for sparse files does not work yet at LLNL. If you
-try to use it then dcp will default to a normal copy.
-.sp
-The maximum supported file name length for any file transferred is
-approximately 4068 characters. This may be less than the number of
-characters that your operating system supports.
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS ddup
-.SS SYNOPSIS
-.sp
-\fBddup [OPTION] PATH\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to report files under a directory tree having identical content.
-.sp
-ddup reports path names to files having identical content (duplicate files).
-A top\-level directory is specified, and the path name to any file that is a duplicate
-of another anywhere under that same directory tree is reported.
-The path to each file is reported, along with a final hash representing its content.
-Multiple sets of duplicate files can be matched using this final reported hash.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-d, \-\-debug LEVEL
-Set verbosity level.  LEVEL can be one of: fatal, err, warn, info, dbg.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the command usage, and the list of options available.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-To report any duplicate files under a directory tree:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 ddup /path/to/haystack\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dfind
-.SS SYNOPSIS
-.sp
-\fBdfind [OPTION] [EXPRESSION] PATH …\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to filter a list of files according to an expression.
-.sp
-dfind provides functionality similar to \fBfind(1)\fP\&.
-.sp
-The file list can be obtained by either walking one or more paths provided on the command line or through an input list.
-.sp
-The filtered list can be written to an output file.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-i, \-\-input FILE
-Read source list from FILE. FILE must be generated by another tool
-from the mpiFileUtils suite.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-o, \-\-output FILE
-Write the processed list to a file.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print a brief message listing the \fBdfind(1)\fP options and usage.
-.UNINDENT
-.SS EXPRESSIONS
-.sp
-Numeric arguments can be specified as:
-.INDENT 0.0
-.INDENT 3.5
-.TS
-center;
-|l|l|.
-_
-T{
-+N
-T}	T{
-more than N
-T}
-_
-T{
-\-N
-T}	T{
-less than N
-T}
-_
-T{
-N
-T}	T{
-exactly N
-T}
-_
-.TE
-.UNINDENT
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-amin N
-File was last accessed N minutes ago.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-anewer FILE
-File was last accessed more recently than FILE was modified.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-atime N
-File was last accessed N days ago.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-cmin N
-File’s status was last changed N minutes ago.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-cnewer FILE
-File’s status was last changed more recently than FILE was modified.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-ctime N
-File’s status was last changed N days ago.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-mmin N
-File’s data was last modified N minutes ago.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-newer FILE
-File was modified more recently than FILE.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-mtime N
-File’s data was last modified N days ago.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-gid N
-File’s numeric group ID is N.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-group NAME
-File belongs to group NAME.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-uid N
-File’s numeric user ID is N.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-user NAME
-File is owned by user NAME.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-name PATTERN
-Base of file name matches shell pattern PATTERN.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-path PATTERN
-Full path to file matches shell pattern PATTERN.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-regex REGEX
-Full path to file matches POSIX regular expression REGEX.  Regular expressions processed by \fBregexec(3)\fP\&.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-size N
-File size is N bytes.  Units can be used like ‘KB’, ‘MB’, ‘GB’.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-type C
-File is of type C:
-.TS
-center;
-|l|l|.
-_
-T{
-b
-T}	T{
-block device
-T}
-_
-T{
-c
-T}	T{
-char device
-T}
-_
-T{
-d
-T}	T{
-directory
-T}
-_
-T{
-f
-T}	T{
-regular file
-T}
-_
-T{
-l
-T}	T{
-symbolic link
-T}
-_
-T{
-p
-T}	T{
-pipe
-T}
-_
-T{
-s
-T}	T{
-socket
-T}
-_
-.TE
-.UNINDENT
-.SS ACTIONS
-.INDENT 0.0
-.TP
-.B \-\-print
-Print file name to stdout.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-exec CMD ;
-Execute command CMD on file.  All following arguments are taken as arguments to the command until ‘;’ is encountered.  The string ‘{}’ is replaced by the current file name.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-Print all files owner by user1 under given path:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dfind \-v \-\-user user1 \-\-print /path/to/target\fP
-.INDENT 0.0
-.IP 2. 3
-To find all files less than 1GB and write them to a file:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dfind \-v \-o outfile \-\-size \-1GB /path/to/target\fP
-.INDENT 0.0
-.IP 3. 3
-Filter list in infile to find all regular files not changed in the past 180 days and write new list to outfile:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dfind \-v \-i infile \-o outfile \-\-type f \-\-mtime +180\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dreln
-.SS SYNOPSIS
-.sp
-\fBdreln [OPTION] OLDPATH NEWPATH PATH …\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to recursively update symlinks within a
-directory.
-.sp
-dreln walks the specified PATH and updates any symlink whose target
-includes an absolute path to OLDPATH and replaces that symlink
-with a new link whose target points to NEWPATH instead.
-.sp
-This is useful to update symlinks after migrating a large
-directory from one file system to another, whose links specify
-absolute paths to the original file system.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-i, \-\-input FILE
-Read source list from FILE. FILE must be generated by another tool
-from the mpiFileUtils suite.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-p, \-\-preserve
-Preserve existing modification times on links.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-r, \-\-relative
-Replace links using target paths that are relative to NEWPATH.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-progress N
-Print progress message to stdout approximately every N seconds.
-The number of seconds must be a non\-negative integer.
-A value of 0 disables progress messages.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print a brief message listing the \fBdrm(1)\fP options and usage.
-.UNINDENT
-.SS EXAMPLES
-.sp
-1. To update all links under /walk/path whose targets point to /orig/path
-and replace them with targets that point to /new/path:
-.sp
-\fBmpirun \-np 128 dreln \-v /orig/path /new/path /walk/path\fP
-.sp
-2. Same as above, but replace each link target with a relative path
-from the link to its new target under /new/path:
-.sp
-\fBmpirun \-np 128 dreln \-v \-\-relative /orig/path /new/path /walk/path\fP
-.INDENT 0.0
-.IP 3. 3
-One can preserve existing modification times on links:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dreln \-v \-\-preserve /orig/path /new/path /walk/path\fP
-.INDENT 0.0
-.IP 4. 3
-One can specifiy multiple paths to walk:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dreln \-v /orig/path /new/path /walk/path1 /walk/path2\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS drm
-.SS SYNOPSIS
-.sp
-\fBdrm [OPTION] PATH…\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to recursively delete a directory and its
-contents.
-.sp
-drm is a tool for removing files recursively in parallel.
-drm behaves like \fIrm \-rf\fP, but it is faster.
-.sp
-\fBNOTE:\fP
-.INDENT 0.0
-.INDENT 3.5
-DO NOT USE SHELL REGEX!!!
-The –match and –exclude options use POSIX regex syntax. Because of
-this make sure that the shell does not try to interpret your regex before
-it gets passed to the program. You can generally use quotes around your
-regex to prevent the shell from expanding. An example of this using the
-–match option with –dryrun would be:
-.sp
-\fBmpirun \-np 128 drm \-\-dryrun \-v \-\-name \-\-match \(aqfile_.*\(aq /path/to/dir/*\fP
-.UNINDENT
-.UNINDENT
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-i, \-\-input FILE
-Read source list from FILE. FILE must be generated by another tool
-from the mpiFileUtils suite.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-o, \-\-output FILE
-Write the list of items drm attempts to delete to FILE in mpiFileUtils format.
-Format can be changed with –text option.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-t, \-\-text
-Must be used with the –output option. Write list of items drm attempts
-to delete to FILE in ascii text format.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-l, \-\-lite
-Walk file system without stat.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-stat
-Walk file system with stat.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-exclude REGEX
-Do not remove items whose full path matches REGEX, processed by \fBregexec(3)\fP\&.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-match REGEX
-Only remove items whose full path matches REGEX, processed by
-\fBregexec(3)\fP\&.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-name
-Change –exclude and match to apply to item name rather than its
-full path.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-dryrun
-Print a list of files that \fBwould\fP be deleted without deleting
-them. This is useful to check list of items satisfying –exclude or
-–match options before actually deleting anything.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-aggressive
-This option will delete files during the walk phase, and then
-delete directories by level after the walk in drm. You cannot
-use this option with –dryrun.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-T, \-\-traceless
-Delete child items without updating the mtime on their parent directory.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-progress N
-Print progress message to stdout approximately every N seconds.
-The number of seconds must be a non\-negative integer.
-A value of 0 disables progress messages.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print a brief message listing the \fBdrm(1)\fP options and usage.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-To delete a directory and its contents:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 drm \-v /dir/to/delete\fP
-.INDENT 0.0
-.IP 2. 3
-Delete all items (files and directories) ending with .core from
-directory tree:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 drm \-\-match \(aq.core$\(aq /dir/to/delete/from\fP
-.INDENT 0.0
-.IP 3. 3
-List items that would be deleted without removing them:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 drm \-\-dryrun \-\-match \(aq.core$\(aq /dir/to/delete/from\fP
-.INDENT 0.0
-.IP 4. 3
-Delete all items named foo:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 drm \-\-name \-\-match \(aq^foo$\(aq /dir/to/delete/from\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dstripe
-.SS SYNOPSIS
-.sp
-\fBdstripe [OPTION] PATH…\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to restripe files.
-.sp
-This tool is in active development. It currently only works on Lustre.
-.sp
-dstripe enables one to restripe file(s) across the underlying storage
-devices. One must specify a list of paths. All files in those paths can
-be restriped. By default, stripe size is 1MB and stripe count is \-1
-allowing dstripe to use all available stripes.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-c, \-\-count STRIPE_COUNT
-The number of stripes to use during file restriping. If STRIPE_COUNT
-is \-1, then all available stripes are used. If STRIPE_COUNT is 0,
-the lustre file system default is used. The default stripe count is
-\-1.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-s, \-\-size STRIPE_SIZE
-The stripe size to use during file restriping. Units like “MB” and
-“GB” can immediately follow the number without spaces (ex. 2MB). The
-default stripe size is 1MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-m, \-\-minsize SIZE
-The minimum size a file must be to be a candidate for restriping.
-Files smaller than SIZE will not be restriped. Units like “MB” and
-“GB” can immediately follow the number without spaces (ex. 2MB). The
-default minimum file size is 0MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-r, \-\-report
-Display the file size, stripe count, and stripe size of all files
-found in PATH. No restriping is performed when using this option.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-progress N
-Print progress message to stdout approximately every N seconds.
-The number of seconds must be a non\-negative integer.
-A value of 0 disables progress messages.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the command usage, and the list of options available.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-To stripe a file on all storage devices using a 1MB stripe size:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dstripe \-s 1MB /path/to/file\fP
-.INDENT 0.0
-.IP 2. 3
-To stripe a file across 20 storage devices with a 1GB stripe size:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dstripe \-c 20 \-s 1GB /path/to/file\fP
-.INDENT 0.0
-.IP 3. 3
-To restripe all files in /path/to/files/ that are at least 1GB in
-size:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dstripe \-m 1GB /path/to/files/\fP
-.INDENT 0.0
-.IP 4. 3
-To restripe all files in /path/to/files/ across 10 storage devices
-with 2MB stripe size:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dstripe \-c 10 \-s 2MB /path/to/files/\fP
-.INDENT 0.0
-.IP 5. 3
-To display the current stripe count and stripe size of all files in
-/path/to/files/:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dstripe \-r /path/to/files/\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dsync
-.SS SYNOPSIS
-.sp
-\fBdsync [OPTION] SRC DEST\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to synchronize two files or two directory trees.
-.sp
-dsync makes DEST match SRC, adding missing entries from DEST, and updating
-existing entries in DEST as necessary so that SRC and DEST have identical
-content, ownership, timestamps, and permissions.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-\-dryrun
-Show differences without changing anything.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-b, \-\-batch\-files N
-Batch files into groups of up to size N during copy operation.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-bufsize SIZE
-Set the I/O buffer to be SIZE bytes.  Units like “MB” and “GB” may
-immediately follow the number without spaces (eg. 8MB). The default
-bufsize is 64MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-chunksize SIZE
-Multiple processes copy a large file in parallel by dividing it into chunks.
-Set chunk to be at minimum SIZE bytes.  Units like “MB” and
-“GB” can immediately follow the number without spaces (eg. 64MB).
-The default chunksize is 64MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-daos\-prefix PREFIX
-Specify the DAOS prefix to be used. This is only necessary
-if copying a subset of a POSIX container in DAOS using a
-Unified Namespace path.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-daos\-api API
-Specify the DAOS API to be used. By default, the API is automatically
-determined based on the container type, where POSIX containers use the
-DFS API, and all other containers use the DAOS object API.
-Values must be in {DFS, DAOS}.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-c, \-\-contents
-Compare files byte\-by\-byte rather than checking size and mtime
-to determine whether file contents are different.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-D, \-\-delete
-Delete extraneous files from destination.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-L, \-\-dereference
-Dereference symbolic links and copy the target file or directory
-that each symbolic link refers to.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-P, \-\-no\-dereference
-Do not follow symbolic links in source paths. Effectviely allows
-symbolic links to be copied when the link target is not valid
-or there is not permission to read the link’s target.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-s, \-\-direct
-Use O_DIRECT to avoid caching file data.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-link\-dest DIR
-Create hardlink in DEST to files in DIR when file is unchanged
-rather than create a new file. One can use this option to conserve
-storage space during an incremental backup.
-.sp
-For example in the following, any file that would be copied from
-/src to /src.bak.inc that is the same as the file already existing
-in /src.bak will instead be hardlinked to the file in /src.bak:
-.sp
-# initial backup of /src
-dsync /src /src.bak
-.sp
-# incremental backup of /src
-dsync –link\-dest /src.bak /src /src.bak.inc
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-S, \-\-sparse
-Create sparse files when possible.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-progress N
-Print progress message to stdout approximately every N seconds.
-The number of seconds must be a non\-negative integer.
-A value of 0 disables progress messages.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode. Prints a list of statistics/timing data for the
-command. Files walked, started, completed, seconds, files, bytes
-read, byte rate, and file rate.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print the command usage, and the list of options available.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-Synchronize dir2 to match dir1:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dsync /path/to/dir1 /path/to/dir2\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dwalk
-.SS SYNOPSIS
-.sp
-\fBdwalk [OPTION] PATH …\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to recursively walk and list contents in a
-directory.
-.sp
-dwalk provides functionality similar to \fBls(1)\fP and \fBdu(1)\fP\&. Like
-\fBdu(1)\fP, the tool reports a summary of the total number of files and
-bytes. Like \fBls(1)\fP, the tool sorts and prints information about
-individual files.
-.sp
-The output can be sorted on different fields (e.g, name, user, group,
-size, etc). A histogram of file sizes can be computed listing the number
-of files that fall into user\-defined bins.
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-i, \-\-input FILE
-Read source list from FILE. FILE must be generated by another tool
-from the mpiFileUtils suite.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-o, \-\-output FILE
-Write the processed list to FILE in binary format. Format can be changed
-With –text option.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-t, \-\-text
-Must be used with the –output option. Write processed list of files to
-FILE in ascii text format.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-l, \-\-lite
-Walk file system without stat.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-s, \-\-sort FIELD
-Sort output by comma\-delimited fields (see below).
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-d, \-\-distribution size:SEPARATORS
-Print the distribution of file sizes. For example, specifying
-size:0,80,100 will report the number of files that have size 0
-bytes, between 1\-80 bytes, between 81\-99 bytes, and 100 bytes or
-greater.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-f, \-\-file\-histogram
-Creates a file histogram without requiring the user to provide
-the bin sizes. The bins are created dynamically based on the
-max file size. The first bin is always for only zero byte
-files, and the rest go up until the max file size is included
-in the very last bin. It always goes up by orders of magnitude
-in powers of two. So, an example of bin separators would be:
-0, 2^10, 2^20, 2^30. Assuming the max file size was somewhere
-within the 2^20 \- 2^30 range. The histogram also includes both
-files and directories.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-p, \-\-print
-Print files to the screen.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-L, \-\-dereference
-Dereference symbolic links and walk the target file or directory
-that each symbolic link refers to.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-progress N
-Print progress message to stdout approximately every N seconds.
-The number of seconds must be a non\-negative integer.
-A value of 0 disables progress messages.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print usage.
-.UNINDENT
-.SS SORT FIELDS
-.sp
-By default, the list of files dwalk captures is not sorted. To sort the
-list, one or more fields can be specified in a comma\-delimited list:
-.sp
-name,user,group,uid,gid,atime,mtime,ctime,size
-.sp
-A field name can be preceded with ‘\-’ to sort by that field in reverse
-order.
-.sp
-A lexicographic sort is executed if more than one field is given.
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-To print summary information for a directory:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dwalk \-v /dir/to/walk\fP
-.INDENT 0.0
-.IP 2. 3
-To print a list of files, sorted by file size, then by file name:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dwalk –print –sort size,name /dir/to/walk\fP
-.INDENT 0.0
-.IP 3. 3
-To save the list of files:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dwalk –output out.dwalk /dir/to/walk\fP
-.INDENT 0.0
-.IP 4. 3
-Print the file distribution for specified histogram based on the size
-field from the top level directory.
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dwalk \-v –print \-d size:0,20,1G src/\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dgrep
-.SS SYNOPSIS
-.sp
-dgrep …
-.SS DESCRIPTION
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print a brief message listing the \fBdgrep(1)\fP options and usage.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-version
-Print version information and exit.
-.UNINDENT
-.SS Known bugs
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dparallel
-.SS SYNOPSIS
-.sp
-dparallel …
-.SS DESCRIPTION
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print a brief message listing the \fBdparallel(1)\fP options and usage.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-version
-Print version information and exit.
-.UNINDENT
-.SS Known bugs
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SS dtar
-.SS SYNOPSIS
-.sp
-\fBdtar [OPTION] \-c \-f ARCHIVE SOURCE…\fP
-.sp
-\fBdtar [OPTION] \-x \-f ARCHIVE\fP
-.SS DESCRIPTION
-.sp
-Parallel MPI application to create and extract tar files.
-.sp
-dtar writes archives in pax file format.
-In addition to the archive file, dtar creates an index to record
-the number of items and the starting byte offset of each entry within the archive.
-This index enables faster parallel extraction.
-By default, dtar appends its index as the last entry of the archive.
-Optionally, the index may be written as a separate file (with a .dtaridx extension)
-or as an extended attribute (named user.dtar.idx) of the archive file.
-.sp
-dtar can extract archives in various tar formats, including archive files that were created by other tools like tar.
-dtar can also extract archives that have been compressed with gzip, bz2, or compress.
-Compressed archives are significantly slower to extract than uncompressed archives,
-because decompression inhibits available parallelism.
-.sp
-Archives are extracted fastest when a dtar index exists.
-If an index does not exist, dtar can create and record an index
-during extraction to benefit subsequent extractions of the same archive file.
-.sp
-When extracting an archive, dtar skips the entry corresponding to its index.
-If other tools, like tar, are used to extract the archive, the index
-entry is extracted as a regular file that is placed in the current working directory
-with a file extension of “.dtaridx” and having the same basename as the original archive file.
-For an archive that was named “file.tar” when it was created, the dtar index file is named “file.tar.dtaridx”.
-.SS LIMITATIONS
-.sp
-dtar only supports directories, regular files, and symlinks.
-.sp
-dtar works best on Lustre and GPFS.
-There are no known restrictions for creating or extracting archives on these file systems.
-These file systems also deliver the highest bandwidth and file create rates.
-.sp
-dtar can be used on NFS, but there is one key restriction.
-Namely, one should not create an archive file in NFS.
-To create an archive of NFS files, the archive file itself should be written to a directory in Lustre or GPFS.
-The dtar tool writes to an archive file from multiple processes in parallel,
-and the algorithms used to write the archive are not valid for NFS.
-.sp
-dtar can be used to extract an archive file into NFS.
-The archive file that is being extracted may be on any file system.
-.sp
-The target items to be archived must be under the current working directory where dtar is running, so commands like these work.
-.sp
-\fBdtar \-cf foo.tar foo/\fP
-.sp
-\fBdtar \-cf foo.tar dir/foo/\fP
-.sp
-But commands like the following are not supported:
-.sp
-\fBdtar \-cf foo.tar ../foo/\fP
-.sp
-\fBdtar \-cf foo.tar /some/other/absolute/path/to/foo/\fP
-.SS OPTIONS
-.INDENT 0.0
-.TP
-.B \-c, \-\-create
-Create a tar archive.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-x, \-\-extract
-Extract a tar archive.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-f, \-\-file NAME
-Name of archive file.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-C, \-\-chdir DIR
-Change directory to DIR before executing.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-preserve\-owner
-Apply recorded owner and group to extracted files.
-Default uses effective uid/gid of the running process.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-preserve\-times
-Apply recorded atime and mtime to extracted files.
-Default uses current system times.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-preserve\-perms
-Apply recorded permissions to extracted files.
-Default subtracts umask from file permissions.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-preserve\-xattrs
-Record extended attributes (xattrs) when creating archive.
-Apply recorded xattrs to extracted files.
-Default does not record or extract xattrs.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-fsync
-Call fsync before closing files after writing.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-bufsize SIZE
-Set the I/O buffer to be SIZE bytes.  Units like “MB” and “GB” may
-immediately follow the number without spaces (eg. 8MB). The default
-bufsize is 64MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-chunksize SIZE
-Multiple processes copy a large file in parallel by dividing it into chunks.
-Set chunk to be at minimum SIZE bytes.  Units like “MB” and
-“GB” can immediately follow the number without spaces (eg. 64MB).
-The default chunksize is 64MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-memsize SIZE
-Set the memory limit to be SIZE bytes when reading archive files.
-For some archives, dtar can distribute the file across processes
-to store segments of the archive in memory for faster processing.
-Units like “MB” and “GB” may immediately follow the number
-without spaces (eg. 8MB). The default is 256MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-\-progress N
-Print progress message to stdout approximately every N seconds.
-The number of seconds must be a non\-negative integer.
-A value of 0 disables progress messages.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-v, \-\-verbose
-Run in verbose mode.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-q, \-\-quiet
-Run tool silently. No output is printed.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-h, \-\-help
-Print a brief message listing the \fBdtar(1)\fP options and usage.
-.UNINDENT
-.SS EXAMPLES
-.INDENT 0.0
-.IP 1. 3
-To create an archive of dir named dir.tar:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dtar \-c \-f dir.tar dir/\fP
-.INDENT 0.0
-.IP 2. 3
-To extract an archive named dir.tar:
-.UNINDENT
-.sp
-\fBmpirun \-np 128 dtar \-x \-f dir.tar\fP
-.SS SEE ALSO
-.sp
-The mpiFileUtils source code and all documentation may be downloaded
-from <\fI\%https://github.com/hpc/mpifileutils\fP>
-.SH INDICES AND TABLES
-.INDENT 0.0
-.IP \(bu 2
-genindex
-.IP \(bu 2
-search
-.UNINDENT
 .SH AUTHOR
 HPC
 .SH COPYRIGHT
-2021, LLNL/LANL/UT-Battelle/DDN
+2022, LLNL/LANL/UT-Battelle/DDN
 .\" Generated by docutils manpage writer.
 .
