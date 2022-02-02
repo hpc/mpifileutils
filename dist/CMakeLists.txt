@@ -192,7 +192,7 @@ ADD_SUBDIRECTORY(mpifileutils/test)
 ADD_SUBDIRECTORY(mpifileutils/man)
 
 # Version for the shared mfu library
-set(MFU_VERSION_MAJOR 3) # Incompatible API changes
+set(MFU_VERSION_MAJOR 4) # Incompatible API changes
 set(MFU_VERSION_MINOR 0) # Backwards-compatible functionality
 set(MFU_VERSION_PATCH 0) # Backwards-compatible fixes
 set(MFU_VERSION ${MFU_VERSION_MAJOR}.${MFU_VERSION_MINOR}.${MFU_VERSION_PATCH})
