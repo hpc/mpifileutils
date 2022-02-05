@@ -27,7 +27,7 @@ elif [ "$1" == "v0.11.1" ] ; then
     # to build from latest branch of all repos
     ORGS=(
         "lwgrp"        "llnl" "v1.0.4"
-        "dtcmp"        "llnl" "v1.1.3"
+        "dtcmp"        "llnl" "v1.1.4"
         "libcircle"    "hpc"  "v0.3"
         "mpifileutils" "hpc"  "v0.11.1"
     )
