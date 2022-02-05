@@ -44,13 +44,13 @@ To be certain of compatibility, it is recommended that one install libarchive-3.
 To build on PowerPC, one may need to add :code:`--build=powerpc64le-redhat-linux-gnu` to the configure command.
 
 Assuming libarchive has been installed to an `install` directory as shown above,
-one can then build mpiFileUtils from a release like v0.11 with commands like the following:
+one can then build mpiFileUtils from a release like v0.11.1 with commands like the following:
 
 .. code-block:: Bash
 
-   wget https://github.com/hpc/mpifileutils/releases/download/v0.11/mpifileutils-v0.11.tgz
-   tar -zxf mpifileutils-v0.11.tgz
-   cd mpifileutils-v0.11
+   wget https://github.com/hpc/mpifileutils/releases/download/v0.11.1/mpifileutils-v0.11.1.tgz
+   tar -zxf mpifileutils-v0.11.1.tgz
+   cd mpifileutils-v0.11.1
      mkdir build
      cd build
        cmake .. \
@@ -133,8 +133,8 @@ which can be done with the following commands:
    mkdir deps
    cd deps
      wget https://github.com/hpc/libcircle/releases/download/v0.3/libcircle-0.3.0.tar.gz
-     wget https://github.com/llnl/lwgrp/releases/download/v1.0.3/lwgrp-1.0.3.tar.gz
-     wget https://github.com/llnl/dtcmp/releases/download/v1.1.1/dtcmp-1.1.1.tar.gz
+     wget https://github.com/llnl/lwgrp/releases/download/v1.0.4/lwgrp-1.0.4.tar.gz
+     wget https://github.com/llnl/dtcmp/releases/download/v1.1.4/dtcmp-1.1.4.tar.gz
      wget https://github.com/libarchive/libarchive/releases/download/3.5.1/libarchive-3.5.1.tar.gz
 
      tar -zxf libcircle-0.3.0.tar.gz
@@ -143,14 +143,14 @@ which can be done with the following commands:
        make install
      cd ..
 
-     tar -zxf lwgrp-1.0.3.tar.gz
-     cd lwgrp-1.0.3
+     tar -zxf lwgrp-1.0.4.tar.gz
+     cd lwgrp-1.0.4
        ./configure --prefix=$installdir
        make install
      cd ..
 
-     tar -zxf dtcmp-1.1.1.tar.gz
-     cd dtcmp-1.1.1
+     tar -zxf dtcmp-1.1.4.tar.gz
+     cd dtcmp-1.1.4
        ./configure --prefix=$installdir --with-lwgrp=$installdir
        make install
      cd ..
