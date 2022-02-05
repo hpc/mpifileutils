@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "MPIFILEUTILS" "1" "Jan 31, 2022" "0.11.1" "mpiFileUtils"
+.TH "MPIFILEUTILS" "1" "Feb 04, 2022" "0.11.1" "mpiFileUtils"
 .SH NAME
 mpifileutils \- mpiFileUtils Documentation
 .
@@ -103,15 +103,15 @@ cd ..
 To build on PowerPC, one may need to add \fB\-\-build=powerpc64le\-redhat\-linux\-gnu\fP to the configure command.
 .sp
 Assuming libarchive has been installed to an \fIinstall\fP directory as shown above,
-one can then build mpiFileUtils from a release like v0.11 with commands like the following:
+one can then build mpiFileUtils from a release like v0.11.1 with commands like the following:
 .INDENT 0.0
 .INDENT 3.5
 .sp
 .nf
 .ft C
-wget https://github.com/hpc/mpifileutils/releases/download/v0.11/mpifileutils\-v0.11.tgz
-tar \-zxf mpifileutils\-v0.11.tgz
-cd mpifileutils\-v0.11
+wget https://github.com/hpc/mpifileutils/releases/download/v0.11.1/mpifileutils\-v0.11.1.tgz
+tar \-zxf mpifileutils\-v0.11.1.tgz
+cd mpifileutils\-v0.11.1
   mkdir build
   cd build
     cmake .. \e
@@ -221,8 +221,8 @@ installdir=\(gapwd\(ga/install
 mkdir deps
 cd deps
   wget https://github.com/hpc/libcircle/releases/download/v0.3/libcircle\-0.3.0.tar.gz
-  wget https://github.com/llnl/lwgrp/releases/download/v1.0.3/lwgrp\-1.0.3.tar.gz
-  wget https://github.com/llnl/dtcmp/releases/download/v1.1.1/dtcmp\-1.1.1.tar.gz
+  wget https://github.com/llnl/lwgrp/releases/download/v1.0.4/lwgrp\-1.0.4.tar.gz
+  wget https://github.com/llnl/dtcmp/releases/download/v1.1.4/dtcmp\-1.1.4.tar.gz
   wget https://github.com/libarchive/libarchive/releases/download/3.5.1/libarchive\-3.5.1.tar.gz
 
   tar \-zxf libcircle\-0.3.0.tar.gz
@@ -231,14 +231,14 @@ cd deps
     make install
   cd ..
 
-  tar \-zxf lwgrp\-1.0.3.tar.gz
-  cd lwgrp\-1.0.3
+  tar \-zxf lwgrp\-1.0.4.tar.gz
+  cd lwgrp\-1.0.4
     ./configure \-\-prefix=$installdir
     make install
   cd ..
 
-  tar \-zxf dtcmp\-1.1.1.tar.gz
-  cd dtcmp\-1.1.1
+  tar \-zxf dtcmp\-1.1.4.tar.gz
+  cd dtcmp\-1.1.4
     ./configure \-\-prefix=$installdir \-\-with\-lwgrp=$installdir
     make install
   cd ..
@@ -351,13 +351,13 @@ mpirun. The tools do not currently checkpoint, so one must be careful that an
 invocation of the tool has sufficient time to complete before it is killed.
 .INDENT 0.0
 .IP \(bu 2
-dbcast \- Broadcast a file to compute nodes.
+dbcast \- Broadcast a file to each compute node.
 .IP \(bu 2
-dbz2 \- Compress a file with bz2.
+dbz2 \- Compress and decompress a file with bz2.
 .IP \(bu 2
 dchmod \- Change owner, group, and permissions on files.
 .IP \(bu 2
-dcmp \- Compare files.
+dcmp \- Compare contents between directories or files.
 .IP \(bu 2
 dcp \- Copy files.
 .IP \(bu 2
@@ -365,13 +365,13 @@ ddup \- Find duplicate files.
 .IP \(bu 2
 dfind \- Filter files.
 .IP \(bu 2
-dreln \- Update symlinks.
+dreln \- Update symlinks to point to a new path.
 .IP \(bu 2
 drm \- Remove files.
 .IP \(bu 2
-dstripe \- Restripe files.
+dstripe \- Restripe files (Lustre).
 .IP \(bu 2
-dsync \- Synchronize files.
+dsync \- Synchronize source and destination directories or files.
 .IP \(bu 2
 dtar \- Create and extract tape archive files.
 .IP \(bu 2
@@ -391,6 +391,222 @@ dparallel \- Perform commands in parallel.
 dsh \- List and remove files with interactive commands.
 .IP \(bu 2
 dfilemaker \- Generate random files.
+.UNINDENT
+.SS Usage tips
+.sp
+Since the tools are MPI applications, it helps to keep a few things in mind:
+.INDENT 0.0
+.IP \(bu 2
+One typically needs to run the tools within a job allocation.  The sweet spot for most tools is about 2\-4 nodes.  One can use more nodes for large datasets, so long as tools scale sufficiently well.
+.IP \(bu 2
+One must launch the job using the MPI job launcher like mpirun or mpiexec.  One should use most CPU cores, though leave a few cores idle on each node for the file system client processes.
+.IP \(bu 2
+Most tools do not checkpoint their progress.  Be sure to request sufficient time in your allocation to allow the job to complete.  One may need to start over from the beginning if a tool is interrupted.
+.IP \(bu 2
+One cannot pipe output of one tool to the input of another.  However, the –input and –output file options are good approximations.
+.IP \(bu 2
+One cannot easily check the return codes of tools.  Instead, inspect stdout and stderr output for errors.
+.UNINDENT
+.SS Examples and frequently used commands
+.sp
+If your MPI library supports it, most tools can run as MPI singletons (w/o mpirun, which runs a single\-task MPI job).
+For brevity, the examples in this section are shown as MPI singleton runs.
+In a real run, one would precede the command shown with an appropriate MPI launch command and options, e.g.,:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+mpirun \-np 128 dwalk /path/to/walk
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+In addition to the man page, each tool provides a help screen for a brief reminder of available options.:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dwalk \-\-help
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+The normal output from dwalk shows a summary of item and byte counts.
+This is useful to determine the number of files and bytes under a path of interest:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dwalk /path/to/walk
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+When walking large directory trees, you can write the list to an output file.
+Then you can read that list back without having to walk the file system again.:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dwalk \-\-output list.mfu /path/to/walk
+dwalk \-\-input list.mfu
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+The default file format is a binary file intended for use in other tools, not humans, but one can ask for a text\-based output:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dwalk \-\-text \-\-output list.txt /path/to/walk
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+The text\-based output is lossy, and it cannot be read back in to a tool.
+If you want both, save to binary format first, then read the binary file to convert it to text.:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dwalk \-\-output list.mfu /path/to/walk
+dwalk \-\-input list.mfu \-\-text \-\-output list.txt
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+dwalk also provides a sort option to order items in the list in various ways,
+e.g., to order the list by username, then by access time:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dwalk \-\-input list.mfu \-\-sort user,atime \-\-output user_atime.mfu
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+To order items from largest to smallest number of bytes:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dwalk \-\-input list.mfu \-\-sort \(aq\-size\(aq \-\-output big_to_small.mfu
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+dfind can be used to filter items with a string of find\-like expressions,
+e.g., files owned by user1 that are bigger than 100GB:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dfind \-\-input list.mfu \-\-user user1 \-\-size +100GB \-\-output user1_over_100GB.mfu
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+dchmod is like chmod and chgrp in one, so one can change uid/gid/mode with a single command:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dchmod \-\-group grp1 \-\-mode g+rw /path/to/walk
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+drm is like “rm \-rf” but in parallel:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+drm /path/to/remove
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+dbcast provides an efficient way to broadcast a file to all compute nodes,
+e.g., upload a tar file of a dataset to an SSD local to each compute node:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dbcast /path/to/file.dat /ssd/file.dat
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+dsync is the recommended way to make a copy a large set of files:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dsync /path/src /path/dest
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+For large directory trees, the –batch\-files option offers a type of checkpoint.
+It moves files in batches, and if interrupted, a restart picks up from the last completed batch.:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+dsync \-\-batch\-files 100000 /path/src /path/dest
+.ft P
+.fi
+.UNINDENT
+.UNINDENT
+.sp
+The tools can be composed in various ways using the –input and –output options.
+For example, the following sequence of commands executes a purge operation,
+which deletes any file that has not been accessed in the past 180 days.:
+.INDENT 0.0
+.INDENT 3.5
+.sp
+.nf
+.ft C
+# walk directory to stat all files, record list in file
+dwalk \-\-output list.mfu /path/to/walk
+
+# filter list to identify all regular files that were last accessed over 180 days ago
+dfind \-\-input list.mfu \-\-type f \-\-atime +180 \-\-output purgelist.mfu
+
+# delete all files in the purge list
+drm \-\-input purgelist.mfu
+.ft P
+.fi
+.UNINDENT
 .UNINDENT
 .SS Common Library \- libmfu
 .sp
