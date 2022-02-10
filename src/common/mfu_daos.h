@@ -40,7 +40,6 @@ typedef struct {
     char dst_cont[DAOS_PROP_LABEL_MAX_LEN + 1];
     /* if destination container is not created new UUID is generated */
     uuid_t dst_cont_uuid;   /* destination container UUID */
-    char* dfs_prefix;       /* prefix for UNS */
     char* src_path;         /* allocated src path */
     char* dst_path;         /* allocated dst path */
     daos_api_t api;         /* API to use */
