@@ -5617,7 +5617,7 @@ int daos_cont_deserialize_connect(daos_args_t *daos_args,
     } else {
         uuid_unparse(daos_args->dst_cont_uuid, cont_str);
         MFU_LOG(MFU_LOG_INFO, "Successfully created container %s", cont_str);
-        rc = daos_cont_open(daos_args->src_poh, daos_args->dst_cont_uuid,
+        rc = daos_cont_open(daos_args->src_poh, cont_str,
                             DAOS_COO_RW, &daos_args->src_coh, &co_info, NULL);
     }
     if (rc != 0) {
