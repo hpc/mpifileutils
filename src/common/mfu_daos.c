@@ -1182,7 +1182,9 @@ int daos_connect(
              * If nothing is passed in for destination a uuid is always generated
              * unless user passed one in, because destination container labels are
              * not generated */
-            rc = daos_cont_open(*poh, da->dst_cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
+            char cont_str[130];
+            uuid_unparse(da->dst_cont_uuid, cont_str);
+            rc = daos_cont_open(*poh, cont_str, DAOS_COO_RW, coh, &co_info, NULL);
         } else {
             rc = daos_cont_open(*poh, *cont, DAOS_COO_RW, coh, &co_info, NULL);
         }
@@ -1273,14 +1275,12 @@ int daos_connect(
             }
 
             /* try to open it again */
-            if (dst_cont_passed) {
-                if (is_uuid) {
-                    rc = daos_cont_open(*poh, da->dst_cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
-                } else {
-                    rc = daos_cont_open(*poh, *cont, DAOS_COO_RW, coh, &co_info, NULL);
-                }
+            if (dst_cont_passed && !is_uuid) {
+                rc = daos_cont_open(*poh, *cont, DAOS_COO_RW, coh, &co_info, NULL);
             } else {
-                rc = daos_cont_open(*poh, da->dst_cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
+                char cont_str[130];
+                uuid_unparse(da->dst_cont_uuid, cont_str);
+                rc = daos_cont_open(*poh, cont_str, DAOS_COO_RW, coh, &co_info, NULL);
             }
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to open container: "DF_RC, DP_RC(rc));
