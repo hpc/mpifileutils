@@ -3,16 +3,11 @@
 *Thank you for taking the time to contribute!*
 
 ## Table of Contents
-[Resources](#resources)
-
 [How To Contribute](#how-to-contribute)
   * [Reporting an Issue & Feature Suggestions](#reporting-an-issue--feature-suggestions)
   * [Pull Requests](#pull-requests)
   * [License](#license)
   * [Contributor's Declaration](#contributors-declaration)
-
-## Resources
-[mpiFileUtils Google Group](https://groups.google.com/forum/#!forum/mpifileutils)
 
 ## How To Contribute
 
