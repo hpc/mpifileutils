@@ -1680,12 +1680,20 @@ static int mfu_copy_file_normal(
         /* If we're using O_DIRECT, deal with short reads.
          * Retry with same buffer and offset since those must
          * be aligned at block boundaries. */
+        int retries = 0;
         while (copy_opts->direct &&            /* using O_DIRECT */
                bytes_read > 0 &&               /* read was not an error or eof */
                bytes_read < left_to_read &&    /* shorter than requested */
                (off + bytes_read) < file_size) /* not at end of file */
         {
-            /* TODO: probably should retry a limited number of times then abort */
+            /* try the read a limited number of times then given up with error */
+            retries++;
+            if (retries == 5) {
+              MFU_LOG(MFU_LOG_ERR, "Source file `%s' exceeded short read limit, maybe shorter than expected size of %llu bytes",
+                  src, file_size);
+              return -1;
+            }
+
             bytes_read = mfu_file_pread(src, buf, left_to_read, off, mfu_src_file);
         }
 
@@ -1698,8 +1706,8 @@ static int mfu_copy_file_normal(
 
         /* check for early EOF */
         if (bytes_read == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Source file `%s' shorter than expected %llu (errno=%d %s)",
-                src, file_size, errno, strerror(errno));
+            MFU_LOG(MFU_LOG_ERR, "Source file `%s' shorter than expected size of %llu bytes",
+                src, file_size);
             return -1;
         }
 
