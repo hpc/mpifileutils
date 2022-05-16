@@ -18,6 +18,14 @@
 #define BUFLEN 80
 #define UUID_STR_LEN 129
 
+#if defined(DAOS_API_VERSION_MAJOR) && defined(DAOS_API_VERSION_MINOR)
+#define CHECK_DAOS_API_VERSION(major, minor)                                            \
+	((DAOS_API_VERSION_MAJOR > (major))                                             \
+	 || (DAOS_API_VERSION_MAJOR == (major) && DAOS_API_VERSION_MINOR >= (minor)))
+#else
+#define CHECK_DAOS_API_VERSION(major, minor) 0
+#endif
+
 static uint32_t obj_id_gen = 1;
 
 /** Print a usage message. */
@@ -176,13 +184,18 @@ int main(int argc, char** argv)
     char                key[keys_per_object];
     int                 i,j;
     char                uuid_str[UUID_STR_LEN];
-    daos_ofeat_t        ofeats;
+    uuid_t              cont_uuid;
 
-    ofeats = DAOS_OF_DKEY_UINT64 | DAOS_OF_KV_FLAT | DAOS_OF_KV_FLAT;
+#if CHECK_DAOS_API_VERSION(2, 0)
+    enum daos_otype_t   otype;
+    otype = DAOS_OT_KV_HASHED;
+#else
+    daos_ofeat_t        ofeats;
+    ofeats = DAOS_OF_KV_FLAT;
+#endif
+
     /* connect to pool/cont then broadcast to rest of ranks */
     if (rank == 0) {
-        /* generate container UUID */
-        uuid_generate(daos_args->src_cont);
         daos_pool_info_t pool_info = {0};
         daos_cont_info_t co_info = {0};
 #if DAOS_API_VERSION_MAJOR < 1
@@ -199,14 +212,27 @@ int main(int argc, char** argv)
         }
 
         /* create cont and open */
+#if CHECK_DAOS_API_VERSION(2, 0)
+        rc = daos_cont_create(daos_args->src_poh, &cont_uuid, NULL, NULL);
+#else
+        /* generate container UUID */
+        uuid_generate(daos_args->src_cont);
+        uuid_copy(cont_uuid, daos_args->src_cont);
         rc = daos_cont_create(daos_args->src_poh, daos_args->src_cont, NULL, NULL);
+#endif
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to create cont: "DF_RC, DP_RC(rc));
             rc = 1;
             goto err_cont;
         }
+        uuid_unparse(cont_uuid, uuid_str);
+#if CHECK_DAOS_API_VERSION(2, 0)
+        rc = daos_cont_open(daos_args->src_poh, uuid_str,
+                            DAOS_COO_RW, &daos_args->src_coh, &co_info, NULL);
+#else
         rc = daos_cont_open(daos_args->src_poh, daos_args->src_cont,
                             DAOS_COO_RW, &daos_args->src_coh, &co_info, NULL);
+#endif
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open container: "DF_RC, DP_RC(rc));
             rc = 1;
@@ -222,8 +248,11 @@ int main(int argc, char** argv)
 	memset(buf, 'A', BUFLEN);
     for (i = 0; i < num_objects; i++) {
         oid[i] = dts_oid_gen(0);
-                                   
+#if CHECK_DAOS_API_VERSION(2, 0)
+        rc = daos_obj_generate_oid(daos_args->src_coh, &oid[i], otype, OC_RP_XSF, 0, 0);
+#else                                   
         rc = daos_obj_generate_oid(daos_args->src_coh, &oid[i], ofeats, OC_RP_XSF, 0, 0);
+#endif
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to generate oid: "DF_RC, DP_RC(rc));
             rc = 1;
@@ -261,7 +290,6 @@ int main(int argc, char** argv)
      * generates same amount */
     if (rank == 0) {
         int total_num_objects = size * num_objects; 
-        uuid_unparse(daos_args->src_cont, uuid_str);
         printf("Container UUID: %s\n\ttotal objects:%d\n"
                "\tkeys per object:%d\n", uuid_str, total_num_objects, keys_per_object);
     }
