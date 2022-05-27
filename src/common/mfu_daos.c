@@ -3857,10 +3857,12 @@ static int cont_serialize_prop_str(struct hdf5_args* hdf5,
     hid_t   attr_dspace;
     hid_t   usr_attr;
 
-    if (entry == NULL || entry->dpe_str == NULL) {
-        MFU_LOG(MFU_LOG_ERR, "Property %s not found", prop_str);
-        rc = 1;
-        goto out;
+    if (entry == NULL || entry->dpe_str == NULL ) {
+        if ( !(entry != NULL && entry->dpe_str == NULL && entry->dpe_type == DAOS_PROP_CO_LABEL)) {
+            MFU_LOG(MFU_LOG_ERR, "Property %s not found", prop_str);
+            rc = 1;
+            goto out;
+        }
     }
 
     attr_dims[0] = 1;
@@ -3870,7 +3872,7 @@ static int cont_serialize_prop_str(struct hdf5_args* hdf5,
         rc = 1;
         goto out;
     }
-    status = H5Tset_size(attr_dtype, strlen(entry->dpe_str) + 1);
+    status = H5Tset_size(attr_dtype, (entry->dpe_str ? strlen(entry->dpe_str) : 0) + 1);
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to set dtype size");
         rc = 1;
@@ -3895,7 +3897,7 @@ static int cont_serialize_prop_str(struct hdf5_args* hdf5,
         rc = 1;
         goto out;
     }   
-    status = H5Awrite(usr_attr, attr_dtype, entry->dpe_str);
+    status = H5Awrite(usr_attr, attr_dtype, entry->dpe_str ? entry->dpe_str : "");
     if (status < 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to write attribute");
         rc = 1;
@@ -5394,22 +5396,23 @@ int cont_deserialize_all_props(struct hdf5_args *hdf5,
         goto out;
     }
 
-    rc = daos_cont_open(poh, label_entry->dpe_str, DAOS_COO_RW, &coh, &cont_info, NULL);
-    if (rc == -DER_NONEXIST) {
-        /* doesn't exist so ok to deserialize this container label */
-        deserialize_label = true;
-    } else if (rc != 0) {
-        MFU_LOG(MFU_LOG_ERR, "daos_cont_open failed: "DF_RC, DP_RC(rc));
-        goto out;
-    }  else {
-        /* if this succeeds then label already exists, close container after
-         * checking */
-        rc = daos_cont_close(coh, NULL);
-        if (rc != 0) {
+    if (label_entry->dpe_str[0]) {
+        rc = daos_cont_open(poh, label_entry->dpe_str, DAOS_COO_RW, &coh, &cont_info, NULL);
+        if (rc == -DER_NONEXIST) {
+            /* doesn't exist so ok to deserialize this container label */
+            deserialize_label = true;
+        } else if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "daos_cont_open failed: "DF_RC, DP_RC(rc));
             goto out;
+        }  else {
+            /* if this succeeds then label already exists, close container after
+             * checking */
+            rc = daos_cont_close(coh, NULL);
+            if (rc != 0) {
+                goto out;
+            }
         }
     }
-
     if (deserialize_label) {
         num_props++;
     }
