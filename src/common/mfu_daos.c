@@ -3857,12 +3857,10 @@ static int cont_serialize_prop_str(struct hdf5_args* hdf5,
     hid_t   attr_dspace;
     hid_t   usr_attr;
 
-    if (entry == NULL || entry->dpe_str == NULL ) {
-        if ( !(entry != NULL && entry->dpe_str == NULL && entry->dpe_type == DAOS_PROP_CO_LABEL)) {
-            MFU_LOG(MFU_LOG_ERR, "Property %s not found", prop_str);
-            rc = 1;
-            goto out;
-        }
+    if (entry == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "Property %s not found", prop_str);
+        rc = 1;
+        goto out;
     }
 
     attr_dims[0] = 1;
