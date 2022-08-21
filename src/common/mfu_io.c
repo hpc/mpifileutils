@@ -643,6 +643,11 @@ int mfu_open(const char* file, int flags, ...)
         mode_set = 1;
     }
 
+#ifdef _GNU_SOURCE
+    /* Preserve atime on the source file if the platform supports it. */
+    flags |= O_NOATIME;
+#endif
+
     /* attempt to open file */
     int fd = -1;
     errno = 0;
