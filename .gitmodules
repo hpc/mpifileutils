@@ -1,0 +1,4 @@
+[submodule "xxhash"]
+	path = xxhash
+	url = https://github.com/theAeon/xxhash
+	branch = xxhash-mfu
