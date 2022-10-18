@@ -71,3 +71,7 @@ doc/build
 # spack files
 .spack*
 spack.lock
+
+.vs/
+
+build/
