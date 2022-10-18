@@ -1,20 +1,21 @@
 #include <stdio.h>
 #include <string.h>
 #include <getopt.h>
-#include <openssl/sha.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <xxh3.h>
 #include "mpi.h"
 #include "dtcmp.h"
 #include "mfu.h"
 #include "list.h"
 
 /* number of uint64_t values in our key
- * 1 for group ID + (SHA256_DIGEST_LENGTH / 8) */
-#define DDUP_KEY_SIZE 5
-
+ * 1 for group ID + (XXHASH_DIGEST_LENGTH / 8) */
+#define DDUP_KEY_SIZE 2
+ /*XXH3_64 output is a hexadecimal representation of an unsigned 64 bit integer*/
+#define XXH3_DIGEST_LENGTH 8
 /* amount of data to read in order to compute hash */
-#define DDUP_CHUNK_SIZE 1048576
+#define DDUP_CHUNK_SIZE 4096
 
 /* Print a usage message */
 static void print_usage(void)
@@ -35,11 +36,11 @@ static void print_usage(void)
 /* create MPI datatypes for key and key and satellite data */
 static void mpi_type_init(MPI_Datatype* key, MPI_Datatype* keysat)
 {
-    assert(SHA256_DIGEST_LENGTH == (DDUP_KEY_SIZE - 1) * 8);
+    assert(XXH3_DIGEST_LENGTH == (DDUP_KEY_SIZE - 1) * 8);
 
     /*
      * Build MPI datatype for key.
-     * 1 for group ID + (SHA256_DIGEST_LENGTH / 8)
+     * 1 for group ID + (XXH3_DIGEST_LENGTH / 8)
      */
     MPI_Type_contiguous(DDUP_KEY_SIZE, MPI_UINT64_T, key);
     MPI_Type_commit(key);
@@ -141,14 +142,14 @@ out:
 }
 
 struct file_item {
-    SHA256_CTX ctx;
+    XXH3_state_t state;
 };
 
-/* print SHA256 value to stdout */
-static void dump_sha256_digest(char* digest_string, unsigned char digest[])
+/* print XXH3 value to stdout */
+static void dump_xxh3_digest(char* digest_string, unsigned char digest[])
 {
     int i;
-    for (i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+    for (i = 0; i < XXH3_DIGEST_LENGTH; i++) {
         sprintf(&digest_string[i * 2], "%02x", (unsigned int)digest[i]);
     }
 }
@@ -161,7 +162,7 @@ int main(int argc, char** argv)
 
     uint64_t chunk_size = DDUP_CHUNK_SIZE;
 
-    SHA256_CTX* ctx_ptr;
+    XXH3_state_t* state_ptr;
 
     MPI_Init(NULL, NULL);
     mfu_init();
@@ -310,8 +311,8 @@ int main(int argc, char** argv)
     /* get local number of items in flist */
     uint64_t checking_files = mfu_flist_size(flist);
 
-    /* allocate memory to hold SHA256 context values */
-    struct file_item* file_items = (struct file_item*) MFU_MALLOC(checking_files * sizeof(*file_items));
+    /* allocate memory to hold XXH3 context values */
+    struct file_item* file_items = (struct file_item*) XXH_alignedMalloc(checking_files * sizeof(*file_items), 128);
 
     /* Allocate two lists of length size, where each
      * element has (DDUP_KEY_SIZE + 1) uint64_t values
@@ -346,8 +347,9 @@ int main(int argc, char** argv)
         /* record our index in flist */
         ptr[DDUP_KEY_SIZE] = i;
 
-        /* initialize the SHA256 hash state for this file */
-        SHA256_Init(&file_items[i].ctx);
+        /* initialize the XXH3 hash state for this file */
+        XXH3_INITSTATE(&file_items[i].state);
+        XXH3_64bits_reset(&file_items[i].state);
 
         /* increment our file count */
         new_checking_files++;
@@ -376,7 +378,7 @@ int main(int argc, char** argv)
         /* update the chunk id we'll read from all files */
         chunk_id++;
 
-        /* iterate over our list and compute SHA256 value for each */
+        /* iterate over our list and compute XXH3 value for each */
         ptr = list;
         for (i = 0; i < checking_files; i++) {
             /* get the flist index for this item */
@@ -399,18 +401,14 @@ int main(int argc, char** argv)
                        "process", fname);
             }
 
-            /* update the SHA256 context for this file */
-            ctx_ptr = &file_items[idx].ctx;
-            SHA256_Update(ctx_ptr, chunk_buf, data_size);
+            /* update the XXH3 context for this file */
+            state_ptr = &file_items[idx].state;
+            XXH3_64bits_update(state_ptr, chunk_buf, data_size);
 
             /*
-             * Use SHA256 value as key.
-             * This is actually an hack, but SHA256_Final can't
-             * be called multiple times with out changing ctx
+             * Use XXH3 digest as key.
              */
-            SHA256_CTX ctx_tmp;
-            memcpy(&ctx_tmp, ctx_ptr, sizeof(ctx_tmp));
-            SHA256_Final((unsigned char*)(ptr + 1), &ctx_tmp);
+            XXH64_hash_t result = XXH3_64bits_digest(state_ptr);
 
             /* move on to next file in the list */
             ptr += DDUP_KEY_SIZE + 1;
@@ -441,8 +439,8 @@ int main(int argc, char** argv)
             /* look up file size */
             file_size = mfu_flist_file_get_size(flist, idx);
 
-            /* get a pointer to the SHA256 context for this file */
-            ctx_ptr = &file_items[idx].ctx;
+            /* get a pointer to the XXH3 context for this file */
+            state_ptr = &file_items[idx].state;
 
             if (group_ranks[i] == 1) {
                 /*
@@ -457,11 +455,11 @@ int main(int argc, char** argv)
                  * duplicate with other files that also have
                  * matching group_id[i]
                  */
-                unsigned char digest[SHA256_DIGEST_LENGTH];
-                SHA256_Final(digest, ctx_ptr);
-
-                char digest_string[SHA256_DIGEST_LENGTH * 2 + 1];
-                dump_sha256_digest(digest_string, digest);
+                XXH64_hash_t digest = XXH3_64bits_digest(state_ptr);
+                XXH64_canonical_t digest_canon;
+                XXH64_canonicalFromHash(&digest_canon, digest);
+                char digest_string[XXH3_DIGEST_LENGTH];
+                dump_xxh3_digest(digest_string, digest_canon.digest);
                 printf("%s %s\n", fname, digest_string);
             } else {
                 /* Have multiple files with the same checksum,
@@ -519,7 +517,7 @@ int main(int argc, char** argv)
     mfu_free(&group_id);
     mfu_free(&new_list);
     mfu_free(&list);
-    mfu_free(&file_items);
+    XXH_alignedFree(&file_items);
     mfu_free(&chunk_buf);
     mfu_flist_free(&flist);
 

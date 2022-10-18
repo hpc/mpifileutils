@@ -147,8 +147,9 @@ IF(LibCap_FOUND)
   LIST(APPEND MFU_EXTERNAL_LIBS ${LibCap_LIBRARIES})
 ENDIF(LibCap_FOUND)
 
-## OPENSSL for ddup
-FIND_PACKAGE(OpenSSL)
+## XXHASH for ddup
+find_package(xxHash REQUIRED)
+INCLUDE_DIRECTORIES(${xxHash_INCLUDE_DIRS})
 
 # Setup Installation
 
