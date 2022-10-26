@@ -71,3 +71,6 @@ doc/build
 # spack files
 .spack*
 spack.lock
+
+# Code editors
+.vscode

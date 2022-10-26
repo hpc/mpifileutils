@@ -2118,7 +2118,6 @@ int main(int argc, char **argv)
         {"base",          0, 0, 'b'},
         {"bufsize",       1, 0, 'B'},
         {"chunksize",     1, 0, 'k'},
-        {"daos-prefix",   1, 0, 'X'},
         {"daos-api",      1, 0, 'x'},
         {"direct",        0, 0, 's'},
         {"progress",      1, 0, 'R'},
@@ -2208,9 +2207,6 @@ int main(int argc, char **argv)
             options.debug++;
             break;
 #ifdef DAOS_SUPPORT
-        case 'X':
-            daos_args->dfs_prefix = MFU_STRDUP(optarg);
-            break;
         case 'x':
             if (daos_parse_api_str(optarg, &daos_args->api) != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to parse --daos-api");

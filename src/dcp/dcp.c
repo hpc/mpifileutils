@@ -145,7 +145,6 @@ int main(int argc, char** argv)
         {"bufsize"              , required_argument, 0, 'b'},
         {"debug"                , required_argument, 0, 'd'}, // undocumented
         {"grouplock"            , required_argument, 0, 'g'}, // untested
-        {"daos-prefix"          , required_argument, 0, 'Y'},
         {"daos-api"             , required_argument, 0, 'y'},
         {"daos-preserve"        , required_argument, 0, 'D'},
         {"input"                , required_argument, 0, 'i'},
@@ -251,9 +250,6 @@ int main(int argc, char** argv)
                 break;
 #endif
 #ifdef DAOS_SUPPORT
-            case 'Y':
-                daos_args->dfs_prefix = MFU_STRDUP(optarg);
-                break;
             case 'y':
                 if (daos_parse_api_str(optarg, &daos_args->api) != 0) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to parse --daos-api");
