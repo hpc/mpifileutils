@@ -404,7 +404,7 @@ char* mfu_param_path_copy_dest(const char* name, int numpaths,
     if (cut > 0 && strcmp(paths[i].orig, "/") == 0) {
         cut--;
     }
-    if ((cut > 0) && mfu_copy_opts->copy_into_dir &&
+    else if ((cut > 0) && mfu_copy_opts->copy_into_dir &&
             (mfu_copy_opts->do_sync != 1) && (paths[i].orig[strlen(paths[i].orig) - 1] != '/')) {
         cut--;
     }
