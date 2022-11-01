@@ -49,7 +49,7 @@ OPTIONS
    DFS API, and all other containers use the DAOS object API.
    Values must be in {DFS, DAOS}.
 
-.. option:: --daos-preserve FILENAME 
+.. option:: --daos-preserve FILENAME
 
    Option to turn on metadata preservation in DAOS. This should
    be used in the case that data is being moved to/from DAOS. For instance,
@@ -91,6 +91,16 @@ OPTIONS
    Print progress message to stdout approximately every N seconds.
    The number of seconds must be a non-negative integer.
    A value of 0 disables progress messages.
+
+.. option:: -G, --gid GID
+
+   Set the effective group ID to perform the copy operation. The copy
+   may fail if the group does not have sufficient privileges.
+
+.. option:: -U, --uid UID
+
+   Set the effective user ID to perform the copy operation. The copy
+   may fail if the user does not have sufficient privileges.
 
 .. option:: -v, --verbose
 
