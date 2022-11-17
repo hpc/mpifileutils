@@ -2312,7 +2312,7 @@ static int mfu_daos_obj_sync(
 
     /* open handle of object in dst container */
     daos_handle_t dst_oh;
-    rc = daos_obj_open(dst_coh, oid, DAOS_OO_EXCL, &dst_oh, NULL);
+    rc = daos_obj_open(dst_coh, oid, DAOS_OO_RW, &dst_oh, NULL);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "DAOS object open returned with errors: " MFU_ERRF,
                 MFU_ERRP(-MFU_ERR_DAOS));
@@ -4193,7 +4193,7 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
                 goto out;
             }
         } else {
-            rc = daos_obj_open(da->src_coh, oid, 0, &oh, NULL);
+            rc = daos_obj_open(da->src_coh, oid, DAOS_OO_RO, &oh, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to open object: "DF_RC, DP_RC(rc));
                 goto out;
@@ -5607,7 +5607,7 @@ int daos_cont_deserialize_hdlr(int rank, daos_args_t *da, const char *h5filename
                 goto out;
             }
         } else {
-            rc = daos_obj_open(da->src_coh, oid, 0, &oh, NULL);
+            rc = daos_obj_open(da->src_coh, oid, DAOS_OO_RW, &oh, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to open object: "DF_RC, DP_RC(rc));
                 goto out;
