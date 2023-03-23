@@ -68,6 +68,10 @@
 #include <gpfs.h>
 #endif
 
+#ifdef HPSS_SUPPORT
+#include <linux/hpssfs.h>
+#endif
+
 /****************************************
  * Define types
  ***************************************/
@@ -1288,6 +1292,62 @@ static int mfu_create_file(
                     dest_path, errno, strerror(errno));
         }
     }
+
+#ifdef HPSS_SUPPORT
+
+    /*
+     *  For HPSS we want to ensure that the file is placed in the correct Class
+     *  of Service (COS). The simplest way to do that is to give a hint to the
+     *  Core Server about what size the destination file will be.
+     *
+     */
+
+    if ( mfu_is_hpss(dest_path) == true ) {
+
+        uint64_t sourcesize = mfu_flist_file_get_size(list, idx);
+        if (sourcesize != (uint64_t) -1) {
+
+            /*
+             * Get the current size of the destintation file.
+             * If the size is greater than 0, the ioctl will fail, so dont bother.
+             *
+             */
+
+            struct stat hpssst;
+            int hpssrc = mfu_file_lstat(dest_path, &hpssst, mfu_dst_file);
+            if (hpssrc == 0 && hpssst.st_size == 0) {
+                errno = 0;
+                hpssrc = mfu_file_open(dest_path, O_RDWR|O_CREAT|O_NONBLOCK, mfu_dst_file);
+                MFU_LOG(MFU_LOG_DBG, "mfu_open(complete): %s (%d %d %s)", dest_path, mfu_dst_file->fd, errno, strerror(errno));
+                if (hpssrc != -1) {
+                    MFU_LOG(MFU_LOG_DBG, "Calling ioctl...source size is: %lu", sourcesize);
+                    errno = 0;
+                    int ioctlrc = ioctl(mfu_dst_file->fd, HPSSFS_SET_FSIZE_HINT, &sourcesize);
+                    MFU_LOG(MFU_LOG_DBG, "Done Calling ioctl (%d)(%d)(%s)", ioctlrc, errno, strerror(errno));
+                    (void) mfu_file_close(dest_path, mfu_dst_file);
+                } else {
+                    /* had an error opening the destination file */
+                    MFU_LOG(MFU_LOG_ERR, "mfu_file_open() file: `%s' (errno=%d %s)", dest_path, errno, strerror(errno));
+                    rc = -1;
+                }
+
+            } else {
+                /*
+                 * had an error getting the size of the sink file or the size is
+                 * greater than zero. we will allow the sync to continue on without
+                 * setting the COS
+                 */
+                MFU_LOG(MFU_LOG_WARN, "mfu_file_lstat() file: `%s' (errno=%d %s) (size=%llu)", dest_path, errno, strerror(errno), hpssst.st_size);
+            }
+
+        } else {
+            /* had an error getting the size of the source file.
+             * we will allow the sync to continue on without setting the COS */
+            MFU_LOG(MFU_LOG_WARN, "mfu_flist_file_get_size() error: `%s'", src_path);
+        }
+    }
+
+#endif
 
     /* free destination path */
     mfu_free(&dest_path);
