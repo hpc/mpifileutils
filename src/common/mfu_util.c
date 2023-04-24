@@ -47,10 +47,10 @@ int mfu_init()
 {
     if (mfu_initialized == 0) {
         /* set globals */
-        mfu_init_filesystem_list();
         MPI_Comm_rank(MPI_COMM_WORLD, &mfu_rank);
         mfu_debug_stream = stdout;
         DTCMP_Init();
+        mfu_init_filesystem_list();
         mfu_initialized++;
     }
 
@@ -64,8 +64,9 @@ int mfu_finalize()
         DTCMP_Finalize();
         mfu_initialized--;
     }
-
-    mfu_destroy_filesystem_list();
+    if (mfu_initialized == 0) {
+        mfu_destroy_filesystem_list();
+    }
     return MFU_SUCCESS;
 }
 
@@ -1249,13 +1250,12 @@ int mfu_mount_info_get_filesystem_list(struct list_head* mfu_mi_list)
 void mfu_init_filesystem_list(void)
 {
     if (mfu_mi_list_initialized == true) {
-        MFU_LOG(MFU_LOG_INFO, "The filesystem list has already been initialized...");
+        MFU_LOG(MFU_LOG_INFO, "The filesystem list is already initialized...");
         return;
     }
 
     MFU_LOG(MFU_LOG_INFO, "Initializing filesystem list...");
     INIT_LIST_HEAD(&mfu_mi_list);
-    mfu_mi_list_initialized = true;
 
     int rc = mfu_mount_info_get_filesystem_list(&mfu_mi_list);
     if (rc != 0) {
@@ -1279,7 +1279,7 @@ void mfu_init_filesystem_list(void)
 void mfu_destroy_filesystem_list(void)
 {
     if (mfu_mi_list_initialized == false) {
-        MFU_LOG(MFU_LOG_INFO, "The filesystem list has not been initialized...");
+        MFU_LOG(MFU_LOG_INFO, "The filesystem list is not initialized...");
         return;
     }
 
@@ -1294,6 +1294,8 @@ void mfu_destroy_filesystem_list(void)
         mfu_mount_info_destroy(itemp);
         mfu_free(&itemp);
     }
+
+    mfu_mi_list_initialized = false;
 }
 
 bool mfu_is_hpss(const char* path)
