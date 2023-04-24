@@ -1148,14 +1148,14 @@ int mfu_mount_info_parse_fstype_line(
         return(ENOENT);
     }
 
-    mip->mfu_mi_fstype = mfu_strdup(found);
+    mip->mfu_mi_fstype = MFU_STRDUP(found);
 
     found = strtok_r(NULL, ".", &saveptr);
     if (found == NULL) {
         return(0);
     }
 
-    mip->mfu_mi_fssubtype = mfu_strdup(found);
+    mip->mfu_mi_fssubtype = MFU_STRDUP(found);
 
     return(0);
 }
@@ -1173,16 +1173,16 @@ mfu_mount_info_parse_mount_line(
         num++;
         switch (num) {
             case 1:
-                mip->mfu_mi_source = mfu_strdup(found);
+                mip->mfu_mi_source = MFU_STRDUP(found);
                 break;
             case 2:
-                mip->mfu_mi_mountpoint = mfu_strdup(found);
+                mip->mfu_mi_mountpoint = MFU_STRDUP(found);
                 break;
             case 3:
                 mfu_mount_info_parse_fstype_line(found, strlen(found)+1, mip);
                 break;
             case 4:
-                mip->mfu_mi_mountopts = mfu_strdup(found);
+                mip->mfu_mi_mountopts = MFU_STRDUP(found);
                 break;
             default:
                 break;
@@ -1211,7 +1211,7 @@ int mfu_mount_info_get_filesystem_list(struct list_head* mfu_mi_list)
     ssize_t bytes = getline(&line, &len, mountfp);
     while (bytes != -1)
     {
-        struct mfu_mount_info* itemp = mfu_calloc(sizeof(struct mfu_mount_info));
+        struct mfu_mount_info* itemp = MFU_CALLOC(1, sizeof(struct mfu_mount_info));
         if (itemp == NULL) {
             fclose(mountfp);
             return(ENOMEM);
