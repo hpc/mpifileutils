@@ -517,7 +517,7 @@ int main(int argc, char** argv)
     mfu_free(&group_id);
     mfu_free(&new_list);
     mfu_free(&list);
-    XXH_alignedFree(&file_items);
+    XXH_alignedFree(file_items);
     mfu_free(&chunk_buf);
     mfu_flist_free(&flist);
 
