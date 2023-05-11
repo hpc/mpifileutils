@@ -112,6 +112,12 @@ int mfu_init(void);
 /* finalize mfu library */
 int mfu_finalize(void);
 
+/* initialize mfu filesystem list */
+void mfu_init_filesystem_list(void);
+
+/* destroy mfu filesystem list */
+void mfu_destroy_filesystem_list(void);
+
 /* print abort message and call MPI_Abort to kill run */
 #define MFU_ABORT(X, ...) mfu_abort(__FILE__, __LINE__, X, __VA_ARGS__)
 void mfu_abort(
@@ -268,6 +274,9 @@ void mfu_stripe_set(const char *path, uint64_t stripe_size, int stripe_count);
 
 /* return true if path is on lustre, false otherwise */
 bool mfu_is_lustre(const char* path);
+
+/* return true if path is on hpss, false otherwise */
+bool mfu_is_hpss(const char* path);
 
 /* executes a logical AND operation on flag on all procs on comm,
  * returns 1 if all true and 0 otherwise */

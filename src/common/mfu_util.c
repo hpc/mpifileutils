@@ -5,6 +5,7 @@
 #include "mpi.h"
 #include "dtcmp.h"
 #include "mfu_errors.h"
+#include "list.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,6 +50,7 @@ int mfu_init()
         MPI_Comm_rank(MPI_COMM_WORLD, &mfu_rank);
         mfu_debug_stream = stdout;
         DTCMP_Init();
+        mfu_init_filesystem_list();
         mfu_initialized++;
     }
 
@@ -61,6 +63,9 @@ int mfu_finalize()
     if (mfu_initialized > 0) {
         DTCMP_Finalize();
         mfu_initialized--;
+    }
+    if (mfu_initialized == 0) {
+        mfu_destroy_filesystem_list();
     }
     return MFU_SUCCESS;
 }
@@ -1103,6 +1108,241 @@ bool mfu_is_lustre(const char* path)
 #endif /* LUSTRE_SUPPORT */
 
     return is_lustre;
+}
+
+static bool             mfu_mi_list_initialized = false;
+static struct list_head mfu_mi_list;
+
+typedef struct mfu_mount_info
+{
+    struct list_head mfu_mi_linkage;
+    dev_t            mfu_mi_dev;
+    char*            mfu_mi_source;
+    char*            mfu_mi_mountpoint;
+    char*            mfu_mi_fstype;
+    char*            mfu_mi_fssubtype;
+    char*            mfu_mi_mountopts;
+} mfu_mount_info_t;
+
+void mfu_mount_info_destroy(struct mfu_mount_info* mip)
+{
+    if (mip == NULL) {
+        return;
+    }
+
+    mfu_free(&mip->mfu_mi_source);
+    mfu_free(&mip->mfu_mi_mountpoint);
+    mfu_free(&mip->mfu_mi_fstype);
+    mfu_free(&mip->mfu_mi_fssubtype);
+    mfu_free(&mip->mfu_mi_mountopts);
+}
+
+int mfu_mount_info_parse_fstype_line(
+    char*                  line,
+    size_t                 size,
+    struct mfu_mount_info* mip)
+{
+    char* saveptr = NULL;
+    char* found = strtok_r(line, ".", &saveptr);
+    if (found == NULL) {
+        return(ENOENT);
+    }
+
+    mip->mfu_mi_fstype = MFU_STRDUP(found);
+
+    found = strtok_r(NULL, ".", &saveptr);
+    if (found == NULL) {
+        return(0);
+    }
+
+    mip->mfu_mi_fssubtype = MFU_STRDUP(found);
+
+    return(0);
+}
+
+int
+mfu_mount_info_parse_mount_line(
+    char*                  line,
+    size_t                 size,
+    struct mfu_mount_info* mip)
+{
+    int num = 0;
+    char* saveptr = NULL;
+    char* found = strtok_r(line, " ", &saveptr);
+    while (found != NULL) {
+        num++;
+        switch (num) {
+            case 1:
+                mip->mfu_mi_source = MFU_STRDUP(found);
+                break;
+            case 2:
+                mip->mfu_mi_mountpoint = MFU_STRDUP(found);
+                break;
+            case 3:
+                mfu_mount_info_parse_fstype_line(found, strlen(found)+1, mip);
+                break;
+            case 4:
+                mip->mfu_mi_mountopts = MFU_STRDUP(found);
+                break;
+            default:
+                break;
+        }
+
+        found = strtok_r(NULL, " ", &saveptr);
+    }
+
+    return(0);
+}
+
+int mfu_mount_info_get_filesystem_list(struct list_head* mfu_mi_list)
+{
+    if (mfu_mi_list == NULL) {
+        return(EINVAL);
+    }
+
+    errno = 0;
+    FILE* mountfp = fopen("/proc/self/mounts", "r");
+    if (mountfp == NULL) {
+        return(errno);
+    }
+
+    char* line = NULL;
+    size_t len = 0;
+    ssize_t bytes = getline(&line, &len, mountfp);
+    while (bytes != -1)
+    {
+        struct mfu_mount_info* itemp = MFU_CALLOC(1, sizeof(struct mfu_mount_info));
+        if (itemp == NULL) {
+            fclose(mountfp);
+            return(ENOMEM);
+        }
+        INIT_LIST_HEAD(&itemp->mfu_mi_linkage);
+
+        /*
+         * Parse one of the lines in /proc/self/mounts
+         */
+        mfu_mount_info_parse_mount_line(line, len, itemp);
+
+        /*
+         *  Get the device for the mountpoint in question.
+         */
+        errno = 0;
+        struct stat st;
+        int rc = stat(itemp->mfu_mi_mountpoint, &st);
+        if (rc == -1) {
+            fclose(mountfp);
+            MFU_LOG(MFU_LOG_ERR, "Could not stat: %s (errno=%d %s)",
+                itemp->mfu_mi_mountpoint, errno, strerror(errno));
+            return(1);
+        }
+        itemp->mfu_mi_dev = st.st_dev;
+
+        /*
+         *  Now we can insert the item into the list.
+         */
+        list_add_tail(&itemp->mfu_mi_linkage, mfu_mi_list);
+        bytes = getline(&line, &len, mountfp);
+    }
+
+    fclose(mountfp);
+    return(0);
+}
+
+void mfu_init_filesystem_list(void)
+{
+    if (mfu_mi_list_initialized == true) {
+        MFU_LOG(MFU_LOG_INFO, "The filesystem list is already initialized...");
+        return;
+    }
+
+    MFU_LOG(MFU_LOG_INFO, "Initializing filesystem list...");
+    INIT_LIST_HEAD(&mfu_mi_list);
+    mfu_mi_list_initialized = true;
+
+    int rc = mfu_mount_info_get_filesystem_list(&mfu_mi_list);
+    if (rc != 0) {
+        struct mfu_mount_info* itemp = NULL;
+        struct mfu_mount_info* tmpitemp = NULL;
+        list_for_each_entry_safe(itemp,
+                                 tmpitemp,
+                                 &mfu_mi_list,
+                                 mfu_mi_linkage)
+        {
+            list_del_init(&itemp->mfu_mi_linkage);
+            mfu_mount_info_destroy(itemp);
+            mfu_free(&itemp);
+        }
+        mfu_mi_list_initialized = false;
+        return;
+    }
+}
+
+void mfu_destroy_filesystem_list(void)
+{
+    if (mfu_mi_list_initialized == false) {
+        MFU_LOG(MFU_LOG_INFO, "The filesystem list is not initialized...");
+        return;
+    }
+
+    struct mfu_mount_info* itemp = NULL;
+    struct mfu_mount_info* tmpitemp = NULL;
+    list_for_each_entry_safe(itemp,
+                             tmpitemp,
+                             &mfu_mi_list,
+                             mfu_mi_linkage)
+    {
+        list_del_init(&itemp->mfu_mi_linkage);
+        mfu_mount_info_destroy(itemp);
+        mfu_free(&itemp);
+    }
+
+    mfu_mi_list_initialized = false;
+}
+
+bool mfu_is_hpss(const char* path)
+{
+    bool is_hpss = false;
+
+#ifdef HPSS_SUPPORT
+    if (mfu_mi_list_initialized == false) {
+        MFU_LOG(MFU_LOG_INFO, "The filesystem list has not been initialized...");
+        return(false);
+    }
+
+    errno = 0;
+    struct stat st;
+    int rc = stat(path, &st);
+    if (rc == -1) {
+        MFU_LOG(MFU_LOG_ERR, "Could not stat: %s (errno=%d %s)",
+            path, errno, strerror(errno));
+        return(false);
+    }
+
+    struct mfu_mount_info* itemp = NULL;
+    struct mfu_mount_info* tmpitemp = NULL;
+    list_for_each_entry_safe(itemp,
+                             tmpitemp,
+                             &mfu_mi_list,
+                             mfu_mi_linkage)
+    {
+        MFU_LOG(MFU_LOG_DBG, "MFU_MI_DEV: %d FILE_DEV: %d MFU_MI_FSTYPE: %s",
+            itemp->mfu_mi_dev, st.st_dev, itemp->mfu_mi_fstype
+        );
+
+        if ((itemp->mfu_mi_dev == st.st_dev) &&
+            (itemp->mfu_mi_fstype != NULL) &&
+            (itemp->mfu_mi_fssubtype != NULL) &&
+            (strncmp(itemp->mfu_mi_fstype, "fuse", 25) == 0) &&
+            (strstr(itemp->mfu_mi_fssubtype, "hpssfs") == itemp->mfu_mi_fssubtype))
+        {
+            MFU_LOG(MFU_LOG_DBG, "Filesystem is HPSSFS-FUSE...");
+            is_hpss = true;
+            break;
+        }
+    }
+#endif
+
+    return is_hpss;
 }
 
 /* executes a logical AND operation on flag on all procs on comm,
