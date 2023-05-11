@@ -1231,7 +1231,8 @@ int mfu_mount_info_get_filesystem_list(struct list_head* mfu_mi_list)
         int rc = stat(itemp->mfu_mi_mountpoint, &st);
         if (rc == -1) {
             fclose(mountfp);
-            fprintf(stderr, "Could not stat: %s (%d)", itemp->mfu_mi_mountpoint, errno);
+            MFU_LOG(MFU_LOG_ERR, "Could not stat: %s (errno=%d %s)",
+                itemp->mfu_mi_mountpoint, errno, strerror(errno));
             return(1);
         }
         itemp->mfu_mi_dev = st.st_dev;
@@ -1256,6 +1257,7 @@ void mfu_init_filesystem_list(void)
 
     MFU_LOG(MFU_LOG_INFO, "Initializing filesystem list...");
     INIT_LIST_HEAD(&mfu_mi_list);
+    mfu_mi_list_initialized = true;
 
     int rc = mfu_mount_info_get_filesystem_list(&mfu_mi_list);
     if (rc != 0) {
@@ -1270,10 +1272,9 @@ void mfu_init_filesystem_list(void)
             mfu_mount_info_destroy(itemp);
             mfu_free(&itemp);
         }
+        mfu_mi_list_initialized = false;
         return;
     }
-
-    mfu_mi_list_initialized = true;
 }
 
 void mfu_destroy_filesystem_list(void)
@@ -1312,7 +1313,8 @@ bool mfu_is_hpss(const char* path)
     struct stat st;
     int rc = stat(path, &st);
     if (rc == -1) {
-        fprintf(stderr, "Could not stat: %s (%d)", path, errno);
+        MFU_LOG(MFU_LOG_ERR, "Could not stat: %s (errno=%d %s)",
+            path, errno, strerror(errno));
         return(false);
     }
 
