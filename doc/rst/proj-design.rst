@@ -32,7 +32,7 @@ Portability
 -----------
 
 The tools are intended to support common file systems used in HPC centers, like
-Lustre, GPFS, and NFS. Additionally, methods in the library should be portable
+Lustre, GPFS, NFS, and HPSS. Additionally, methods in the library should be portable
 and efficient across multiple file systems. Tool and library users can rely on
 mpiFileUtils to provide portable and performant implementations.
 

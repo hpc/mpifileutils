@@ -66,6 +66,7 @@ Additional CMake options:
 * :code:`-DENABLE_XATTRS=[ON/OFF]` : use extended attributes and libattr, defaults to :code:`ON`
 * :code:`-DENABLE_LUSTRE=[ON/OFF]` : specialization for Lustre, defaults to :code:`OFF`
 * :code:`-DENABLE_GPFS=[ON/OFF]` : specialization for GPFS, defaults to :code:`OFF`
+* :code:`-DENABLE_HPSS=[ON/OFF]` : specialization for HPSS, defaults to :code:`OFF`
 * :code:`-DENABLE_EXPERIMENTAL=[ON/OFF]` : build experimental tools, defaults to :code:`OFF`
 
 -------------------------------------------
@@ -102,7 +103,7 @@ Spack
 
 To use `Spack <https://github.com/spack/spack>`_, it is recommended that one first create a `packages.yaml` file to list system-provided packages, like MPI.
 Without doing this, Spack will fetch and install an MPI library that may not work on your system.
-Make sure that you've set up spack in your shell (see `these instructions <https://spack.readthedocs.io/en/latest/getting_started.html>`_).
+Make sure that you've set up Spack in your shell (see `these instructions <https://spack.readthedocs.io/en/latest/getting_started.html>`_).
 
 Once Spack has been configured, mpiFileUtils can be installed as:
 
@@ -114,7 +115,7 @@ or to enable all features:
 
 .. code-block:: Bash
 
-    spack install mpifileutils +lustre +gpfs +experimental
+    spack install mpifileutils +lustre +gpfs +hpss +experimental
 
 ----------------------------
 Development build with CMake
@@ -205,5 +206,5 @@ Thus, the commands to build become:
    cd ../build
    cmake ../mpifileutils
 
-The other way to use spack is to create a "view" to the installed dependencies.
+The other way to use Spack is to create a "view" to the installed dependencies.
 Details on this are coming soon.
