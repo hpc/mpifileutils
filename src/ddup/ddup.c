@@ -394,9 +394,7 @@ int main(int argc, char** argv)
                                chunk_size, file_size, &data_size);
             if (status) {
                 /* File size has been changed, TODO: handle */
-                printf("failed to read file %s, maybe file "
-                       "size has been modified during the "
-                       "process", fname);
+                MFU_LOG(MFU_LOG_WARN, "Failed to read %s, size may have changed", fname);
             }
 
             /* update the SHA256 context for this file */
