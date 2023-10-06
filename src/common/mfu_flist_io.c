@@ -22,6 +22,10 @@
 #include <errno.h>
 #include <string.h>
 
+/* to read file project id via ioctl */
+#include <sys/ioctl.h>
+#include <linux/fs.h>
+
 #include "dtcmp.h"
 #include "mfu.h"
 #include "mfu_flist_internal.h"
@@ -1591,9 +1595,30 @@ void mfu_flist_write_cache(
     return;
 }
 
+/* uses FS_IOC_FSGETXATTR ioctl to read file project id value */
+static int get_projid(const char* path, uint32_t* id)
+{
+    int ret = -1;
+    int fd = open(path, O_RDONLY | O_NOATIME);
+    if (fd >= 0) {
+        struct fsxattr attr;
+        int rc = ioctl(fd, FS_IOC_FSGETXATTR, &attr);
+        if (rc == 0) {
+            *id = (uint32_t) attr.fsx_projid;
+            ret = 0;
+        } else {
+            MFU_LOG(MFU_LOG_ERR, "ioctl failed: `%s' errno=%d (%s)", path, errno, strerror(errno));
+        }
+        close(fd);
+    } else {
+        MFU_LOG(MFU_LOG_ERR, "open failed: `%s' errno=%d (%s)", path, errno, strerror(errno));
+    }
+    return ret;
+}
+
 /* TODO: move this somewhere or modify existing print_file */
 /* print information about a file given the index and rank (used in print_files) */
-static size_t print_file_text(mfu_flist flist, uint64_t idx, char* buffer, size_t bufsize)
+static size_t print_file_text(mfu_flist flist, uint64_t idx, const uint32_t* projids, char* buffer, size_t bufsize)
 {
     size_t numbytes = 0;
 
@@ -1640,9 +1665,11 @@ static size_t print_file_text(mfu_flist flist, uint64_t idx, char* buffer, size_
         const char* size_units;
         mfu_format_bytes(size, &size_tmp, &size_units);
 
-        numbytes = snprintf(buffer, bufsize, "%s %s %s %7.3f %3s %s %s\n",
+        uint32_t projid = projids[idx];
+
+        numbytes = snprintf(buffer, bufsize, "%s %s %s %7.3f %3s %s %lu %s\n",
             mode_format, username, groupname,
-            size_tmp, size_units, modify_s, file
+            size_tmp, size_units, modify_s, (unsigned long)projid, file
         );
     }
     else {
@@ -1690,12 +1717,24 @@ void mfu_flist_write_text(
         MFU_LOG(MFU_LOG_INFO, "Writing to output file: %s", name);
     }
 
-    /* compute size of buffer needed to hold all data */
-    size_t bufsize = 0;
     uint64_t idx;
     uint64_t size = mfu_flist_size(flist);
+
+    /* TODO: corresponding projid array element is undefined if lookup fails */
+    /* lookup project id value for each item in our list */
+    uint32_t* projids = (uint32_t*) MFU_MALLOC(size * sizeof(uint32_t));
     for (idx = 0; idx < size; idx++) {
-        size_t count = print_file_text(flist, idx, NULL, 0);
+        const char* file = mfu_flist_file_get_name(flist, idx);
+        uint32_t projid;
+        if (get_projid(file, &projid) == 0) {
+            projids[idx] = projid;
+        }
+    }
+
+    /* compute size of buffer needed to hold all data */
+    size_t bufsize = 0;
+    for (idx = 0; idx < size; idx++) {
+        size_t count = print_file_text(flist, idx, projids, NULL, 0);
         bufsize += count + 1;
     }
 
@@ -1706,7 +1745,7 @@ void mfu_flist_write_text(
     char* ptr = buf;
     size_t total = 0;
     for (idx = 0; idx < size; idx++) {
-        size_t count = print_file_text(flist, idx, ptr, bufsize - total);
+        size_t count = print_file_text(flist, idx, projids, ptr, bufsize - total);
         total += count;
         ptr += count;
     }
@@ -1810,6 +1849,9 @@ void mfu_flist_write_text(
 
     /* free buffer */
     mfu_free(&buf);
+
+    /* free buffer of project ids */
+    mfu_free(&projids);
 
     /* end timer */
     double end_write = MPI_Wtime();
