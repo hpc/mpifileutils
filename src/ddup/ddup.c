@@ -1,9 +1,13 @@
+/* For O_NOATIME support */
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <string.h>
 #include <getopt.h>
 #include <openssl/sha.h>
 #include <assert.h>
 #include <inttypes.h>
+
 #include "mpi.h"
 #include "dtcmp.h"
 #include "mfu.h"
@@ -23,6 +27,7 @@ static void print_usage(void)
     printf("Usage: ddup <dir>\n");
     printf("\n");
     printf("Options:\n");
+    printf("      --open-noatime   - open files with O_NOATIME\n");
     printf("  -d, --debug <DEBUG>  - set verbosity, one of: fatal,err,warn,info,dbg\n");
     printf("  -v, --verbose        - verbose output\n");
     printf("  -q, --quiet          - quiet output\n");
@@ -78,9 +83,14 @@ static void mtcmp_cmp_fini(DTCMP_Op* cmp)
 
 /* open the specified file, read specified chunk, and close file,
  * returns -1 on any read error */
-static int read_data(const char* fname, char* chunk_buf, uint64_t chunk_id,
-                     uint64_t chunk_size, uint64_t file_size,
-                     uint64_t* data_size)
+static int read_data(
+    const char* fname,
+    bool noatime,
+    char* chunk_buf,
+    uint64_t chunk_id,
+    uint64_t chunk_size,
+    uint64_t file_size,
+    uint64_t* data_size)
 {
     int status = 0;
 
@@ -93,7 +103,11 @@ static int read_data(const char* fname, char* chunk_buf, uint64_t chunk_id,
     memset(chunk_buf, 0, chunk_size);
 
     /* open the file */
-    int fd = mfu_open(fname, O_RDONLY);
+    int flags = O_RDONLY;
+    if (noatime) {
+        flags |= O_NOATIME;
+    }
+    int fd = mfu_open(fname, flags);
     if (fd < 0) {
         return -1;
     }
@@ -175,7 +189,10 @@ int main(int argc, char** argv)
 
     mfu_debug_level = MFU_LOG_VERBOSE;
 
+    bool open_noatime = false;
+
     static struct option long_options[] = {
+        {"open-noatime", 0, 0, 'U'},
         {"debug",    0, 0, 'd'},
         {"verbose",  0, 0, 'v'},
         {"quiet",    0, 0, 'q'},
@@ -192,6 +209,9 @@ int main(int argc, char** argv)
                             long_options, &option_index)) != -1)
     {
         switch (c) {
+        case 'U':
+            open_noatime = true;
+            break;
         case 'd':
             if (strncmp(optarg, "fatal", 5) == 0) {
                 mfu_debug_level = MFU_LOG_FATAL;
@@ -307,6 +327,10 @@ int main(int argc, char** argv)
 
     /* TODO: spread list among procs? */
 
+    /* determine effective user id and capabilities of current process */
+    mfu_proc_t proc;
+    mfu_proc_set(&proc);
+
     /* get local number of items in flist */
     uint64_t checking_files = mfu_flist_size(flist);
 
@@ -388,9 +412,18 @@ int main(int argc, char** argv)
             /* look up file size */
             file_size = mfu_flist_file_get_size(flist, idx);
 
+            /* open file with O_NOATIME if requested and if possible */
+            bool noatime = false;
+            if (open_noatime) {
+                uid_t owner = (uid_t) mfu_flist_file_get_uid(flist, idx);
+                if (proc.geteuid == owner || proc.cap_fowner) {
+                    noatime = true;
+                }
+            }
+
             /* read a chunk of data from the file into chunk_buf */
             uint64_t data_size;
-            status = read_data(fname, chunk_buf, chunk_id,
+            status = read_data(fname, noatime, chunk_buf, chunk_id,
                                chunk_size, file_size, &data_size);
             if (status) {
                 /* File size has been changed, TODO: handle */

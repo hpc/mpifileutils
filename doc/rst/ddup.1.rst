@@ -20,6 +20,10 @@ Multiple sets of duplicate files can be matched using this final reported hash.
 OPTIONS
 -------
 
+.. option:: --open-noatime
+
+   Open files with O_NOATIME flag, if possible.
+
 .. option:: -d, --debug LEVEL
 
    Set verbosity level.  LEVEL can be one of: fatal, err, warn, info, dbg.

@@ -142,6 +142,7 @@ static int mfu_archive_open_file(
     const char* file,                /* path to file to be opened */
     int read_flag,                   /* set to 1 to open in read only, 0 for write */
     int sync_flag,                   /* set to 1 to sync file on close (if opned for write) */
+    int noatime_flag,                /* set to 1 to open file with O_NOATIME */
     mfu_archive_file_cache_t* cache) /* cache the open file to avoid repetitive open/close of the same file */
 {
     /* see if we have a cached file descriptor */
@@ -164,6 +165,9 @@ static int mfu_archive_open_file(
     int fd;
     if (read_flag) {
         int flags = O_RDONLY;
+        if (noatime_flag) {
+            flags |= O_NOATIME;
+        }
         fd = mfu_open(file, flags);
     } else {
         int flags = O_WRONLY | O_CREAT;
@@ -397,7 +401,11 @@ static int encode_header(
         /* to preserve ACLs and XATTRs, we rely on read disk to capture that info,
          * libarchive captures this info in an entry by default (unless told not to),
          * we need to open the target item with a file descriptor for the read_disk call */
-        int fd = mfu_open(fname, O_RDONLY);
+        int flags = O_RDONLY;
+        if (opts->open_noatime) {
+            flags |= O_NOATIME;
+        }
+        int fd = mfu_open(fname, flags);
         if (fd >= 0) {
             /* define an host archive for encoding our entry */
             struct archive* source = archive_read_disk_new();
@@ -729,7 +737,8 @@ static void DTAR_perform_copy(CIRCLE_handle* handle)
     /* open input file for reading */
     int read_flag = 1;
     int sync_flag = 0;
-    int open_rc = mfu_archive_open_file(in_name, read_flag, sync_flag, &mfu_archive_src_cache);
+    int noatime_flag = DTAR_opts->open_noatime;
+    int open_rc = mfu_archive_open_file(in_name, read_flag, sync_flag, noatime_flag, &mfu_archive_src_cache);
     int in_fd = mfu_archive_src_cache.fd;
     if (open_rc == -1) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open source file '%s' errno=%d %s",
@@ -913,10 +922,11 @@ static void DTAR_perform_extract(CIRCLE_handle* handle)
     /* get name of user file */
     const char* out_name = op->operand;
 
-    /* open output file for reading */
+    /* open output file for writing */
     int read_flag = 0; /* write */
     int sync_flag = DTAR_opts->sync_on_close;
-    int open_rc = mfu_archive_open_file(out_name, read_flag, sync_flag, &mfu_archive_dst_cache);
+    int noatime_flag = DTAR_opts->open_noatime;
+    int open_rc = mfu_archive_open_file(out_name, read_flag, sync_flag, noatime_flag, &mfu_archive_dst_cache);
     int out_fd = mfu_archive_dst_cache.fd;
     if (open_rc == -1) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open destination file '%s' errno=%d %s",
@@ -2340,7 +2350,11 @@ static int mfu_flist_archive_create_copy_chunk(
 
         /* open the source file for reading */
         const char* in_name = p->name;
-        int in_fd = mfu_open(p->name, O_RDONLY);
+        int flags = O_RDONLY;
+        if (opts->open_noatime) {
+            flags |= O_NOATIME;
+        }
+        int in_fd = mfu_open(in_name, flags);
         if (in_fd < 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open source file '%s' errno=%d %s",
                 in_name, errno, strerror(errno));
@@ -3516,7 +3530,7 @@ static int index_entries_distread(
         MFU_LOG(MFU_LOG_INFO, "Indexing archive with parallel read");
     }
 
-    /* open archive file for readhing */
+    /* open archive file for reading */
     int fd = mfu_open(filename, O_RDONLY);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open archive: '%s' (errno=%d %s)",
@@ -3883,7 +3897,7 @@ static int extract_flist_offsets(
     /* prepare list for metadata details */
     mfu_flist_set_detail(flist, 1);
 
-    /* open archive file for readhing */
+    /* open archive file for reading */
     int fd = mfu_open(filename, O_RDONLY);
     if (fd < 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open archive: '%s' (errno=%d %s)",
@@ -5763,6 +5777,9 @@ mfu_archive_opts_t* mfu_archive_opts_new(void)
 
     /* By default, don't bother to preserve all attributes. */
     opts->preserve = false;
+
+    /* Whether to open files with O_NOATIME */
+    opts->open_noatime = false;
 
     /* flags for libarchive */
     opts->flags = 0;

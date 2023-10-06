@@ -92,6 +92,7 @@ void print_usage(void)
     printf("  -P, --no-dereference     - don't follow links in source\n");
     printf("  -p, --preserve           - preserve permissions, ownership, timestamps (see also --xattrs)\n");
     printf("  -s, --direct             - open files with O_DIRECT\n");
+    printf("      --open-noatime       - open files with O_NOATIME\n");
     printf("  -S, --sparse             - create sparse files when possible\n");
     printf("      --progress <N>       - print progress every N seconds\n");
     printf("  -G  --gid <GID>          - Set the group id to perform copy\n");
@@ -160,6 +161,7 @@ int main(int argc, char** argv)
         {"preserve"             , no_argument      , 0, 'p'},
         {"synchronous"          , no_argument      , 0, 's'},
         {"direct"               , no_argument      , 0, 's'},
+        {"open-noatime"         , no_argument      , 0, 'A'},
         {"sparse"               , no_argument      , 0, 'S'},
         {"progress"             , required_argument, 0, 'R'},
         {"gid"                  , required_argument, 0, 'G'},
@@ -312,6 +314,12 @@ int main(int argc, char** argv)
                 mfu_copy_opts->direct = 1;
                 if(rank == 0) {
                     MFU_LOG(MFU_LOG_INFO, "Using O_DIRECT");
+                }
+                break;
+            case 'A':
+                mfu_copy_opts->open_noatime = true;
+                if(rank == 0) {
+                    MFU_LOG(MFU_LOG_INFO, "Using O_NOATIME");
                 }
                 break;
             case 'S':

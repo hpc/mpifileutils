@@ -633,6 +633,7 @@ typedef struct {
     bool    preserve_acls;
     bool    preserve_fflags;
     bool    preserve;
+    bool    open_noatime;
     int     flags;
     size_t  chunk_size;
     size_t  buf_size;

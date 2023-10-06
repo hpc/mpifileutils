@@ -83,6 +83,10 @@ OPTIONS
 
    Use O_DIRECT to avoid caching file data.
 
+.. option:: --open-noatime
+
+   Open files with O_NOATIME flag.
+
 .. option:: --link-dest DIR
 
    Create hardlink in DEST to files in DIR when file is unchanged

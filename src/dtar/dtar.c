@@ -145,6 +145,7 @@ static void print_usage(void)
 //    printf("      --preserve-acls     - preserve acls (default ignores acls)\n");
 //    printf("      --preserve-flags    - preserve fflags (default ignores ioctl iflags)\n");
     printf("      --fsync             - sync file data to disk on close\n");
+    printf("      --open-noatime      - open source files with O_NOATIME\n");
     printf("  -b, --bufsize <SIZE>    - IO buffer size in bytes (default " MFU_BUFFER_SIZE_STR ")\n");
     printf("  -k, --chunksize <SIZE>  - work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
     printf("      --memsize <SIZE>    - memory limit per task for parallel read in bytes (default 256MB)\n");
@@ -200,6 +201,7 @@ int main(int argc, char** argv)
         {"preserve-acls",   0, 0, 'A'},
         {"preserve-flags",  0, 0, 'F'},
         {"fsync",     0, 0, 's'},
+        {"open-noatime",    0, 0, 'U'},
         {"bufsize",   1, 0, 'b'},
         {"chunksize", 1, 0, 'k'},
         {"memsize",   1, 0, 'm'},
@@ -263,6 +265,9 @@ int main(int argc, char** argv)
                 break;
             case 's':
                 archive_opts->sync_on_close = true;
+                break;
+            case 'U':
+                archive_opts->open_noatime = true;
                 break;
             case 'b':
                 if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {

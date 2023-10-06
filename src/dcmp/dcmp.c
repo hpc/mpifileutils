@@ -45,6 +45,7 @@ static void print_usage(void)
     printf("      --daos-api            - DAOS API in {DFS, DAOS} (default uses DFS for POSIX containers)\n");
 #endif
     printf("  -s, --direct              - open files with O_DIRECT\n");
+    printf("      --open-noatime        - open files with O_NOATIME\n");
     printf("      --progress <N>        - print progress every N seconds\n");
     printf("  -v, --verbose             - verbose output\n");
     printf("  -q, --quiet               - quiet output\n");
@@ -2120,6 +2121,7 @@ int main(int argc, char **argv)
         {"chunksize",     1, 0, 'k'},
         {"daos-api",      1, 0, 'x'},
         {"direct",        0, 0, 's'},
+        {"open-noatime",  0, 0, 'U'},
         {"progress",      1, 0, 'R'},
         {"verbose",       0, 0, 'v'},
         {"quiet",         0, 0, 'q'},
@@ -2184,6 +2186,12 @@ int main(int argc, char **argv)
             copy_opts->direct = true;
             if(rank == 0) {
                 MFU_LOG(MFU_LOG_INFO, "Using O_DIRECT");
+            }
+            break;
+        case 'U':
+            copy_opts->open_noatime = true;
+            if(rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "Using O_NOATIME");
             }
             break;
         case 'R':

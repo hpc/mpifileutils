@@ -178,6 +178,9 @@ static int mfu_copy_open_file(
     /* open the new file, this sets mfu_file->fd/obj */
     if (read_flag) {
         int flags = O_RDONLY;
+        if (copy_opts->open_noatime) {
+            flags |= O_NOATIME;
+        }
         if (copy_opts->direct) {
             flags |= O_DIRECT;
         }
@@ -3337,6 +3340,9 @@ mfu_copy_opts_t* mfu_copy_opts_new(void)
 
     /* By default, don't use O_DIRECT. */
     opts->direct = false;
+
+    /* By default, don't use O_NOATIME. */
+    opts->open_noatime = false;
 
     /* By default, don't use sparse file. */
     opts->sparse = false;
