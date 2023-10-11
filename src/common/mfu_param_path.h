@@ -135,6 +135,7 @@ typedef struct {
                                     * this is not a perfect opposite of no_dereference */
     int          no_dereference;   /* if true, don't dereference source symbolic links */
     bool         direct;           /* whether to use O_DIRECT */
+    bool         open_noatime;     /* whether to use O_NOATIME */
     bool         sparse;           /* whether to create sparse files */
     size_t       chunk_size;       /* size to chunk files by */
     size_t       buf_size;         /* buffer size to read/write to file system */

@@ -72,6 +72,7 @@ static void print_usage(void)
     printf("  -L, --dereference       - copy original files instead of links\n");
     printf("  -P, --no-dereference    - don't follow links in source\n"); 
     printf("  -s, --direct            - open files with O_DIRECT\n");
+    printf("      --open-noatime      - open files with O_NOATIME\n");
     printf("      --link-dest <DIR>   - hardlink to files in DIR when unchanged\n");
     printf("  -S, --sparse            - create sparse files when possible\n");
     printf("      --progress <N>      - print progress every N seconds\n");
@@ -3028,6 +3029,7 @@ int main(int argc, char **argv)
         {"dereference",    0, 0, 'L'},
         {"no-dereference", 0, 0, 'P'},
         {"direct",         0, 0, 's'},
+        {"open-noatime",   0, 0, 'U'},
         {"output",         1, 0, 'o'}, // undocumented
         {"debug",          0, 0, 'd'}, // undocumented
         {"link-dest",      1, 0, 'l'},
@@ -3128,6 +3130,12 @@ int main(int argc, char **argv)
             copy_opts->direct = true;
             if(rank == 0) {
                 MFU_LOG(MFU_LOG_INFO, "Using O_DIRECT");
+            }
+            break;
+        case 'U':
+            copy_opts->open_noatime = true;
+            if(rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "Using O_NOATIME");
             }
             break;
         case 'l':

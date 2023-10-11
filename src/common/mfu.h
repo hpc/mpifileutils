@@ -27,6 +27,7 @@ extern "C" {
 #include "mfu_param_path.h"
 #include "mfu_flist.h"
 #include "mfu_pred.h"
+#include "mfu_proc.h"
 #include "mfu_progress.h"
 #include "mfu_bz2.h"
 

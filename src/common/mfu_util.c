@@ -725,6 +725,7 @@ int mfu_compare_contents(
     /* extract values from copy options */
     int direct = copy_opts->direct;
     size_t buf_size = copy_opts->buf_size;
+    bool noatime = copy_opts->open_noatime;
 
     /* for O_DIRECT, check that length is a multiple of buf_size */
     if (direct &&                      /* using O_DIRECT */
@@ -737,6 +738,9 @@ int mfu_compare_contents(
 
     /* open source as read only, with optional O_DIRECT */
     int src_flags = O_RDONLY;
+    if (noatime) {
+        src_flags |= O_NOATIME;
+    }
     if (direct) {
         src_flags |= O_DIRECT;
     }
@@ -755,6 +759,9 @@ int mfu_compare_contents(
     int dst_flags = O_RDONLY;
     if (overwrite) {
         dst_flags = O_RDWR;
+    }
+    if (noatime) {
+        dst_flags |= O_NOATIME;
     }
     if (direct) {
         dst_flags |= O_DIRECT;

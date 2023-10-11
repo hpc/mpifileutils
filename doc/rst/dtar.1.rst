@@ -119,6 +119,10 @@ OPTIONS
    Apply recorded flags to extracted files.
    Default does not record or extract flags.
 
+.. option:: --open-noatime
+
+   Open source files with O_NOATIME flag when creating archive.
+
 .. option:: --fsync
 
    Call fsync before closing files after writing.

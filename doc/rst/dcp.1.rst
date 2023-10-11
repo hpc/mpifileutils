@@ -82,6 +82,10 @@ OPTIONS
 
    Use O_DIRECT to avoid caching file data.
 
+.. option:: --open-noatime
+
+   Open files with O_NOATIME flag.
+
 .. option:: -S, --sparse
 
    Create sparse files when possible.
