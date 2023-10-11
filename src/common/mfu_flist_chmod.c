@@ -928,6 +928,7 @@ static int chmod_list(
     const mfu_perms* head,
     const char* usrname,
     const char* grname,
+    const mfu_proc_t* proc,
     mfu_chmod_opts_t* opts)
 {
     /* assume we'll succeed, set this to FAILURE on any error */
@@ -990,7 +991,7 @@ static int chmod_list(
                 /* only attempt to change group if effective user id of
                  * the process is the owner of the item or process has
                  * CAP_CHWON capability */
-                if (grname != NULL && opts->geteuid != olduid && !opts->capchown) {
+                if (grname != NULL && proc->geteuid != olduid && !proc->cap_chown) {
                     /* want to change group, but effective uid is not the
                      * owner, linux prevents normal users from doing this */
                     change = 0;
@@ -1069,7 +1070,7 @@ static int chmod_list(
                 /* don't bother changing permissions on files we don't own,
                  * unless process has CAP_FOWNER capability */
                 uid_t owner = (uid_t) mfu_flist_file_get_uid(list, idx);
-                if (opts->geteuid != owner && !opts->capfowner) {
+                if (proc->geteuid != owner && !proc->cap_fowner) {
                     /* don't attempt to change files we don't own */
                     change = 0;
                 }
@@ -1174,6 +1175,17 @@ void mfu_flist_chmod(
         }
     }
 
+    /* Determine whether process is running with CAP_CHOWN,
+     * allowing changes to uid/gid of file even when effective
+     * user id of the process does not match owner of the file. */
+
+    /* Determine whether process is running with CAP_FOWNER,
+     * allowing changes to permissions of file even when effective
+     * user id of the process does not match owner of the file */
+
+    mfu_proc_t proc;
+    mfu_proc_set(&proc);
+
     /* wait for all tasks and start timer */
     MPI_Barrier(MPI_COMM_WORLD);
     double start_dchmod = MPI_Wtime();
@@ -1199,7 +1211,7 @@ void mfu_flist_chmod(
 
         /* do a dchmod on each element in the list for this level & pass it the size */
         uint64_t stats[7] = {0};
-        chmod_list(list, stats, head, usrname, grname, opts);
+        chmod_list(list, stats, head, usrname, grname, &proc, opts);
 
         /* tally up stats for above operation into running totals */
         total_stats[ITEM_COUNT]    += stats[ITEM_COUNT];
@@ -1252,13 +1264,6 @@ mfu_chmod_opts_t* mfu_chmod_opts_new(void)
 {
     mfu_chmod_opts_t* opts = (mfu_chmod_opts_t*) MFU_MALLOC(sizeof(mfu_chmod_opts_t));
 
-    /* cache current real user id */
-    opts->getuid = getuid();
-
-    /* cache current effective user id,
-     * determines uid when considering owner ID of files */
-    opts->geteuid = geteuid();
-
     /* chown with uid==-1 preserves the same owner,
      * default to keeping the owner the same */ 
     opts->uid = -1;
@@ -1270,30 +1275,6 @@ mfu_chmod_opts_t* mfu_chmod_opts_new(void)
     /* umask to apply when setting permissions with
      * implied all in symbolic mode, like "+rX" */
     opts->umask = 0;
-
-    /* whether process is running with CAP_CHOWN, allowing
-     * changes to uid/gid of file even when effective id
-     * of the process does not match the file */
-    opts->capchown = false;
-#ifdef HAVE_LIBCAP
-    int cap_rc = cap_get_bound(CAP_CHOWN);
-    if (cap_rc > 0) {
-        /* process is running with CAP_CHOWN capability */
-        opts->capchown = true;
-    }
-#endif
-
-    /* whether process is running with CAP_FOWNER, allowing
-     * changes to permissions of file even when effective user id
-     * of the process does not match the owner of the file */
-    opts->capfowner = false;
-#ifdef HAVE_LIBCAP
-    cap_rc = cap_get_bound(CAP_FOWNER);
-    if (cap_rc > 0) {
-        /* process is running with CAP_FOWNER capability */
-        opts->capfowner = true;
-    }
-#endif
 
     /* avoid calling chmod/chown on all items,
      * if this is set to true, call on every item */
