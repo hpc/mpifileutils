@@ -550,13 +550,9 @@ void mfu_flist_metadata_apply(
 void mfu_flist_unlink(mfu_flist flist, bool traceless, mfu_file_t* mfu_file);
 
 typedef struct {
-    uid_t getuid;   /* result from getuid */
-    uid_t geteuid;  /* result from geteuid */
     uid_t uid;      /* new user id for item's owner, -1 for no change */
     gid_t gid;      /* new group id for item's group, -1 for no change  */
     mode_t umask;   /* umask to apply when setting item permissions */
-    bool capchown;  /* whether process has CAP_CHOWN capability */
-    bool capfowner; /* whether process has CAP_FOWNER capability */
     bool force;     /* always call chmod/chgrp on every item */
     bool silence;   /* avoid printing EPERM errors */
 } mfu_chmod_opts_t;
