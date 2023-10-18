@@ -630,6 +630,9 @@ static int mfu_copy_timestamps(
     times[1].tv_sec  = (time_t) mtime;
     times[1].tv_nsec = (long)   mtime_nsec;
 
+    printf("%s atime_sec=%llu atime_ns=%llu mtime_sec=%llu mtime_ns=%llu\n",
+        dest_path, times[0].tv_sec, times[0].tv_nsec, times[1].tv_sec, times[1].tv_nsec);
+
     /* set times with nanosecond precision using utimensat,
      * assume path is relative to current working directory,
      * if it's not absolute, and set times on link (not target file)
