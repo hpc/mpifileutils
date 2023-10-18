@@ -1667,6 +1667,14 @@ static int dsync_strmap_compare(
              * will be later copied into dst dir */
             if (!options.dry_run) {
                 mfu_flist_file_copy(src_list, src_index, src_cp_list);
+
+                const char* src_name    = mfu_flist_file_get_name(src_list, src_index);
+                uint64_t src_atime      = mfu_flist_file_get_atime(src_list, src_index);
+                uint64_t src_atime_nsec = mfu_flist_file_get_atime_nsec(src_list, src_index);
+                uint64_t src_mtime      = mfu_flist_file_get_mtime(src_list, src_index);
+                uint64_t src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_list, src_index);
+                printf("%s atime_sec=%llu atime_ns=%llu mtime_sec=%llu mtime_ns=%llu\n",
+                    src_name, src_atime, src_atime_nsec, src_mtime, src_mtime_nsec);
             }
 
             /* skip uncommon files, all other states are DCMPS_INIT */
