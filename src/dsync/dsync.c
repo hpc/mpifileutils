@@ -37,6 +37,8 @@
 #include <stdbool.h>
 #include <assert.h>
 
+#include <time.h>
+
 #include "mfu.h"
 #include "strmap.h"
 #include "list.h"
@@ -1673,8 +1675,14 @@ static int dsync_strmap_compare(
                 uint64_t src_atime_nsec = mfu_flist_file_get_atime_nsec(src_list, src_index);
                 uint64_t src_mtime      = mfu_flist_file_get_mtime(src_list, src_index);
                 uint64_t src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_list, src_index);
-                printf("%s atime_sec=%llu atime_ns=%llu mtime_sec=%llu mtime_ns=%llu\n",
-                    src_name, src_atime, src_atime_nsec, src_mtime, src_mtime_nsec);
+                time_t access_t = (time_t) src_atime;
+                time_t modify_t = (time_t) src_mtime;
+                char access_s[30];
+                char modify_s[30];
+                size_t access_rc = strftime(access_s, sizeof(access_s) - 1, "%FT%T", localtime(&access_t));
+                size_t modify_rc = strftime(modify_s, sizeof(modify_s) - 1, "%FT%T", localtime(&modify_t));
+                printf("src %s atime_sec=%llu atime_ns=%llu mtime_sec=%llu mtime_ns=%llu atime=%s mtime=%s\n",
+                    src_name, src_atime, src_atime_nsec, src_mtime, src_mtime_nsec, access_s, modify_s);
             }
 
             /* skip uncommon files, all other states are DCMPS_INIT */
