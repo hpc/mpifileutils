@@ -1151,9 +1151,7 @@ static void dsync_strmap_compare_lite_link_dest(
         uint64_t dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(link_compare_list, idx);
 
         /* if size and mtime are the same, we assume the file contents are same */
-        if ((src_size == dst_size) &&
-            (src_mtime == dst_mtime) && (src_mtime_nsec == dst_mtime_nsec))
-        {
+        if ((src_size == dst_size) && (src_mtime == dst_mtime)) {
             mfu_flist_file_copy(link_compare_list, idx, link_same_list);
         }
     }
@@ -1199,8 +1197,7 @@ static int dsync_strmap_compare_lite(
         uint64_t dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(dst_compare_list, idx);
 
         /* if size or mtime is different, we assume the file contents are different */
-        if ((src_size != dst_size) ||
-            (src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec))
+        if ((src_size != dst_size) || (src_mtime != dst_mtime))
         {
             /* update to say contents of the files were found to be different */
             dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);

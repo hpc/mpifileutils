@@ -644,7 +644,7 @@ static int dcmp_compare_metadata(
         uint64_t src_mtime_nsec = mfu_flist_file_get_mtime_nsec(src_list, src_index);
         uint64_t dst_mtime      = mfu_flist_file_get_mtime(dst_list, dst_index);
         uint64_t dst_mtime_nsec = mfu_flist_file_get_mtime_nsec(dst_list, dst_index);
-        if ((src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec)) {
+        if ((src_mtime != dst_mtime)) {
             /* file mtime is different */
             dcmp_strmap_item_update(src_map, key, DCMPF_MTIME, DCMPS_DIFFER);
             dcmp_strmap_item_update(dst_map, key, DCMPF_MTIME, DCMPS_DIFFER);
@@ -1104,7 +1104,7 @@ static int dcmp_strmap_compare(
         }
 
         if (options.lite) {
-            if ((src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec)) {
+            if ((src_mtime != dst_mtime)) {
                 /* modification times are different, assume content is different.
                  * I don't think we can assume contents are different if the
                  * lite option is not on. Because files can have different
