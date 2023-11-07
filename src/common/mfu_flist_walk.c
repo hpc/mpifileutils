@@ -51,6 +51,7 @@ static flist_t* CURRENT_LIST;
 static int SET_DIR_PERMS;
 static int REMOVE_FILES;
 static int DEREFERENCE;
+static int NOHARDLINK;
 static mfu_file_t** CURRENT_PFILE;
 
 /****************************************
@@ -535,6 +536,9 @@ static void walk_stat_process(CIRCLE_handle* handle)
                 path, errno, strerror(errno));
         return;
     }
+    if (!S_ISDIR(st.st_mode) && st.st_nlink > 1 && NOHARDLINK) {
+        return;
+    }
 
     /* increment our item count */
     reduce_items++;
@@ -605,6 +609,11 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
         DEREFERENCE = 1;
     }
 
+    /* if nohardlink is set to 1 then set global variable */
+    NOHARDLINK = 0;
+    if (walk_opts->nohardlink) {
+        NOHARDLINK = 1;
+    }
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
 
