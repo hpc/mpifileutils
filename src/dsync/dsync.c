@@ -1212,6 +1212,10 @@ static int dsync_strmap_compare_lite(
             if (!options.dry_run || use_hardlinks) {
                 mfu_flist_file_copy(dst_compare_list, idx, dst_remove_list);
                 mfu_flist_file_copy(src_compare_list, idx, src_cp_list);
+
+                const char* src_name = mfu_flist_file_get_name(src_compare_list, idx);
+                printf("DIFF size/mtime src %s src_size=%lu dst_size=%lu src_mtime=%lu dst_mtime=%lu\n",
+                    src_name, (unsigned long)src_size, (unsigned long)dst_size, (unsigned long)src_mtime, (unsigned long)dst_mtime);
             }
         } else {
             /* update to say contents of the files were found to be the same */
@@ -1670,6 +1674,7 @@ static int dsync_strmap_compare(
             if (!options.dry_run) {
                 mfu_flist_file_copy(src_list, src_index, src_cp_list);
 
+#if 0
                 const char* src_name    = mfu_flist_file_get_name(src_list, src_index);
                 uint64_t src_atime      = mfu_flist_file_get_atime(src_list, src_index);
                 uint64_t src_atime_nsec = mfu_flist_file_get_atime_nsec(src_list, src_index);
@@ -1683,6 +1688,7 @@ static int dsync_strmap_compare(
                 size_t modify_rc = strftime(modify_s, sizeof(modify_s) - 1, "%FT%T", localtime(&modify_t));
                 printf("src %s atime_sec=%llu atime_ns=%llu mtime_sec=%llu mtime_ns=%llu atime=%s mtime=%s\n",
                     src_name, src_atime, src_atime_nsec, src_mtime, src_mtime_nsec, access_s, modify_s);
+#endif
             }
 
             /* skip uncommon files, all other states are DCMPS_INIT */
@@ -1743,6 +1749,10 @@ static int dsync_strmap_compare(
             if (!options.dry_run) {
                 mfu_flist_file_copy(src_list, src_index, src_cp_list);
                 mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
+
+                const char* src_name = mfu_flist_file_get_name(src_list, src_index);
+                printf("DIFF mode src %s src_mode=%lx dst_mode=%lx\n",
+                    src_name, (unsigned long)(src_mode & S_IFMT), (unsigned long)(dst_mode & S_IFMT));
             }
 
             if (!dsync_option_need_compare(DCMPF_CONTENT)) {
@@ -1787,6 +1797,12 @@ static int dsync_strmap_compare(
             if (!options.dry_run) {
                 mfu_flist_file_copy(src_list, src_index, src_cp_list);
                 mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
+
+                const char* src_name = mfu_flist_file_get_name(src_list, src_index);
+                uint64_t src_size = mfu_flist_file_get_size(src_list, src_index);
+                uint64_t dst_size = mfu_flist_file_get_size(dst_list, dst_index);
+                printf("DIFF size src %s src_size=%lu dst_size=%lu\n",
+                    src_name, (unsigned long)src_size, (unsigned long)dst_size);
             }
 
             continue;
