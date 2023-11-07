@@ -68,6 +68,10 @@ OPTIONS
 
    Delete extraneous files from destination.
 
+.. option:: -H, --nohardlink
+
+   Ignore hardlinks.
+
 .. option:: -L, --dereference
 
    Dereference symbolic links and copy the target file or directory
