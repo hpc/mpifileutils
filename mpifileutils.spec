@@ -17,15 +17,12 @@ File utilities designed for scalability and performance.
 %setup -q
 
 %build
-#topdir=`pwd`
-#installdir=$topdir/install
-
-cmake ./ -DWITH_DTCMP_PREFIX=${installdir} -DWITH_LibCircle_PREFIX=${installdir} -DCMAKE_INSTALL_PREFIX=%{buildroot} -DENABLE_LUSTRE=ON -DENABLE_XATTRS=ON
-make
+%{cmake} ./ -DWITH_DTCMP_PREFIX=${installdir} -DWITH_LibCircle_PREFIX=${installdir} -DCMAKE_INSTALL_PREFIX=%{buildroot} -DENABLE_LUSTRE=ON -DENABLE_XATTRS=ON
+%{cmake_build}
 
 %install
 rm -rf %{buildroot}
-make install DESTDIR=%{buildroot}
+%{cmake_install}
 
 
 %files
