@@ -1214,8 +1214,33 @@ static int dsync_strmap_compare_lite(
                 mfu_flist_file_copy(src_compare_list, idx, src_cp_list);
 
                 const char* src_name = mfu_flist_file_get_name(src_compare_list, idx);
-                printf("DIFF size/mtime src %s src_size=%lu dst_size=%lu src_mtime=%lu dst_mtime=%lu\n",
-                    src_name, (unsigned long)src_size, (unsigned long)dst_size, (unsigned long)src_mtime, (unsigned long)dst_mtime);
+                const char* dst_name = mfu_flist_file_get_name(dst_compare_list, idx);
+
+                // stat each file to double check we actually read the correct values
+                int stat_rc;
+                struct stat sb;
+                stat_rc = mfu_stat(src_name, &sb);
+                if (stat_rc != 0) {
+                    printf("DIFF size/mtime failed to stat src %s errno=%d\n", src_name, errno);
+                }
+                unsigned long src_read_mtime = (unsigned long) sb.st_mtime;
+
+                stat_rc = mfu_stat(dst_name, &sb);
+                if (stat_rc != 0) {
+                    printf("DIFF size/mtime failed to stat src %s errno=%d\n", dst_name, errno);
+                }
+                unsigned long dst_read_mtime = (unsigned long) sb.st_mtime;
+
+                time_t src_modify_t = (time_t) src_read_mtime;
+                time_t dst_modify_t = (time_t) dst_read_mtime;
+                char src_modify_s[30];
+                char dst_modify_s[30];
+                strftime(src_modify_s, sizeof(src_modify_s) - 1, "%FT%T", localtime(&src_modify_t));
+                strftime(dst_modify_s, sizeof(dst_modify_s) - 1, "%FT%T", localtime(&dst_modify_t));
+                printf("DIFF size/mtime src %s src_size=%lu src_mstr=%s src_mtime=%lu src_mtime2=%lu\n",
+                    src_name, (unsigned long)src_size, src_modify_s, (unsigned long)src_mtime, src_read_mtime);
+                printf("DIFF size/mtime dst %s dst_size=%lu dst_mstr=%s dst_mtime=%lu dst_mtime2=%lu\n",
+                    dst_name, (unsigned long)dst_size, dst_modify_s, (unsigned long)dst_mtime, dst_read_mtime);
             }
         } else {
             /* update to say contents of the files were found to be the same */

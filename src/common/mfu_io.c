@@ -241,14 +241,14 @@ retry:
             }
         }
     }
-#if 0
+//#if 0
     char access_s[30];
     char modify_s[30];
     size_t access_rc = strftime(access_s, sizeof(access_s) - 1, "%FT%T", localtime(&times[0].tv_sec));
     size_t modify_rc = strftime(modify_s, sizeof(modify_s) - 1, "%FT%T", localtime(&times[1].tv_sec));
     printf("dst %s rc=%d errno=%d atime_sec=%llu atime_ns=%llu mtime_sec=%llu mtime_ns=%llu atime=%s mtime=%s\n",
         pathname, rc, errno, times[0].tv_sec, times[0].tv_nsec, times[1].tv_sec, times[1].tv_nsec, access_s, modify_s);
-#endif
+//#endif
     return rc;
 }
 
