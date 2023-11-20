@@ -150,6 +150,31 @@ static void mkdir_progress_fn(const uint64_t* vals, int count, int complete, int
 static mfu_copy_file_cache_t mfu_copy_src_cache;
 static mfu_copy_file_cache_t mfu_copy_dst_cache;
 
+/* close a file that opened with mfu_copy_open_file */
+static int mfu_copy_close_file(
+    mfu_copy_file_cache_t* cache,
+    mfu_file_t* mfu_file)
+{
+    int rc = 0;
+
+    /* close file if we have one */
+    char* name = cache->name;
+    if (name != NULL) {
+        /* if open for write, fsync */
+        int read_flag = cache->read;
+        if (! read_flag && mfu_file->type == POSIX) {
+            int fd = cache->fd;
+            rc = mfu_fsync(name, fd);
+        }
+
+        /* close the file and delete the name string */
+        rc = mfu_file_close(name, mfu_file);
+        mfu_free(&cache->name);
+    }
+
+    return rc;
+}
+
 /* open and cache a file.
  * Returns 0 on success; -1 otherwise */
 static int mfu_copy_open_file(
@@ -170,8 +195,9 @@ static int mfu_copy_open_file(
         } else {
             /* the file we're trying to open is different,
              * close the old file and delete the name */
-            mfu_file_close(name, mfu_file);
-            mfu_free(&cache->name);
+            //mfu_file_close(name, mfu_file);
+            //mfu_free(&cache->name);
+            mfu_copy_close_file(cache, mfu_file);
         }
     }
 
@@ -234,31 +260,6 @@ static int mfu_copy_open_file(
 #endif
 
     return 0;
-}
-
-/* close a file that opened with mfu_copy_open_file */
-static int mfu_copy_close_file(
-    mfu_copy_file_cache_t* cache,
-    mfu_file_t* mfu_file)
-{
-    int rc = 0;
-
-    /* close file if we have one */
-    char* name = cache->name;
-    if (name != NULL) {
-        int fd = cache->fd;
-        /* if open for write, fsync */
-        int read_flag = cache->read;
-        if (! read_flag && mfu_file->type == POSIX) {
-            rc = mfu_fsync(name, fd);
-        }
-
-        /* close the file and delete the name string */
-        rc = mfu_file_close(name, mfu_file);
-        mfu_free(&cache->name);
-    }
-
-    return rc;
 }
 
 /* copy all extended attributes from op->operand to dest_path,
