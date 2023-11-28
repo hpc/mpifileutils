@@ -64,6 +64,8 @@
 #include <sys/ioctl.h>
 #endif
 
+#include <lustre/lustreapi.h>
+
 #ifdef GPFS_SUPPORT
 #include <gpfs.h>
 #endif
@@ -165,6 +167,7 @@ static int mfu_copy_close_file(
         if (! read_flag && mfu_file->type == POSIX) {
             int fd = cache->fd;
             rc = mfu_fsync(name, fd);
+            rc = llapi_file_flush(fd);
         }
 
         /* close the file and delete the name string */
