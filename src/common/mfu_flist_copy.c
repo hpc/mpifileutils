@@ -645,6 +645,22 @@ static int mfu_copy_timestamps(
         rc = -1;
     }
 
+//#if 0
+    // stat each file to double check we actually read the correct values
+    int stat_rc;
+    struct stat sb;
+    stat_rc = mfu_stat(dest_path, &sb);
+    if (stat_rc != 0) {
+        printf("DIFF size/mtime failed to stat dest %s errno=%d\n", dest_path, errno);
+    }   
+    uint64_t read_atime = (uint64_t) sb.st_atime;
+    uint64_t read_mtime = (uint64_t) sb.st_mtime;
+    if (read_atime != atime || read_mtime != mtime) {
+        printf("DIFF dst %s atime_exp=%lu atime_act=%lu mtime_exp=%lu mtime_act=%lu\n",
+            dest_path, (unsigned long) times[0].tv_sec, (unsigned long) read_atime, (unsigned long) times[1].tv_sec, (unsigned long) read_mtime);
+    }
+//#endif
+
     return rc;
 }
 
