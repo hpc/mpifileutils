@@ -67,6 +67,9 @@ mfu_walk_opts_t* mfu_walk_opts_new(void)
     /* Don't dereference symbolic links by default */
     opts->dereference = 0;
 
+    /* Don't ignore hardlink default */
+    opts->nohardlink = 0;
+
     return opts;
 }
 

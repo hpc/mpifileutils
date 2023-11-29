@@ -69,6 +69,7 @@ static void print_usage(void)
 #endif
     printf("  -c, --contents          - read and compare file contents rather than compare size and mtime\n");
     printf("  -D, --delete            - delete extraneous files from target\n");
+    printf("  -H, --nohardlink        - ignore hardlink\n");
     printf("  -L, --dereference       - copy original files instead of links\n");
     printf("  -P, --no-dereference    - don't follow links in source\n"); 
     printf("  -s, --direct            - open files with O_DIRECT\n");
@@ -3026,6 +3027,7 @@ int main(int argc, char **argv)
         {"daos-api",       1, 0, 'y'},
         {"contents",       0, 0, 'c'},
         {"delete",         0, 0, 'D'},
+        {"nohardlink",     0, 0, 'H'},
         {"dereference",    0, 0, 'L'},
         {"no-dereference", 0, 0, 'P'},
         {"direct",         0, 0, 's'},
@@ -3053,7 +3055,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDso:LPSvqhX:",
+            argc, argv, "b:cDso:LPSvqhHX:",
             long_options, &option_index
         );
 
@@ -3112,6 +3114,9 @@ int main(int argc, char **argv)
             break;
         case 'D':
             options.delete = 1;
+            break;
+        case 'H':
+            walk_opts->nohardlink = 1;
             break;
         case 'L':
             /* turn on dereference.

@@ -113,6 +113,7 @@ typedef struct {
     int remove;         /* flag option to remove files during walk */
     int use_stat;       /* flag option on whether or not to stat files during walk */
     int dereference;    /* flag option to dereference symbolic links */
+    int nohardlink;     /* flag option to ignore hardlink */
 } mfu_walk_opts_t;
 
 typedef enum {

@@ -70,6 +70,10 @@ OPTIONS
 
    Print files to the screen.
 
+.. option:: -H, --nohardlink
+
+   Ignore hardlinks.
+
 .. option:: -L, --dereference
 
    Dereference symbolic links and walk the target file or directory
