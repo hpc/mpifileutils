@@ -642,10 +642,10 @@ static int cont_get_props(daos_handle_t coh, daos_prop_t** _props,
     daos_prop_t*    prop_acl = NULL;
     daos_prop_t*    props_merged = NULL;
     /* total amount of properties to allocate */
-    uint32_t        total_props = 15;
+    uint32_t        total_props = 16;
     /* minimum number of properties that are always allocated/used to start
      * count */
-    int             prop_index = 15;
+    int             prop_index = 16;
 
     if (get_oid) {
         total_props++;
@@ -687,6 +687,7 @@ static int cont_get_props(daos_handle_t coh, daos_prop_t** _props,
     props->dpp_entries[12].dpe_type = DAOS_PROP_CO_DEDUP;
     props->dpp_entries[13].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
     props->dpp_entries[14].dpe_type = DAOS_PROP_CO_EC_CELL_SZ;
+    props->dpp_entries[15].dpe_type = DAOS_PROP_CO_SCRUBBER_DISABLED;
 
     /* Conditionally get the OID. Should always be true for serialization. */
     if (get_oid) {
@@ -4048,26 +4049,32 @@ int cont_serialize_props(struct hdf5_args *hdf5,
     }
 
     entry = &prop_query->dpp_entries[15];
-    rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ALLOCED_OID");
+    rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_SCRUBBER_DISABLED");
     if (rc != 0) {
         goto out;
     }
 
     entry = &prop_query->dpp_entries[16];
-    rc = cont_serialize_prop_str(hdf5, entry, "DAOS_PROP_CO_LABEL");
+    rc = cont_serialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ALLOCED_OID");
     if (rc != 0) {
         goto out;
     }
 
     entry = &prop_query->dpp_entries[17];
+    rc = cont_serialize_prop_str(hdf5, entry, "DAOS_PROP_CO_LABEL");
+    if (rc != 0) {
+        goto out;
+    }
+
+    entry = &prop_query->dpp_entries[18];
     rc = cont_serialize_prop_roots(hdf5, entry, "DAOS_PROP_CO_ROOTS");
     if (rc != 0) {
         goto out;
     }
 
     /* serialize ACL */
-    if (prop_query->dpp_nr > 18) {
-        entry = &prop_query->dpp_entries[18];
+    if (prop_query->dpp_nr > 19) {
+        entry = &prop_query->dpp_entries[19];
         rc = cont_serialize_prop_acl(hdf5, entry, "DAOS_PROP_CO_ACL");
         if (rc != 0) {
             goto out;
@@ -5327,11 +5334,12 @@ int cont_deserialize_all_props(struct hdf5_args *hdf5,
     prop->dpp_entries[12].dpe_type = DAOS_PROP_CO_DEDUP;
     prop->dpp_entries[13].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
     prop->dpp_entries[14].dpe_type = DAOS_PROP_CO_EC_CELL_SZ;
-    prop->dpp_entries[15].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
-    prop->dpp_entries[16].dpe_type = DAOS_PROP_CO_ACL;
-    prop->dpp_entries[17].dpe_type = DAOS_PROP_CO_ROOTS;
+    prop->dpp_entries[15].dpe_type = DAOS_PROP_CO_SCRUBBER_DISABLED;
+    prop->dpp_entries[16].dpe_type = DAOS_PROP_CO_ALLOCED_OID;
+    prop->dpp_entries[17].dpe_type = DAOS_PROP_CO_ACL;
+    prop->dpp_entries[18].dpe_type = DAOS_PROP_CO_ROOTS;
     if (deserialize_label) {
-        prop->dpp_entries[18].dpe_type = DAOS_PROP_CO_LABEL; 
+        prop->dpp_entries[19].dpe_type = DAOS_PROP_CO_LABEL;
     }
 
     entry = &prop->dpp_entries[0];
@@ -5425,12 +5433,18 @@ int cont_deserialize_all_props(struct hdf5_args *hdf5,
     }
 
     entry = &prop->dpp_entries[15];
-    rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ALLOCED_OID");
+    rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_SCRUBBER_DISABLED");
     if (rc != 0) {
         goto out;
     }
 
     entry = &prop->dpp_entries[16];
+    rc = cont_deserialize_prop_uint(hdf5, entry, "DAOS_PROP_CO_ALLOCED_OID");
+    if (rc != 0) {
+        goto out;
+    }
+
+    entry = &prop->dpp_entries[17];
     /* read acl as a list of strings in deserialize, then convert
      * back to acl for property entry
      */
@@ -5439,14 +5453,14 @@ int cont_deserialize_all_props(struct hdf5_args *hdf5,
         goto out;
     }
 
-    entry = &prop->dpp_entries[17];
+    entry = &prop->dpp_entries[18];
     rc = cont_deserialize_prop_roots(hdf5, entry, "DAOS_PROP_CO_ROOTS", roots);
     if (rc != 0) {
         goto out;
     }
 
     if (deserialize_label) {
-        prop->dpp_entries[18].dpe_str = strdup(label_entry->dpe_str);
+        prop->dpp_entries[19].dpe_str = strdup(label_entry->dpe_str);
     }
     *cont_type = prop->dpp_entries[0].dpe_val;
     *_prop = prop;
