@@ -5268,7 +5268,7 @@ int cont_deserialize_all_props(struct hdf5_args *hdf5,
 {
     int                     rc = 0;
     bool                    deserialize_label = false;
-    uint32_t                num_props = 18;
+    uint32_t                num_props = 19;
     daos_prop_t             *label = NULL;
     daos_prop_t             *prop = NULL;
     struct daos_prop_entry  *entry;
