@@ -301,7 +301,7 @@ int daos_parse_path(
 
 /* connect to DAOS pool,
  * and then open container */
-int daos_connect(
+int mfu_daos_connect(
   int rank,
   daos_args_t* da,
   char (*pool)[],
@@ -310,7 +310,9 @@ int daos_connect(
   daos_handle_t* coh,
   bool force_serialize,
   bool connect_pool,
+  unsigned int pool_connect_flags,
   bool create_cont,
+  unsigned int cont_open_flags,
   bool require_new_cont,
   bool preserve,
   mfu_file_t* mfu_src_file,
