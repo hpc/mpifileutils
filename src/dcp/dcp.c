@@ -395,6 +395,16 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    /* setgroups before set gid or uid */
+    if (gid > 0 || uid > 0) {
+        if (setgroups(0, NULL) < 0) {
+            MFU_LOG(MFU_LOG_ERR, "Could not setgroups: %s", strerror(errno));
+            mfu_finalize();
+            MPI_Finalize();
+            return 1;
+        }
+    }
+
     /* set egid */
     if (gid > 0) {
         if (setegid(gid) < 0) {
