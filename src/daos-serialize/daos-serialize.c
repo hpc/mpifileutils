@@ -155,8 +155,8 @@ int main(int argc, char** argv)
     
     tmp_rc = daos_connect(rank, daos_args, &daos_args->src_pool,
                           &daos_args->src_cont, &daos_args->src_poh,
-                          &daos_args->src_coh, force_serialize, true,
-                          false, false, false, NULL, true);
+                          &daos_args->src_coh, force_serialize, true, DAOS_PC_RW,
+                          false, DAOS_COO_RW, false, false, NULL, true);
     if (tmp_rc != 0) {
         daos_fini();
         mfu_finalize();
