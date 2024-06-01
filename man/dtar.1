@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DTAR" "1" "Feb 04, 2022" "0.11.1" "mpiFileUtils"
+.TH "DTAR" "1" "May 31, 2024" "0.12" "mpiFileUtils"
 .SH NAME
 dtar \- create and extract a tar archive
 .
@@ -32,7 +32,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 ..
 .SH SYNOPSIS
 .sp
-\fBdtar [OPTION] \-c \-f ARCHIVE SOURCE…\fP
+\fBdtar [OPTION] \-c \-f ARCHIVE SOURCE...\fP
 .sp
 \fBdtar [OPTION] \-x \-f ARCHIVE\fP
 .SH DESCRIPTION
@@ -59,8 +59,8 @@ during extraction to benefit subsequent extractions of the same archive file.
 When extracting an archive, dtar skips the entry corresponding to its index.
 If other tools, like tar, are used to extract the archive, the index
 entry is extracted as a regular file that is placed in the current working directory
-with a file extension of “.dtaridx” and having the same basename as the original archive file.
-For an archive that was named “file.tar” when it was created, the dtar index file is named “file.tar.dtaridx”.
+with a file extension of ".dtaridx" and having the same basename as the original archive file.
+For an archive that was named "file.tar" when it was created, the dtar index file is named "file.tar.dtaridx".
 .SH LIMITATIONS
 .sp
 dtar only supports directories, regular files, and symlinks.
@@ -137,13 +137,18 @@ Default does not record or extract xattrs.
 .UNINDENT
 .INDENT 0.0
 .TP
+.B \-\-open\-noatime
+Open source files with O_NOATIME flag when creating archive.
+.UNINDENT
+.INDENT 0.0
+.TP
 .B \-\-fsync
 Call fsync before closing files after writing.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-bufsize SIZE
-Set the I/O buffer to be SIZE bytes.  Units like “MB” and “GB” may
+Set the I/O buffer to be SIZE bytes.  Units like "MB" and "GB" may
 immediately follow the number without spaces (e.g. 8MB). The default
 bufsize is 4MB.
 .UNINDENT
@@ -151,8 +156,8 @@ bufsize is 4MB.
 .TP
 .B \-\-chunksize SIZE
 Multiple processes copy a large file in parallel by dividing it into chunks.
-Set chunk to be at minimum SIZE bytes.  Units like “MB” and
-“GB” can immediately follow the number without spaces (e.g. 64MB).
+Set chunk to be at minimum SIZE bytes.  Units like "MB" and
+"GB" can immediately follow the number without spaces (e.g. 64MB).
 The default chunksize is 4MB.
 .UNINDENT
 .INDENT 0.0
@@ -161,7 +166,7 @@ The default chunksize is 4MB.
 Set the memory limit to be SIZE bytes when reading archive files.
 For some archives, dtar can distribute the file across processes
 to store segments of the archive in memory for faster processing.
-Units like “MB” and “GB” may immediately follow the number
+Units like "MB" and "GB" may immediately follow the number
 without spaces (eg. 8MB). The default is 256MB.
 .UNINDENT
 .INDENT 0.0

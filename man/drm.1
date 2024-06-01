@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DRM" "1" "Feb 04, 2022" "0.11.1" "mpiFileUtils"
+.TH "DRM" "1" "May 31, 2024" "0.12" "mpiFileUtils"
 .SH NAME
 drm \- distributed remove
 .
@@ -32,7 +32,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 ..
 .SH SYNOPSIS
 .sp
-\fBdrm [OPTION] PATH…\fP
+\fBdrm [OPTION] PATH...\fP
 .SH DESCRIPTION
 .sp
 Parallel MPI application to recursively delete a directory and its
@@ -45,11 +45,11 @@ drm behaves like \fIrm \-rf\fP, but it is faster.
 .INDENT 0.0
 .INDENT 3.5
 DO NOT USE SHELL REGEX!!!
-The –match and –exclude options use POSIX regex syntax. Because of
+The \-\-match and \-\-exclude options use POSIX regex syntax. Because of
 this make sure that the shell does not try to interpret your regex before
 it gets passed to the program. You can generally use quotes around your
 regex to prevent the shell from expanding. An example of this using the
-–match option with –dryrun would be:
+\-\-match option with \-\-dryrun would be:
 .sp
 \fBmpirun \-np 128 drm \-\-dryrun \-v \-\-name \-\-match \(aqfile_.*\(aq /path/to/dir/*\fP
 .UNINDENT
@@ -65,12 +65,12 @@ from the mpiFileUtils suite.
 .TP
 .B \-o, \-\-output FILE
 Write the list of items drm attempts to delete to FILE in mpiFileUtils format.
-Format can be changed with –text option.
+Format can be changed with \-\-text option.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-t, \-\-text
-Must be used with the –output option. Write list of items drm attempts
+Must be used with the \-\-output option. Write list of items drm attempts
 to delete to FILE in ascii text format.
 .UNINDENT
 .INDENT 0.0
@@ -97,22 +97,22 @@ Only remove items whose full path matches REGEX, processed by
 .INDENT 0.0
 .TP
 .B \-\-name
-Change –exclude and match to apply to item name rather than its
+Change \-\-exclude and match to apply to item name rather than its
 full path.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-dryrun
 Print a list of files that \fBwould\fP be deleted without deleting
-them. This is useful to check list of items satisfying –exclude or
-–match options before actually deleting anything.
+them. This is useful to check list of items satisfying \-\-exclude or
+\-\-match options before actually deleting anything.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-aggressive
 This option will delete files during the walk phase, and then
 delete directories by level after the walk in drm. You cannot
-use this option with –dryrun.
+use this option with \-\-dryrun.
 .UNINDENT
 .INDENT 0.0
 .TP
