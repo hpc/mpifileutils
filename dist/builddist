@@ -5,7 +5,7 @@ print_usage() {
     echo ""
     echo "Tags:"
     echo "  main    - build tarball of latest"
-    echo "  v0.11.1 - build tarball of v0.11.1"
+    echo "  v0.12   - build tarball of v0.12"
 }
 
 # check that we got an argument or print usage
@@ -23,13 +23,13 @@ if [ "$1" == "main" ] ; then
         "libcircle"    "hpc"  "master"
         "mpifileutils" "hpc"  "master"
     )
-elif [ "$1" == "v0.11.1" ] ; then
+elif [ "$1" == "v0.12" ] ; then
     # to build from latest branch of all repos
     ORGS=(
         "lwgrp"        "llnl" "v1.0.4"
         "dtcmp"        "llnl" "v1.1.4"
         "libcircle"    "hpc"  "v0.3"
-        "mpifileutils" "hpc"  "v0.11.1"
+        "mpifileutils" "hpc"  "v0.12"
     )
 else
     echo "Error: unknown tag: $1"
