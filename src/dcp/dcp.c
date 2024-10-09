@@ -19,6 +19,9 @@
 
 #include "mfu_errors.h"
 
+/* Max number of groups for get/setgroups */
+#define MAX_GIDS 100
+
 static int input_flist_skip(const char* name, void *args)
 {
     /* nothing to do if args are NULL */
@@ -111,7 +114,10 @@ int main(int argc, char** argv)
     int rc = 0;
 
     /* effective group/user id */
-    uid_t gid = 0, uid = 0;
+    uid_t egid = 0, euid = 0;
+    uid_t gid = getegid(), uid = geteuid();
+    uid_t gids[MAX_GIDS];
+    int gids_count = 0;
 
     /* initialize MPI */
     MPI_Init(&argc, &argv);
@@ -332,10 +338,10 @@ int main(int argc, char** argv)
                 mfu_progress_timeout = atoi(optarg);
                 break;
             case 'G':
-                gid = atoi(optarg);
+                egid = atoi(optarg);
                 break;
             case 'U':
-                uid = atoi(optarg);
+                euid = atoi(optarg);
                 break;
             case 'v':
                 mfu_debug_level = MFU_LOG_VERBOSE;
@@ -396,7 +402,17 @@ int main(int argc, char** argv)
     }
 
     /* setgroups before set gid or uid */
-    if (gid > 0 || uid > 0) {
+    if (egid > 0 || euid > 0) {
+        /* record the original groups */
+        gids_count = getgroups(MAX_GIDS, &gids);
+        if (gids_count < 0) {
+            MFU_LOG(MFU_LOG_ERR, "Could not getgroups: %s", strerror(errno));
+            mfu_finalize();
+            MPI_Finalize();
+            return 1;
+        }
+
+        /* clear groups */
         if (setgroups(0, NULL) < 0) {
             MFU_LOG(MFU_LOG_ERR, "Could not setgroups: %s", strerror(errno));
             mfu_finalize();
@@ -406,25 +422,25 @@ int main(int argc, char** argv)
     }
 
     /* set egid */
-    if (gid > 0) {
-        if (setegid(gid) < 0) {
+    if (egid > 0) {
+        if (setegid(egid) < 0) {
             MFU_LOG(MFU_LOG_ERR, "Could not set Group ID: %s", strerror(errno));
             mfu_finalize();
             MPI_Finalize();
             return 1;
         }
-        MFU_LOG(MFU_LOG_INFO, "Set Group ID to %u", gid);
+        MFU_LOG(MFU_LOG_DBG, "Set Group ID to %u", egid);
     }
 
     /* set euid */
-    if (uid > 0) {
-        if (seteuid(uid) < 0) {
+    if (euid > 0) {
+        if (seteuid(euid) < 0) {
             MFU_LOG(MFU_LOG_ERR, "Could not set User ID: %s", strerror(errno));
             mfu_finalize();
             MPI_Finalize();
             return 1;
         }
-        MFU_LOG(MFU_LOG_INFO, "Set User ID to %u", uid);
+        MFU_LOG(MFU_LOG_DBG, "Set User ID to %u", euid);
     }
 
 
@@ -569,6 +585,39 @@ daos_cleanup:
     /* Cleanup DAOS-related variables, etc. */
     daos_cleanup(daos_args, mfu_src_file, mfu_dst_file);
 #endif
+
+    /* restore uid */
+    if (euid > 0) {
+        if (seteuid(uid) < 0) {
+            MFU_LOG(MFU_LOG_ERR, "Could not restore original User ID: %s", strerror(errno));
+            mfu_finalize();
+            MPI_Finalize();
+            return 1;
+        }
+        MFU_LOG(MFU_LOG_DBG, "Restored User ID back to %u", uid);
+    }
+
+    /* restore gid */
+    if (egid > 0) {
+        if (setegid(gid) < 0) {
+            MFU_LOG(MFU_LOG_ERR, "Could not restore original Group ID: %s", strerror(errno));
+            mfu_finalize();
+            MPI_Finalize();
+            return 1;
+        }
+        MFU_LOG(MFU_LOG_DBG, "Restored Group ID back to %u", gid);
+    }
+
+    /* restore groups*/
+    if (egid > 0 || euid > 0) {
+        if (setgroups(gids_count, gids) < 0) {
+            MFU_LOG(MFU_LOG_ERR, "Could not setgroups: %s", strerror(errno));
+            mfu_finalize();
+            MPI_Finalize();
+            return 1;
+        }
+        MFU_LOG(MFU_LOG_DBG, "Restored GIDs");
+    }
 
     /* free the file list */
     mfu_flist_free(&flist);
