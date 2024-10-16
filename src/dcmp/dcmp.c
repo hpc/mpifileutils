@@ -46,6 +46,7 @@ static void print_usage(void)
 #endif
     printf("  -s, --direct              - open files with O_DIRECT\n");
     printf("      --open-noatime        - open files with O_NOATIME\n");
+    printf("  -H, --nohardlink          - ignore hardlink\n");
     printf("      --progress <N>        - print progress every N seconds\n");
     printf("  -v, --verbose             - verbose output\n");
     printf("  -q, --quiet               - quiet output\n");
@@ -2122,6 +2123,7 @@ int main(int argc, char **argv)
         {"daos-api",      1, 0, 'x'},
         {"direct",        0, 0, 's'},
         {"open-noatime",  0, 0, 'U'},
+        {"nohardlink",    0, 0, 'H'},
         {"progress",      1, 0, 'R'},
         {"verbose",       0, 0, 'v'},
         {"quiet",         0, 0, 'q'},
@@ -2139,7 +2141,7 @@ int main(int argc, char **argv)
     unsigned long long bytes = 0;
     while (1) {
         int c = getopt_long(
-            argc, argv, "o:tbsvqldh",
+            argc, argv, "o:tbsvqldhH",
             long_options, &option_index
         );
 
@@ -2170,6 +2172,9 @@ int main(int argc, char **argv)
             } else {
                 copy_opts->buf_size = (size_t)bytes;
             }
+            break;
+        case 'H':
+            walk_opts->nohardlink = 1;
             break;
         case 'k':
             if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
