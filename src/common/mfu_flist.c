@@ -67,6 +67,9 @@ mfu_walk_opts_t* mfu_walk_opts_new(void)
     /* Don't dereference symbolic links by default */
     opts->dereference = 0;
 
+    /* Don't update the file last access time */
+    opts->no_atime = 0;
+
     return opts;
 }
 
