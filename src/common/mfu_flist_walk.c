@@ -52,6 +52,7 @@ static int SET_DIR_PERMS;
 static int REMOVE_FILES;
 static int DEREFERENCE;
 static int WALK_RESULT = 0;
+static int NO_ATIME;
 static mfu_file_t** CURRENT_PFILE;
 
 /****************************************
@@ -182,11 +183,15 @@ struct linux_dirent {
 
 static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
 {
+    int flags = O_RDONLY | O_DIRECTORY;
     char buf[BUF_SIZE];
+
+    if (NO_ATIME)
+        flags |= O_NOATIME;
 
     /* TODO: may need to try these functions multiple times */
     mfu_file_t* mfu_file = *CURRENT_PFILE;
-    mfu_file_open(dir, O_RDONLY | O_DIRECTORY, mfu_file);
+    mfu_file_open(dir, flags, mfu_file);
     if (mfu_file->fd == -1) {
         /* print error */
         MFU_LOG(MFU_LOG_ERR, "Failed to open directory for reading: `%s' (errno=%d %s)", dir, errno, strerror(errno));
@@ -276,50 +281,6 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
 
     mfu_file_close(dir, mfu_file);
 
-    return;
-}
-
-/** Call back given to initialize the dataset. */
-static void walk_getdents_create(CIRCLE_handle* handle)
-{
-    uint64_t i;
-    for (i = 0; i < CURRENT_NUM_DIRS; i++) {
-        const char* path = CURRENT_DIRS[i];
-
-        /* stat top level item */
-        struct stat st;
-        mfu_file_t* mfu_file = *CURRENT_PFILE;
-        int status = mfu_file_lstat(path, &st, mfu_file);
-        if (status != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
-                    path, errno, strerror(errno));
-            WALK_RESULT = -1;
-            return;
-        }
-
-        /* increment our item count */
-        reduce_items++;
-
-        /* record item info */
-        mfu_flist_insert_stat(CURRENT_LIST, path, st.st_mode, &st);
-
-        /* recurse into directory */
-        if (S_ISDIR(st.st_mode)) {
-            walk_getdents_process_dir(path, handle);
-        }
-    }
-
-    return;
-}
-
-/** Callback given to process the dataset. */
-static void walk_getdents_process(CIRCLE_handle* handle)
-{
-    /* in this case, only items on queue are directories */
-    char path[CIRCLE_MAX_STRING_LEN];
-    handle->dequeue(path);
-    walk_getdents_process_dir(path, handle);
-    reduce_items++;
     return;
 }
 
@@ -427,7 +388,7 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
 }
 
 /** Call back given to initialize the dataset. */
-static void walk_readdir_create(CIRCLE_handle* handle)
+static void walk_create(CIRCLE_handle* handle)
 {
     uint64_t i;
     for (i = 0; i < CURRENT_NUM_DIRS; i++) {
@@ -452,7 +413,13 @@ static void walk_readdir_create(CIRCLE_handle* handle)
 
         /* recurse into directory */
         if (S_ISDIR(st.st_mode)) {
-            walk_readdir_process_dir(path, handle);
+            if (NO_ATIME) {
+                // walk directories without updating the file last access time
+                walk_getdents_process_dir(path, handle);
+            } else {
+                //walk directories using file types in readdir
+                walk_readdir_process_dir(path, handle);
+            }
         }
     }
 
@@ -460,12 +427,18 @@ static void walk_readdir_create(CIRCLE_handle* handle)
 }
 
 /** Callback given to process the dataset. */
-static void walk_readdir_process(CIRCLE_handle* handle)
+static void walk_process(CIRCLE_handle* handle)
 {
     /* in this case, only items on queue are directories */
     char path[CIRCLE_MAX_STRING_LEN];
     handle->dequeue(path);
-    walk_readdir_process_dir(path, handle);
+    if (NO_ATIME) {
+        // walk directories without updating the file last access time
+        walk_getdents_process_dir(path, handle);
+    } else {
+        //walk directories using file types in readdir
+        walk_readdir_process_dir(path, handle);
+    }
     reduce_items++;
     return;
 }
@@ -614,6 +587,12 @@ int mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
         DEREFERENCE = 1;
     }
 
+    /* if no_atime is set to 1 then set global variable */
+    NO_ATIME = 0;
+    if (walk_opts->no_atime) {
+        NO_ATIME = 1;
+    }
+
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
 
@@ -666,11 +645,8 @@ int mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
         CIRCLE_cb_process(&walk_stat_process);
     }
     else {
-        /* walk directories using file types in readdir */
-        CIRCLE_cb_create(&walk_readdir_create);
-        CIRCLE_cb_process(&walk_readdir_process);
-        //        CIRCLE_cb_create(&walk_getdents_create);
-        //        CIRCLE_cb_process(&walk_getdents_process);
+        CIRCLE_cb_create(&walk_create);
+        CIRCLE_cb_process(&walk_process);
     }
 
     /* prepare callbacks and initialize variables for reductions */
