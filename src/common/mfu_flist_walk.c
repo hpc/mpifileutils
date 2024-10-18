@@ -51,6 +51,7 @@ static flist_t* CURRENT_LIST;
 static int SET_DIR_PERMS;
 static int REMOVE_FILES;
 static int DEREFERENCE;
+static int NO_ATIME;
 static mfu_file_t** CURRENT_PFILE;
 
 /****************************************
@@ -180,11 +181,15 @@ struct linux_dirent {
 
 static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
 {
+    int flags = O_RDONLY | O_DIRECTORY;
     char buf[BUF_SIZE];
+
+    if (NO_ATIME)
+        flags |= O_NOATIME;
 
     /* TODO: may need to try these functions multiple times */
     mfu_file_t* mfu_file = *CURRENT_PFILE;
-    mfu_file_open(dir, O_RDONLY | O_DIRECTORY, mfu_file);
+    mfu_file_open(dir, flags, mfu_file);
     if (mfu_file->fd == -1) {
         /* print error */
         MFU_LOG(MFU_LOG_ERR, "Failed to open directory for reading: `%s' (errno=%d %s)", dir, errno, strerror(errno));
@@ -605,6 +610,12 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
         DEREFERENCE = 1;
     }
 
+    /* if no_atime is set to 1 then set global variable */
+    NO_ATIME = 0;
+    if (walk_opts->no_atime) {
+        NO_ATIME = 1;
+    }
+
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
 
@@ -657,11 +668,15 @@ void mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
         CIRCLE_cb_process(&walk_stat_process);
     }
     else {
-        /* walk directories using file types in readdir */
-        CIRCLE_cb_create(&walk_readdir_create);
-        CIRCLE_cb_process(&walk_readdir_process);
-        //        CIRCLE_cb_create(&walk_getdents_create);
-        //        CIRCLE_cb_process(&walk_getdents_process);
+        if (walk_opts->no_atime) {
+            /* walk directories without updating the file last access time */
+            CIRCLE_cb_create(&walk_getdents_create);
+            CIRCLE_cb_process(&walk_getdents_process);
+        } else {
+            /* walk directories using file types in readdir */
+            CIRCLE_cb_create(&walk_readdir_create);
+            CIRCLE_cb_process(&walk_readdir_process);
+        }
     }
 
     /* prepare callbacks and initialize variables for reductions */
