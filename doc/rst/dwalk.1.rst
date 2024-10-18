@@ -70,6 +70,10 @@ OPTIONS
 
    Print files to the screen.
 
+.. option:: --no-atime
+
+   Must be used with --lite option. Do not update last file access time.
+
 .. option:: -L, --dereference
 
    Dereference symbolic links and walk the target file or directory
