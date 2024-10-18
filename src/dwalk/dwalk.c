@@ -319,6 +319,7 @@ static void print_usage(void)
     printf("  -d, --distribution <field>:<separators> \n                          - print distribution by field\n");
     printf("  -f, --file_histogram    - print default size distribution of items\n");
     printf("  -p, --print             - print files to screen\n");
+    printf("      --no-atime          - use with -l; do not update the file last access time\n");
     printf("  -L, --dereference       - follow symbolic links\n");
     printf("      --progress <N>      - print progress every N seconds\n");
     printf("  -v, --verbose           - verbose output\n");
@@ -390,6 +391,7 @@ int main(int argc, char** argv)
         {"distribution",   1, 0, 'd'},
         {"file_histogram", 0, 0, 'f'},
         {"print",          0, 0, 'p'},
+        {"no-atime",       0, 0, 'n'},
         {"dereference",    0, 0, 'L'},
         {"progress",       1, 0, 'R'},
         {"verbose",        0, 0, 'v'},
@@ -401,7 +403,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:tls:d:fpLvqh",
+                    argc, argv, "i:o:tls:d:fpLvqhn",
                     long_options, &option_index
                 );
 
@@ -431,6 +433,9 @@ int main(int argc, char** argv)
                 break;
             case 'p':
                 print = 1;
+                break;
+            case 'n':
+                walk_opts->no_atime = 1;
                 break;
             case 'L':
                 walk_opts->dereference = 1;
