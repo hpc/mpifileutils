@@ -11,6 +11,6 @@ dsync_dest_dir   = "/mnt/lustre2"
 dsync_test_file  = "file_test_xattr_XXX"
 
 def test_xattr():
-        p = subprocess.Popen(["%s %s %s %s %s %s %s" % (dsync_test_bin,
+        p = subprocess.Popen(["%s %s %s %s %s" % (mpifu_path, dsync_test_bin,
           dsync_src_dir, dsync_dest_dir, dsync_test_file)], shell=True,
           executable="/bin/bash").communicate()
