@@ -94,7 +94,14 @@ function sync_and_verify()
 		echo "user.sync_and_verify_test  skip" >> /etc/xattr.conf
 	fi
 
-	$DSYNC_TEST_BIN --quiet --xattrs=$opt $srcdir $destdir
+
+	if [[ $opt = "no-xattr-option" ]]; then
+		xattropt=""
+	else
+		xattropt="--xattrs=$opt"
+	fi
+
+	$DSYNC_TEST_BIN --quiet $xattropt $srcdir $destdir
 
 	if [ $opt = "libattr" ]; then
 		sed --in-place "/^user.sync_and_verify_test/d" /etc/xattr.conf
@@ -151,6 +158,7 @@ set +e
 # Sync and verify
 echo
 echo Testing dsync
+sync_and_verify  $DSYNC_SRC_DIR $DSYNC_DEST_DIR aaa no-xattr-option
 sync_and_verify  $DSYNC_SRC_DIR $DSYNC_DEST_DIR aaa none
 sync_and_verify  $DSYNC_SRC_DIR $DSYNC_DEST_DIR aaa all
 sync_and_verify  $DSYNC_SRC_DIR $DSYNC_DEST_DIR aaa non-lustre
