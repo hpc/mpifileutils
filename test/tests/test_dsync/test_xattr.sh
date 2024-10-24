@@ -50,7 +50,7 @@ function list_all_xattrs()
 	fname=$1
 
 	echo Listing xattrs on $fname
-	attr -l $fname
+	attr -l $fname | sort
 }
 
 function compare_xattr_lists()
