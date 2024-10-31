@@ -3287,6 +3287,25 @@ int main(int argc, char **argv)
             flist_tmp_link = mfu_flist_new();
         }
     }
+    /* Avoid walking source if dest doesn't exist or not writable */
+    /* compute destination parent path */
+    mfu_path* dest_parent = mfu_path_from_str(destpath->path);
+    mfu_path_dirname(dest_parent);
+    char* dest_parent_str = mfu_path_strdup(dest_parent);
+    mfu_path_delete(&dest_parent);
+
+    /* check that destination parent is writable */
+    if(mfu_file_access(dest_parent_str, W_OK, mfu_dst_file) < 0) {
+        mfu_loglevel log_level = MFU_LOG_ERR;
+        if (options.dry_run)
+            log_level = MFU_LOG_WARN;
+        MFU_LOG(log_level, "Destination parent directory is not writable `%s' (errno=%d %s)",
+                dest_parent_str, errno, strerror(errno));
+        if (!options.dry_run) {
+            mfu_free(&dest_parent_str);
+            goto ERROR;
+        }
+    }
 
     /* walk source path */
     if (rank == 0) {
@@ -3419,7 +3438,7 @@ dsync_common_cleanup:
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Completed sync");
     }
-
+ERROR:
     /* shut down */
     mfu_finalize();
     MPI_Finalize();
