@@ -1493,7 +1493,7 @@ struct dirent* mfu_file_readdir(DIR* dirp, mfu_file_t* mfu_file)
     }
 }
 
-#ifdef DCOPY_USE_XATTRS
+#if DCOPY_USE_XATTRS
 /* list xattrs (link interrogation) */
 ssize_t mfu_file_llistxattr(const char* path, char* list, size_t size, mfu_file_t* mfu_file)
 {
