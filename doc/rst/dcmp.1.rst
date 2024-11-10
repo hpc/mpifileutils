@@ -64,6 +64,10 @@ OPTIONS
 
    Open files with O_NOATIME flag.
 
+.. option:: -H, --nohardlink
+
+   Ignore hardlinks.
+
 .. option:: --progress N
 
    Print progress message to stdout approximately every N seconds.

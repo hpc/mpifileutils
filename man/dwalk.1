@@ -1,8 +1,5 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DWALK" "1" "Feb 04, 2022" "0.11.1" "mpiFileUtils"
-.SH NAME
-dwalk \- distributed walk and list
 .
 .nr rst2man-indent-level 0
 .
@@ -30,9 +27,12 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
+.TH "DWALK" "1" "Nov 07, 2023" "0.11.1" "mpiFileUtils"
+.SH NAME
+dwalk \- distributed walk and list
 .SH SYNOPSIS
 .sp
-\fBdwalk [OPTION] PATH …\fP
+\fBdwalk [OPTION] PATH ...\fP
 .SH DESCRIPTION
 .sp
 Parallel MPI application to recursively walk and list contents in a
@@ -57,12 +57,12 @@ from the mpiFileUtils suite.
 .TP
 .B \-o, \-\-output FILE
 Write the processed list to FILE in binary format. Format can be changed
-With –text option.
+With \-\-text option.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-t, \-\-text
-Must be used with the –output option. Write processed list of files to
+Must be used with the \-\-output option. Write processed list of files to
 FILE in ascii text format.
 .UNINDENT
 .INDENT 0.0
@@ -100,6 +100,11 @@ files and directories.
 .TP
 .B \-p, \-\-print
 Print files to the screen.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-H, \-\-nohardlink
+Ignore hardlinks.
 .UNINDENT
 .INDENT 0.0
 .TP

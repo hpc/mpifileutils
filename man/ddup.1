@@ -1,8 +1,5 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DDUP" "1" "Feb 04, 2022" "0.11.1" "mpiFileUtils"
-.SH NAME
-ddup \- report files with identical content
 .
 .nr rst2man-indent-level 0
 .
@@ -30,6 +27,9 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .\" new: \\n[rst2man-indent\\n[rst2man-indent-level]]
 .in \\n[rst2man-indent\\n[rst2man-indent-level]]u
 ..
+.TH "DDUP" "1" "Nov 07, 2023" "0.11.1" "mpiFileUtils"
+.SH NAME
+ddup \- report files with identical content
 .SH SYNOPSIS
 .sp
 \fBddup [OPTION] PATH\fP
@@ -43,6 +43,11 @@ of another anywhere under that same directory tree is reported.
 The path to each file is reported, along with a final hash representing its content.
 Multiple sets of duplicate files can be matched using this final reported hash.
 .SH OPTIONS
+.INDENT 0.0
+.TP
+.B \-\-open\-noatime
+Open files with O_NOATIME flag, if possible.
+.UNINDENT
 .INDENT 0.0
 .TP
 .B \-d, \-\-debug LEVEL
