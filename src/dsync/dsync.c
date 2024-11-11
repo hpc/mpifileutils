@@ -2968,6 +2968,7 @@ dsync_daos_out:
 int main(int argc, char **argv)
 {
     int rc = 0;
+    int walk_rc = 0;
 
     /* initialize MPI and mfu libraries */
     MPI_Init(&argc, &argv);
@@ -3311,7 +3312,21 @@ int main(int argc, char **argv)
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking source path");
     }
-    mfu_flist_walk_param_paths(1, srcpath, walk_opts, flist_tmp_src, mfu_src_file);
+    walk_rc = mfu_flist_walk_param_paths(1, srcpath, walk_opts, flist_tmp_src, mfu_src_file);
+
+    /* If we encountered an error during the srcpath walk, the src flist is likely incomplete,
+     * and a delete might delete files already on the destination.  Disable the delete and
+     * notify the user. rsync takes the same approach. */
+    int all_rc;
+    MPI_Allreduce(&walk_rc, &all_rc, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+    if (all_rc > 0) {
+        if (options.delete == 1) {
+            if (rank == 0) {
+                MFU_LOG(MFU_LOG_ERR, "Errors detected walking source path, delete option disabled");
+            }
+            options.delete = 0;
+	}
+    }
 
     /* check that we actually got something so that we don't delete
      * an entire target directory because of a typo on the source dir */
@@ -3337,14 +3352,14 @@ int main(int argc, char **argv)
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking destination path");
     }
-    mfu_flist_walk_param_paths(1, destpath, walk_opts, flist_tmp_dst, mfu_dst_file);
+    (void) mfu_flist_walk_param_paths(1, destpath, walk_opts, flist_tmp_dst, mfu_dst_file);
 
     /* walk link-dest path if we have one */
     if (options.link_dest != NULL) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Walking link-dest path");
         }
-        mfu_flist_walk_param_paths(1, linkpath, walk_opts, flist_tmp_link, mfu_dst_file);
+        (void) mfu_flist_walk_param_paths(1, linkpath, walk_opts, flist_tmp_link, mfu_dst_file);
     }
 
     /* reset the dereference flag */
