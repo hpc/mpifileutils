@@ -3330,6 +3330,12 @@ int main(int argc, char **argv)
         goto dsync_common_cleanup;
     }
 
+    /* TODO:
+     * if we encountered an error during the srcpath walk, above, we should either
+     * quit or disable deletes if that option was used.
+     options.delete = 0; (1 == do deletes, 0 = do not do deletes)
+     */
+
     /* walk destinaton path.
      * We never dereference the destination */
     int tmp_dereference = walk_opts->dereference;
