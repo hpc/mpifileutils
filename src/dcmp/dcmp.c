@@ -2330,12 +2330,12 @@ int main(int argc, char **argv)
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking source path");
     }
-    mfu_flist_walk_param_paths(1,  srcpath, walk_opts, flist1, mfu_src_file);
+    (void) mfu_flist_walk_param_paths(1,  srcpath, walk_opts, flist1, mfu_src_file);
 
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking destination path");
     }
-    mfu_flist_walk_param_paths(1, destpath, walk_opts, flist2, mfu_dst_file);
+    (void) mfu_flist_walk_param_paths(1, destpath, walk_opts, flist2, mfu_dst_file);
 
     /* store src and dest path strings */
     const char* path1 = srcpath->path;
