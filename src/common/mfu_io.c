@@ -14,6 +14,10 @@
 #include <assert.h>
 #include <libgen.h>
 
+#if DCOPY_USE_XATTRS
+#include <sys/xattr.h>
+#endif
+
 #include "mfu.h"
 #include "mfu_errors.h"
 
@@ -1489,6 +1493,7 @@ struct dirent* mfu_file_readdir(DIR* dirp, mfu_file_t* mfu_file)
     }
 }
 
+#if DCOPY_USE_XATTRS
 /* list xattrs (link interrogation) */
 ssize_t mfu_file_llistxattr(const char* path, char* list, size_t size, mfu_file_t* mfu_file)
 {
@@ -1665,3 +1670,4 @@ int daos_lsetxattr(const char* path, const char* name, const void* value, size_t
     return mfu_errno2rc(ENOSYS);
 #endif
 }
+#endif DCOPY_USE_XATTRS
