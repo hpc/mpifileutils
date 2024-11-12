@@ -335,7 +335,7 @@ daos_setup_done:
      * input file */
     if (walk) {
         /* walk list of input paths */
-        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_file);
+        (void) mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_file);
     }
     else {
         /* read list from file */

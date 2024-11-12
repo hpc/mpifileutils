@@ -526,7 +526,7 @@ int main(int argc, char** argv)
         /* perform POSIX copy */
         if (inputname == NULL) {
             /* if daos is set to SRC then use daos_ functions on walk */
-            mfu_flist_walk_param_paths(numpaths_src, paths, walk_opts, flist, mfu_src_file);
+            (void) mfu_flist_walk_param_paths(numpaths_src, paths, walk_opts, flist, mfu_src_file);
         } else {
             struct mfu_flist_skip_args skip_args;
 

@@ -418,7 +418,7 @@ int main(int argc, char** argv)
 
         /* walk path to get stats info on all files */
         mfu_flist flist = mfu_flist_new();
-        mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_src_file);
+        (void) mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_src_file);
 
         /* we may need to add parent directories between the cwd
          * and the source paths the user specified */

@@ -3350,14 +3350,14 @@ int main(int argc, char **argv)
     if (rank == 0) {
         MFU_LOG(MFU_LOG_INFO, "Walking destination path");
     }
-    mfu_flist_walk_param_paths(1, destpath, walk_opts, flist_tmp_dst, mfu_dst_file);
+    (void) mfu_flist_walk_param_paths(1, destpath, walk_opts, flist_tmp_dst, mfu_dst_file);
 
     /* walk link-dest path if we have one */
     if (options.link_dest != NULL) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_INFO, "Walking link-dest path");
         }
-        mfu_flist_walk_param_paths(1, linkpath, walk_opts, flist_tmp_link, mfu_dst_file);
+        (void) mfu_flist_walk_param_paths(1, linkpath, walk_opts, flist_tmp_link, mfu_dst_file);
     }
 
     /* reset the dereference flag */
