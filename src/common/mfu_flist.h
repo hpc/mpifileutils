@@ -188,7 +188,7 @@ void mfu_flist_walk_path(
 );
 
 /* create file list by walking list of directories */
-void mfu_flist_walk_paths(
+int mfu_flist_walk_paths(
     uint64_t num_paths,         /* IN  - number of paths in array */
     const char** paths,         /* IN  - array of paths to be walkted */
     mfu_walk_opts_t* walk_opts, /* IN  - functions to perform during the walk */
@@ -197,7 +197,7 @@ void mfu_flist_walk_paths(
 );
 
 /* given a list of param_paths, walk each one and add to flist */
-void mfu_flist_walk_param_paths(
+int mfu_flist_walk_param_paths(
     uint64_t num,                 /* IN  - number of paths in array */
     const mfu_param_path* params, /* IN  - array of paths to be walkted */
     mfu_walk_opts_t* walk_opts,   /* IN  - functions to perform during the walk */
