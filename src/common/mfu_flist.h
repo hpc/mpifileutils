@@ -180,7 +180,7 @@ void mfu_flist_free(mfu_flist* flist);
  * optionally stat each item, and optionally
  * set directory permission bits in order to walk into a directory,
  * whose permission bits are otherwise restrictive (e.g., useful for recursive unlink) */
-void mfu_flist_walk_path(
+int mfu_flist_walk_path(
     const char* path,           /* IN  - path to be walked */
     mfu_walk_opts_t* walk_opts, /* IN  - functions to perform during the walk */
     mfu_flist flist,            /* OUT - flist to insert walked items into */
