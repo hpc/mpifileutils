@@ -51,7 +51,7 @@ static flist_t* CURRENT_LIST;
 static int SET_DIR_PERMS;
 static int REMOVE_FILES;
 static int DEREFERENCE;
-static int WALK_RESULT;
+static int WALK_RESULT = 0;
 static mfu_file_t** CURRENT_PFILE;
 
 /****************************************
@@ -117,6 +117,7 @@ static int build_path(char* path, size_t path_len, const char* dir, const char* 
     if (new_len > path_len) {
         MFU_LOG(MFU_LOG_ERR, "Path name is too long, %lu chars exceeds limit %lu: '%s/%s'",
                 new_len, path_len, dir, name);
+        WALK_RESULT = errno;
         return -1;
     }
 
@@ -202,6 +203,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
         int nread = syscall(SYS_getdents, mfu_file->fd, buf, (int) BUF_SIZE);
         if (nread == -1) {
             MFU_LOG(MFU_LOG_ERR, "syscall to getdents failed when reading `%s' (errno=%d %s)", dir, errno, strerror(errno));
+            WALK_RESULT = errno;
             break;
         }
 
@@ -291,6 +293,7 @@ static void walk_getdents_create(CIRCLE_handle* handle)
         if (status != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
                     path, errno, strerror(errno));
+            WALK_RESULT = errno;
             return;
         }
 
@@ -349,6 +352,7 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
     if (! dirp) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open directory with opendir: '%s' (errno=%d %s)",
                 dir, errno, strerror(errno));
+        WALK_RESULT = errno;
     }
     else {
         /* Read all directory entries */
@@ -400,6 +404,7 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
                         else {
                             MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
                                     newpath, errno, strerror(errno));
+                            WALK_RESULT = errno;
                         }
                     }
 
@@ -435,6 +440,7 @@ static void walk_readdir_create(CIRCLE_handle* handle)
         if (status != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
                     path, errno, strerror(errno));
+            WALK_RESULT = errno;
             return;
         }
 
@@ -477,6 +483,7 @@ static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
     if (! dirp) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open directory with opendir: '%s' (errno=%d %s)",
                 dir, errno, strerror(errno));
+        WALK_RESULT = errno;
     }
     else {
         while (1) {
@@ -815,6 +822,7 @@ void mfu_flist_stat(
             if (status != 0) {
                 MFU_LOG(MFU_LOG_ERR, "mfu_file_stat() failed: '%s' rc=%d (errno=%d %s)",
                         name, status, errno, strerror(errno));
+                WALK_RESULT = errno;
                 continue;
             }
         } else {
@@ -823,6 +831,7 @@ void mfu_flist_stat(
             if (status != 0) {
                 MFU_LOG(MFU_LOG_ERR, "mfu_file_lstat() failed: '%s' rc=%d (errno=%d %s)",
                         name, status, errno, strerror(errno));
+                WALK_RESULT = errno;
                 continue;
             }
         }
