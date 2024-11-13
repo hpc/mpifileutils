@@ -705,7 +705,13 @@ int mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
     /* hold procs here until summary is printed */
     MPI_Barrier(MPI_COMM_WORLD);
 
-    return WALK_RESULT;
+    int all_rc;
+    MPI_Allreduce(&WALK_RESULT, &all_rc, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+    if (all_rc > 0) {
+        MFU_LOG(MFU_LOG_WARN, "Errors detected walking path");
+    }
+
+    return all_rc;
 }
 
 /* given a list of param_paths, walk each one and add to flist */
