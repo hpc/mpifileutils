@@ -3321,7 +3321,7 @@ int main(int argc, char **argv)
     MPI_Allreduce(&walk_rc, &all_rc, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
     if (all_rc > 0) {
         if (options.delete == 1) {
-            MFU_LOG(MFU_LOG_WARN, "Errors detected walking source path, delete option disabled");
+            MFU_LOG(MFU_LOG_ERR, "Errors detected walking source path, delete option disabled");
             options.delete = 0;
 	}
     }
