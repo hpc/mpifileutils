@@ -3318,8 +3318,8 @@ int main(int argc, char **argv)
      * and a delete might delete files already on the destination.  Disable the delete and
      * notify the user. rsync takes the same approach. */
     int all_rc;
-    MPI_Allreduce(&walk_rc, &all_rc, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-    if (all_rc > 0) {
+    MPI_Allreduce(&walk_rc, &all_rc, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+    if (all_rc != 0) {
         if (options.delete == 1) {
             if (rank == 0) {
                 MFU_LOG(MFU_LOG_ERR, "Errors detected walking source path, delete option disabled");

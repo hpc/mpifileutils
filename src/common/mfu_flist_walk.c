@@ -117,7 +117,7 @@ static int build_path(char* path, size_t path_len, const char* dir, const char* 
     if (new_len > path_len) {
         MFU_LOG(MFU_LOG_ERR, "Path name is too long, %lu chars exceeds limit %lu: '%s/%s'",
                 new_len, path_len, dir, name);
-        WALK_RESULT = errno;
+        WALK_RESULT = -1;
         return -1;
     }
 
@@ -190,7 +190,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
     if (mfu_file->fd == -1) {
         /* print error */
         MFU_LOG(MFU_LOG_ERR, "Failed to open directory for reading: `%s' (errno=%d %s)", dir, errno, strerror(errno));
-        WALK_RESULT = errno;
+        WALK_RESULT = -1;
         return;
     }
 
@@ -203,7 +203,7 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
         int nread = syscall(SYS_getdents, mfu_file->fd, buf, (int) BUF_SIZE);
         if (nread == -1) {
             MFU_LOG(MFU_LOG_ERR, "syscall to getdents failed when reading `%s' (errno=%d %s)", dir, errno, strerror(errno));
-            WALK_RESULT = errno;
+            WALK_RESULT = -1;
             break;
         }
 
@@ -293,7 +293,7 @@ static void walk_getdents_create(CIRCLE_handle* handle)
         if (status != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
                     path, errno, strerror(errno));
-            WALK_RESULT = errno;
+            WALK_RESULT = -1;
             return;
         }
 
@@ -352,7 +352,7 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
     if (! dirp) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open directory with opendir: '%s' (errno=%d %s)",
                 dir, errno, strerror(errno));
-        WALK_RESULT = errno;
+        WALK_RESULT = -1;
     }
     else {
         /* Read all directory entries */
@@ -404,7 +404,7 @@ static void walk_readdir_process_dir(const char* dir, CIRCLE_handle* handle)
                         else {
                             MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
                                     newpath, errno, strerror(errno));
-                            WALK_RESULT = errno;
+                            WALK_RESULT = -1;
                         }
                     }
 
@@ -440,7 +440,7 @@ static void walk_readdir_create(CIRCLE_handle* handle)
         if (status != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
                     path, errno, strerror(errno));
-            WALK_RESULT = errno;
+            WALK_RESULT = -1;
             return;
         }
 
@@ -483,7 +483,7 @@ static void walk_stat_process_dir(char* dir, CIRCLE_handle* handle)
     if (! dirp) {
         MFU_LOG(MFU_LOG_ERR, "Failed to open directory with opendir: '%s' (errno=%d %s)",
                 dir, errno, strerror(errno));
-        WALK_RESULT = errno;
+        WALK_RESULT = -1;
     }
     else {
         while (1) {
@@ -542,7 +542,7 @@ static void walk_stat_process(CIRCLE_handle* handle)
     if (status != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to stat: '%s' (errno=%d %s)",
                 path, errno, strerror(errno));
-        WALK_RESULT = errno;
+        WALK_RESULT = -1;
         return;
     }
 
@@ -713,7 +713,7 @@ int mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
     MPI_Barrier(MPI_COMM_WORLD);
 
     int all_rc;
-    MPI_Allreduce(&WALK_RESULT, &all_rc, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(&WALK_RESULT, &all_rc, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
 
     return all_rc;
 }
@@ -819,7 +819,7 @@ void mfu_flist_stat(
             if (status != 0) {
                 MFU_LOG(MFU_LOG_ERR, "mfu_file_stat() failed: '%s' rc=%d (errno=%d %s)",
                         name, status, errno, strerror(errno));
-                WALK_RESULT = errno;
+                WALK_RESULT = -1;
                 continue;
             }
         } else {
@@ -828,7 +828,7 @@ void mfu_flist_stat(
             if (status != 0) {
                 MFU_LOG(MFU_LOG_ERR, "mfu_file_lstat() failed: '%s' rc=%d (errno=%d %s)",
                         name, status, errno, strerror(errno));
-                WALK_RESULT = errno;
+                WALK_RESULT = -1;
                 continue;
             }
         }
