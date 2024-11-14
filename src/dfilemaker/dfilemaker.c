@@ -12,6 +12,10 @@
 #define FILE_PERMS (S_IRUSR | S_IWUSR)
 #define DIR_PERMS  (S_IRWXU)
 
+/* filltype describes what data to put in generated files */
+typedef enum {ft_random, ft_true, ft_false, ft_alternate, ft_last} filltype_t ;
+static char *filltype_name[]={"random","true","false","alternate"};
+
 /* keep stats during walk */
 uint64_t total_dirs    = 0;
 uint64_t total_files   = 0;
@@ -141,11 +145,12 @@ static void print_summary(mfu_flist flist)
 
     /* convert total size to units */
     if (mfu_debug_level >= MFU_LOG_VERBOSE && rank == 0) {
-        printf("Items: %llu\n", (unsigned long long) all_count);
-        printf("  Directories: %llu\n", (unsigned long long) all_dirs);
-        printf("  Files: %llu\n", (unsigned long long) all_files);
-        printf("  Links: %llu\n", (unsigned long long) all_links);
-        /* printf("  Unknown: %lu\n", (unsigned long long) all_unknown); */
+        MFU_LOG(MFU_LOG_VERBOSE, "");
+        MFU_LOG(MFU_LOG_VERBOSE, "  Items: %llu", (unsigned long long) all_count);
+        MFU_LOG(MFU_LOG_VERBOSE, "    Directories: %llu", (unsigned long long) all_dirs);
+        MFU_LOG(MFU_LOG_VERBOSE, "    Files: %llu", (unsigned long long) all_files);
+        MFU_LOG(MFU_LOG_VERBOSE, "    Links: %llu", (unsigned long long) all_links);
+        /* MFU_LOG(MFU_LOG_VERBOSE, "  Unknown: %lu", (unsigned long long) all_unknown); */
 
         if (mfu_flist_have_detail(flist)) {
             double agg_size_tmp;
@@ -160,7 +165,7 @@ static void print_summary(mfu_flist flist)
             const char* size_per_file_units;
             mfu_format_bytes(size_per_file, &size_per_file_tmp, &size_per_file_units);
 
-            printf("     Data: %.3lf %s (%.3lf %s per file)\n", agg_size_tmp, agg_size_units, size_per_file_tmp, size_per_file_units);
+            MFU_LOG(MFU_LOG_VERBOSE, "     Data: %.3lf %s (%.3lf %s per file)", agg_size_tmp, agg_size_units, size_per_file_tmp, size_per_file_units);
         }
     }
 
@@ -188,7 +193,7 @@ void fillelem(mfu_flist flist, uint64_t index, char* fname, long int flen, mfu_f
         fmode = S_IFLNK;
     }
     else  {
-        printf("from fillelem ftype = %ld is not legal value\n", ftype);
+        MFU_LOG(MFU_LOG_ERR,"In fillelem() ftype = %ld is not legal value", ftype);
         exit(0);
     }
 
@@ -247,34 +252,43 @@ int getnum(const char* fname)
 //-----------------------------------
 // put nwds ints into buffer
 //------------------------------------
-void fillbuff(int* ibuff, size_t nwds, int kft)
+void fillbuff(int* ibuff, size_t nwds, filltype_t ft)
 {
     int i;
-    switch (kft)
+    switch (ft)
     {
-        case 0:
+        case ft_random:
           for (i = 0; i < nwds; i++) {
             ibuff[i] = rand();
           }
           break;
-        case 1:
+        case ft_true:
           for (i = 0; i < nwds; i++) {
             ibuff[i] = 0xFFFFFFFF;
           }
           break;
-        case 2:
+        case ft_false:
           for (i = 0; i < nwds; i++) {
             ibuff[i] = 0x00000000;
           }
           break;
-        case 3:
+        case ft_alternate:
           for (i = 0; i < nwds; i++) {
             ibuff[i] = 0xAAAAAAAA;
           }
           break;
+        default:
+          MFU_LOG(MFU_LOG_ERR,"Invalid filltype=%d", ft);
+          break;
     }
 }
 
+/*
+ * buf points to bufsize bytes allocated in main()
+ * written to in main()->write_files()->write_file()->fillbuf()
+ * used to provide data for write() call in main()->write_files()->write_file()->mfu_write()
+ * TODO: eliminate these global variables and pass values through arguments
+ */
 size_t bufsize = 1024 * 1024 * 4;
 char* buf;
 size_t size, isize;
@@ -283,7 +297,7 @@ int nnum;
 /*----------------------------------------------*/
 /* add content to a node created by create_file */
 /*----------------------------------------------*/
-static int write_file(mfu_flist list, uint64_t idx, int kft)
+static int write_file(mfu_flist list, uint64_t idx, filltype_t ft)
 {
     int rc = 0;
 
@@ -296,7 +310,7 @@ static int write_file(mfu_flist list, uint64_t idx, int kft)
     nnum = getnum(dest_path);
     srand(nnum);
     isize = bufsize/4;
-    fillbuff((int*)buf, isize, kft);
+    fillbuff((int*)buf, isize, ft);
 
     /* open file */
     int fd = mfu_open(dest_path, O_TRUNC | O_WRONLY, S_IRUSR | S_IWUSR);
@@ -316,7 +330,7 @@ static int write_file(mfu_flist list, uint64_t idx, int kft)
             /* write data to file */
             ssize_t n = mfu_write(dest_path, fd, ptr, left);
             if (n == -1) {
-                printf("Failed to write to file: dest_path=%s errno=%d (%s)\n", dest_path, errno, strerror(errno));
+                MFU_LOG(MFU_LOG_ERR,"Failed to write to file: dest_path=%s errno=%d (%s)", dest_path, errno, strerror(errno));
                 rc = 1;
                 break;
             }
@@ -331,7 +345,7 @@ static int write_file(mfu_flist list, uint64_t idx, int kft)
     }
     else {
         /* failed to open the file */
-        printf("Failed to open file: dest_path=%s errno=%d (%s)\n", dest_path, errno, strerror(errno));
+        MFU_LOG(MFU_LOG_ERR,"Failed to open file: dest_path=%s errno=%d (%s)", dest_path, errno, strerror(errno));
         rc = 1;
     }
 
@@ -341,7 +355,7 @@ static int write_file(mfu_flist list, uint64_t idx, int kft)
 /*----------------------------------------------*/
 /* add content to nodes created by create_files */
 /*----------------------------------------------*/
-static int write_files(mfu_flist list, int kft)
+static int write_files(mfu_flist list, filltype_t ft)
 {
     int rc = 0;
 
@@ -364,7 +378,7 @@ static int write_files(mfu_flist list, int kft)
         /* process files and links */
         if (type == MFU_TYPE_FILE) {
             /* TODO: skip file if it's not readable */
-            write_file(list, idx, kft);
+            write_file(list, idx, ft);
         }
     }
 
@@ -413,14 +427,14 @@ static void create_targets(int nlevels, int linktot, int* nfiles, uint64_t* targ
 //-------------------------------------------------------------
 // writes links to file, dirs, and other links for one proc
 //--------------------------------------------------------------
-static void write_links(int nlink, char* linknames, char* targnames)
+static void write_links(int nlink, char* linknames, char* targnames, int level)
 {
     /* get our rank and number of ranks in job */
     int rank, ranks;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
     if (rank == 0) {
-        MFU_LOG(MFU_LOG_INFO, "Creating and writing links.");
+        MFU_LOG(MFU_LOG_INFO, "Creating and writing links for level %d", level);
     }
 
     int i;
@@ -615,17 +629,15 @@ int main(int narg, char** arg)
     char* tnamelist; // list of path names of items associated with targIDs
     int* lind; // list of ints in order to resort things
     int initsum, noff;
-
-    int kft=0,ifac=0; // kft is index of filltype
+    static filltype_t filltype = ft_random; // what data to put into files
     unsigned long long sizeminl,sizemaxl;  // for mfu_abtoul
-    long int sizemin=0,sizemax=0;
+    uint64_t sizemin=0,sizemax=0;
     double ratio=0.;
     int longind=0;
     char *minterm,*maxterm;
     int depmin=0,depmax=0;
     int nmin=0,nmax=0;
     int widmin=0,widmax=0;
-    static char *filltype[]={"random","true","false","alternate"};
     static struct option long_options[] = {
        {"seed",     1, 0, 'i'},
        {"fill",     1, 0, 'f'},
@@ -654,13 +666,12 @@ int main(int narg, char** arg)
     MPI_Datatype tname_type;
 
    /*---------------------
-    *  loop over options  
+    *  loop over options
     *---------------------*/
-    while (1)
-    {
+    while (1) {
        /*---------------------------------------------------------------------
-        *  shortopts below are followed by a colon if they take an argument  
-        *---------------------------------------------------------------------*/        
+        *  shortopts below are followed by a colon if they take an argument
+        *---------------------------------------------------------------------*/
         c=getopt_long(narg,arg,"i:f:d:n:r:s:w:vh",long_options,&longind);
         if (c <= 0) break;
         minterm=(char*)MFU_MALLOC(10*sizeof(char));
@@ -671,83 +682,98 @@ int main(int narg, char** arg)
              if (jseed) iseed=jseed;
              break;
            case 'f':
-             for (kft=0;kft<4;kft++) if (strcmp(optarg,filltype[kft])==0) break;
-             if (kft==4 && rank==0)
-             {
-                printf("%s not a fill option\n",optarg);
-                MPI_Finalize();  
+             for (filltype=0;filltype<ft_last;filltype++) {
+                 if (strcmp(optarg,filltype_name[filltype])==0) {
+                     break;
+                 }
+             }
+             if (filltype==ft_last) {
+                 if (rank==0) {
+                     MFU_LOG(MFU_LOG_ERR,"%s not a fill option",optarg);
+                 }
+                 MPI_Finalize();
+                 exit(1);
              }
              break;
-           case 'd': 
+           case 'd':
              // range for nlevels
              mmparse(optarg,&minterm,&maxterm);
              depmin=atoi(minterm);
              depmax=atoi(maxterm);
              break;
            case 'n':
-              // range for ntotal 
+              // range for ntotal
               mmparse(optarg,&minterm,&maxterm);
               nmin=atoi(minterm);
               nmax=atoi(maxterm);
               break;
             case 'r':
               ratio = atof(optarg);
-              printf("ratio = %f\n",ratio);
+              if (rank == 0) {
+                  MFU_LOG(MFU_LOG_DBG,"ratio = %f",ratio);
+              }
               break;
-            case 's': 
+            case 's':
               // range for maxflen
               mmparse(optarg,&minterm,&maxterm);
 
               /* read file size */
-              if (mfu_abtoull(minterm, &sizeminl) != MFU_SUCCESS)
-              {
-                if (rank == 0)
-                {
-                  printf("Could not interpret %s as file size\n", minterm);
-                  fflush(stdout);
+              if (mfu_abtoull(minterm, &sizeminl) != MFU_SUCCESS) {
+                if (rank == 0) {
+                  MFU_LOG(MFU_LOG_ERR,"Could not interpret %s as file size", minterm);
                 }
                 mfu_finalize();
                 MPI_Finalize();
                 return 1;
               }
-              sizemin=(int)sizeminl;
-              if (mfu_abtoull(maxterm, &sizemaxl) != MFU_SUCCESS)
-              {
-                if (rank == 0)
-                {
-                  printf("Could not interpret %s as file size\n", maxterm);
-                  fflush(stdout);
+              sizemin=(uint64_t)sizeminl;
+              if (mfu_abtoull(maxterm, &sizemaxl) != MFU_SUCCESS) {
+                if (rank == 0) {
+                  MFU_LOG(MFU_LOG_ERR,"Could not interpret %s as file size", maxterm);
                 }
                 mfu_finalize();
                 MPI_Finalize();
                 return 1;
               }
-              sizemax=(int)sizemaxl;
+              sizemax=(uint64_t)sizemaxl;
               break;
-            case 'w': 
+            case 'w':
               mmparse(optarg,&minterm,&maxterm);
               widmin=atoi(minterm);
               widmax=atoi(maxterm);
               break;
             case 'v':
-              if (rank == 0) printf("verbose is on\n");
+              if (rank == 0) {
+                  MFU_LOG(MFU_LOG_DBG,"verbose is on");
+              }
               break;
             case 'h':
-              if (rank == 0) print_usage();
+              if (rank == 0) {
+                  print_usage();
+              }
+              mfu_finalize();
+              MPI_Finalize();
+	      exit(0);
               break;
-            default: 
+            default:
               break;
         }
-     };
+     }
+
      srand(iseed);
-     if (nmax > 0) ntotal=nmin+rand()%(1+nmax-nmin);
-     if (depmax > 0) nlevels=depmin+rand()%(1+depmax-depmin);
-     if (sizemax > 0) maxflen=sizemin+rand()%(1+sizemax-sizemin);
-     if (rank == 0 )
-     {
+     if (nmax > 0) {
+         ntotal=nmin+rand()%(1+nmax-nmin);
+     }
+     if (depmax > 0) {
+         nlevels=depmin+rand()%(1+depmax-depmin);
+     }
+     if (sizemax > 0) {
+         maxflen=sizemin+rand()%(1+sizemax-sizemin);
+     }
+     if (rank == 0 ) {
          printf("ntotal = %d\n",ntotal);
          printf("nlevels = %d\n",nlevels);
-         printf("maxflen = %d\n",maxflen); 
+         printf("maxflen = %d\n",maxflen);
      }
 
     /*-------------------------------------------------------
@@ -759,11 +785,18 @@ int main(int narg, char** arg)
     nfiles[0] = ntotal / nsum;
     if (nfiles[0] < 1) {
         if (rank == 0) {
-            printf("ntotal must be greater than (levels * (nlevels + 1) /2)\n");
+            MFU_LOG(MFU_LOG_ERR,"ntotal must be greater than (levels * (nlevels + 1) /2)");
         }
         MPI_Finalize();
         exit(0);
     }
+
+    if (rank == 0 ) {
+        MFU_LOG(MFU_LOG_VERBOSE, "ntotal = %d",ntotal);
+        MFU_LOG(MFU_LOG_VERBOSE, "nlevels = %d",nlevels);
+        MFU_LOG(MFU_LOG_VERBOSE, "maxflen = %d",maxflen);
+    }
+
     for (ilev = 1; ilev < nlevels; ilev++) {
         nfiles[ilev] = (ilev + 1) * nfiles[0];
     }
@@ -932,7 +965,8 @@ int main(int narg, char** arg)
         MPI_Type_contiguous(dnamlen, MPI_CHAR, &dirname_type);
         MPI_Type_commit(&dirname_type);
         if (DTCMP_Op_create(dirname_type, &dnamcomp, &op_dnamcomp) != DTCMP_SUCCESS) {
-            printf("Failed to create string sort\n");
+            MFU_LOG(MFU_LOG_ERR, "Failed to create string sort");
+            MPI_Finalize();
             exit(0);
         }
         DTCMP_Sort_local(DTCMP_IN_PLACE, dnames, dirtot, dirname_type, dirname_type, op_dnamcomp, DTCMP_FLAG_NONE);
@@ -951,7 +985,6 @@ int main(int narg, char** arg)
         for (i = 0; i < rank + 1; i++) {
             dlast += ndirs[i];    // index of last dir for proc
         }
-        // printf("rank=%d, dfirst = %d, dlast = %d, dirtot = %d\n",rank,dfirst,dlast,dirtot);
         randir = (uint64_t*)  MFU_MALLOC(nfiles[ilev] * sizeof(uint64_t));
         ftypes = (long int*) MFU_MALLOC(nfiles[ilev] * sizeof(long int));
         flens  = (long int*) MFU_MALLOC(nfiles[ilev] * sizeof(long int));
@@ -1031,7 +1064,8 @@ int main(int narg, char** arg)
     mfu_create_opts_t* create_opts = mfu_create_opts_new();
     mfu_flist_mkdir(mybflist, create_opts);
     mfu_flist_mknod(mybflist, create_opts);
-    write_files(mybflist, kft);
+    write_files(mybflist, filltype);
+    mfu_free(buf); // used only in write_files()->write_file()
     mfu_create_opts_delete(&create_opts);
 
     //------------------------------------
@@ -1108,7 +1142,7 @@ int main(int narg, char** arg)
         MPI_Type_contiguous(tnamlen, MPI_CHAR, &tname_type);
         MPI_Type_commit(&tname_type);
         if (DTCMP_Op_create(tname_type, &tnamcomp, &op_tnamcomp) != DTCMP_SUCCESS) {
-            printf("Failed to create string sort\n");
+            MFU_LOG(MFU_LOG_ERR,"Failed to create string sort");
             exit(0);
         }
         DTCMP_Sort_local(DTCMP_IN_PLACE, tnames[ilev], nitot, tname_type, tname_type, op_tnamcomp, DTCMP_FLAG_NONE);
@@ -1137,10 +1171,6 @@ int main(int narg, char** arg)
     //--------------------------------
     mfu_flist_array_by_depth(mybflist, &outlevels, &outmin, &outlists);
     for (ilev = 0; ilev < nlevels; ilev++) {
-        if (rank == 0) {
-            printf("ilev=%d\n", ilev);
-        }
-
         //------------------------------------------------
         // list items at this level for each processor
         //------------------------------------------------
@@ -1264,7 +1294,7 @@ int main(int narg, char** arg)
         /*---------------------------------*/
         /* write links with targets        */
         /*---------------------------------*/
-        write_links(nlink, linknames, itemnames); // write links for this processor
+        write_links(nlink, linknames, itemnames, ilev); // write links for this processor
 
         mfu_free(&linknames);
         mfu_free(&tnamelist);
