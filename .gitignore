@@ -74,3 +74,6 @@ spack.lock
 
 # Code editors
 .vscode
+
+# source indexing/tagging
+tags
