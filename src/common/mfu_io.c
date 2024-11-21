@@ -1670,4 +1670,4 @@ int daos_lsetxattr(const char* path, const char* name, const void* value, size_t
     return mfu_errno2rc(ENOSYS);
 #endif
 }
-#endif DCOPY_USE_XATTRS
+#endif // DCOPY_USE_XATTRS
