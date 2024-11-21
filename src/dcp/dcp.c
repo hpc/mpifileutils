@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <grp.h>
 
 /* for daos */
 #ifdef DAOS_SUPPORT
@@ -116,7 +117,7 @@ int main(int argc, char** argv)
     /* effective group/user id */
     uid_t egid = 0, euid = 0;
     uid_t gid = getegid(), uid = geteuid();
-    uid_t gids[MAX_GIDS];
+    gid_t gids[MAX_GIDS];
     int gids_count = 0;
 
     /* initialize MPI */
@@ -404,7 +405,7 @@ int main(int argc, char** argv)
     /* setgroups before set gid or uid */
     if (egid > 0 || euid > 0) {
         /* record the original groups */
-        gids_count = getgroups(MAX_GIDS, &gids);
+        gids_count = getgroups(MAX_GIDS, gids);
         if (gids_count < 0) {
             MFU_LOG(MFU_LOG_ERR, "Could not getgroups: %s", strerror(errno));
             mfu_finalize();
