@@ -674,7 +674,7 @@ int main(int narg, char** arg)
     MPI_Init(&narg, &arg);
     DTCMP_Init();
     mfu_init();
-    mfu_debug_level = MFU_LOG_VERBOSE;
+    mfu_debug_level = MFU_LOG_WARN;
 
     int rank, nrank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -757,8 +757,8 @@ int main(int narg, char** arg)
               widmax=atoi(maxterm);
               break;
             case 'v':
-              if (rank == 0) {
-                  MFU_LOG(MFU_LOG_DBG,"verbose is on");
+              if (mfu_debug_level < MFU_LOG_DBG) {
+                  mfu_debug_level++;
               }
               break;
             case 'h':
@@ -767,7 +767,7 @@ int main(int narg, char** arg)
               }
               mfu_finalize();
               MPI_Finalize();
-	      exit(0);
+              exit(0);
               break;
             default:
               break;
