@@ -541,6 +541,23 @@ void lnamunsort(char** buff, char** tarray, int* lind, int nitems)
     }
 }
 
+/*---------------------------------------------------------------------
+*  shortopts below are followed by a colon if they take an argument
+*---------------------------------------------------------------------*/
+static char *short_options = "i:f:d:n:r:s:w:vh";
+static struct option long_options[] = {
+    {"seed",     1, 0, 'i'},
+    {"fill",     1, 0, 'f'},
+    {"depth",    1, 0, 'd'},
+    {"nitems",   1, 0, 'n'},
+    {"ratio",    1, 0, 'r'},
+    {"size",     1, 0, 's'},
+    {"width",    1, 0, 'w'},
+    {"version",  0, 0, 'v'},
+    {"help",     0, 0, 'h'},
+    {0, 0, 0, 0}
+};
+
 /*-----------------------*/
 /* Print help message */
 /*-----------------------*/
@@ -669,10 +686,7 @@ int main(int narg, char** arg)
     *  loop over options
     *---------------------*/
     while (1) {
-       /*---------------------------------------------------------------------
-        *  shortopts below are followed by a colon if they take an argument
-        *---------------------------------------------------------------------*/
-        c=getopt_long(narg,arg,"i:f:d:n:r:s:w:vh",long_options,&longind);
+        c=getopt_long(narg,arg,short_options,long_options,&longind);
         if (c <= 0) break;
         minterm=(char*)MFU_MALLOC(10*sizeof(char));
         maxterm=(char*)MFU_MALLOC(10*sizeof(char));
