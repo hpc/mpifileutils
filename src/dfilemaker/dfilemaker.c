@@ -564,7 +564,9 @@ static struct option long_options[] = {
 static void print_usage(void)
 {
     printf("\n");
-    printf("Usage: dfilemaker [options] \n");
+    printf("Usage: dfilemaker [options] <parent_path> \n");
+    printf("\n");
+    printf("*parent_path*               - path to directory where dfilemaker will create files");
     printf("\n");
     printf("Options:\n");
     printf("  -i, --seed=*integer*      - seed to use for random number generation\n");
@@ -600,6 +602,7 @@ void mmparse(char* optarg,char** minterm,char** maxterm)
  ****************************************************************/
 int main(int narg, char** arg)
 {
+    char* parent_path;
     char* cbuff;
     uint64_t i, j, ifst, ilst;
     int namlen;
@@ -764,6 +767,22 @@ int main(int narg, char** arg)
         }
      }
 
+    if ((narg-optind) != 1) {
+        if (rank == 0) {
+            if (optind == narg) {
+                MFU_LOG(MFU_LOG_ERR,"missing required argument parent_path");
+            } else {
+                MFU_LOG(MFU_LOG_ERR,"too many arguments");
+            }
+            print_usage();
+        }
+
+        rc = EINVAL;
+        goto dfilemaker_cleanup_all;
+    }
+
+    parent_path=arg[optind];
+
      srand(iseed);
      if (nmax > 0) {
          ntotal=nmin+rand()%(1+nmax-nmin);
@@ -791,6 +810,7 @@ int main(int narg, char** arg)
     }
 
     if (rank == 0 ) {
+        MFU_LOG(MFU_LOG_VERBOSE, "parent_path = %s", parent_path);
         MFU_LOG(MFU_LOG_VERBOSE, "ntotal = %d",ntotal);
         MFU_LOG(MFU_LOG_VERBOSE, "nlevels = %d",nlevels);
         MFU_LOG(MFU_LOG_VERBOSE, "maxflen = %d",maxflen);
@@ -827,6 +847,17 @@ int main(int narg, char** arg)
     // fill buff with stuff
     //-----------------------
     buf = MFU_MALLOC(bufsize);
+
+    /* change directory, and check that all processes succeeded */
+    int chdir_rc = chdir(parent_path);
+    if (! mfu_alltrue(chdir_rc == 0, MPI_COMM_WORLD)) {
+        /* at least one process failed, so bail out */
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Failed to change directory to '%s'", parent_path);
+        }
+        rc = EINVAL;
+        goto dfilemaker_cleanup_all;
+    }
 
     //-----------------------------------
     // get depth of './' or top
