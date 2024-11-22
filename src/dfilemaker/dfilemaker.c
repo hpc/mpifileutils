@@ -1072,7 +1072,7 @@ int main(int narg, char** arg)
     mfu_flist_mkdir(mybflist, create_opts);
     mfu_flist_mknod(mybflist, create_opts);
     write_files(mybflist, filltype);
-    mfu_free(buf); // used only in write_files()->write_file()
+    mfu_free(&buf); // used only in write_files()->write_file()
     mfu_create_opts_delete(&create_opts);
 
     //------------------------------------
