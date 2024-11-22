@@ -78,7 +78,7 @@ int tnamcomp(const void* a, const void* b)
     return rc;
 }
 
-static void print_summary(mfu_flist flist)
+static void print_summary(mfu_flist flist, int level)
 {
     /* get our rank and the size of comm_world */
     int rank, ranks;
@@ -784,11 +784,6 @@ int main(int narg, char** arg)
      if (sizemax > 0) {
          maxflen=sizemin+rand()%(1+sizemax-sizemin);
      }
-     if (rank == 0 ) {
-         printf("ntotal = %d\n",ntotal);
-         printf("nlevels = %d\n",nlevels);
-         printf("maxflen = %d\n",maxflen);
-     }
 
     /*-------------------------------------------------------
      * each level has nfiles[0] more than the one above
@@ -892,7 +887,8 @@ int main(int narg, char** arg)
     //-----------------------------
     MPI_Barrier(MPI_COMM_WORLD);
     mfu_flist_summarize(mybflist);
-    print_summary(mybflist);
+
+    print_summary(mybflist, 0);
     MPI_Barrier(MPI_COMM_WORLD);
     mfu_free(&ftypes);
     mfu_free(&flens);
@@ -904,9 +900,6 @@ int main(int narg, char** arg)
     lndirs = (int*) MFU_MALLOC(nrank * sizeof(int));
     ddispls = (int*) MFU_MALLOC(nrank * sizeof(int));
     for (ilev = 1; ilev < nlevels; ilev++) {
-        if (rank == 0) {
-            printf("ilev = %d\n", ilev);
-        }
         nfsum += nfiles[ilev - 1];
         ifrac = (nfiles[ilev] + nrank - 1) / nrank;
         ifst = rank * ifrac;
@@ -1056,7 +1049,7 @@ int main(int narg, char** arg)
         total_unknown = 0;
         total_bytes   = 0;
         mfu_flist_summarize(mybflist);
-        print_summary(mybflist);
+        print_summary(mybflist, ilev);
         MPI_Barrier(MPI_COMM_WORLD);
         mfu_free(&randir);
         mfu_free(&ftypes);
