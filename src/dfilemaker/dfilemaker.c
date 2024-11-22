@@ -1336,3 +1336,5 @@ int main(int narg, char** arg)
 
     return 0;
 }
+
+//  vim: et ts=4 :
