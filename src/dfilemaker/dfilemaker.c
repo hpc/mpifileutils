@@ -770,7 +770,13 @@ int main(int narg, char** arg)
               exit(0);
               break;
             default:
-              break;
+              /* unrecognized option */
+              if (rank == 0) {
+                  print_usage();
+              }
+              mfu_finalize();
+              MPI_Finalize();
+              exit(1);
         }
      }
 
