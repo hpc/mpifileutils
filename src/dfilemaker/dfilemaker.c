@@ -553,7 +553,7 @@ static struct option long_options[] = {
     {"ratio",    1, 0, 'r'},
     {"size",     1, 0, 's'},
     {"width",    1, 0, 'w'},
-    {"version",  0, 0, 'v'},
+    {"verbose",  0, 0, 'v'},
     {"help",     0, 0, 'h'},
     {0, 0, 0, 0}
 };
@@ -574,7 +574,7 @@ static void print_usage(void)
     printf("  -r, --ratio=*min*-*max*   - ratio of files to directories as a percent (not implemented)\n");
     printf("  -s, --size=*min*-*max*    - file size, integers min and max followed by MB or GB\n");
     printf("  -w, --width=*min*-*max*   - directory width, integers min and max (not implemented)\n");
-    printf("  -v, --verbose             - print version number\n");
+    printf("  -v, --verbose             - increase verbosity of output; default is INFO\n");
     printf("  -h, --help                - print usage\n");
     printf("\n");
     printf("For more information see https://mpifileutils.readthedocs.io.\n");
@@ -655,18 +655,6 @@ int main(int narg, char** arg)
     int depmin=0,depmax=0;
     int nmin=0,nmax=0;
     int widmin=0,widmax=0;
-    static struct option long_options[] = {
-       {"seed",     1, 0, 'i'},
-       {"fill",     1, 0, 'f'},
-       {"depth",    1, 0, 'd'},
-       {"nitems",   1, 0, 'n'},
-       {"ratio",    1, 0, 'r'},
-       {"size",     1, 0, 's'},
-       {"width",    1, 0, 'w'},
-       {"version",  0, 0, 'v'},
-       {"help",     0, 0, 'h'},
-       {0, 0, 0, 0}
-    };
 
     /*--------------------------
      * initialize mfu and MPI
