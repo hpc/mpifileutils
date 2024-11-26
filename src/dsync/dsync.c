@@ -2411,17 +2411,21 @@ static void dsync_disjunction_free(struct dsync_disjunction* disjunction)
 {
     struct dsync_conjunction *conjunction;
     struct dsync_conjunction *n;
-
-    assert(list_empty(&disjunction->linkage));
-    list_for_each_entry_safe(conjunction,
-                             n,
-                             &disjunction->conjunctions,
-                             linkage) {
-        list_del_init(&conjunction->linkage);
-        dsync_conjunction_free(conjunction);
+    
+    if (disjunction) {
+        assert(list_empty(&disjunction->linkage));
+        list_for_each_entry_safe(conjunction,
+                                 n,
+                                 &disjunction->conjunctions,
+                                 linkage) {
+            list_del_init(&conjunction->linkage);
+            dsync_conjunction_free(conjunction);
+        }
+        assert(list_empty(&disjunction->conjunctions));
+        mfu_free(&disjunction);
+    } else {
+        return;
     }
-    assert(list_empty(&disjunction->conjunctions));
-    mfu_free(&disjunction);
 }
 
 static void dsync_disjunction_print(
@@ -3143,8 +3147,7 @@ int main(int argc, char **argv)
             options.link_dest = MFU_STRDUP(optarg);
             break;
         case 'o':
-            ret = dsync_option_output_parse(optarg, 0);
-            if (ret) {
+            if (dsync_option_output_parse(optarg, 0)) {
                 usage = 1;
             }
             break;
@@ -3186,9 +3189,12 @@ int main(int argc, char **argv)
         }
         usage = 1;
     }
-
+    
+    if (usage) {
+        goto do_usage;
+    }
     /* Generate default output */
-    if (list_empty(&options.outputs)) {
+    if (list_empty(&options.outputs) ) {
         /*
          * If -o option is not given,
          * we want to add default output,
@@ -3213,6 +3219,7 @@ int main(int argc, char **argv)
         usage = 1;
     }
 
+do_usage:
     /* print usage and exit if necessary */
     if (usage) {
         if (rank == 0) {
