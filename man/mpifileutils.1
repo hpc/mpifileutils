@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "MPIFILEUTILS" "1" "Feb 04, 2022" "0.11.1" "mpiFileUtils"
+.TH "MPIFILEUTILS" "1" "May 31, 2024" "0.12" "mpiFileUtils"
 .SH NAME
 mpifileutils \- mpiFileUtils Documentation
 .
@@ -41,7 +41,7 @@ delivering orders of magnitude in performance speedup over their single\-process
 Furthermore, the libmfu library packages common functionality to simplify the creation of new tools,
 and it can even be invoked directly from within HPC applications.
 .sp
-Video Overview: \fI\%“Scalable Management of HPC Datasets with mpiFileUtils”\fP, HPCKP‘20.
+Video Overview: \fI\%"Scalable Management of HPC Datasets with mpiFileUtils"\fP, HPCKP\(aq20.
 .sp
 The figure below, taken from the above presentation, illustrates the potential performance improvement that one can achieve
 when scaling a tool like dcp to utilize more compute resources.
@@ -89,7 +89,7 @@ To be certain of compatibility, it is recommended that one install libarchive\-3
 mkdir install
 installdir=\(gapwd\(ga/install
 
-wget https://github.com/libarchive/libarchive/releases/download/3.5.1/libarchive\-3.5.1.tar.gz
+wget https://github.com/libarchive/libarchive/releases/download/v3.5.1/libarchive\-3.5.1.tar.gz
 tar \-zxf libarchive\-3.5.1.tar.gz
 cd libarchive\-3.5.1
   ./configure \-\-prefix=$installdir
@@ -103,15 +103,15 @@ cd ..
 To build on PowerPC, one may need to add \fB\-\-build=powerpc64le\-redhat\-linux\-gnu\fP to the configure command.
 .sp
 Assuming libarchive has been installed to an \fIinstall\fP directory as shown above,
-one can then build mpiFileUtils from a release like v0.11.1 with commands like the following:
+one can then build mpiFileUtils from a release like v0.12 with commands like the following:
 .INDENT 0.0
 .INDENT 3.5
 .sp
 .nf
 .ft C
-wget https://github.com/hpc/mpifileutils/releases/download/v0.11.1/mpifileutils\-v0.11.1.tgz
-tar \-zxf mpifileutils\-v0.11.1.tgz
-cd mpifileutils\-v0.11.1
+wget https://github.com/hpc/mpifileutils/releases/download/v0.12/mpifileutils\-v0.12.tgz
+tar \-zxf mpifileutils\-v0.12.tgz
+cd mpifileutils\-v0.12
   mkdir build
   cd build
     cmake .. \e
@@ -135,6 +135,8 @@ Additional CMake options:
 \fB\-DENABLE_LUSTRE=[ON/OFF]\fP : specialization for Lustre, defaults to \fBOFF\fP
 .IP \(bu 2
 \fB\-DENABLE_GPFS=[ON/OFF]\fP : specialization for GPFS, defaults to \fBOFF\fP
+.IP \(bu 2
+\fB\-DENABLE_HPSS=[ON/OFF]\fP : specialization for HPSS, defaults to \fBOFF\fP
 .IP \(bu 2
 \fB\-DENABLE_EXPERIMENTAL=[ON/OFF]\fP : build experimental tools, defaults to \fBOFF\fP
 .UNINDENT
@@ -179,7 +181,7 @@ If HDF5 is installed under a standard system path then specifying the HDF5 path 
 .sp
 To use \fI\%Spack\fP, it is recommended that one first create a \fIpackages.yaml\fP file to list system\-provided packages, like MPI.
 Without doing this, Spack will fetch and install an MPI library that may not work on your system.
-Make sure that you’ve set up spack in your shell (see \fI\%these instructions\fP).
+Make sure that you\(aqve set up Spack in your shell (see \fI\%these instructions\fP).
 .sp
 Once Spack has been configured, mpiFileUtils can be installed as:
 .INDENT 0.0
@@ -199,7 +201,7 @@ or to enable all features:
 .sp
 .nf
 .ft C
-spack install mpifileutils +lustre +gpfs +experimental
+spack install mpifileutils +lustre +gpfs +hpss +experimental
 .ft P
 .fi
 .UNINDENT
@@ -223,7 +225,7 @@ cd deps
   wget https://github.com/hpc/libcircle/releases/download/v0.3/libcircle\-0.3.0.tar.gz
   wget https://github.com/llnl/lwgrp/releases/download/v1.0.4/lwgrp\-1.0.4.tar.gz
   wget https://github.com/llnl/dtcmp/releases/download/v1.1.4/dtcmp\-1.1.4.tar.gz
-  wget https://github.com/libarchive/libarchive/releases/download/3.5.1/libarchive\-3.5.1.tar.gz
+  wget https://github.com/libarchive/libarchive/releases/download/v3.5.1/libarchive\-3.5.1.tar.gz
 
   tar \-zxf libcircle\-0.3.0.tar.gz
   cd libcircle\-0.3.0
@@ -306,7 +308,7 @@ cmake ../mpifileutils
 .UNINDENT
 .UNINDENT
 .sp
-The other way to use spack is to create a “view” to the installed dependencies.
+The other way to use Spack is to create a "view" to the installed dependencies.
 Details on this are coming soon.
 .SS Project Design Principles
 .sp
@@ -331,7 +333,7 @@ careful to learn the options of each tool.
 .SS Portability
 .sp
 The tools are intended to support common file systems used in HPC centers, like
-Lustre, GPFS, and NFS. Additionally, methods in the library should be portable
+Lustre, GPFS, NFS, and HPSS. Additionally, methods in the library should be portable
 and efficient across multiple file systems. Tool and library users can rely on
 mpiFileUtils to provide portable and performant implementations.
 .SS Composability
@@ -351,31 +353,31 @@ mpirun. The tools do not currently checkpoint, so one must be careful that an
 invocation of the tool has sufficient time to complete before it is killed.
 .INDENT 0.0
 .IP \(bu 2
-dbcast \- Broadcast a file to each compute node.
+\fI\%dbcast\fP \- Broadcast a file to each compute node.
 .IP \(bu 2
-dbz2 \- Compress and decompress a file with bz2.
+\fI\%dbz2\fP \- Compress and decompress a file with bz2.
 .IP \(bu 2
-dchmod \- Change owner, group, and permissions on files.
+\fI\%dchmod\fP \- Change owner, group, and permissions on files.
 .IP \(bu 2
-dcmp \- Compare contents between directories or files.
+\fI\%dcmp\fP \- Compare contents between directories or files.
 .IP \(bu 2
-dcp \- Copy files.
+\fI\%dcp\fP \- Copy files.
 .IP \(bu 2
-ddup \- Find duplicate files.
+\fI\%ddup\fP \- Find duplicate files.
 .IP \(bu 2
-dfind \- Filter files.
+\fI\%dfind\fP \- Filter files.
 .IP \(bu 2
-dreln \- Update symlinks to point to a new path.
+\fI\%dreln\fP \- Update symlinks to point to a new path.
 .IP \(bu 2
-drm \- Remove files.
+\fI\%drm\fP \- Remove files.
 .IP \(bu 2
-dstripe \- Restripe files (Lustre).
+\fI\%dstripe\fP \- Restripe files (Lustre).
 .IP \(bu 2
-dsync \- Synchronize source and destination directories or files.
+\fI\%dsync\fP \- Synchronize source and destination directories or files.
 .IP \(bu 2
-dtar \- Create and extract tape archive files.
+\fI\%dtar\fP \- Create and extract tape archive files.
 .IP \(bu 2
-dwalk \- List, sort, and profile files.
+\fI\%dwalk\fP \- List, sort, and profile files.
 .UNINDENT
 .SS Experimental Utilities
 .sp
@@ -403,7 +405,7 @@ One must launch the job using the MPI job launcher like mpirun or mpiexec.  One 
 .IP \(bu 2
 Most tools do not checkpoint their progress.  Be sure to request sufficient time in your allocation to allow the job to complete.  One may need to start over from the beginning if a tool is interrupted.
 .IP \(bu 2
-One cannot pipe output of one tool to the input of another.  However, the –input and –output file options are good approximations.
+One cannot pipe output of one tool to the input of another.  However, the \-\-input and \-\-output file options are good approximations.
 .IP \(bu 2
 One cannot easily check the return codes of tools.  Instead, inspect stdout and stderr output for errors.
 .UNINDENT
@@ -538,7 +540,7 @@ dchmod \-\-group grp1 \-\-mode g+rw /path/to/walk
 .UNINDENT
 .UNINDENT
 .sp
-drm is like “rm \-rf” but in parallel:
+drm is like "rm \-rf" but in parallel:
 .INDENT 0.0
 .INDENT 3.5
 .sp
@@ -575,7 +577,7 @@ dsync /path/src /path/dest
 .UNINDENT
 .UNINDENT
 .sp
-For large directory trees, the –batch\-files option offers a type of checkpoint.
+For large directory trees, the \-\-batch\-files option offers a type of checkpoint.
 It moves files in batches, and if interrupted, a restart picks up from the last completed batch.:
 .INDENT 0.0
 .INDENT 3.5
@@ -588,7 +590,7 @@ dsync \-\-batch\-files 100000 /path/src /path/dest
 .UNINDENT
 .UNINDENT
 .sp
-The tools can be composed in various ways using the –input and –output options.
+The tools can be composed in various ways using the \-\-input and \-\-output options.
 For example, the following sequence of commands executes a purge operation,
 which deletes any file that has not been accessed in the past 180 days.:
 .INDENT 0.0
@@ -648,9 +650,9 @@ entries from one location to another or compare corresponding entries across
 two different lists. A file list can be serialized and written to or read from
 a file.
 .sp
-Each MPI rank “owns” a portion of the list, and there are routines to step
+Each MPI rank "owns" a portion of the list, and there are routines to step
 through the entries owned by that process. This portion is referred to as the
-“local” list. Functions exist to get and set properties of the items in the
+"local" list. Functions exist to get and set properties of the items in the
 local list, for example to get the path name, type, and size of a file.
 Functions dealing with the local list can be called by the MPI process
 independently of other MPI processes.

@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DCP" "1" "Feb 04, 2022" "0.11.1" "mpiFileUtils"
+.TH "DCP" "1" "May 31, 2024" "0.12" "mpiFileUtils"
 .SH NAME
 dcp \- distributed copy
 .
@@ -46,7 +46,7 @@ file system, and it splits large file copies across multiple processes.
 .INDENT 0.0
 .TP
 .B \-\-bufsize SIZE
-Set the I/O buffer to be SIZE bytes.  Units like “MB” and “GB” may
+Set the I/O buffer to be SIZE bytes.  Units like "MB" and "GB" may
 immediately follow the number without spaces (e.g. 8MB). The default
 bufsize is 4MB.
 .UNINDENT
@@ -54,14 +54,14 @@ bufsize is 4MB.
 .TP
 .B \-\-chunksize SIZE
 Multiple processes copy a large file in parallel by dividing it into chunks.
-Set chunk to be at minimum SIZE bytes.  Units like “MB” and
-“GB” can immediately follow the number without spaces (e.g. 64MB).
+Set chunk to be at minimum SIZE bytes.  Units like "MB" and
+"GB" can immediately follow the number without spaces (e.g. 64MB).
 The default chunksize is 4MB.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-xattrs WHICH
-Copy extended attributes (“xattrs”) from source files to target files.
+Copy extended attributes ("xattrs") from source files to target files.
 WHICH determines which xattrs are copied.  Options are to copy no xattrs,
 all xattrs, xattrs not excluded by /etc/xattr.conf, or all xattrs except
 those which have special meaning to Lustre.  Certain xattrs control Lustre
@@ -104,7 +104,7 @@ that each symbolic link refers to.
 .B \-P, \-\-no\-dereference
 Do not follow symbolic links in source paths. Effectviely allows
 symbolic links to be copied when the link target is not valid
-or there is not permission to read the link’s target.
+or there is not permission to read the link\(aqs target.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -118,6 +118,11 @@ Use O_DIRECT to avoid caching file data.
 .UNINDENT
 .INDENT 0.0
 .TP
+.B \-\-open\-noatime
+Open files with O_NOATIME flag.
+.UNINDENT
+.INDENT 0.0
+.TP
 .B \-S, \-\-sparse
 Create sparse files when possible.
 .UNINDENT
@@ -127,6 +132,18 @@ Create sparse files when possible.
 Print progress message to stdout approximately every N seconds.
 The number of seconds must be a non\-negative integer.
 A value of 0 disables progress messages.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-G, \-\-gid GID
+Set the effective group ID to perform the copy operation. The copy
+may fail if the group does not have sufficient privileges.
+.UNINDENT
+.INDENT 0.0
+.TP
+.B \-U, \-\-uid UID
+Set the effective user ID to perform the copy operation. The copy
+may fail if the user does not have sufficient privileges.
 .UNINDENT
 .INDENT 0.0
 .TP
