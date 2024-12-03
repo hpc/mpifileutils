@@ -2412,20 +2412,19 @@ static void dsync_disjunction_free(struct dsync_disjunction* disjunction)
     struct dsync_conjunction *conjunction;
     struct dsync_conjunction *n;
     
-    if (disjunction) {
-        assert(list_empty(&disjunction->linkage));
-        list_for_each_entry_safe(conjunction,
-                                 n,
-                                 &disjunction->conjunctions,
-                                 linkage) {
-            list_del_init(&conjunction->linkage);
-            dsync_conjunction_free(conjunction);
-        }
-        assert(list_empty(&disjunction->conjunctions));
-        mfu_free(&disjunction);
-    } else {
+    if (!disjunction) {
         return;
     }
+    assert(list_empty(&disjunction->linkage));
+    list_for_each_entry_safe(conjunction,
+                             n,
+                             &disjunction->conjunctions,
+                             linkage) {
+        list_del_init(&conjunction->linkage);
+        dsync_conjunction_free(conjunction);
+    }
+    assert(list_empty(&disjunction->conjunctions));
+    mfu_free(&disjunction);
 }
 
 static void dsync_disjunction_print(
@@ -3190,9 +3189,25 @@ int main(int argc, char **argv)
         usage = 1;
     }
     
-    if (usage) {
-        goto do_usage;
+    /* we should have two arguments left, source and dest paths */
+    int numargs = argc - optind;
+
+    /* if help flag was thrown, don't bother checking usage */
+    if (numargs != 2 && !help) {
+        MFU_LOG(MFU_LOG_ERR,
+            "You must specify a source and destination path.");
+        usage = 1;
     }
+
+    /* print usage and exit if necessary */
+    if (usage) {
+        if (rank == 0) {
+            print_usage();
+        }
+        rc = 1;
+        goto dsync_common_cleanup;
+    }
+    
     /* Generate default output */
     if (list_empty(&options.outputs) ) {
         /*
@@ -3209,25 +3224,6 @@ int main(int argc, char **argv)
         }
     }
 
-    /* we should have two arguments left, source and dest paths */
-    int numargs = argc - optind;
-
-    /* if help flag was thrown, don't bother checking usage */
-    if (numargs != 2 && !help) {
-        MFU_LOG(MFU_LOG_ERR,
-            "You must specify a source and destination path.");
-        usage = 1;
-    }
-
-do_usage:
-    /* print usage and exit if necessary */
-    if (usage) {
-        if (rank == 0) {
-            print_usage();
-        }
-        rc = 1;
-        goto dsync_common_cleanup;
-    }
 
     /* pointer to path arguments */
     char** argpaths = &argv[optind];
