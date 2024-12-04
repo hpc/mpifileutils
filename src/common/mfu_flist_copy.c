@@ -18,6 +18,10 @@
 #include <time.h> /* asctime / localtime */
 #include <regex.h>
 
+#if DCOPY_USE_XATTRS
+#include <linux/fs.h>
+#endif
+
 #ifdef HAVE_LIBATTR
 #include <attr/libattr.h>
 #endif /* HAVE_LIBATTR */
@@ -261,6 +265,66 @@ static int mfu_copy_close_file(
     return rc;
 }
 
+static int mfu_copy_projid(
+    const char* src_path,
+    const char* dest_path)
+{
+    int rc = 0;
+    struct stat st;
+    /* check whether the src is symlink */
+    if (lstat(src_path, &st)) {
+        MFU_LOG(MFU_LOG_ERR, "lstat failed: `%s' errno=%d (%s)", src_path, errno, strerror(errno));
+        goto xattr_fin;
+    }
+    if (S_ISLNK(st.st_mode)) {
+        goto xattr_fin;
+    }
+    /* open the src */
+    int src_fd = open(src_path, O_RDONLY);
+    if (src_fd < 0) {
+        MFU_LOG(MFU_LOG_ERR, "open failed: `%s' errno=%d (%s)", src_path, errno, strerror(errno));
+        rc = -1;
+        goto xattr_fin;
+    }
+    /* open the dest */
+    int dest_fd = open(dest_path, O_RDONLY);
+    if (dest_fd < 0) {
+        MFU_LOG(MFU_LOG_ERR, "open failed: `%s' errno=%d (%s)", dest_path, errno, strerror(errno));
+        rc = -1;
+        goto xattr_close_src;
+    }
+    struct fsxattr src_attr;
+    /* get src's xattr */
+    rc = ioctl(src_fd, FS_IOC_FSGETXATTR, &src_attr);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "ioctl(FS_IOC_FSGETXATTR) failed: `%s' errno=%d (%s)", src_path, errno, strerror(errno));
+        goto xattr_close_dest;
+    }
+    struct fsxattr dest_attr;
+    /* get dest's xattr */
+    rc = ioctl(dest_fd, FS_IOC_FSGETXATTR, &dest_attr);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "ioctl(FS_IOC_FSGETXATTR) failed: `%s' errno=%d (%s)", dest_path, errno, strerror(errno));
+        goto xattr_close_dest;
+    }
+    dest_attr.fsx_projid = src_attr.fsx_projid;
+    dest_attr.fsx_xflags = (dest_attr.fsx_xflags & ~FS_XFLAG_PROJINHERIT) |
+                           (src_attr.fsx_xflags & FS_XFLAG_PROJINHERIT);
+    /* set dest's xattr */
+    rc = ioctl(dest_fd, FS_IOC_FSSETXATTR, &dest_attr);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "ioctl(FS_IOC_FSSETXATTR) failed: `%s' errno=%d (%s)", dest_path, errno, strerror(errno));
+    }
+xattr_close_dest:
+    /* close dest */
+    close(dest_fd);
+xattr_close_src:
+    /* close src */
+    close(src_fd);
+xattr_fin:
+    return rc;
+}
+
 /* copy all extended attributes from op->operand to dest_path,
  * returns 0 on success and -1 on failure */
 static int mfu_copy_xattrs(
@@ -442,6 +506,13 @@ static int mfu_copy_xattrs(
     /* free space allocated for list */
     mfu_free(&list);
     list_bufsize = 0;
+
+    rc = mfu_copy_projid(src_path, dest_path);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to copy projid from src_path=%s to dest_path=%s (errno=%d %s)",
+            src_path, dest_path, errno, strerror(errno)
+        );
+    }
 
 #endif /* DCOPY_USE_XATTR */
 
