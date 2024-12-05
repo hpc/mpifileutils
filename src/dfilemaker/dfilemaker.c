@@ -544,15 +544,13 @@ void lnamunsort(char** buff, char** tarray, int* lind, int nitems)
 /*---------------------------------------------------------------------
 *  shortopts below are followed by a colon if they take an argument
 *---------------------------------------------------------------------*/
-static char *short_options = "i:f:d:n:r:s:w:vh";
+static char *short_options = "i:f:d:n:s:vh";
 static struct option long_options[] = {
     {"seed",     1, 0, 'i'},
     {"fill",     1, 0, 'f'},
     {"depth",    1, 0, 'd'},
     {"nitems",   1, 0, 'n'},
-    {"ratio",    1, 0, 'r'},
     {"size",     1, 0, 's'},
-    {"width",    1, 0, 'w'},
     {"verbose",  0, 0, 'v'},
     {"help",     0, 0, 'h'},
     {0, 0, 0, 0}
@@ -573,9 +571,7 @@ static void print_usage(void)
     printf("  -f, --fill=*filltype*     - filltype = random, true, false, or alternate\n");
     printf("  -d, --depth=*min*-*max*   - directory depth, integers min and max\n");
     printf("  -n, --nitems=*min*-*max*  - number of items, integers min and max (subs for -r and -w)\n");
-    printf("  -r, --ratio=*min*-*max*   - ratio of files to directories as a percent (not implemented)\n");
     printf("  -s, --size=*min*-*max*    - file size, integers min and max followed by MB or GB\n");
-    printf("  -w, --width=*min*-*max*   - directory width, integers min and max (not implemented)\n");
     printf("  -v, --verbose             - increase verbosity of output; default is INFO\n");
     printf("  -h, --help                - print usage\n");
     printf("\n");
@@ -652,12 +648,10 @@ int main(int narg, char** arg)
     static filltype_t filltype = ft_random; // what data to put into files
     unsigned long long sizeminl,sizemaxl;  // for mfu_abtoul
     uint64_t sizemin=0,sizemax=0;
-    double ratio=0.;
     int longind=0;
     char *minterm,*maxterm;
     int depmin=0,depmax=0;
     int nmin=0,nmax=0;
-    int widmin=0,widmax=0;
     int rc=0;
 
     /*--------------------------
@@ -713,12 +707,6 @@ int main(int narg, char** arg)
               nmin=atoi(minterm);
               nmax=atoi(maxterm);
               break;
-            case 'r':
-              ratio = atof(optarg);
-              if (rank == 0) {
-                  MFU_LOG(MFU_LOG_DBG,"ratio = %f",ratio);
-              }
-              break;
             case 's':
               // range for maxflen
               mmparse(optarg,&minterm,&maxterm);
@@ -740,11 +728,6 @@ int main(int narg, char** arg)
                 goto dfilemaker_cleanup_all;
               }
               sizemax=(uint64_t)sizemaxl;
-              break;
-            case 'w':
-              mmparse(optarg,&minterm,&maxterm);
-              widmin=atoi(minterm);
-              widmax=atoi(maxterm);
               break;
             case 'v':
               if (mfu_debug_level < MFU_LOG_DBG) {
