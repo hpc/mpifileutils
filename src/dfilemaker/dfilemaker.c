@@ -194,7 +194,7 @@ void fillelem(mfu_flist flist, uint64_t index, char* fname, long int flen, mfu_f
     }
     else  {
         MFU_LOG(MFU_LOG_ERR,"In fillelem() ftype = %ld is not legal value", ftype);
-        exit(0);
+        exit(EINVAL);
     }
 
     //----------------------------------
@@ -655,6 +655,7 @@ int main(int narg, char** arg)
     int depmin=0,depmax=0;
     int nmin=0,nmax=0;
     int widmin=0,widmax=0;
+    int rc=0;
 
     /*--------------------------
      * initialize mfu and MPI
@@ -693,8 +694,8 @@ int main(int narg, char** arg)
                  if (rank==0) {
                      MFU_LOG(MFU_LOG_ERR,"%s not a fill option",optarg);
                  }
-                 MPI_Finalize();
-                 exit(1);
+                 rc = EINVAL;
+                 goto dfilemaker_cleanup_all;
              }
              break;
            case 'd':
@@ -724,18 +725,16 @@ int main(int narg, char** arg)
                 if (rank == 0) {
                   MFU_LOG(MFU_LOG_ERR,"Could not interpret %s as file size", minterm);
                 }
-                mfu_finalize();
-                MPI_Finalize();
-                return 1;
+                rc = EINVAL;
+                goto dfilemaker_cleanup_all;
               }
               sizemin=(uint64_t)sizeminl;
               if (mfu_abtoull(maxterm, &sizemaxl) != MFU_SUCCESS) {
                 if (rank == 0) {
                   MFU_LOG(MFU_LOG_ERR,"Could not interpret %s as file size", maxterm);
                 }
-                mfu_finalize();
-                MPI_Finalize();
-                return 1;
+                rc = EINVAL;
+                goto dfilemaker_cleanup_all;
               }
               sizemax=(uint64_t)sizemaxl;
               break;
@@ -753,18 +752,15 @@ int main(int narg, char** arg)
               if (rank == 0) {
                   print_usage();
               }
-              mfu_finalize();
-              MPI_Finalize();
-              exit(0);
-              break;
+              rc = 0;
+              goto dfilemaker_cleanup_all;
             default:
               /* unrecognized option */
               if (rank == 0) {
                   print_usage();
               }
-              mfu_finalize();
-              MPI_Finalize();
-              exit(1);
+              rc = EINVAL;
+              goto dfilemaker_cleanup_all;
         }
      }
 
@@ -790,8 +786,8 @@ int main(int narg, char** arg)
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR,"ntotal must be greater than (levels * (nlevels + 1) /2)");
         }
-        MPI_Finalize();
-        exit(0);
+        rc = EINVAL;
+        goto dfilemaker_cleanup_all;
     }
 
     if (rank == 0 ) {
@@ -967,8 +963,8 @@ int main(int narg, char** arg)
         MPI_Type_commit(&dirname_type);
         if (DTCMP_Op_create(dirname_type, &dnamcomp, &op_dnamcomp) != DTCMP_SUCCESS) {
             MFU_LOG(MFU_LOG_ERR, "Failed to create string sort");
-            MPI_Finalize();
-            exit(0);
+            rc = ENOMEM;
+            goto dfilemaker_cleanup_all;
         }
         DTCMP_Sort_local(DTCMP_IN_PLACE, dnames, dirtot, dirname_type, dirname_type, op_dnamcomp, DTCMP_FLAG_NONE);
         DTCMP_Op_free(&op_dnamcomp);
@@ -1144,7 +1140,8 @@ int main(int narg, char** arg)
         MPI_Type_commit(&tname_type);
         if (DTCMP_Op_create(tname_type, &tnamcomp, &op_tnamcomp) != DTCMP_SUCCESS) {
             MFU_LOG(MFU_LOG_ERR,"Failed to create string sort");
-            exit(0);
+            rc = ENOMEM;
+            goto dfilemaker_cleanup_all;
         }
         DTCMP_Sort_local(DTCMP_IN_PLACE, tnames[ilev], nitot, tname_type, tname_type, op_tnamcomp, DTCMP_FLAG_NONE);
         DTCMP_Op_free(&op_tnamcomp);
@@ -1317,11 +1314,12 @@ int main(int narg, char** arg)
      *------------*/
     mfu_flist_free((void**)&mybflist);
 
+dfilemaker_cleanup_all:
     mfu_finalize();
     DTCMP_Finalize();
     MPI_Finalize();
 
-    return 0;
+    return rc;
 }
 
 //  vim: et ts=4 :
