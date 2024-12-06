@@ -4,31 +4,20 @@ dfilemaker
 SYNOPSIS
 --------
 
-**dfilemaker <nitems> <nlevels> <maxflen>**
+**dfilemaker <destination_path>**
 
 DESCRIPTION
 -----------
 
-dfilemaker creates a random directory tree with files having random data
-that is useful for testing.
+dfilemaker creates a number of random directory tree with subdirectories and
+files of various sizes, that is useful for testing.
 
-Files and directories are created in the current working directory where the tool is executed.
-dfilemaker takes three positional parameters:
+Directory trees are created under destination_path, which must be a directory,
+where the tool is executed.
 
-.. option:: nitems
+.. option:: destination_path
 
-   Total number of items to create.
-
-.. option:: nlevels
-
-   Maximum depth to create in directory level (relative to current path).
-
-.. option:: maxflen
-
-   Maximum number of bytes to write to a file.
-
-
-The following options are planned in future releases, but they are not yet implemented.
+   Directory under which the new directory tree will be created.
 
 OPTIONS
 -------
@@ -48,7 +37,7 @@ OPTIONS
    ``alternate`` will fill the file with a 0xAA pattern. The default
    fill is ``random``.
 
-.. option:: -r, --ratio=*min*-*max*
+.. option:: -r, --ratio=*min*-*max*  (not yet implemented)
 
    Specify the ratio of files to directories as a percentage. The ratio
    will be chosen at random within the bounds of min and max. The
@@ -66,7 +55,7 @@ OPTIONS
    random random within the bounds of min and max. The default file
    size is set from 1MB to 5MB.
 
-.. option:: -w, --width=*min*-*max*
+.. option:: -w, --width=*min*-*max*  (not yet implemented)
 
    Specify the width of the file system tree to generate. The width
    will be selected at random within the bounds of min and max. The

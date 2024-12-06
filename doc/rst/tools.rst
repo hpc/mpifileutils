@@ -13,6 +13,7 @@ invocation of the tool has sufficient time to complete before it is killed.
 - :doc:`dcmp <dcmp.1>` - Compare contents between directories or files.
 - :doc:`dcp <dcp.1>` - Copy files.
 - :doc:`ddup <ddup.1>` - Find duplicate files.
+- :doc:`dfilemaker <dfilemaker.1>` - Generate random files.
 - :doc:`dfind <dfind.1>` - Filter files.
 - :doc:`dreln <dreln.1>` - Update symlinks to point to a new path.
 - :doc:`drm <drm.1>` - Remove files.
@@ -32,7 +33,6 @@ who are interested in developing them further or to provide additional examples.
 - dgrep - Run grep on files in parallel.
 - dparallel - Perform commands in parallel.
 - dsh - List and remove files with interactive commands.
-- dfilemaker - Generate random files.
 
 ==============================
 Usage tips
