@@ -20,7 +20,7 @@
 # Turn on verbose output
 #set -x
 
-DSYNC_TEST_BIN=${DSYNC_TEST_BIN:-${1}}
+MFU_TEST_BIN=${MFU_TEST_BIN:-${1}}
 DSYNC_SRC_BASE=${DSYNC_SRC_BASE:-${2}}
 DSYNC_DEST_BASE=${DSYNC_DEST_BASE:-${3}}
 DSYNC_TREE_NAME=${DSYNC_TREE_NAME:-${4}}
@@ -39,7 +39,7 @@ if [[ -n $mpirun ]]; then
 	echo "Using mpirun: $mpirun $mpirun_opts"
 fi
 
-echo "Using dsync binary at: $DSYNC_TEST_BIN"
+echo "Using MFU binaries at: $MFU_TEST_BIN"
 echo "Using src parent directory at: $DSYNC_SRC_BASE"
 echo "Using dest parent directory at: $DSYNC_DEST_BASE"
 echo "Using test data from: $DSYNC_TREE_DATA"
@@ -93,9 +93,9 @@ function sync_and_verify()
 	fi
 
 	if [[ -n $mpirun ]]; then
-		$mpirun $mpirun_opts $DSYNC_TEST_BIN $quiet_opt $delete_opt $srcdir $destdir
+		$mpirun $mpirun_opts ${MFU_TEST_BIN}/dsync $quiet_opt $delete_opt $srcdir $destdir
 	else
-		$DSYNC_TEST_BIN $quiet_opt $delete_opt $srcdir $destdir
+		${MFU_TEST_BIN}/dsync $quiet_opt $delete_opt $srcdir $destdir
 	fi
 	rc=$?
 
