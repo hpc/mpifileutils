@@ -25,8 +25,6 @@ DSYNC_SRC_BASE=${DSYNC_SRC_BASE:-${2}}
 DSYNC_DEST_BASE=${DSYNC_DEST_BASE:-${3}}
 DSYNC_TREE_NAME=${DSYNC_TREE_NAME:-${4}}
 
-DSYNC_TREE_DATA=/usr/include/c++
-
 mpirun=$(which mpirun 2>/dev/null)
 mpirun_opts=""
 if [[ -n $mpirun ]]; then
@@ -42,7 +40,6 @@ fi
 echo "Using MFU binaries at: $MFU_TEST_BIN"
 echo "Using src parent directory at: $DSYNC_SRC_BASE"
 echo "Using dest parent directory at: $DSYNC_DEST_BASE"
-echo "Using test data from: $DSYNC_TREE_DATA"
 
 DSYNC_SRC_DIR=$(mktemp --directory ${DSYNC_SRC_BASE}/${DSYNC_TREE_NAME}.XXXXX)
 DSYNC_DEST_DIR=$(mktemp --directory ${DSYNC_DEST_BASE}/${DSYNC_TREE_NAME}.XXXXX)

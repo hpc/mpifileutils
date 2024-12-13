@@ -27,8 +27,6 @@ DSYNC_SRC_BASE=${DSYNC_SRC_BASE:-${2}}
 DSYNC_DEST_BASE=${DSYNC_DEST_BASE:-${3}}
 DSYNC_TREE_NAME=${DSYNC_TREE_NAME:-${4}}
 
-DSYNC_TREE_DATA=/usr/include/c++
-
 mpirun=$(which mpirun 2>/dev/null)
 mpirun_opts=""
 if [[ -n $mpirun ]]; then
@@ -44,7 +42,6 @@ fi
 echo "Using MFU binaries at: $MFU_TEST_BIN"
 echo "Using src parent directory at: $DSYNC_SRC_BASE"
 echo "Using dest parent directory at: $DSYNC_DEST_BASE"
-echo "Using test data from: $DSYNC_TREE_DATA"
 
 DSYNC_SRC_DIR=$(mktemp --directory ${DSYNC_SRC_BASE}/${DSYNC_TREE_NAME}.XXXXX)
 DSYNC_DEST_DIR=$(mktemp --directory ${DSYNC_DEST_BASE}/${DSYNC_TREE_NAME}.XXXXX)
@@ -156,7 +153,7 @@ rm -fr $DSYNC_SRC_DIR/stuff
 rm -fr $DSYNC_DEST_DIR/stuff
 mkdir $DSYNC_SRC_DIR/stuff
 mkdir $DSYNC_DEST_DIR/stuff
-cp -a $DSYNC_TREE_DATA $DSYNC_DEST_DIR/stuff
+${MFU_TEST_BIN}/dfilemaker --depth 5-10 --nitems 100-300 --size 1MB-10MB $DSYNC_DEST_DIR/stuff
 sync_and_verify  $DSYNC_SRC_DIR/stuff $DSYNC_DEST_DIR/stuff empty_source union
 
 # non-empty source, but empty destination
@@ -165,7 +162,7 @@ sync_and_verify  $DSYNC_SRC_DIR/stuff $DSYNC_DEST_DIR/stuff empty_source union
 rm -fr $DSYNC_SRC_DIR/stuff
 rm -fr $DSYNC_DEST_DIR/stuff
 mkdir $DSYNC_SRC_DIR/stuff
-cp -a $DSYNC_TREE_DATA $DSYNC_SRC_DIR/stuff
+${MFU_TEST_BIN}/dfilemaker --depth 5-10 --nitems 100-300 --size 1MB-10MB $DSYNC_SRC_DIR/stuff
 sync_and_verify  $DSYNC_SRC_DIR/stuff $DSYNC_DEST_DIR/stuff empty_destination union
 
 # directories on destination, but not source, are removed with --delete
@@ -174,7 +171,7 @@ rm -fr $DSYNC_SRC_DIR/stuff
 rm -fr $DSYNC_DEST_DIR/stuff
 mkdir $DSYNC_SRC_DIR/stuff
 mkdir $DSYNC_DEST_DIR/stuff
-cp -a $DSYNC_TREE_DATA $DSYNC_SRC_DIR/stuff
+${MFU_TEST_BIN}/dfilemaker --depth 5-10 --nitems 100-300 --size 1MB-10MB $DSYNC_SRC_DIR/stuff
 mkdir $DSYNC_DEST_DIR/stuff/destdir
 touch $DSYNC_DEST_DIR/stuff/destfile
 sync_and_verify  $DSYNC_SRC_DIR/stuff $DSYNC_DEST_DIR/stuff delete src_exactly
