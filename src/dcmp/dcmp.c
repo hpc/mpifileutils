@@ -1084,12 +1084,27 @@ static int dcmp_strmap_compare(
             continue;
         }
 
-        /* for now, we can only compare content of regular files */
-        /* TODO: add support for symlinks */
-        if (! S_ISREG(dst_mode)) {
-            /* not regular file, take them as common content */
+        /* for now, we can only compare content of regular files and symlinks */
+        if (! S_ISREG(dst_mode) && ! S_ISLNK(dst_mode)) {
+            /* not regular file or symlink, take them as common content */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+            continue;
+        }
+
+        /* For symlinks, compare targets */
+        if (S_ISLNK(dst_mode)) {
+            if (mfu_compare_symlinks(mfu_flist_file_get_name(src_list, src_index),
+                    mfu_flist_file_get_name(dst_list, dst_index),
+                    mfu_src_file, mfu_dst_file) == 0) {
+                /* update to say contents of the symlinks were found to be the same */
+                dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+                dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+            } else {
+                /* update to say contents of the symlinks were found to be different */
+                dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
+                dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
+            }
             continue;
         }
 
