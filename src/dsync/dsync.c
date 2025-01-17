@@ -48,6 +48,9 @@
 #include "mfu_daos.h"
 #endif
 
+/* True if both src and dest file systems support nsec field in mtime */
+static bool comp_mtime_nsec = true;
+
 /* Print a usage message */
 static void print_usage(void)
 {
@@ -1152,7 +1155,7 @@ static void dsync_strmap_compare_lite_link_dest(
 
         /* if size and mtime are the same, we assume the file contents are same */
         if ((src_size == dst_size) &&
-            (src_mtime == dst_mtime) && (src_mtime_nsec == dst_mtime_nsec))
+            (src_mtime == dst_mtime) && (comp_mtime_nsec ? (src_mtime_nsec == dst_mtime_nsec):true))
         {
             mfu_flist_file_copy(link_compare_list, idx, link_same_list);
         }
@@ -1200,12 +1203,12 @@ static int dsync_strmap_compare_lite(
 
         /* if size or mtime is different, we assume the file contents are different */
         if ((src_size != dst_size) ||
-            (src_mtime != dst_mtime) || (src_mtime_nsec != dst_mtime_nsec))
+            (src_mtime != dst_mtime) || (comp_mtime_nsec ? (src_mtime_nsec != dst_mtime_nsec):false))
         {
             /* update to say contents of the files were found to be different */
             dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
             dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
-
+            
             /* mark file to be deleted from destination, copied from source */
             if (!options.dry_run || use_hardlinks) {
                 mfu_flist_file_copy(dst_compare_list, idx, dst_remove_list);
@@ -2968,6 +2971,20 @@ dsync_daos_out:
 }
 #endif
 
+static bool is_mtime_nsec_used(char *srcpath, char *dstpath)
+{
+    struct stat srcpath_stat, dstpath_stat;
+    if (stat(srcpath, &srcpath_stat) == 0 && stat(dstpath, &dstpath_stat) == 0) {
+        if (srcpath_stat.st_mtim.tv_nsec == 0 || dstpath_stat.st_mtim.tv_nsec == 0) {
+           return false; 
+        } else {
+            return true;
+        }
+    } else {
+        return true;
+    }
+}
+
 int main(int argc, char **argv)
 {
     int rc = 0;
@@ -3254,9 +3271,14 @@ int main(int argc, char **argv)
     mfu_param_path* srcpath  = &paths[0];
     mfu_param_path* destpath = &paths[1];
 
+    
     /* process each path */
     mfu_param_path_set((const char*)argpaths[0], srcpath,  mfu_src_file, true);
     mfu_param_path_set((const char*)argpaths[1], destpath, mfu_dst_file, false);
+    /* some filesystem don't support 
+     * nanosecond in mtime time stamp aavoid the comp if 
+     * it is the case */
+    comp_mtime_nsec = is_mtime_nsec_used(srcpath->path, destpath->path);
 
     /* advance to next set of options */
     optind += numargs;
