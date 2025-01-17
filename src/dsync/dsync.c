@@ -2981,7 +2981,7 @@ static bool is_mtime_nsec_used(char *srcpath, char *dstpath)
             return true;
         }
     } else {
-        return false;
+        return true;
     }
 }
 
