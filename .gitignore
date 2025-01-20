@@ -17,11 +17,23 @@
 *.exe
 *.out
 *.app
+src/dbcast/dbcast
+src/dbz2/dbz2
+src/dchmod/dchmod
 src/dcmp/dcmp
 src/dcp/dcp
+src/dcp1/dcp1
 src/dcp2/dcp2
+src/ddup/ddup
 src/dfilemaker/dfilemaker
+src/dfilemaker1/
+src/dfind/dfind
+src/dreln/dreln
+src/drm/drm
 src/dsh/dsh
+src/dstripe/dstripe
+src/dsync/dsync
+src/dtar/dtar
 src/dwalk/dwalk
 
 .pc
@@ -77,3 +89,12 @@ spack.lock
 
 # source indexing/tagging
 tags
+
+# CMake files
+CMakeCache.txt
+CMakeFiles
+cmake_install.cmake
+install_manifest.txt
+
+# Python tests files
+__pycache__/
