@@ -125,7 +125,7 @@ static size_t list_elem_pack2_size(int detail, uint64_t chars, const elem_t* ele
 {
     size_t size;
     if (detail) {
-        size = 2 * 4 + chars + 0 * 4 + 10 * 8;
+        size = 2 * 4 + chars + 1 * 4 + 10 * 8 + 8 + chars;
     }
     else {
         size = 2 * 4 + chars + 1 * 4;
@@ -154,11 +154,7 @@ static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_
     mfu_pack_uint32(&ptr, (uint32_t) chars);
 
     /* copy in file name */
-    char* file = elem->file;
-    if (file != NULL) {
-        strcpy(ptr, file);
-    }
-    ptr += chars;
+    mfu_pack_sized_str(&ptr, elem->file, chars);
 
 #ifdef DAOS_SUPPORT
     /* copy in values for obj ids */
@@ -166,6 +162,7 @@ static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_
     mfu_pack_uint64(&ptr, elem->obj_id_hi);
 #endif
 
+    mfu_pack_uint32(&ptr, elem->type);
     if (detail) {
         /* copy in fields */
         mfu_pack_uint64(&ptr, elem->mode);
@@ -178,10 +175,8 @@ static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_
         mfu_pack_uint64(&ptr, elem->ctime);
         mfu_pack_uint64(&ptr, elem->ctime_nsec);
         mfu_pack_uint64(&ptr, elem->size);
-    }
-    else {
-        /* just have the file type */
-        mfu_pack_uint32(&ptr, elem->type);
+        mfu_pack_uint64(&ptr, elem->nlink);
+        mfu_pack_sized_str(&ptr, elem->ref, chars);
     }
 
     size_t bytes = (size_t)(ptr - start);
@@ -203,15 +198,11 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
     uint32_t chars;
     mfu_unpack_uint32(&ptr, &chars);
 
-    /* get name and advance pointer */
-    const char* file = ptr;
-    ptr += chars;
-
-    /* copy path */
-    elem->file = MFU_STRDUP(file);
+    /* get name */
+    mfu_unpack_sized_str(&ptr, &elem->file, chars);
 
     /* set depth */
-    elem->depth = mfu_flist_compute_depth(file);
+    elem->depth = mfu_flist_compute_depth(elem->file);
 
     elem->detail = (int) detail;
 
@@ -220,6 +211,10 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
     mfu_unpack_uint64(&ptr, &elem->obj_id_lo);
     mfu_unpack_uint64(&ptr, &elem->obj_id_hi);
 #endif
+
+    uint32_t type;
+    mfu_unpack_uint32(&ptr, &type);
+    elem->type = (mfu_filetype) type;
 
     if (detail) {
         /* extract fields */
@@ -233,14 +228,8 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
         mfu_unpack_uint64(&ptr, &elem->ctime);
         mfu_unpack_uint64(&ptr, &elem->ctime_nsec);
         mfu_unpack_uint64(&ptr, &elem->size);
-        /* use mode to set file type */
-        elem->type = mfu_flist_mode_to_filetype((mode_t)elem->mode);
-    }
-    else {
-        /* only have type */
-        uint32_t type;
-        mfu_unpack_uint32(&ptr, &type);
-        elem->type = (mfu_filetype) type;
+        mfu_unpack_uint64(&ptr, &elem->nlink);
+        mfu_unpack_sized_str(&ptr, &elem->ref, chars);
     }
 
     size_t bytes = (size_t)(ptr - start);
@@ -346,6 +335,8 @@ static void list_insert_copy(flist_t* flist, elem_t* src)
     elem->ctime      = src->ctime;
     elem->ctime_nsec = src->ctime_nsec;
     elem->size       = src->size;
+    elem->nlink      = src->nlink;
+    elem->ref        = MFU_STRDUP(src->ref);
 
     /* append element to tail of linked list */
     mfu_flist_insert_elem(flist, elem);
@@ -368,6 +359,9 @@ void mfu_flist_insert_stat(flist_t* flist, const char* fpath, mode_t mode, const
     /* set file type */
     elem->type = mfu_flist_mode_to_filetype(mode);
 
+    /* hardlinks references are discovered afterwhile */
+    elem->ref = NULL;
+
     /* copy stat info */
     if (sb != NULL) {
         elem->detail = 1;
@@ -389,6 +383,7 @@ void mfu_flist_insert_stat(flist_t* flist, const char* fpath, mode_t mode, const
         elem->ctime_nsec = nsecs;
 
         elem->size  = (uint64_t) sb->st_size;
+        elem->nlink = (uint64_t) sb->st_nlink;
 
         /* TODO: link to user and group names? */
     }
@@ -409,6 +404,7 @@ static void list_delete(flist_t* flist)
     while (current != NULL) {
         elem_t* next = current->next;
         mfu_free(&current->file);
+        mfu_free(&current->ref);
         mfu_free(&current);
         current = next;
     }
@@ -987,6 +983,28 @@ uint64_t mfu_flist_file_get_size(mfu_flist bflist, uint64_t idx)
     return ret;
 }
 
+uint64_t mfu_flist_file_get_nlink(mfu_flist bflist, uint64_t idx)
+{
+    uint64_t ret = (uint64_t) - 1;
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL && flist->detail) {
+        ret = elem->nlink;
+    }
+    return ret;
+}
+
+const char* mfu_flist_file_get_ref(mfu_flist bflist, uint64_t idx)
+{
+    const char* ref = NULL;
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        ref = elem->ref;
+    }
+    return ref;
+}
+
 const char* mfu_flist_file_get_username(mfu_flist bflist, uint64_t idx)
 {
     const char* ret = NULL;
@@ -1167,6 +1185,19 @@ void mfu_flist_file_set_size(mfu_flist bflist, uint64_t idx, uint64_t size)
     elem_t* elem = list_get_elem(flist, idx);
     if (elem != NULL) {
         elem->size = size;
+    }
+    return;
+}
+
+void mfu_flist_file_set_ref(mfu_flist bflist, uint64_t idx, const char* ref)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        /* free existing name if there is one */
+        mfu_free(&elem->ref);
+        /* set new ref*/
+        elem->ref = MFU_STRDUP(ref);
     }
     return;
 }
@@ -1353,6 +1384,8 @@ uint64_t mfu_flist_file_create(mfu_flist bflist)
     elem->ctime      = 0;
     elem->ctime_nsec = 0;
     elem->size       = 0;
+    elem->nlink      = 0;
+    elem->ref        = NULL;
 
     /* for DAOS */
 #ifdef DAOS_SUPPORT
@@ -1817,11 +1850,12 @@ void mfu_flist_print_summary(mfu_flist flist)
     MPI_Comm_size(MPI_COMM_WORLD, &ranks);
 
     /* initlialize counters */
-    uint64_t total_dirs    = 0;
-    uint64_t total_files   = 0;
-    uint64_t total_links   = 0;
-    uint64_t total_unknown = 0;
-    uint64_t total_bytes   = 0;
+    uint64_t total_dirs      = 0;
+    uint64_t total_files     = 0;
+    uint64_t total_links     = 0;
+    uint64_t total_hardlinks = 0;
+    uint64_t total_unknown   = 0;
+    uint64_t total_bytes     = 0;
 
     /* step through and print data */
     uint64_t idx = 0;
@@ -1839,8 +1873,12 @@ void mfu_flist_print_summary(mfu_flist flist)
                 total_dirs++;
             }
             else if (S_ISREG(mode)) {
-                total_files++;
-                total_bytes += size;
+                if (mfu_flist_file_get_ref(flist, idx) != NULL) {
+                    total_hardlinks++;
+                } else {
+                    total_files++;
+                    total_bytes += size;
+                }
             }
             else if (S_ISLNK(mode)) {
                 total_links++;
@@ -1863,6 +1901,9 @@ void mfu_flist_print_summary(mfu_flist flist)
             else if (type == MFU_TYPE_LINK) {
                 total_links++;
             }
+            else if (type == MFU_TYPE_HARDLINK) {
+                total_hardlinks++;
+            }
             else {
                 /* unknown file type */
                 total_unknown++;
@@ -1874,13 +1915,14 @@ void mfu_flist_print_summary(mfu_flist flist)
     }
 
     /* get total directories, files, links, and bytes */
-    uint64_t all_dirs, all_files, all_links, all_unknown, all_bytes;
+    uint64_t all_dirs, all_files, all_links, all_hardlinks, all_unknown, all_bytes;
+    MPI_Allreduce(&total_dirs,      &all_dirs,      1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_files,     &all_files,     1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_links,     &all_links,     1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_hardlinks, &all_hardlinks, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_unknown,   &all_unknown,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&total_bytes,     &all_bytes,     1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
     uint64_t all_count = mfu_flist_global_size(flist);
-    MPI_Allreduce(&total_dirs,    &all_dirs,    1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&total_files,   &all_files,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&total_links,   &all_links,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&total_unknown, &all_unknown, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&total_bytes,   &all_bytes,   1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* convert total size to units */
     if (rank == 0) {
@@ -1888,6 +1930,7 @@ void mfu_flist_print_summary(mfu_flist flist)
         MFU_LOG(MFU_LOG_INFO, "  Directories: %llu", (unsigned long long) all_dirs);
         MFU_LOG(MFU_LOG_INFO, "  Files: %llu", (unsigned long long) all_files);
         MFU_LOG(MFU_LOG_INFO, "  Links: %llu", (unsigned long long) all_links);
+        MFU_LOG(MFU_LOG_INFO, "  Hardlinks: %llu", (unsigned long long) all_hardlinks);
         /* MFU_LOG(MFU_LOG_INFO, "  Unknown: %lu", (unsigned long long) all_unknown); */
 
         if (mfu_flist_have_detail(flist)) {
