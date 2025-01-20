@@ -80,6 +80,7 @@ typedef struct {
     int64_t  total_dirs;         /* sum of all directories */
     int64_t  total_files;        /* sum of all files */
     int64_t  total_links;        /* sum of all symlinks */
+    int64_t  total_hardlinks;    /* sum of all hardlinks */
     int64_t  total_size;         /* sum of all file sizes */
     int64_t  total_bytes_copied; /* total bytes written */
     time_t   time_started;       /* time when dcp command started */
@@ -734,6 +735,13 @@ static int mfu_copy_set_metadata(
         for (idx = 0; idx < size; idx++) {
             /* TODO: skip file if it's not readable */
 
+            mfu_filetype type = mfu_flist_file_get_type(list, idx);
+            /* skip hardlinks as metadata changes on reference paths also affect
+             * hardlinks */
+            if (type == MFU_TYPE_HARDLINK) {
+                continue;
+            }
+
             /* get source name of item */
             const char* name = mfu_flist_file_get_name(list, idx);
 
@@ -1363,7 +1371,7 @@ static int mfu_create_file(
 
 /* creates hardlink in destpath for specified file, identifies source path
  * returns 0 on success and -1 on error */
-static int mfu_create_hardlink(
+static int mfu_create_hardlink_dest(
     mfu_flist list,
     uint64_t idx,
     const mfu_param_path* srcpath,
@@ -1543,7 +1551,7 @@ static int mfu_create_files(
 
 /* creates hardlinks,
  * returns 0 on success and -1 on error */
-static int mfu_create_hardlinks(
+static int mfu_create_hardlinks_dest(
     int levels,
     int minlevel,
     mfu_flist* lists,
@@ -1612,9 +1620,9 @@ static int mfu_create_hardlinks(
                 continue;
             }
 
-            int tmp_rc = mfu_create_hardlink(list, idx, srcpath,
-                                             destpath, copy_opts,
-                                             mfu_src_file, mfu_dst_file);
+            int tmp_rc = mfu_create_hardlink_dest(list, idx, srcpath,
+                                                  destpath, copy_opts,
+                                                  mfu_src_file, mfu_dst_file);
             if (tmp_rc != 0) {
                 rc = -1;
             }
@@ -1631,6 +1639,171 @@ static int mfu_create_hardlinks(
 
     /* finalize progress messages */
     mfu_progress_complete(&total_count, &create_prog); 
+
+    return rc;
+}
+
+/* tracks number of hardlinks created by this process */
+static uint64_t hardlinks_total_count;
+
+/* progress message to print while creating hardlinks */
+static void create_hardlinks_progress_fn(const uint64_t* vals, int count, int complete, int ranks, double secs)
+{
+    /* get number of items created so far */
+    uint64_t items = vals[0];
+
+    /* compute item rate */
+    double item_rate = 0.0;
+    if (secs > 0) {
+        item_rate = (double)items / secs;
+    }
+
+    /* compute percentage of items created */
+    double percent = 0.0;
+    if (hardlinks_total_count > 0) {
+        percent = (double)items * 100.0 / (double)hardlinks_total_count;
+    }
+
+    /* estimate seconds remaining */
+    double secs_remaining = -1.0;
+    if (item_rate > 0.0) {
+        secs_remaining = (double)(hardlinks_total_count - items) / item_rate;
+    }
+
+    if (complete < ranks) {
+        MFU_LOG(MFU_LOG_INFO, "Created %llu items (%.0f%%) in %.3lf secs (%.3lf items/sec) %.0f secs left ...",
+            items, percent, secs, item_rate, secs_remaining);
+    } else {
+        MFU_LOG(MFU_LOG_INFO, "Created %llu items (%.0f%%) in %.3lf secs (%.3lf items/sec) done",
+            items, percent, secs, item_rate);
+    }
+}
+
+/* creates hardlink in destpath for specified file, identifies source path
+ * returns 0 on success and -1 on error */
+static int mfu_create_hardlink(
+    mfu_flist list,
+    uint64_t idx,
+    int numpaths,
+    const mfu_param_path* paths,
+    const mfu_param_path* destpath,
+    mfu_copy_opts_t* copy_opts,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
+{
+    /* assume we'll succeed */
+    int rc = 0;
+
+    const char* name = mfu_flist_file_get_name(list, idx);
+    const char* ref = mfu_flist_file_get_ref(list, idx);
+
+    /* get reference name */
+    const char* src_path = mfu_param_path_copy_dest(ref, numpaths,
+            paths, destpath, copy_opts, mfu_src_file, mfu_dst_file);
+
+    /* get destination name */
+    const char* dest_path = mfu_param_path_copy_dest(name, numpaths,
+            paths, destpath, copy_opts, mfu_src_file, mfu_dst_file);
+
+    /* No need to copy it */
+    if (dest_path == NULL) {
+        return 0;
+    }
+
+    rc = mfu_hardlink(src_path, dest_path);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to create hardlink %s --> %s",
+                dest_path, src_path);
+        mfu_free(&src_path);
+        mfu_free(&dest_path);
+        return rc;
+    }
+
+    /* free source path */
+    mfu_free(&src_path);
+
+    /* free destination path */
+    mfu_free(&dest_path);
+
+    /* increment our hardlinks count by one */
+    mfu_copy_stats.total_hardlinks++;
+
+    return rc;
+}
+
+/* creates hardlinks,
+ * returns 0 on success and -1 on error */
+static int mfu_create_hardlinks(
+    mfu_flist list,
+    int numpaths,
+    const mfu_param_path* paths,
+    const mfu_param_path* destpath,
+    mfu_copy_opts_t* copy_opts,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
+{
+    int rc = 0;
+    flist_t* flist = (flist_t*)list;
+
+    /* get current rank */
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    /* iterate over items and create hardlink for each */
+    uint64_t idx;
+    uint64_t size = mfu_flist_size(list);
+    uint64_t hardlinks_local_count = 0;
+
+    /* get type of item */
+    for (idx = 0; idx < size; idx++) {
+        mfu_filetype type = mfu_flist_file_get_type(list, idx);
+        if (type == MFU_TYPE_HARDLINK) {
+            hardlinks_local_count++;
+        }
+    }
+
+    /* get total for print percent progress while creating */
+    hardlinks_total_count = 0;
+    MPI_Allreduce(&hardlinks_local_count, &hardlinks_total_count, 1,
+        MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+    /* bail early if there is no work to do */
+    if (hardlinks_total_count == 0) {
+        return rc;
+    }
+
+    /* indicate to user what phase we're in */
+    if (rank == 0) {
+        MFU_LOG(MFU_LOG_INFO, "Linking %llu files.", hardlinks_total_count);
+    }
+
+    /* start progress messages for creating files */
+    mfu_progress* create_prog = mfu_progress_start(mfu_progress_timeout, 1,
+        MPI_COMM_WORLD, create_hardlinks_progress_fn);
+
+    uint64_t total_count = 0;
+
+    for (idx = 0; idx < size; idx++) {
+        mfu_filetype type = mfu_flist_file_get_type(list, idx);
+        if (type == MFU_TYPE_HARDLINK) {
+            int tmp_rc = mfu_create_hardlink(list, idx, numpaths, paths,
+                                             destpath, copy_opts,
+                                             mfu_src_file, mfu_dst_file);
+            if (tmp_rc != 0) {
+                rc = -1;
+            }
+
+            /* update number of files we have created for progress messages */
+            total_count++;
+            mfu_progress_update(&total_count, create_prog);
+        }
+    }
+
+    /* wait for all procs to finish */
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    /* finalize progress messages */
+    mfu_progress_complete(&total_count, &create_prog);
 
     return rc;
 }
@@ -2472,6 +2645,7 @@ int mfu_flist_copy(
     mfu_copy_stats.total_dirs  = 0;
     mfu_copy_stats.total_files = 0;
     mfu_copy_stats.total_links = 0;
+    mfu_copy_stats.total_hardlinks = 0;
     mfu_copy_stats.total_size  = 0;
     mfu_copy_stats.total_bytes_copied = 0;
 
@@ -2550,7 +2724,7 @@ int mfu_flist_copy(
                 mfu_flist* lists2;
                 mfu_flist_array_by_depth(spreadlist, &levels2, &minlevel2, &lists2);
 
-                /* create files and links */
+                /* create files and symlinks */
                 tmp_rc = mfu_create_files(levels2, minlevel2, lists2, numpaths,
                         paths, destpath, copy_opts, mfu_src_file, mfu_dst_file);
                 if (tmp_rc < 0) {
@@ -2593,23 +2767,25 @@ int mfu_flist_copy(
             double rel_time = mfu_copy_stats.wtime_ended - mfu_copy_stats.wtime_started;
 
             /* prep our values into buffer */
-            int64_t values[5];
+            int64_t values[6];
             values[0] = mfu_copy_stats.total_dirs;
             values[1] = mfu_copy_stats.total_files;
             values[2] = mfu_copy_stats.total_links;
-            values[3] = mfu_copy_stats.total_size;
-            values[4] = mfu_copy_stats.total_bytes_copied;
+            values[3] = mfu_copy_stats.total_hardlinks;
+            values[4] = mfu_copy_stats.total_size;
+            values[5] = mfu_copy_stats.total_bytes_copied;
 
             /* sum values across processes */
-            int64_t sums[5];
-            MPI_Allreduce(values, sums, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+            int64_t sums[6];
+            MPI_Allreduce(values, sums, 6, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
 
             /* extract results from allreduce */
-            int64_t agg_dirs   = sums[0];
-            int64_t agg_files  = sums[1];
-            int64_t agg_links  = sums[2];
-            int64_t agg_size   = sums[3];
-            int64_t agg_copied = sums[4];
+            int64_t agg_dirs       = sums[0];
+            int64_t agg_files      = sums[1];
+            int64_t agg_links      = sums[2];
+            int64_t agg_hardlinks  = sums[3];
+            int64_t agg_size       = sums[4];
+            int64_t agg_copied     = sums[5];
 
             /* compute rate of copy */
             double agg_rate = (double)agg_copied / rel_time;
@@ -2690,6 +2866,13 @@ int mfu_flist_copy(
         mfu_sync_all("Syncing directory updates to disk.");
     }
 
+    /* create hardlinks */
+    tmp_rc = mfu_create_hardlinks(src_cp_list, numpaths, paths, destpath,
+        copy_opts, mfu_src_file, mfu_dst_file);
+    if (tmp_rc < 0) {
+        rc = -1;
+    }
+
     /* free our lists of levels */
     mfu_flist_array_free(levels, &lists);
 
@@ -2706,23 +2889,25 @@ int mfu_flist_copy(
                       mfu_copy_stats.wtime_started;
 
     /* prep our values into buffer */
-    int64_t values[5];
+    int64_t values[6];
     values[0] = mfu_copy_stats.total_dirs;
     values[1] = mfu_copy_stats.total_files;
     values[2] = mfu_copy_stats.total_links;
-    values[3] = mfu_copy_stats.total_size;
-    values[4] = mfu_copy_stats.total_bytes_copied;
+    values[3] = mfu_copy_stats.total_hardlinks;
+    values[4] = mfu_copy_stats.total_size;
+    values[5] = mfu_copy_stats.total_bytes_copied;
 
     /* sum values across processes */
-    int64_t sums[5];
-    MPI_Allreduce(values, sums, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+    int64_t sums[6];
+    MPI_Allreduce(values, sums, 6, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     /* extract results from allreduce */
-    int64_t agg_dirs   = sums[0];
-    int64_t agg_files  = sums[1];
-    int64_t agg_links  = sums[2];
-    int64_t agg_size   = sums[3];
-    int64_t agg_copied = sums[4];
+    int64_t agg_dirs      = sums[0];
+    int64_t agg_files     = sums[1];
+    int64_t agg_links     = sums[2];
+    int64_t agg_hardlinks = sums[3];
+    int64_t agg_size      = sums[4];
+    int64_t agg_copied    = sums[5];
 
     /* compute rate of copy */
     double agg_rate = (double)agg_copied / rel_time;
@@ -2742,7 +2927,7 @@ int mfu_flist_copy(
         strftime(endtime_str, 256, "%b-%d-%Y,%H:%M:%S", localend);
 
         /* total number of items */
-        int64_t agg_items = agg_dirs + agg_files + agg_links;
+        int64_t agg_items = agg_dirs + agg_files + agg_links + agg_hardlinks;
 
         /* convert size to units */
         double agg_size_tmp;
@@ -2761,6 +2946,7 @@ int mfu_flist_copy(
         MFU_LOG(MFU_LOG_INFO, "  Directories: %" PRId64, agg_dirs);
         MFU_LOG(MFU_LOG_INFO, "  Files: %" PRId64, agg_files);
         MFU_LOG(MFU_LOG_INFO, "  Links: %" PRId64, agg_links);
+        MFU_LOG(MFU_LOG_INFO, "  Hardlinks: %" PRId64, agg_hardlinks);
         MFU_LOG(MFU_LOG_INFO, "Data: %.3lf %s (%" PRId64 " bytes)",
             agg_size_tmp, agg_size_units, agg_size);
 
@@ -3154,7 +3340,7 @@ int mfu_flist_hardlink(
      * under any directories that were created). We can imrove this if someone
      * has better idea for it. */
     /* create hard links */
-    tmp_rc = mfu_create_hardlinks(levels, minlevel, lists,
+    tmp_rc = mfu_create_hardlinks_dest(levels, minlevel, lists,
             srcpath, destpath, copy_opts, mfu_src_file, mfu_dst_file);
     if (tmp_rc < 0) {
         rc = -1;
