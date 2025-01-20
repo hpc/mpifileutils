@@ -40,11 +40,20 @@ typedef struct list_elem {
     uint64_t ctime;         /* create time */
     uint64_t ctime_nsec;    /* create time nanoseconds */
     uint64_t size;          /* file size in bytes */
+    uint64_t nlink;         /* number of links to inode */
+    char* ref;              /* reference path for hardlinks */
     struct list_elem* next; /* pointer to next item */
     /* vars for a non-posix DAOS copy */
     uint64_t obj_id_lo;
     uint64_t obj_id_hi;
 } elem_t;
+
+/* linked list inode/path pairs used during walk */
+typedef struct inodes_hardlinks_map {
+    uint64_t *inodes; /* array of inodes numbers for each item in hardlinks temporary list */
+    uint64_t count; /* number of inodes */
+    uint64_t cap; /* current capacity */
+} inodes_hardlink_map_t;
 
 /* holds an array of objects: users, groups, or file data */
 typedef struct {
