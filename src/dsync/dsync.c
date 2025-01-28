@@ -885,7 +885,7 @@ static int dsync_strmap_compare_data(
     /* get chunk size for copying files (just hard-coded for now) */
     uint64_t chunk_size = copy_opts->chunk_size;
 
-    /* get the linked list of file chunks for the src and dest */
+    /* get the linked list of regular file chunks for the src and dest */
     mfu_file_chunk* src_head = mfu_file_chunk_list_alloc(src_compare_list, chunk_size);
     mfu_file_chunk* dst_head = mfu_file_chunk_list_alloc(dst_compare_list, chunk_size);
 
@@ -966,8 +966,18 @@ static int dsync_strmap_compare_data(
         /* ignore prefix portion of path to use as key */
         name += strlen_prefix;
 
-        /* get comparison results for this item */
-        int flag = results[i];
+        mfu_filetype type = mfu_flist_file_get_type(src_compare_list, i);
+        int flag = 0;
+        if (type == MFU_TYPE_LINK) {
+            /* symlinks have not been compared above, their targets are compared now */
+            flag = mfu_compare_symlinks(mfu_flist_file_get_name(src_compare_list, i),
+                    mfu_flist_file_get_name(dst_compare_list, i),
+                    mfu_src_file, mfu_dst_file);
+        } else {
+            /* get comparison results for this regular file */
+            flag = results[i];
+        }
+
 
         /* set flag in strmap to record status of file */
         if (flag != 0) {
@@ -976,7 +986,7 @@ static int dsync_strmap_compare_data(
             dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
 
             /* mark file to be deleted from destination, copied from source */
-            if (use_hardlinks) {
+            if (use_hardlinks || type == MFU_TYPE_LINK) {
                 mfu_flist_file_copy(dst_compare_list, i, dst_remove_list);
                 mfu_flist_file_copy(src_compare_list, i, src_cp_list);
             }
@@ -1174,7 +1184,9 @@ static int dsync_strmap_compare_lite(
     mfu_flist dst_remove_list,
     strmap* dst_map,
     size_t strlen_prefix,
-    bool use_hardlinks)
+    bool use_hardlinks,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
 {
     /* assume we'll succeed */
     int rc = 0;
@@ -1187,6 +1199,7 @@ static int dsync_strmap_compare_lite(
     for (idx = 0; idx < size; idx++) {
         /* lookup name of file based on id to send to strmap updata call */
         const char* name = mfu_flist_file_get_name(src_compare_list, idx);
+        const mfu_filetype type = mfu_flist_file_get_type(src_compare_list, idx);
 
         /* ignore prefix portion of path to use as key */
         name += strlen_prefix;
@@ -1213,6 +1226,20 @@ static int dsync_strmap_compare_lite(
             if (!options.dry_run || use_hardlinks) {
                 mfu_flist_file_copy(dst_compare_list, idx, dst_remove_list);
                 mfu_flist_file_copy(src_compare_list, idx, src_cp_list);
+            }
+        /* if symlink, check if targets of source and destination files match. If not, mark the
+         * files as being different. */
+        } else if (type == MFU_TYPE_LINK) {
+            if (mfu_compare_symlinks(mfu_flist_file_get_name(src_compare_list, idx),
+                    mfu_flist_file_get_name(dst_compare_list, idx),
+                    mfu_src_file, mfu_dst_file) == 0) {
+                /* update to say contents of the files were found to be the same */
+                dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_COMMON);
+                dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_COMMON);
+            } else {
+                /* update to say contents of the symlinks were found to be different */
+                dsync_strmap_item_update(src_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
+                dsync_strmap_item_update(dst_map, name, DCMPF_CONTENT, DCMPS_DIFFER);
             }
         } else {
             /* update to say contents of the files were found to be the same */
@@ -1751,10 +1778,9 @@ static int dsync_strmap_compare(
             continue;
         }
 
-        /* for now, we can only compare content of regular files */
-        /* TODO: add support for symlinks */
-        if (! S_ISREG(dst_mode)) {
-            /* not regular file, take them as common content */
+        /* for now, we can only compare content of regular files and symlinks */
+        if (! S_ISREG(dst_mode) && !S_ISLNK(dst_mode)) {
+            /* not regular file or symlink, take them as common content */
             dsync_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
             dsync_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
             continue;
@@ -1835,7 +1861,7 @@ static int dsync_strmap_compare(
              * adds files to remove and copy lists if different */
             tmp_rc = dsync_strmap_compare_lite(src_compare_list, src_cp_list, dst_same_list,
                 src_map, dst_compare_list, dst_remove_list, dst_map,
-                strlen_prefix, use_hardlinks
+                strlen_prefix, use_hardlinks, mfu_src_file, mfu_dst_file
             );
             if (tmp_rc < 0) {
                 rc = -1;
