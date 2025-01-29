@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DDUP" "1" "Feb 04, 2022" "0.11.1" "mpiFileUtils"
+.TH "DDUP" "1" "May 31, 2024" "0.12" "mpiFileUtils"
 .SH NAME
 ddup \- report files with identical content
 .
@@ -43,6 +43,11 @@ of another anywhere under that same directory tree is reported.
 The path to each file is reported, along with a final hash representing its content.
 Multiple sets of duplicate files can be matched using this final reported hash.
 .SH OPTIONS
+.INDENT 0.0
+.TP
+.B \-\-open\-noatime
+Open files with O_NOATIME flag, if possible.
+.UNINDENT
 .INDENT 0.0
 .TP
 .B \-d, \-\-debug LEVEL

@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DSTRIPE" "1" "Feb 04, 2022" "0.11.1" "mpiFileUtils"
+.TH "DSTRIPE" "1" "May 31, 2024" "0.12" "mpiFileUtils"
 .SH NAME
 dstripe \- restripe files on underlying storage
 .
@@ -32,7 +32,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 ..
 .SH SYNOPSIS
 .sp
-\fBdstripe [OPTION] PATH…\fP
+\fBdstripe [OPTION] PATH...\fP
 .SH DESCRIPTION
 .sp
 Parallel MPI application to restripe files.
@@ -55,16 +55,16 @@ the lustre file system default is used. The default stripe count is
 .INDENT 0.0
 .TP
 .B \-s, \-\-size STRIPE_SIZE
-The stripe size to use during file restriping. Units like “MB” and
-“GB” can immediately follow the number without spaces (ex. 2MB). The
+The stripe size to use during file restriping. Units like "MB" and
+"GB" can immediately follow the number without spaces (ex. 2MB). The
 default stripe size is 1MB.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-m, \-\-minsize SIZE
 The minimum size a file must be to be a candidate for restriping.
-Files smaller than SIZE will not be restriped. Units like “MB” and
-“GB” can immediately follow the number without spaces (ex. 2MB). The
+Files smaller than SIZE will not be restriped. Units like "MB" and
+"GB" can immediately follow the number without spaces (ex. 2MB). The
 default minimum file size is 0MB.
 .UNINDENT
 .INDENT 0.0

@@ -44,13 +44,13 @@ To be certain of compatibility, it is recommended that one install libarchive-3.
 To build on PowerPC, one may need to add :code:`--build=powerpc64le-redhat-linux-gnu` to the configure command.
 
 Assuming libarchive has been installed to an `install` directory as shown above,
-one can then build mpiFileUtils from a release like v0.11.1 with commands like the following:
+one can then build mpiFileUtils from a release like v0.12 with commands like the following:
 
 .. code-block:: Bash
 
-   wget https://github.com/hpc/mpifileutils/releases/download/v0.11.1/mpifileutils-v0.11.1.tgz
-   tar -zxf mpifileutils-v0.11.1.tgz
-   cd mpifileutils-v0.11.1
+   wget https://github.com/hpc/mpifileutils/releases/download/v0.12/mpifileutils-v0.12.tgz
+   tar -zxf mpifileutils-v0.12.tgz
+   cd mpifileutils-v0.12
      mkdir build
      cd build
        cmake .. \

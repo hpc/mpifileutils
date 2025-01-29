@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DFIND" "1" "Feb 04, 2022" "0.11.1" "mpiFileUtils"
+.TH "DFIND" "1" "May 31, 2024" "0.12" "mpiFileUtils"
 .SH NAME
 dfind \- distributed file filtering
 .
@@ -32,7 +32,7 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 ..
 .SH SYNOPSIS
 .sp
-\fBdfind [OPTION] [EXPRESSION] PATH …\fP
+\fBdfind [OPTION] [EXPRESSION] PATH ...\fP
 .SH DESCRIPTION
 .sp
 Parallel MPI application to filter a list of files according to an expression.
@@ -57,7 +57,7 @@ Write the processed list to a file.
 .INDENT 0.0
 .TP
 .B \-t, \-\-text
-Must be used with the –output option. Write processed list of files to
+Must be used with the \-\-output option. Write processed list of files to
 FILE in ascii text format.
 .UNINDENT
 .INDENT 0.0
@@ -123,22 +123,22 @@ File was last accessed N days ago.
 .INDENT 0.0
 .TP
 .B \-\-cmin N
-File’s status was last changed N minutes ago.
+File\(aqs status was last changed N minutes ago.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-cnewer FILE
-File’s status was last changed more recently than FILE was modified.
+File\(aqs status was last changed more recently than FILE was modified.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-ctime N
-File’s status was last changed N days ago.
+File\(aqs status was last changed N days ago.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-mmin N
-File’s data was last modified N minutes ago.
+File\(aqs data was last modified N minutes ago.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -148,12 +148,12 @@ File was modified more recently than FILE.
 .INDENT 0.0
 .TP
 .B \-\-mtime N
-File’s data was last modified N days ago.
+File\(aqs data was last modified N days ago.
 .UNINDENT
 .INDENT 0.0
 .TP
 .B \-\-gid N
-File’s numeric group ID is N.
+File\(aqs numeric group ID is N.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -163,7 +163,7 @@ File belongs to group NAME.
 .INDENT 0.0
 .TP
 .B \-\-uid N
-File’s numeric user ID is N.
+File\(aqs numeric user ID is N.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -188,7 +188,7 @@ Full path to file matches POSIX regular expression REGEX.  Regular expressions p
 .INDENT 0.0
 .TP
 .B \-\-size N
-File size is N bytes.  Units can be used like ‘KB’, ‘MB’, ‘GB’.
+File size is N bytes.  Units can be used like \(aqKB\(aq, \(aqMB\(aq, \(aqGB\(aq.
 .UNINDENT
 .INDENT 0.0
 .TP
@@ -251,7 +251,7 @@ Print file name to stdout.
 .INDENT 0.0
 .TP
 .B \-\-exec CMD ;
-Execute command CMD on file.  All following arguments are taken as arguments to the command until ‘;’ is encountered.  The string ‘{}’ is replaced by the current file name.
+Execute command CMD on file.  All following arguments are taken as arguments to the command until \(aq;\(aq is encountered.  The string \(aq{}\(aq is replaced by the current file name.
 .UNINDENT
 .SH EXAMPLES
 .INDENT 0.0
