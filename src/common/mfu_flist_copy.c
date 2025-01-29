@@ -1613,7 +1613,7 @@ static int mfu_create_hardlinks_dest(
         for (idx = 0; idx < size; idx++) {
             /* get type of item */
             mfu_filetype type = mfu_flist_file_get_type(list, idx);
-            if (type != MFU_TYPE_FILE) {
+            if (type != MFU_TYPE_FILE && type != MFU_TYPE_HARDLINK) {
                 MFU_LOG(MFU_LOG_ERR, "Can't create link for unregular files.");
                 rc = -1;
                 total_count++;
