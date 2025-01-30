@@ -26,7 +26,7 @@ https://github.com/hpc/mpifileutils/releases
 mpiFileUtils optionally depends on libarchive, version 3.5.1.
 If new enough, the system install of libarchive may be sufficient,
 though even newer versions may be incompatible with the required version.
-To be certain of compatibility, it is recommended that one install libarchive-3.5.1 with commands like the following
+To be certain of compatibility, it is recommended that one install libarchive-3.7.7 with commands like the following
 
 .. code-block:: Bash
 
@@ -34,9 +34,9 @@ To be certain of compatibility, it is recommended that one install libarchive-3.
    mkdir install
    installdir=`pwd`/install
 
-   wget https://github.com/libarchive/libarchive/releases/download/v3.5.1/libarchive-3.5.1.tar.gz
-   tar -zxf libarchive-3.5.1.tar.gz
-   cd libarchive-3.5.1
+   wget https://github.com/libarchive/libarchive/releases/download/v3.5.1/libarchive-3.7.7.tar.gz
+   tar -zxf libarchive-3.7.7.tar.gz
+   cd libarchive-3.7.7
      ./configure --prefix=$installdir
      make install
    cd ..
@@ -44,13 +44,13 @@ To be certain of compatibility, it is recommended that one install libarchive-3.
 To build on PowerPC, one may need to add :code:`--build=powerpc64le-redhat-linux-gnu` to the configure command.
 
 Assuming libarchive has been installed to an `install` directory as shown above,
-one can then build mpiFileUtils from a release like v0.11.1 with commands like the following:
+one can then build mpiFileUtils from a release like v0.12 with commands like the following:
 
 .. code-block:: Bash
 
-   wget https://github.com/hpc/mpifileutils/releases/download/v0.11.1/mpifileutils-v0.11.1.tgz
-   tar -zxf mpifileutils-v0.11.1.tgz
-   cd mpifileutils-v0.11.1
+   wget https://github.com/hpc/mpifileutils/releases/download/v0.12/mpifileutils-v0.12.tgz
+   tar -zxf mpifileutils-v0.12.tgz
+   cd mpifileutils-v0.12
      mkdir build
      cd build
        cmake .. \
@@ -135,9 +135,9 @@ which can be done with the following commands:
    cd deps
 
      urls=(     https://github.com/hpc/libcircle/releases/download/v0.3/libcircle-0.3.0.tar.gz
-                https://github.com/llnl/lwgrp/releases/download/v1.0.4/lwgrp-1.0.4.tar.gz
-                https://github.com/llnl/dtcmp/releases/download/v1.1.4/dtcmp-1.1.4.tar.gz
-                https://github.com/libarchive/libarchive/releases/download/3.5.1/libarchive-3.5.1.tar.gz
+                https://github.com/llnl/lwgrp/releases/download/v1.0.4/lwgrp-1.0.6.tar.gz
+                https://github.com/llnl/dtcmp/releases/download/v1.1.4/dtcmp-1.1.5.tar.gz
+                https://github.com/libarchive/libarchive/releases/download/3.5.1/libarchive-3.7.7.tar.gz
      )
 
      rc=0
@@ -160,20 +160,20 @@ which can be done with the following commands:
            make install
          cd ..
 
-         tar -zxf lwgrp-1.0.4.tar.gz
-         cd lwgrp-1.0.4
+         tar -zxf lwgrp-1.0.6.tar.gz
+         cd lwgrp-1.0.6
            ./configure --prefix=$installdir
            make install
          cd ..
 
-         tar -zxf dtcmp-1.1.4.tar.gz
-         cd dtcmp-1.1.4
+         tar -zxf dtcmp-1.1.5.tar.gz
+         cd dtcmp-1.1.5
            ./configure --prefix=$installdir --with-lwgrp=$installdir
            make install
          cd ..
 
-         tar -zxf libarchive-3.5.1.tar.gz
-         cd libarchive-3.5.1
+         tar -zxf libarchive-3.7.7.tar.gz
+         cd libarchive-3.7.7
            ./configure --prefix=$installdir
            make install
          cd ..

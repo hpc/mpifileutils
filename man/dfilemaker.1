@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "DFILEMAKER" "1" "Dec 05, 2024" "0.11.1" "mpiFileUtils"
+.TH "DFILEMAKER" "1" "Jan 29, 2025" "0.12" "mpiFileUtils"
 .SH NAME
 dfilemaker \- generate random files
 .
@@ -35,11 +35,10 @@ level margin: \\n[rst2man-indent\\n[rst2man-indent-level]]
 \fBdfilemaker <destination_path>\fP
 .SH DESCRIPTION
 .sp
-dfilemaker creates a number of random directory tree with subdirectories and
+dfilemaker creates a number of random directory trees with subdirectories and
 files of various sizes, that is useful for testing.
 .sp
-Directory trees are created under destination_path, which must be a directory,
-where the tool is executed.
+Directory trees are created under destination_path, which must be a directory.
 .INDENT 0.0
 .TP
 .B destination_path
@@ -65,13 +64,6 @@ fill is \fBrandom\fP\&.
 .UNINDENT
 .INDENT 0.0
 .TP
-.B \-r, \-\-ratio=*min*\-*max*  (not yet implemented)
-Specify the ratio of files to directories as a percentage. The ratio
-will be chosen at random within the bounds of min and max. The
-default ratio is 5% min to 20% max.
-.UNINDENT
-.INDENT 0.0
-.TP
 .B \-i, \-\-seed=*integer*
 Specify the seed to use for random number generation. This can be
 used to create reproducible test runs. The default is to generate a
@@ -83,14 +75,6 @@ random seed.
 Specify the file sizes to generate. The file size will be chosen at
 random random within the bounds of min and max. The default file
 size is set from 1MB to 5MB.
-.UNINDENT
-.INDENT 0.0
-.TP
-.B \-w, \-\-width=*min*\-*max*  (not yet implemented)
-Specify the width of the file system tree to generate. The width
-will be selected at random within the bounds of min and max. The
-width of the tree is determined by counting directories. The default
-width is set to 10 min, 20 max.
 .UNINDENT
 .INDENT 0.0
 .TP
