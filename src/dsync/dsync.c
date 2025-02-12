@@ -1751,12 +1751,43 @@ static int dsync_strmap_compare(
             continue;
         }
 
-        /* for now, we can only compare content of regular files */
-        /* TODO: add support for symlinks */
-        if (! S_ISREG(dst_mode)) {
-            /* not regular file, take them as common content */
+        /* for now, we can only compare content of regular files and symlinks */
+        if (! S_ISREG(dst_mode) && ! S_ISLNK(dst_mode)) {
+            /* not regular file or symlink, take them as common content */
             dsync_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
             dsync_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+            continue;
+        }
+
+        /* if symlink, check if targets of source and destination files match. If not,
+         * mark the files as being different. */
+        if (S_ISLNK(dst_mode)) {
+            const char* src_name = mfu_flist_file_get_name(src_list, src_index);
+            const char* dst_name = mfu_flist_file_get_name(dst_list, dst_index);
+            int compare_rc = mfu_compare_symlinks(src_name, dst_name, mfu_src_file, mfu_dst_file);
+            if (compare_rc == -1) {
+                /* we hit an error while reading the symlink */
+                rc = -1;
+                MFU_LOG(MFU_LOG_ERR,
+                    "Failed to readlink on %s and/or %s. Assuming contents are different.",
+                    src_name, dst_name);
+            }
+            if (!compare_rc) {
+                /* update to say contents of the files were found to be the same */
+                dsync_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+                dsync_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+            } else {
+                /* update to say contents of the symlinks were found to be different */
+                dsync_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
+                dsync_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
+
+                /* if the destinations are different then we need to remove the file in
+                 * the dst directory, and replace it with the one in the src directory */
+                if (compare_rc > 0 && !options.dry_run) {
+                    mfu_flist_file_copy(src_list, src_index, src_cp_list);
+                    mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
+                }
+            }
             continue;
         }
 

@@ -266,6 +266,15 @@ int mfu_compare_contents(
     mfu_file_t* mfu_dst_file  /* IN  - I/O filesystem functions to use for destination */
 );
 
+/* compares targets of two symlinks, returns 0 if equal, positive value if
+ * different, -1 on error when reading symlink. */
+int mfu_compare_symlinks(
+    const char* src_name,     /* IN  - path name to souce file */
+    const char* dst_name,     /* IN  - path name to destination file */
+    mfu_file_t* mfu_src_file, /* IN  - I/O filesystem functions to use for source */
+    mfu_file_t* mfu_dst_file  /* IN  - I/O filesystem functions to use for destination */
+);
+
 /* uses the lustre api to obtain stripe count and stripe size of a file */
 int mfu_stripe_get(const char *path, uint64_t *stripe_size, uint64_t *stripe_count);
 

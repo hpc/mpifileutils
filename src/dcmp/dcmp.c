@@ -1084,12 +1084,35 @@ static int dcmp_strmap_compare(
             continue;
         }
 
-        /* for now, we can only compare content of regular files */
-        /* TODO: add support for symlinks */
-        if (! S_ISREG(dst_mode)) {
-            /* not regular file, take them as common content */
+        /* for now, we can only compare content of regular files and symlinks */
+        if (! S_ISREG(dst_mode) && ! S_ISLNK(dst_mode)) {
+            /* not regular file or symlink, take them as common content */
             dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
             dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+            continue;
+        }
+
+        /* For symlinks, compare targets */
+        if (S_ISLNK(dst_mode)) {
+            const char* src_name = mfu_flist_file_get_name(src_list, src_index);
+            const char* dst_name = mfu_flist_file_get_name(dst_list, dst_index);
+            int compare_rc = mfu_compare_symlinks(src_name, dst_name, mfu_src_file, mfu_dst_file);
+            if (compare_rc == -1) {
+                /* we hit an error while reading the symlink */
+                rc = -1;
+                MFU_LOG(MFU_LOG_ERR,
+                    "Failed to readlink on %s and/or %s. Assuming contents are different.",
+                    src_name, dst_name);
+            }
+            if (!compare_rc) {
+                /* update to say contents of the symlinks were found to be the same */
+                dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+                dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_COMMON);
+            } else {
+                /* update to say contents of the symlinks were found to be different */
+                dcmp_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
+                dcmp_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
+            }
             continue;
         }
 

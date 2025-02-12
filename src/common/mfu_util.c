@@ -996,6 +996,34 @@ int mfu_compare_contents(
     return rc;
 }
 
+/* compares targets of two symlinks, returns 0 if equal, positive value if
+ * different, -1 on error when reading symlink. */
+int mfu_compare_symlinks(
+    const char* src_name,          /* IN  - path name to source file */
+    const char* dst_name,          /* IN  - path name to destination file */
+    mfu_file_t* mfu_src_file,      /* IN  - I/O filesystem functions to use for source */
+    mfu_file_t* mfu_dst_file)      /* IN  - I/O filesystem functions to use for destination */
+{
+    char src_target[PATH_MAX + 1], dst_target[PATH_MAX + 1];
+    ssize_t readlink_rc = mfu_file_readlink(src_name, src_target, sizeof(src_target) - 1, mfu_src_file);
+    if(readlink_rc < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to read source link `%s' readlink() (errno=%d %s)",
+            src_name, errno, strerror(errno)
+        );
+        return -1;
+    }
+    readlink_rc = mfu_file_readlink(dst_name, dst_target, sizeof(dst_target) - 1, mfu_dst_file);
+    if(readlink_rc < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to read destination link `%s' readlink() (errno=%d %s)",
+            dst_name, errno, strerror(errno)
+        );
+        return -1;
+    }
+    /* ensure that strings end with NUL */
+    src_target[readlink_rc] = dst_target[readlink_rc] = '\0';
+    return abs(strcmp(src_target, dst_target));
+}
+
 /* uses the lustre api to obtain stripe count and stripe size of a file */
 int mfu_stripe_get(const char *path, uint64_t *stripe_size, uint64_t *stripe_count)
 {
