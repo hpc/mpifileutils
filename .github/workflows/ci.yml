@@ -1,0 +1,117 @@
+---
+name: Build & tests
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+  MFU_BIN: ${{github.workspace}}/build/bin
+  MFU_MPIRUN_ARGS: --mca mpi_abort_print_stack 1 --bind-to none --oversubscribe -N 8
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Install tests dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libopenmpi-dev libattr1-dev libarchive-dev python3-pytest python3-xattr e2fsprogs
+
+      #
+      # lwgrp
+      #
+      - name: lwgrp checkout
+        uses: actions/checkout@v4
+        with:
+          repository: 'LLNL/lwgrp'
+          ref: 'v1.0.6'
+          path: 'lwgrp'
+      - name: lwgrp autogen
+        run: ./autogen.sh
+        working-directory: lwgrp
+      - name: lwgrp configure
+        run: ./configure --prefix=${{github.workspace}}/build --disable-static
+        working-directory: lwgrp
+      - name: lwgrp make
+        run: make
+        working-directory: lwgrp
+      - name: lwgrp make install
+        run: make install
+        working-directory: lwgrp
+
+
+      #
+      # libcircle
+      #
+      - name: libcircle checkout
+        uses: actions/checkout@v4
+        with:
+          repository: 'hpc/libcircle'
+          ref: 'v0.3'
+          path: 'libcircle'
+      - name: libcircle autogen
+        run: ./autogen.sh
+        working-directory: libcircle
+      - name: libcircle configure
+        run: ./configure --prefix=${{github.workspace}}/build --disable-static
+        working-directory: libcircle
+      - name: libcircle make
+        run: make
+        working-directory: libcircle
+      - name: libcircle make install
+        run: make install
+        working-directory: libcircle
+
+      #
+      # dtcmp
+      #
+      - name: dtcmp checkout
+        uses: actions/checkout@v4
+        with:
+          repository: 'LLNL/dtcmp'
+          ref: 'v1.1.5'
+          path: 'dtcmp'
+      - name: dtcmp autogen
+        run: ./autogen.sh
+        working-directory: dtcmp
+      - name: dtcmp configure
+        run: ./configure --prefix=${{github.workspace}}/build --with-lwgrp=${{github.workspace}}/build --disable-static
+        working-directory: dtcmp
+      - name: dtcmp make
+        run: make
+        working-directory: dtcmp
+      - name: dtcmp make install
+        run: make install
+        working-directory: dtcmp
+
+      #
+      # mpifileutils
+      #
+      - uses: actions/checkout@v4
+        with:
+          path: 'mpifileutils'
+      - name: Configure CMake
+        run: >
+          cmake
+          -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/build
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+          -DDTCMP_INCLUDE_DIRS=${{github.workspace}}/build/include
+          -DDTCMP_LIBRARIES=${{github.workspace}}/build/lib/libdtcmp.so
+          -DLibCircle_INCLUDE_DIRS=${{github.workspace}}/build/include
+          -DLibCircle_LIBRARIES=${{github.workspace}}/build/lib/libcircle.so
+        working-directory: mpifileutils
+      - name: Build
+        run: cmake --build mpifileutils --config ${{env.BUILD_TYPE}}
+      - name: Install
+        run: cmake --install mpifileutils
+      - name: Run tests
+        run: pytest
+        working-directory: mpifileutils
