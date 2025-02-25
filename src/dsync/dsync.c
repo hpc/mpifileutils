@@ -3171,6 +3171,7 @@ int main(int argc, char **argv)
             copy_opts->dereference = 1;
             walk_opts->dereference = 1;
             copy_opts->no_dereference = 0;
+            break;
         case 'P':
             /* turn on no_dereference.
              * turn off dereference */
