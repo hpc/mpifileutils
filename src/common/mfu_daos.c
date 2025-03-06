@@ -1345,7 +1345,6 @@ daos_args_t* daos_args_new(void)
     memset(da->dst_cont, '\0', DAOS_PROP_LABEL_MAX_LEN + 1);
 
     /* By default, try to automatically determine the API */
-    /* By default, try to automatically determine the API */
     da->api = DAOS_API_AUTO;
 
     /* Default to 0 for "no epoch" */
@@ -1361,6 +1360,10 @@ daos_args_t* daos_args_new(void)
     /* by default do not preserve daos metadata */
     da->daos_preserve = false;
     da->daos_preserve_path = NULL;
+
+    /* in most cases source only needs RO and destination needs RW */
+    da->default_src_cont_open_flags = DAOS_COO_RO;
+    da->default_dst_cont_open_flags = DAOS_COO_RW;
 
     return da;
 }
@@ -1576,9 +1579,9 @@ int daos_setup(
 
     /* For POSIX containers, the source only needs read, but the destination needs read and write.
      * For DAOS (object-level), both containers need read and write.
-     * Open the source with RO first, then elevate to RW if needed below. */
-    unsigned int src_cont_open_flags = DAOS_COO_RO;
-    unsigned int dst_cont_open_flags = DAOS_COO_RW;
+     * If needed, the source container will be elevated to RW. */
+    unsigned int src_cont_open_flags = da->default_src_cont_open_flags;
+    unsigned int dst_cont_open_flags = da->default_dst_cont_open_flags;
 
     bool create_cont = false;
     bool require_new_cont = false;
@@ -1617,7 +1620,7 @@ int daos_setup(
             goto out;
         }
         /* If using the DAOS API, we need to elevate permissions to RW for creating a snapshot */
-        if (mfu_src_file->type == DAOS) {
+        if (mfu_src_file->type == DAOS && src_cont_open_flags == DAOS_COO_RO) {
             MPI_Barrier(MPI_COMM_WORLD);
 
             tmp_rc = daos_cont_close(da->src_coh, NULL);
