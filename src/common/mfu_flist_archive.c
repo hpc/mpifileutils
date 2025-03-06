@@ -427,7 +427,17 @@ static int encode_header(
             }
             archive_read_disk_set_behavior(source, flags);
 
-            /* build the entry by querying the item associated with the open file descriptor */
+            /* build the entry by querying the item associated with the open
+             * file descriptor, on which libarchive calls fstat(). For symlinks,
+             * ignore this file description to make libarchive() call lstat() on
+             * the file instead and define a symlink entry eventually.
+             */
+            mfu_filetype type = mfu_flist_file_get_type(flist, idx);
+            if (type == MFU_TYPE_LINK) {
+                mfu_close(fname, fd);
+                fd = -1;
+            }
+
             int r = archive_read_disk_entry_from_file(source, entry, fd, NULL);
             if (r != ARCHIVE_OK) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to define entry for '%s': archive_read_disk_entry_from_file(): %s",
