@@ -1095,9 +1095,13 @@ void mfu_flist_stat(
   mfu_file_t* mfu_file)
 {
     flist_t* file_list = (flist_t*)flist;
+    /* lists to track and resolve hardlinks */
+    flist_t* hardlinks_tmp_list = mfu_flist_new();
+    inodes_hardlink_map_t* hardlinks_inodes_map = inodes_map_new();
 
     /* we will stat all items in output list, so set detail to 1 */
     file_list->detail = 1;
+    hardlinks_tmp_list->detail = 1;
 
     /* get user data if needed */
     if (file_list->have_users == 0) {
@@ -1161,9 +1165,20 @@ void mfu_flist_stat(
             }
         }
 
-        /* insert item into output list */
-        mfu_flist_insert_stat(flist, name, st.st_mode, &st);
+        if (S_ISREG(st.st_mode) && st.st_nlink > 1) {
+            /* record info for item in temporary hardlinks list and inodes map */
+            mfu_flist_insert_stat(hardlinks_tmp_list, name, st.st_mode, &st);
+            inodes_map_insert(hardlinks_inodes_map, (uint64_t)st.st_ino);
+        } else
+            /* record info for item in list */
+            mfu_flist_insert_stat(flist, name, st.st_mode, &st);
+
     }
+
+    /* compute hardlinks temporary list global summary */
+    mfu_flist_summarize(hardlinks_tmp_list);
+    /* resolve hardlinks and merge them in flist */
+    walk_resolve_hardlinks(flist, hardlinks_tmp_list, hardlinks_inodes_map);
 
     /* compute global summary */
     mfu_flist_summarize(flist);
