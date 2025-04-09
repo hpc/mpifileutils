@@ -50,6 +50,8 @@ typedef struct {
     enum daos_cont_props dst_cont_type; /* type of the destination container */
     bool daos_preserve;                 /* preserve daos cont props and user attrs */
     char *daos_preserve_path;           /* set path to write daos props and user attrs */
+    unsigned int default_src_cont_open_flags; /* default flags for container open */
+    unsigned int default_dst_cont_open_flags; /* default flags for container close */
 } daos_args_t;
 
 /* struct for holding statistics */

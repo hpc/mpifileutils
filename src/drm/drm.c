@@ -93,6 +93,9 @@ int main(int argc, char** argv)
 #ifdef DAOS_SUPPORT
     /* DAOS vars */
     daos_args_t* daos_args = daos_args_new();
+
+    /* Deleting always requires write permission */
+    daos_args->default_src_cont_open_flags = DAOS_COO_RW;
 #endif
 
     /* with drm, we don't stat files on walk by default,
