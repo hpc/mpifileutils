@@ -1,0 +1,26 @@
+include: [component: $CI_SERVER_FQDN/lc-components/id_tokens/id_tokens-component@main]
+# This workflow is written to work with the CI infrastructure at LLNL and 
+# likely will not work at other sites that use gitlab.      
+
+build-job:
+  tags:
+    - oslic
+    - shell
+  script:
+    - echo "Starting build stage for mpifileutils"
+  stage: build
+  script:
+    - pwd
+    - module --force purge
+    - module load openmpi-gnu
+    - cd ..
+    - ./mpifileutils/scripts/prepmfubuild.sh
+    - rm -fr build
+    - mkdir build
+    - cd build
+    - cmake ../mpifileutils -DWITH_DTCMP_PREFIX=../install \n
+                            -DWITH_LibCircle_PREFIX=../install \n
+                            -DWITH_LibArchive_PREFIX=../install \n
+                            -DCMAKE_INSTALL_PREFIX=../install
+    - make -j install
+
