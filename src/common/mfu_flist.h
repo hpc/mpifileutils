@@ -94,11 +94,12 @@ extern "C" {
  * so changing their values can break backwards compatibility
  * in reading any such files */
 typedef enum mfu_filetypes_e {
-    MFU_TYPE_NULL    = 0, /* type not set */
-    MFU_TYPE_UNKNOWN = 1, /* type not known */
-    MFU_TYPE_FILE    = 2, /* regular file */
-    MFU_TYPE_DIR     = 3, /* directory */
-    MFU_TYPE_LINK    = 4, /* symlink */
+    MFU_TYPE_NULL     = 0, /* type not set */
+    MFU_TYPE_UNKNOWN  = 1, /* type not known */
+    MFU_TYPE_FILE     = 2, /* regular file */
+    MFU_TYPE_DIR      = 3, /* directory */
+    MFU_TYPE_LINK     = 4, /* symlink */
+    MFU_TYPE_HARDLINK = 5, /* hardlink */
 } mfu_filetype;
 
 /* define handle type to a file list */
@@ -395,6 +396,8 @@ uint64_t mfu_flist_file_get_mtime_nsec(mfu_flist flist, uint64_t index);
 uint64_t mfu_flist_file_get_ctime(mfu_flist flist, uint64_t index);
 uint64_t mfu_flist_file_get_ctime_nsec(mfu_flist flist, uint64_t index);
 uint64_t mfu_flist_file_get_size(mfu_flist flist, uint64_t index);
+uint64_t mfu_flist_file_get_nlink(mfu_flist flist, uint64_t idx);
+const char* mfu_flist_file_get_ref(mfu_flist flist, uint64_t idx);
 uint64_t mfu_flist_file_get_perm(mfu_flist flist, uint64_t index);
 #if DCOPY_USE_XATTRS
 void *mfu_flist_file_get_acl(mfu_flist bflist, uint64_t idx, ssize_t *acl_size, char *type);
@@ -420,6 +423,7 @@ void mfu_flist_file_set_mtime_nsec(mfu_flist flist, uint64_t index, uint64_t mti
 void mfu_flist_file_set_ctime(mfu_flist flist, uint64_t index, uint64_t ctime);
 void mfu_flist_file_set_ctime_nsec(mfu_flist flist, uint64_t index, uint64_t ctime_nsec);
 void mfu_flist_file_set_size(mfu_flist flist, uint64_t index, uint64_t size);
+void mfu_flist_file_set_ref(mfu_flist flist, uint64_t index, const char* ref);
 #if DCOPY_USE_XATTRS
 //void *mfu_flist_file_set_acl(mfu_flist bflist, uint64_t idx, ssize_t *acl_size, char *type);
 #endif
