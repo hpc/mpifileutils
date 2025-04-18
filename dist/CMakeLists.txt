@@ -280,6 +280,7 @@ LIST(APPEND libmfu_srcs
   mpifileutils/src/common/mfu_bz2_static.c
   mpifileutils/src/common/mfu_compress_bz2_libcircle.c
   mpifileutils/src/common/mfu_decompress_bz2_libcircle.c
+  mpifileutils/src/common/mfu_proc.c
   mpifileutils/src/common/mfu_flist.c
   mpifileutils/src/common/mfu_flist_chunk.c
   mpifileutils/src/common/mfu_flist_copy.c
