@@ -2778,6 +2778,48 @@ int mfu_flist_copy(
     return rc;
 }
 
+int mfu_flist_copy_py(
+    mfu_flist flist,                /* list of source items to be copied */
+    int numpaths,                   /* number of entries in paths array below */
+    const char** srcs,              /* list of paths, each source item is from one path in this list */
+    const char* dest,               /* destination path to copy items to */
+    mfu_copy_opts_t* copy_opts,     /* options to configure how copy is executed */
+    mfu_file_t* mfu_src_file,       /* whether source items are coming from POSIX/DAOS */
+    mfu_file_t* mfu_dst_file)       /* whether destination is in POSIX/DAOS */
+{
+    /* pointer to mfu_file src object */
+    //mfu_file_t* mfu_src_file = mfu_file_new();
+    //mfu_file_t* mfu_dst_file = mfu_file_new();
+
+    /* allocate space for each path */
+    mfu_param_path* paths = (mfu_param_path*) MFU_MALLOC((size_t)numpaths * sizeof(mfu_param_path));
+
+    /* standardize source paths */
+    mfu_param_path_set_all(numpaths, srcs, paths, mfu_src_file, true);
+
+    /* standardize destination path */
+    mfu_param_path destpath;
+    mfu_param_path_set(dest, &destpath, mfu_dst_file, false);
+
+    /* Parse the source and destination paths. */
+    int valid, copy_into_dir;
+    mfu_param_path_check_copy(numpaths, paths, &destpath, mfu_src_file, mfu_dst_file,
+                              copy_opts->no_dereference, &valid, &copy_into_dir);
+    copy_opts->copy_into_dir = copy_into_dir;
+
+    /* finally execute the copy */
+    int rc = mfu_flist_copy(flist, numpaths, paths, &destpath, copy_opts, mfu_src_file, mfu_dst_file);
+
+    /* clean up */
+    mfu_param_path_free(&destpath);
+    mfu_param_path_free_all(numpaths, paths);
+    mfu_free(&paths);
+    //mfu_file_delete(&mfu_dst_file);
+    //mfu_file_delete(&mfu_src_file);
+
+    return rc;
+}
+
 /* hold state for progress messages */
 static mfu_progress* fill_prog;
 
