@@ -1242,6 +1242,7 @@ static int mfu_create_file(
      * for regular files, dev argument is supposed to be ignored,
      * see makedev() to create valid dev */
     dev_t dev;
+    bool file_exists = false;
     memset(&dev, 0, sizeof(dev_t));
     int mknod_rc = mfu_file_mknod(dest_path, DCOPY_DEF_PERMS_FILE | S_IFREG, dev, mfu_dst_file);
     if(mknod_rc < 0) {
@@ -1249,6 +1250,7 @@ static int mfu_create_file(
             /* destination already exists, no big deal, but print warning */
             MFU_LOG(MFU_LOG_WARN, "Original file exists, skip the creation: `%s' (errno=%d %s)",
                     dest_path, errno, strerror(errno));
+	    file_exists = true;
         } else {
             /* failed to create inode, that's a problem */
             MFU_LOG(MFU_LOG_ERR, "File `%s' mknod() failed (errno=%d %s)",
@@ -1269,31 +1271,46 @@ static int mfu_create_file(
         }
     }
 
-    /* Truncate destination files to 0 bytes when sparse file is enabled,
-     * this is because we will not overwrite sections corresponding to holes
-     * and we need those to be set to 0 */
-    if (copy_opts->sparse) {
-        /* truncate destination file to 0 bytes */
+    if (file_exists) {
         struct stat st;
         int status = mfu_file_lstat(dest_path, &st, mfu_dst_file);
-        if (status == 0) {
-            /* destination exists, truncate it to 0 bytes */
+	if (status != 0) {
+            MFU_LOG(MFU_LOG_ERR, "mfu_file_lstat() file: `%s' (errno=%d %s)",
+                    dest_path, errno, strerror(errno));
+	    mfu_free(&dest_path);
+            return -1;
+	}
+	bool need_truncate = false;
+	/* Truncate destination files to 0 bytes when sparse file is enabled,
+	 * this is because we will not overwrite sections corresponding to holes
+	 * and we need those to be set to 0 */
+	if (copy_opts->sparse) {
+            need_truncate = true;
+	} else {
+	    /* if src_file size < dest_file size, we also truncate */
+	    struct stat src_st;
+	    status = mfu_file_lstat(src_path, &src_st, mfu_src_file);
+	    if (status != 0) {
+		MFU_LOG(MFU_LOG_ERR, "mfu_file_lstat() file: `%s' (errno=%d %s)",
+			src_path, errno, strerror(errno));
+		mfu_free(&dest_path);
+		return -1;
+	    }
+	    if (src_st.st_size < st.st_size)
+                need_truncate = true;
+	}
+
+	if (need_truncate) {
+            /* truncate destination file to 0 bytes */
             status = mfu_file_truncate(dest_path, 0, mfu_dst_file);
             if (status) {
                 /* when using sparse file optimization, consider this to be an error,
                  * since we will not be overwriting the holes */
                 MFU_LOG(MFU_LOG_ERR, "Failed to truncate destination file: `%s' (errno=%d %s)",
                           dest_path, errno, strerror(errno));
-                rc = -1;
-            }
-        } else if (errno == -ENOENT) {
-            /* destination does not exist, which is fine */
-            status = 0;
-        } else {
-            /* had an error stating destination file */
-            MFU_LOG(MFU_LOG_ERR, "mfu_file_lstat() file: `%s' (errno=%d %s)",
-                    dest_path, errno, strerror(errno));
-        }
+		rc = -1;
+	    }
+	}
     }
 
 #ifdef HPSS_SUPPORT
@@ -1722,7 +1739,7 @@ static int mfu_copy_file_normal(
 
     /* initialize our starting offset within the file */
     off_t off = offset;
-
+    bool need_truncate = false;
     /* write data */
     uint64_t total_bytes = 0;
     while (total_bytes < length) {
@@ -1787,6 +1804,8 @@ static int mfu_copy_file_normal(
                  * current file if we fail before truncating */
                 char* bufzero = ((char*)buf + bytes_read);
                 memset(bufzero, 0, remainder);
+		/* truncate only in this case, otherwise truncate is not necessary */
+		need_truncate = true;
             }
 
             /* assumes buf_size is magic size for O_DIRECT */
@@ -1800,6 +1819,7 @@ static int mfu_copy_file_normal(
         int skip_write = 0;
         if (copy_opts->sparse && mfu_is_all_null(buf, bytes_to_write)) {
             skip_write = 1;
+            need_truncate = true;
         }
 
         /* write data to destination file if needed */
@@ -1847,7 +1867,11 @@ static int mfu_copy_file_normal(
     }
 #endif
 
-    /* if we wrote the last chunk, truncate the file */
+    /* if not using O_DIRECT, we already truncated the file at the beginning, we do not need to do
+     * it again. If using O_DIRECT, truncate only if we wrote beyond the src EOF. */
+    if (!need_truncate)
+	    return 0;
+
     off_t last_written = offset + length;
     off_t file_size_offt = (off_t) file_size;
     if (last_written >= file_size_offt || file_size == 0) {
