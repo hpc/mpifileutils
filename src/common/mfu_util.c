@@ -577,6 +577,26 @@ void mfu_unpack_uint64(const char** pptr, uint64_t* value)
     *pptr += 8;
 }
 
+void mfu_pack_sized_str(char** pptr, char* value, uint64_t chars)
+{
+    char* ptr = *pptr;
+    if (value == NULL)
+        *ptr = (char) 0;
+    else
+        strncpy(ptr, value, (size_t)chars);
+    *pptr += chars;
+}
+
+void mfu_unpack_sized_str(const char** pptr, char** value, uint64_t chars)
+{
+    const char* ptr = *pptr;
+    if(*ptr == 0)
+        *value = NULL;
+    else
+        *value = MFU_STRDUP(ptr);
+    *pptr += chars;
+}
+
 /* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
 uint32_t mfu_hash_jenkins(const char* key, size_t len)
 {
