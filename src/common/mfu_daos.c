@@ -642,10 +642,10 @@ static int cont_get_props(daos_handle_t coh, daos_prop_t** _props,
     daos_prop_t*    prop_acl = NULL;
     daos_prop_t*    props_merged = NULL;
     /* total amount of properties to allocate */
-    uint32_t        total_props = 16;
+    uint32_t        total_props = 14;
     /* minimum number of properties that are always allocated/used to start
      * count */
-    int             prop_index = 16;
+    int             prop_index = 14;
 
     if (get_oid) {
         total_props++;
@@ -682,12 +682,12 @@ static int cont_get_props(daos_handle_t coh, daos_prop_t** _props,
     props->dpp_entries[7].dpe_type = DAOS_PROP_CO_SNAPSHOT_MAX;
     props->dpp_entries[8].dpe_type = DAOS_PROP_CO_COMPRESS;
     props->dpp_entries[9].dpe_type = DAOS_PROP_CO_ENCRYPT;
-    props->dpp_entries[10].dpe_type = DAOS_PROP_CO_OWNER;
-    props->dpp_entries[11].dpe_type = DAOS_PROP_CO_OWNER_GROUP;
-    props->dpp_entries[12].dpe_type = DAOS_PROP_CO_DEDUP;
-    props->dpp_entries[13].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
-    props->dpp_entries[14].dpe_type = DAOS_PROP_CO_EC_CELL_SZ;
-    props->dpp_entries[15].dpe_type = DAOS_PROP_CO_SCRUBBER_DISABLED;
+    // props->dpp_entries[10].dpe_type = DAOS_PROP_CO_OWNER;
+    // props->dpp_entries[11].dpe_type = DAOS_PROP_CO_OWNER_GROUP;
+    props->dpp_entries[10].dpe_type = DAOS_PROP_CO_DEDUP;
+    props->dpp_entries[11].dpe_type = DAOS_PROP_CO_DEDUP_THRESHOLD;
+    props->dpp_entries[12].dpe_type = DAOS_PROP_CO_EC_CELL_SZ;
+    props->dpp_entries[13].dpe_type = DAOS_PROP_CO_SCRUBBER_DISABLED;
 
     /* Conditionally get the OID. Should always be true for serialization. */
     if (get_oid) {
@@ -712,23 +712,46 @@ static int cont_get_props(daos_handle_t coh, daos_prop_t** _props,
         goto out;
     }
 
-    /* Fetch the ACL separately in case user doesn't have access */
-    rc = daos_cont_get_acl(coh, &prop_acl, NULL);
-    if (rc == 0) {
-        /* ACL will be appended to the end */
-        props_merged = daos_prop_merge(props, prop_acl);
-        if (props_merged == NULL) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to set container ACL: "DF_RC, DP_RC(rc));
-            rc = 1;
-            goto out;
-        }
-        daos_prop_free(props);
-        props = props_merged;
-    } else if (rc && rc != -DER_NO_PERM) {
-        MFU_LOG(MFU_LOG_ERR, "Failed to query container ACL: "DF_RC, DP_RC(rc));
+    /* Get ACL prop. */
+    prop_acl = daos_prop_alloc(1);
+    if (prop_acl == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to allocate container properties.");
         rc = 1;
         goto out;
     }
+    prop_acl->dpp_entries[0].dpe_type = DAOS_PROP_CO_ACL;
+    rc = daos_cont_query(coh, NULL, prop_acl, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to query container: "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+    props_merged = daos_prop_merge(props, prop_acl);
+    if (props_merged == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to set container ACL: "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+    daos_prop_free(props);
+    props = props_merged;
+
+    /* Fetch the ACL separately in case user doesn't have access */
+    // rc = daos_cont_get_acl(coh, &prop_acl, NULL);
+    // if (rc == 0) {
+    //     /* ACL will be appended to the end */
+    //     props_merged = daos_prop_merge(props, prop_acl);
+    //     if (props_merged == NULL) {
+    //         MFU_LOG(MFU_LOG_ERR, "Failed to set container ACL: "DF_RC, DP_RC(rc));
+    //         rc = 1;
+    //         goto out;
+    //     }
+    //     daos_prop_free(props);
+    //     props = props_merged;
+    // } else if (rc && rc != -DER_NO_PERM) {
+    //     MFU_LOG(MFU_LOG_ERR, "Failed to query container ACL: "DF_RC, DP_RC(rc));
+    //     rc = 1;
+    //     goto out;
+    // }
 
     rc = 0;
     *_props = props;
