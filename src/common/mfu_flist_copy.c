@@ -57,6 +57,7 @@
 
 #include "mfu.h"
 #include "mfu_flist_internal.h"
+#include "mfu_errors.h"
 #include "strmap.h"
 
 #ifdef LUSTRE_SUPPORT
@@ -1933,8 +1934,9 @@ static int mfu_copy_file_fiemap(
     }
 
     if (ioctl(mfu_src_file->fd, FS_IOC_FIEMAP, fiemap) < 0) {
-        if (errno == ENOTSUP) {
-            /* silently ignore */
+        if (errno == ENOTSUP || errno == MFU_ERR_ENOTSUPP) {
+            MFU_LOG(MFU_LOG_INFO, "Destination file not sparse; FIEMAP not supported for src '%s'",
+                    src, errno, strerror(errno));
         } else {
             MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src '%s' (errno=%d %s)",
                     src, errno, strerror(errno));

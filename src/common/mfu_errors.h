@@ -20,6 +20,10 @@ static inline int mfu_errno2rc(int err)
     return -1;
 }
 
+/* Non-standard error code returned by syscalls or external libs */
+/* Returned by ioctl(FIEMAP) with Lustre 2.15.6, should be 95 ENOTSUP */
+#define MFU_ERR_ENOTSUPP 524
+
 /* Generic error codes */
 #define MFU_ERR           1000
 #define MFU_ERR_INVAL_ARG 1001
