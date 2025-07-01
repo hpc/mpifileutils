@@ -1888,7 +1888,45 @@ static int mfu_copy_file_normal(
     return 0;
 }
 
-static int mfu_copy_file_fiemap(
+struct mfu_extent {
+    __u64 me_logical;  /* logical offset in bytes for the start of the extent */
+    __u64 me_length;   /* length in bytes for this extent */
+};
+
+struct mfu_extent_list {
+    __u32 mel_mapped_extents;/* number of extents that were mapped */
+    __u32 mel_extent_count;  /* size of fm_extents array */
+    struct mfu_extent mel_extents[0]; /* array of mapped extents */
+};
+
+/*
+ * If we are resizing an existing allocation, the new extent_count must be
+ * larger than the old one.
+ */
+struct mfu_extent_list *mfu_extent_list_realloc(struct mfu_extent_list *orig, size_t extent_count)
+{
+    size_t extent_list_size = sizeof(struct mfu_extent_list) + sizeof(struct mfu_extent) * extent_count;
+    size_t old_size = 0;
+
+    if (orig) {
+        if (extent_count <= orig->mel_extent_count) {
+            return NULL;
+        }
+
+        old_size = sizeof(struct mfu_extent_list) + sizeof(struct mfu_extent) * orig->mel_extent_count;
+    }
+
+    struct mfu_extent_list* extent_list = (struct mfu_extent_list*) realloc(orig, extent_list_size);
+    if (extent_list == NULL) {
+        return NULL;
+    }
+
+    memset((char *)extent_list + old_size, 0, extent_list_size - old_size);
+    extent_list->mel_extent_count = extent_count;
+    return extent_list;
+}
+
+static struct mfu_extent_list * mfu_fiemap_get_extents(
     const char* src,
     const char* dest,
     uint64_t offset,
@@ -1900,24 +1938,13 @@ static int mfu_copy_file_fiemap(
     mfu_file_t* mfu_dst_file)
 {
     *normal_copy_required = true;
-    if (copy_opts->direct) {
-        goto fail_normal_copy;
-    }
-
-#ifdef DAOS_SUPPORT
-    /* Not yet supported */
-    if (mfu_src_file->type == DFS) {
-        goto fail_normal_copy;
-    }
-#endif
-
-    size_t last_ext_start = offset;
-    size_t last_ext_len = 0;
+    uint64_t last_byte = offset + length;
+    struct mfu_extent_list* extent_list = NULL;
 
     struct fiemap *fiemap = (struct fiemap*)malloc(sizeof(struct fiemap));
     if (fiemap == NULL) {
         MFU_LOG(MFU_LOG_ERR, "Out of memory allocating fiemap");
-        goto fail_normal_copy;
+        goto fail_no_fiemap;
     }
     memset(fiemap, 0, sizeof(struct fiemap));
 
@@ -1927,11 +1954,6 @@ static int mfu_copy_file_fiemap(
     fiemap->fm_extent_count   = 0;
     fiemap->fm_mapped_extents = 0;
 
-    struct stat sb;
-    if (fstat(mfu_src_file->fd, &sb) < 0) {
-        goto fail_fiemap;
-    }
-
     if (ioctl(mfu_src_file->fd, FS_IOC_FIEMAP, fiemap) < 0) {
         if (errno == ENOTSUP) {
             /* silently ignore */
@@ -1939,7 +1961,7 @@ static int mfu_copy_file_fiemap(
             MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src '%s' (errno=%d %s)",
                     src, errno, strerror(errno));
         }
-        goto fail_fiemap;
+        goto fail_free_fiemap;
     }
 
     size_t extents_size = sizeof(struct fiemap_extent) * (fiemap->fm_mapped_extents);
@@ -1949,7 +1971,7 @@ static int mfu_copy_file_fiemap(
     struct fiemap* new_fiemap = (struct fiemap*) realloc(fiemap, sizeof(struct fiemap) + extents_size);
     if (new_fiemap == NULL) {
         MFU_LOG(MFU_LOG_ERR, "Out of memory reallocating fiemap");
-        goto fail_fiemap;
+        goto fail_free_fiemap;
     }
     fiemap = new_fiemap;
 
@@ -1957,13 +1979,17 @@ static int mfu_copy_file_fiemap(
     fiemap->fm_extent_count   = fiemap->fm_mapped_extents;
     fiemap->fm_mapped_extents = 0;
 
+    extent_list = mfu_extent_list_realloc(NULL, fiemap->fm_extent_count);
+    if (extent_list == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "Out of memory allocating extent_list with count %d", fiemap->fm_extent_count);
+        goto fail_free_fiemap;
+    }
+
     if (ioctl(mfu_src_file->fd, FS_IOC_FIEMAP, fiemap) < 0) {
         MFU_LOG(MFU_LOG_ERR, "fiemap ioctl() failed for src '%s' (errno=%d %s)",
                 src, errno, strerror(errno));
-        goto fail_fiemap;
+        goto fail_free_fiemap;
     }
-
-    uint64_t last_byte = offset + length;
 
     if (fiemap->fm_mapped_extents > 0) {
         uint64_t fe_logical = fiemap->fm_extents[0].fe_logical;
@@ -1981,7 +2007,183 @@ static int mfu_copy_file_fiemap(
         }
     }
 
+    for (ssize_t idx = 0; idx < fiemap->fm_mapped_extents; idx++) {
+        extent_list->mel_extents[idx].me_logical = fiemap->fm_extents[idx].fe_logical;
+        extent_list->mel_extents[idx].me_length = fiemap->fm_extents[idx].fe_length;
+    }
+    extent_list->mel_mapped_extents = fiemap->fm_mapped_extents;
+
+    free(fiemap);
+
     *normal_copy_required = false;
+
+    return extent_list;
+
+fail_free_fiemap:
+    free(fiemap);
+    free(extent_list);
+
+fail_no_fiemap:
+    return NULL;
+}
+
+/*
+ * if returned extent_list * is non-NULL, and normal_copy_required == false,
+ * then the extent [ offset, offset+length ) is within a hole, and there is
+ * no data to copy.
+ */
+static struct mfu_extent_list * mfu_lseek_get_extents(
+    const char* src,
+    const char* dest,
+    uint64_t offset,
+    uint64_t length,
+    uint64_t file_size,
+    bool* normal_copy_required,
+    mfu_copy_opts_t* copy_opts,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
+{
+    *normal_copy_required = true;
+    uint64_t logical_off = offset;
+    uint64_t last_byte = offset + length;
+    int op;
+    int idx;
+    uint64_t start;
+
+    /* Verify that SEEK_HOLE and SEEK_DATA are supported */
+    if ((mfu_file_lseek(src, mfu_src_file, offset, SEEK_HOLE) == (off_t)-1) ||
+        (mfu_file_lseek(src, mfu_src_file, offset, SEEK_DATA) == (off_t)-1)) {
+        goto fail_no_extent_list;
+    }
+
+
+    /* initial guess at max number of extents, can revise */
+    size_t extent_count = 16;
+    struct mfu_extent_list* extent_list = mfu_extent_list_realloc(NULL, extent_count);
+    if (extent_list == NULL) {
+        MFU_LOG(MFU_LOG_ERR, "Out of memory allocating extent_list with count %d", extent_count);
+        goto fail_no_extent_list;
+    }
+
+    op = SEEK_DATA;
+    idx = 0;
+
+    MFU_LOG(MFU_LOG_DBG, "src %s map from lseek():", src);
+    start = offset;
+    while (offset < last_byte) {
+        offset = mfu_file_lseek(src, mfu_src_file, offset, op);
+
+	if (offset == -1) {
+            MFU_LOG(MFU_LOG_ERR, "Couldn't seek in src path `%s' (errno=%d %s)",
+                src, errno, strerror(errno));
+            goto fail_free_extent_list;
+        }
+
+	if (offset > last_byte) {
+	    offset = last_byte;
+
+	    if (offset == start) {
+                break;
+	    }
+        }
+
+        if (op == SEEK_HOLE) {
+            extent_list->mel_extents[idx].me_logical =  start;
+            extent_list->mel_extents[idx++].me_length = offset - start;
+            extent_list->mel_mapped_extents++;
+            MFU_LOG(MFU_LOG_DBG, "src %s extent %d logical %llu length %llu:",
+                src, extent_list->mel_mapped_extents-1,
+                extent_list->mel_extents[idx].me_logical,
+                extent_list->mel_extents[idx++].me_length);
+        }
+
+        if (idx >= extent_list->mel_extent_count) {
+            MFU_LOG(MFU_LOG_DBG, "Extent count %d is too small, resizing x2", extent_count);
+
+            extent_count *= 2;
+            struct mfu_extent_list* new_extent_list = mfu_extent_list_realloc(extent_list, extent_count);
+            if (new_extent_list == NULL) {
+                MFU_LOG(MFU_LOG_ERR, "Out of memory allocating extent_list with count %d", extent_count);
+                /* need to free the original allocation since the realloc failed */
+                goto fail_free_extent_list;
+            }
+            extent_list = new_extent_list;
+        }
+
+        /* setup for next chunk */
+        start = offset;
+        if (op == SEEK_HOLE)
+            op = SEEK_DATA;
+        else
+            op = SEEK_HOLE;
+    }
+
+    *normal_copy_required = false;
+
+    MFU_LOG(MFU_LOG_DBG, "src %s logical %llu length %llu has %d mapped data hunks",
+	src, logical_off, length, extent_list->mel_mapped_extents);
+
+    return extent_list;
+
+fail_free_extent_list:
+    free(extent_list);
+
+fail_no_extent_list:
+    return NULL;
+}
+
+static int mfu_copy_file_extents(
+    const char* src,
+    const char* dest,
+    uint64_t offset,
+    uint64_t length,
+    uint64_t file_size,
+    bool* normal_copy_required,
+    mfu_copy_opts_t* copy_opts,
+    mfu_file_t* mfu_src_file,
+    mfu_file_t* mfu_dst_file)
+{
+    size_t last_ext_start = offset;
+    size_t last_ext_len = 0;
+    uint64_t last_byte = offset + length;
+    struct mfu_extent_list* extent_list;
+
+    *normal_copy_required = true;
+    if (copy_opts->direct) {
+        goto fail_normal_copy;
+    }
+
+    struct stat sb;
+    if (fstat(mfu_src_file->fd, &sb) < 0) {
+        goto fail_normal_copy;
+    }
+
+#ifdef DAOS_SUPPORT
+    /* Not yet supported */
+    if (mfu_src_file->type == DFS) {
+        goto fail_normal_copy;
+    }
+#endif
+
+    /* get extents using SEEK_DATA and SEEK_HOLE */
+    extent_list = mfu_lseek_get_extents( src, dest, offset, length,
+        file_size, normal_copy_required, copy_opts, mfu_src_file,
+        mfu_dst_file);
+
+    if (!extent_list || *normal_copy_required == true) {
+        if (extent_list) {
+            free(extent_list);
+        }
+
+        /* extents acquired by fiemap ioctl */
+        extent_list = mfu_fiemap_get_extents( src, dest,
+            offset, length, file_size, normal_copy_required, copy_opts,
+            mfu_src_file, mfu_dst_file);
+
+        if (!extent_list || *normal_copy_required == true) {
+            goto fail_fiemap;
+        }
+    }
 
     /* seek to offset in source file */
     if (mfu_file_lseek(src, mfu_src_file, (off_t)last_ext_start, SEEK_SET) < 0) {
@@ -1998,7 +2200,7 @@ static int mfu_copy_file_fiemap(
     }
 
     unsigned int i;
-    for (i = 0; i < fiemap->fm_mapped_extents; i++) {
+    for (i = 0; i < extent_list->mel_mapped_extents; i++) {
         size_t ext_start;
         size_t ext_len;
         size_t ext_hole_size;
@@ -2006,8 +2208,8 @@ static int mfu_copy_file_fiemap(
         size_t buf_size = copy_opts->buf_size;
         void* buf = copy_opts->block_buf1;
 
-        ext_start = fiemap->fm_extents[i].fe_logical;
-        ext_len = fiemap->fm_extents[i].fe_length;
+        ext_start = extent_list->mel_extents[i].me_logical;
+        ext_len = extent_list->mel_extents[i].me_length;
         ext_hole_size = ext_start - (last_ext_start + last_ext_len);
 
         if (ext_hole_size) {
@@ -2068,11 +2270,12 @@ static int mfu_copy_file_fiemap(
         mfu_copy_stats.total_size += (int64_t) last_byte;
     }
 
-    free(fiemap);
+    free( extent_list );
+
     return 0;
 
 fail_fiemap:
-    free(fiemap);
+    free( extent_list );
 
 fail_normal_copy:
     return -1;
@@ -2110,7 +2313,7 @@ static int mfu_copy_file(
 
     if (copy_opts->sparse) {
         bool normal_copy_required;
-        ret = mfu_copy_file_fiemap(src, dest, offset, length, file_size,
+        ret = mfu_copy_file_extents(src, dest, offset, length, file_size,
                                &normal_copy_required, copy_opts,
                                mfu_src_file, mfu_dst_file);
         if (!ret || !normal_copy_required) {
