@@ -150,7 +150,7 @@ int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg)
 int MFU_PRED_PRINT0 (mfu_flist flist, uint64_t idx, void* arg)
 {
     const char* name = mfu_flist_file_get_name(flist, idx);
-    printf("%s\0", name);
+    printf("%s%c", name, '\0');
     return 1;
 }
 
