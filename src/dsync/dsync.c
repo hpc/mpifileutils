@@ -1687,7 +1687,6 @@ static int dsync_remove_hardlinks_with_removed_refs(
                     MFU_LOG(MFU_LOG_ERR, "ERROR: Unable to find index of key `%s' in source map", key);
                     continue;
                 }
-
                 /* skip item if not hardlink */
                 mfu_filetype type = mfu_flist_file_get_type(dst_list, dst_index);
                 if(type != MFU_TYPE_HARDLINK)
@@ -1698,14 +1697,20 @@ static int dsync_remove_hardlinks_with_removed_refs(
                 if(strcmp(ref, removed_ref))
                     continue;
 
-                /* skip item if type already differs */
+                /* skip item if type or content already differ */
                 dsync_state state;
+
                 tmp_rc = dsync_strmap_item_state(dst_map, key, DCMPF_TYPE, &state);
                 assert(tmp_rc == 0);
                 if (state == DCMPS_DIFFER)
                     continue;
 
-                /* Update to say contents of the symlinks were found to be
+                tmp_rc = dsync_strmap_item_state(dst_map, key, DCMPF_CONTENT, &state);
+                assert(tmp_rc == 0);
+                if (state == DCMPS_DIFFER)
+                    continue;
+
+                /* Update to say contents of the hardlinks were found to be
                  * different */
                 dsync_strmap_item_update(src_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
                 dsync_strmap_item_update(dst_map, key, DCMPF_CONTENT, DCMPS_DIFFER);
