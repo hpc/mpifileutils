@@ -41,7 +41,7 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Items     : 9
+                    Items     : 12
                 """
             ),
         )
@@ -53,11 +53,11 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Number of items that exist in both directories: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories: 12 (Src: 12 Dest: 12)
                     Number of items that exist only in one directory: 0 (Src: 0 Dest: 0)
-                    Number of items that exist in both directories and have the same type: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories and have the same type: 12 (Src: 12 Dest: 12)
                     Number of items that exist in both directories and have different types: 0 (Src: 0 Dest: 0)
-                    Number of items that exist in both directories and have the same content: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories and have the same content: 12 (Src: 12 Dest: 12)
                     Number of items that exist in both directories and have different contents: 0 (Src: 0 Dest: 0)
                 """
             ),
@@ -71,11 +71,11 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Number of items that exist in both directories: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories: 12 (Src: 12 Dest: 12)
                     Number of items that exist only in one directory: N/A (Src: 0 Dest: 1)
-                    Number of items that exist in both directories and have the same type: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories and have the same type: 12 (Src: 12 Dest: 12)
                     Number of items that exist in both directories and have different types: 0 (Src: 0 Dest: 0)
-                    Number of items that exist in both directories and have the same content: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories and have the same content: 12 (Src: 12 Dest: 12)
                     Number of items that exist in both directories and have different contents: 0 (Src: 0 Dest: 0)
                 """
             ),
@@ -89,11 +89,11 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Number of items that exist in both directories: 8 (Src: 8 Dest: 8)
+                    Number of items that exist in both directories: 11 (Src: 11 Dest: 11)
                     Number of items that exist only in one directory: N/A (Src: 1 Dest: 0)
-                    Number of items that exist in both directories and have the same type: 8 (Src: 8 Dest: 8)
+                    Number of items that exist in both directories and have the same type: 11 (Src: 11 Dest: 11)
                     Number of items that exist in both directories and have different types: 0 (Src: 0 Dest: 0)
-                    Number of items that exist in both directories and have the same content: 8 (Src: 8 Dest: 8)
+                    Number of items that exist in both directories and have the same content: 11 (Src: 11 Dest: 11)
                     Number of items that exist in both directories and have different contents: 0 (Src: 0 Dest: 0)
                 """
             ),
@@ -109,11 +109,11 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Number of items that exist in both directories: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories: 12 (Src: 12 Dest: 12)
                     Number of items that exist only in one directory: 0 (Src: 0 Dest: 0)
-                    Number of items that exist in both directories and have the same type: 8 (Src: 8 Dest: 8)
+                    Number of items that exist in both directories and have the same type: 11 (Src: 11 Dest: 11)
                     Number of items that exist in both directories and have different types: 1 (Src: 1 Dest: 1)
-                    Number of items that exist in both directories and have the same content: 8 (Src: 8 Dest: 8)
+                    Number of items that exist in both directories and have the same content: 11 (Src: 11 Dest: 11)
                     Number of items that exist in both directories and have different contents: 1 (Src: 1 Dest: 1)
                 """
             ),
@@ -129,11 +129,11 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Number of items that exist in both directories: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories: 12 (Src: 12 Dest: 12)
                     Number of items that exist only in one directory: 0 (Src: 0 Dest: 0)
-                    Number of items that exist in both directories and have the same type: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories and have the same type: 12 (Src: 12 Dest: 12)
                     Number of items that exist in both directories and have different types: 0 (Src: 0 Dest: 0)
-                    Number of items that exist in both directories and have the same content: 8 (Src: 8 Dest: 8)
+                    Number of items that exist in both directories and have the same content: 11 (Src: 11 Dest: 11)
                     Number of items that exist in both directories and have different contents: 1 (Src: 1 Dest: 1)
                 """
             ),
@@ -149,11 +149,11 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Number of items that exist in both directories: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories: 12 (Src: 12 Dest: 12)
                     Number of items that exist only in one directory: 0 (Src: 0 Dest: 0)
-                    Number of items that exist in both directories and have the same type: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories and have the same type: 12 (Src: 12 Dest: 12)
                     Number of items that exist in both directories and have different types: 0 (Src: 0 Dest: 0)
-                    Number of items that exist in both directories and have the same content: 8 (Src: 8 Dest: 8)
+                    Number of items that exist in both directories and have the same content: 11 (Src: 11 Dest: 11)
                     Number of items that exist in both directories and have different contents: 1 (Src: 1 Dest: 1)
                 """
             ),
@@ -169,11 +169,11 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Number of items that exist in both directories: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories: 12 (Src: 12 Dest: 12)
                     Number of items that exist only in one directory: 0 (Src: 0 Dest: 0)
-                    Number of items that exist in both directories and have the same type: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories and have the same type: 12 (Src: 12 Dest: 12)
                     Number of items that exist in both directories and have different types: 0 (Src: 0 Dest: 0)
-                    Number of items that exist in both directories and have the same content: 8 (Src: 8 Dest: 8)
+                    Number of items that exist in both directories and have the same content: 11 (Src: 11 Dest: 11)
                     Number of items that exist in both directories and have different contents: 1 (Src: 1 Dest: 1)
                 """
             ),

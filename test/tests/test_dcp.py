@@ -77,11 +77,11 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                       Directories: 2
-                      Files: 4
+                      Files: 5
                       Links: 2
-                      Hardlinks: 1
+                      Hardlinks: 3
                 """
             ),
         )
@@ -150,11 +150,11 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                       Directories: 2
-                      Files: 4
+                      Files: 5
                       Links: 2
-                      Hardlinks: 1
+                      Hardlinks: 3
                 """
             ),
         )
@@ -168,11 +168,11 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                       Directories: 2
-                      Files: 4
+                      Files: 5
                       Links: 2
-                      Hardlinks: 1
+                      Hardlinks: 3
                 """
             ),
         )
@@ -186,11 +186,11 @@ class TestDcpBasic(TestDcp):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                       Directories: 2
-                      Files: 4
+                      Files: 5
                       Links: 2
-                      Hardlinks: 1
+                      Hardlinks: 3
                 """
             ),
         )

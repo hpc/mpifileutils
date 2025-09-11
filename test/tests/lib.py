@@ -223,12 +223,19 @@ BASIC_FILES_LAYOUT = """
 file1: {}
 file2: {}
 file3: {}
+file4: {}
 symlink2:
     type: symlink
     target: file2
 hardlink3:
     type: hardlink
     target: file3
+hardlink4.0:
+    type: hardlink
+    target: file4
+hardlink4.1:
+    type: hardlink
+    target: file4
 dir1:
     type: dir
     layout:

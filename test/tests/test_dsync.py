@@ -57,11 +57,11 @@ class TestDsyncBasic(TestDsync):
             proc,
             textwrap.dedent(
                 """
-                    Items: 8
+                    Items: 11
                       Directories: 1
-                      Files: 4
+                      Files: 5
                       Links: 2
-                      Hardlinks: 1
+                      Hardlinks: 3
                 """
             ),
         )
@@ -99,7 +99,7 @@ class TestDsyncBasic(TestDsync):
         proc = self.run_dsync()
         self.assertInProcStdout(
             proc,
-            "Comparing file sizes and modification times of 3 items",
+            "Comparing file sizes and modification times of 4 items",
         )
         self.assertSrcDstEqual(ignore_paths=["file2"])
         self.assertFalse((self.src / "file2").exists())
@@ -127,11 +127,11 @@ class TestDsyncBasic(TestDsync):
             proc,
             textwrap.dedent(
                 """
-                    Items: 8
+                    Items: 11
                       Directories: 1
-                      Files: 4
+                      Files: 5
                       Links: 2
-                      Hardlinks: 1
+                      Hardlinks: 3
                 """
             ),
         )
@@ -220,16 +220,16 @@ class TestDsyncBasic(TestDsync):
             (self.dst / "file3").stat().st_ino,
         )
 
-        # Check dsync reported creation of 2 hardlinks and 0 symlink.
+        # Check dsync reported creation of 4 hardlinks and 0 symlink.
         self.assertInProcStdout(
             proc,
             textwrap.dedent(
                 """
-                    Items: 8
+                    Items: 11
                       Directories: 1
-                      Files: 5
+                      Files: 6
                       Links: 0
-                      Hardlinks: 2
+                      Hardlinks: 4
                 """
             ),
         )
@@ -273,7 +273,7 @@ class TestDsyncBasic(TestDsync):
         os.utime(self.src / "file2", ns=(previous_atime, previous_mtime))
         proc = self.run_dsync()
         self.assertInProcStdout(
-            proc, "Comparing file sizes and modification times of 4 items"
+            proc, "Comparing file sizes and modification times of 5 items"
         )
         # Check src/dst metadata are equal but file2 still contains first 64
         # random bytes.
@@ -331,7 +331,7 @@ class TestDsyncBasic(TestDsync):
         proc = self.run_dsync(contents=True)
         self.assertInProcStdout(
             proc,
-            "Comparing file contents of 4 items",
+            "Comparing file contents of 5 items",
         )
         # FIXME: mtime on file2 do not match on src/dst even though it has been
         # updated with second dsync.
@@ -378,11 +378,11 @@ class TestDsyncBasic(TestDsync):
                 proc,
                 textwrap.dedent(
                     """
-                        Items: 8
+                        Items: 11
                           Directories: 1
-                          Files: 5
+                          Files: 6
                           Links: 2
-                          Hardlinks: 0
+                          Hardlinks: 2
                     """
                 ),
             )

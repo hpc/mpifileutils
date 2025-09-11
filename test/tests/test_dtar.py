@@ -107,11 +107,11 @@ class TestDtarBasic(TestDtar):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                       Directories: 2
-                      Files: 4
+                      Files: 5
                       Links: 2
-                      Hardlinks: 1
+                      Hardlinks: 3
                 """
             ),
         )
@@ -124,11 +124,11 @@ class TestDtarBasic(TestDtar):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                       Directories: 2
-                      Files: 4
+                      Files: 5
                       Links: 2
-                      Hardlinks: 1
+                      Hardlinks: 3
                 """
             ),
         )
@@ -141,11 +141,11 @@ class TestDtarBasic(TestDtar):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                       Directories: 2
-                      Files: 4
+                      Files: 5
                       Links: 2
-                      Hardlinks: 1
+                      Hardlinks: 3
                 """
             ),
         )
@@ -159,9 +159,9 @@ class TestDtarBasic(TestDtar):
             textwrap.dedent(
                 """
                     Creating 2 directories
-                    Creating 4 files
+                    Creating 5 files
                     Creating 2 symlinks
-                    Creating 1 hardlinks
+                    Creating 3 hardlinks
                 """
             ),
         )
@@ -178,7 +178,7 @@ class TestDtarBasic(TestDtar):
             proc,
             textwrap.dedent(
                 """
-                    Items: 10
+                    Items: 13
                 """
             ),
         )
@@ -194,7 +194,7 @@ class TestDtarBasic(TestDtar):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                 """
             ),
         )
@@ -210,7 +210,7 @@ class TestDtarBasic(TestDtar):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                 """
             ),
         )
@@ -219,9 +219,9 @@ class TestDtarBasic(TestDtar):
             textwrap.dedent(
                 """
                     Creating 2 directories
-                    Creating 4 files
+                    Creating 5 files
                     Creating 2 symlinks
-                    Creating 1 hardlinks
+                    Creating 3 hardlinks
                 """
             ),
         )
@@ -237,7 +237,7 @@ class TestDtarBasic(TestDtar):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                 """
             ),
         )
@@ -246,9 +246,9 @@ class TestDtarBasic(TestDtar):
             textwrap.dedent(
                 """
                     Creating 2 directories
-                    Creating 4 files
+                    Creating 5 files
                     Creating 2 symlinks
-                    Creating 1 hardlinks
+                    Creating 3 hardlinks
                 """
             ),
         )

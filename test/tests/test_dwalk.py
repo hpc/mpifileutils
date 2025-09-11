@@ -50,11 +50,11 @@ class TestDwalkBasic(TestDwalk):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                       Directories: 2
-                      Files: 4
+                      Files: 5
                       Links: 2
-                      Hardlinks: 1
+                      Hardlinks: 3
                 """
             ),
         )
@@ -71,11 +71,11 @@ class TestDwalkBasic(TestDwalk):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                       Directories: 2
-                      Files: 4
+                      Files: 5
                       Links: 2
-                      Hardlinks: 1
+                      Hardlinks: 3
                 """
             ),
         )
@@ -90,9 +90,9 @@ class TestDwalkBasic(TestDwalk):
             proc,
             textwrap.dedent(
                 """
-                    Items: 9
+                    Items: 12
                       Directories: 2
-                      Files: 5
+                      Files: 8
                       Links: 2
                       Hardlinks: 0
                 """
@@ -105,6 +105,9 @@ class TestDwalkBasic(TestDwalk):
         output.unlink()
         for entry in [
             f"{self.src}|D",
+            f"{self.src}/file4|F",
+            f"{self.src}/hardlink4.0|F",
+            f"{self.src}/hardlink4.1|F",
             f"{self.src}/file3|F",
             f"{self.src}/hardlink3|F",
             f"{self.src}/file2|F",
@@ -134,7 +137,10 @@ class TestDwalkBasic(TestDwalk):
             rf"-rw-r--r-- .* {self.src}/file1",
             rf"-rw-r--r-- .* {self.src}/file2",
             rf"-rw-r--r-- .* {self.src}/file3",
+            rf"-rw-r--r-- .* {self.src}/file4",
             rf"-rw-r--r-- .* {self.src}/hardlink3",
+            rf"-rw-r--r-- .* {self.src}/hardlink4.0",
+            rf"-rw-r--r-- .* {self.src}/hardlink4.1",
         ]:
             self.assertRegex(content, entry)
 
@@ -147,11 +153,11 @@ class TestDwalkBasic(TestDwalk):
                 proc,
                 textwrap.dedent(
                     """
-                        Items: 9
+                        Items: 12
                           Directories: 2
-                          Files: 4
+                          Files: 5
                           Links: 2
-                          Hardlinks: 1
+                          Hardlinks: 3
                     """
                 ),
             )
@@ -166,9 +172,9 @@ class TestDwalkBasic(TestDwalk):
                 proc,
                 textwrap.dedent(
                     """
-                        Items: 9
+                        Items: 12
                           Directories: 2
-                          Files: 5
+                          Files: 8
                           Links: 2
                           Hardlinks: 0
                     """
