@@ -1667,7 +1667,9 @@ static int dsync_remove_hardlinks_with_removed_refs(
     uint64_t count = mfu_flist_size(dst_list);
     char* recvptr = (char*) recvbuf;
     for (int i = 0; i < (int) ranks; i++) {
-        for (int j = 0; j<recvcounts[i]; j++) {
+        size_t ref_size = char_extent * chars;
+        char *rank_next = recvptr + recvcounts[i];
+        while(recvptr < rank_next) {
             const char* removed_ref = recvptr;
             /* Search for local hardlinks with this reference and mark them to
              * be removed. */
@@ -1722,9 +1724,11 @@ static int dsync_remove_hardlinks_with_removed_refs(
                     mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
                 }
             }
-            /* jump to next received path */
-            recvptr += char_extent * chars;
+            /* jump to next received path for this rank */
+            recvptr += ref_size;
         }
+        /* jump to next received path */
+        recvptr = rank_next;
     }
 
     mfu_free(&recvcounts);
