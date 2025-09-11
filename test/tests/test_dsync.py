@@ -365,6 +365,39 @@ class TestDsyncBasic(TestDsync):
             with open(self.dst / filename, "r") as fh:
                 self.assertEqual(fh.read(), "original")
 
+    def test_dsync_hardlink_dest_multiple_ref_changed(self):
+        # Create a conflicting file in dest with different content and check it
+        # is overwritten.
+        with open(self.src / "file3", "w+") as fh:
+            fh.write("original3")
+        with open(self.src / "file4", "w+") as fh:
+            fh.write("original4")
+        self.run_dsync()
+        with open(self.dst / "file3", "w+") as fh:
+            fh.write("modified3")
+        with open(self.dst / "file4", "w+") as fh:
+            fh.write("modified4")
+        proc = self.run_dsync()
+        self.assertInProcStdout(
+            proc,
+            textwrap.dedent(
+                """
+                    Items: 5
+                      Directories: 0
+                      Files: 2
+                      Links: 0
+                      Hardlinks: 3
+                """
+            ),
+        )
+        self.assertSrcDstEqual()
+        for filename in ["file3", "hardlink3"]:
+            with open(self.dst / filename, "r") as fh:
+                self.assertEqual(fh.read(), "original3")
+        for filename in ["file4", "hardlink4.0", "hardlink4.1"]:
+            with open(self.dst / filename, "r") as fh:
+                self.assertEqual(fh.read(), "original4")
+
     def test_dsync_hardlink_outside_tree(self):
         # Create temporary file outside src and dst tree, create hardlink in src
         # to this temporary file, sync and check. The destination should contain
@@ -410,6 +443,27 @@ class TestDsyncBasic(TestDsync):
                       Files: 0
                       Links: 0
                       Hardlinks: 1
+                """
+            ),
+        )
+        self.assertSrcDstEqual()
+
+    def test_dsync_hardlink_src_ref_replaced(self):
+        # Synchronize, replace reference file in source, re-synchronize and
+        # check.
+        self.run_dsync()
+        (self.src / "file3").unlink()
+        create_file(self.src / "file3")
+        proc = self.run_dsync()
+        self.assertInProcStdout(
+            proc,
+            textwrap.dedent(
+                """
+                    Items: 2
+                      Directories: 0
+                      Files: 2
+                      Links: 0
+                      Hardlinks: 0
                 """
             ),
         )
