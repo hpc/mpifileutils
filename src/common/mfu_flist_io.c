@@ -221,6 +221,8 @@ static void list_elem_decode(char* buf, elem_t* elem)
         elem->type = MFU_TYPE_UNKNOWN;
     }
 
+    elem->ref = NULL;
+
     return;
 }
 
@@ -356,7 +358,8 @@ static size_t list_elem_unpack(const void* buf, int detail, uint64_t chars, elem
         mfu_unpack_io_uint64(&ptr, &elem->size);
         mfu_unpack_io_uint64(&ptr, &elem->nlink);
         mfu_unpack_sized_str(&ptr, &elem->ref, chars);
-    }
+    } else
+        elem->ref = NULL;
 
     size_t bytes = (size_t)(ptr - start);
     return bytes;
