@@ -404,7 +404,8 @@ static void list_delete(flist_t* flist)
     while (current != NULL) {
         elem_t* next = current->next;
         mfu_free(&current->file);
-        mfu_free(&current->ref);
+        if (current->detail)
+            mfu_free(&current->ref);
         mfu_free(&current);
         current = next;
     }
