@@ -2721,9 +2721,10 @@ int mfu_flist_copy(
         rc = -1;
     }
 
-    /* operate on files in batches if batch size is given */
+    /* operate on files in batches if batch size or volume is given */
     uint64_t batch_size = copy_opts->batch_files;
-    if (batch_size > 0) {
+    uint64_t batch_volume = copy_opts->batch_volume;
+    if (batch_size > 0 || batch_volume > 0) {
         /* operate in batches, get total size of list, our global
          * offset within it, and the local size of our list to
          * compute which batch our files are part of */
@@ -2739,7 +2740,8 @@ int mfu_flist_copy(
 
             /* copy a full batch or until we run out of files */
             uint64_t count = 0;
-            while (count < batch_size && (batch_offset + count) < src_size) {
+            uint64_t volume = 0;
+            while (count < batch_size && volume < batch_volume && (batch_offset + count) < src_size) {
                 /* compute global index of this file */
                 uint64_t global_idx = batch_offset + count;
 
@@ -2752,6 +2754,7 @@ int mfu_flist_copy(
                     mfu_filetype type = mfu_flist_file_get_type(src_cp_list, idx);
                     if (type != MFU_TYPE_DIR) {
                         mfu_flist_file_copy(src_cp_list, idx, tmplist);
+                        volume += mfu_flist_file_get_size(src_cp_list, idx);
                     }
                 }
 
@@ -3587,6 +3590,7 @@ mfu_copy_opts_t* mfu_copy_opts_new(void)
 
     /* By default, do not limit the batch size */
     opts->batch_files = 0;
+    opts->batch_volume = 0;
 
     return opts;
 }

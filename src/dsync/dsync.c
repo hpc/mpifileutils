@@ -62,26 +62,27 @@ static void print_usage(void)
     printf("       daos://<pool>/<cont>[/<path>] | <UNS path>\n");
 #endif
     printf("Options:\n");
-    printf("      --dryrun            - show differences, but do not synchronize files\n");
-    printf("  -b  --batch-files <N>   - batch files into groups of N during copy\n");
-    printf("      --bufsize <SIZE>    - IO buffer size in bytes (default " MFU_BUFFER_SIZE_STR ")\n");
-    printf("      --chunksize <SIZE>  - minimum work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
-    printf("  -X, --xattrs <OPT>      - copy xattrs (none, all, non-lustre, libattr)\n");
+    printf("      --dryrun              - show differences, but do not synchronize files\n");
+    printf("  -b  --batch-files <N>     - batch files into groups of N during copy\n");
+    printf("  -V  --batch-volume <SIZE> - batch files into groups of SIZE during copy\n");
+    printf("      --bufsize <SIZE>      - IO buffer size in bytes (default " MFU_BUFFER_SIZE_STR ")\n");
+    printf("      --chunksize <SIZE>    - minimum work size per task in bytes (default " MFU_CHUNK_SIZE_STR ")\n");
+    printf("  -X, --xattrs <OPT>        - copy xattrs (none, all, non-lustre, libattr)\n");
 #ifdef DAOS_SUPPORT
-    printf("      --daos-api          - DAOS API in {DFS, DAOS} (default uses DFS for POSIX containers)\n");
+    printf("      --daos-api            - DAOS API in {DFS, DAOS} (default uses DFS for POSIX containers)\n");
 #endif
-    printf("  -c, --contents          - read and compare file contents rather than compare size and mtime\n");
-    printf("  -D, --delete            - delete extraneous files from target\n");
-    printf("  -L, --dereference       - copy original files instead of links\n");
-    printf("  -P, --no-dereference    - don't follow links in source\n"); 
-    printf("  -s, --direct            - open files with O_DIRECT\n");
-    printf("      --open-noatime      - open files with O_NOATIME\n");
-    printf("      --link-dest <DIR>   - hardlink to files in DIR when unchanged\n");
-    printf("  -S, --sparse            - create sparse files when possible\n");
-    printf("      --progress <N>      - print progress every N seconds\n");
-    printf("  -v, --verbose           - verbose output\n");
-    printf("  -q, --quiet             - quiet output\n");
-    printf("  -h, --help              - print usage\n");
+    printf("  -c, --contents            - read and compare file contents rather than compare size and mtime\n");
+    printf("  -D, --delete              - delete extraneous files from target\n");
+    printf("  -L, --dereference         - copy original files instead of links\n");
+    printf("  -P, --no-dereference      - don't follow links in source\n"); 
+    printf("  -s, --direct              - open files with O_DIRECT\n");
+    printf("      --open-noatime        - open files with O_NOATIME\n");
+    printf("      --link-dest <DIR>     - hardlink to files in DIR when unchanged\n");
+    printf("  -S, --sparse              - create sparse files when possible\n");
+    printf("      --progress <N>        - print progress every N seconds\n");
+    printf("  -v, --verbose             - verbose output\n");
+    printf("  -q, --quiet               - quiet output\n");
+    printf("  -h, --help                - print usage\n");
     printf("\n");
     printf("For more information see https://mpifileutils.readthedocs.io.\n");
     fflush(stdout);
@@ -3105,7 +3106,7 @@ int main(int argc, char **argv)
 
     while (1) {
         int c = getopt_long(
-            argc, argv, "b:cDso:LPSvqhX:",
+            argc, argv, "b:V:cDso:LPSvqhX:",
             long_options, &option_index
         );
 
@@ -3116,6 +3117,17 @@ int main(int argc, char **argv)
         switch (c) {
         case 'b':
             copy_opts->batch_files = atoi(optarg);
+            break;
+        case 'V':
+            if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
+                if (rank == 0) {
+                    MFU_LOG(MFU_LOG_ERR,
+                            "Failed to parse volume size: '%s'", optarg);
+                }
+                usage = 1;
+            } else {
+                copy_opts->batch_volume = bytes;
+            }
             break;
         case 'B':
             if (mfu_abtoull(optarg, &bytes) != MFU_SUCCESS || bytes == 0) {
