@@ -29,6 +29,11 @@ OPTIONS
 
    Batch files into groups of up to size N during copy operation.
 
+.. option:: -V, --batch-volume <SIZE>
+
+   Batch files into groups of up to volume <SIZE> during copy operation.
+   Units like "MB" and "GB" may immediately follow the number without spaces (e.g. 8MB)
+
 .. option:: --bufsize SIZE
 
    Set the I/O buffer to be SIZE bytes.  Units like "MB" and "GB" may
