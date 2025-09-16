@@ -365,6 +365,63 @@ class TestDsyncBasic(TestDsync):
             with open(self.dst / filename, "r") as fh:
                 self.assertEqual(fh.read(), "original")
 
+    def test_dsync_hardlink_dest_ref_changed_w_new_dest(self):
+        # Create a conflicting file in dest with different content and check it
+        # is overwritten. Also add new hardlink in dest and check it is not
+        # touched.
+        with open(self.src / "file3", "w+") as fh:
+            fh.write("original")
+        self.run_dsync()
+        with open(self.dst / "file3", "w+") as fh:
+            fh.write("modified")
+        (self.dst / "hardlink3.1").hardlink_to(self.dst / "file3")
+        proc = self.run_dsync()
+        self.assertInProcStdout(
+            proc,
+            textwrap.dedent(
+                """
+                    Items: 2
+                      Directories: 0
+                      Files: 1
+                      Links: 0
+                      Hardlinks: 1
+                """
+            ),
+        )
+        self.assertSrcDstEqual(ignore_paths=["hardlink3.1"])
+        for filename in ["file3", "hardlink3"]:
+            with open(self.dst / filename, "r") as fh:
+                self.assertEqual(fh.read(), "original")
+        with open(self.dst / "hardlink3.1", "r") as fh:
+            self.assertEqual(fh.read(), "modified")
+
+    def test_dsync_hardlink_dest_ref_changed_w_new_dest_delete(self):
+        # Create a conflicting file in dest with different content and check it
+        # is overwritten. Also add new hardlink in dest and check it is removed.
+        with open(self.src / "file3", "w+") as fh:
+            fh.write("original")
+        self.run_dsync()
+        with open(self.dst / "file3", "w+") as fh:
+            fh.write("modified")
+        (self.dst / "hardlink3.1").hardlink_to(self.dst / "file3")
+        proc = self.run_dsync(delete=True)
+        self.assertInProcStdout(
+            proc,
+            textwrap.dedent(
+                """
+                    Items: 2
+                      Directories: 0
+                      Files: 1
+                      Links: 0
+                      Hardlinks: 1
+                """
+            ),
+        )
+        self.assertSrcDstEqual()
+        for filename in ["file3", "hardlink3"]:
+            with open(self.dst / filename, "r") as fh:
+                self.assertEqual(fh.read(), "original")
+
     def test_dsync_hardlink_dest_multiple_ref_changed(self):
         # Create a conflicting file in dest with different content and check it
         # is overwritten.
