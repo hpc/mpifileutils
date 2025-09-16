@@ -1682,11 +1682,15 @@ static int dsync_remove_hardlinks_with_removed_refs(
                 uint64_t dst_index;
                 int tmp_rc;
                 tmp_rc = dsync_strmap_item_index(dst_map, key, &dst_index);
-                if (tmp_rc) {
-                    rc = -1;
-                    MFU_LOG(MFU_LOG_ERR, "ERROR: Unable to find index of key `%s' in source map", key);
+                assert(tmp_rc == 0);
+
+                /* get index of source file */
+                uint64_t src_index;
+                tmp_rc = dsync_strmap_item_index(src_map, key, &src_index);
+                /* skip item if it only exists in the destination */
+                if (tmp_rc)
                     continue;
-                }
+
                 /* skip item if not hardlink */
                 mfu_filetype type = mfu_flist_file_get_type(dst_list, dst_index);
                 if(type != MFU_TYPE_HARDLINK)
@@ -1718,14 +1722,7 @@ static int dsync_remove_hardlinks_with_removed_refs(
                 /* Unless dry run mode, mark the file to be removed in
                  * destination and copied from source. */
                 if (!options.dry_run) {
-                    /* get index of source file */
-                    uint64_t src_index;
-                    tmp_rc = dsync_strmap_item_index(src_map, key, &src_index);
-                    if (tmp_rc) {
-                        rc = -1;
-                        MFU_LOG(MFU_LOG_ERR, "ERROR: Unable to find index of key `%s' in destination map", key);
-                    } else
-                        mfu_flist_file_copy(src_list, src_index, src_cp_list);
+                    mfu_flist_file_copy(src_list, src_index, src_cp_list);
                     mfu_flist_file_copy(dst_list, dst_index, dst_remove_list);
                 }
             }
