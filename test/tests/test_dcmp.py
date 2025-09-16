@@ -159,6 +159,34 @@ class TestDcpBasic(TestDcp):
             ),
         )
 
+    def test_dcmp_missing_hardlink_ref(self):
+        self.run_dsync()
+        # Remove file4 (reference of hardlink4.1 and hardlink4.2) in source.
+        #
+        # In practice, a single file is missing in destination. However, due to
+        # limitations in comparison algorithm, dcmp considers:
+        # - file4 is missing in dest (ok)
+        # - hardlink4.1 to be a reference file in source and a "secondary"
+        #   hardlink in destination → type difference
+        # - hardlink4.2 is a hardlink to file4 in source and a hardlink to
+        #   hardlink4.1 in destination → content difference
+        (self.src / "file4").unlink()
+        proc = self.run_dcmp()
+        self.assertInProcStdout(
+            proc,
+            textwrap.dedent(
+                """
+                    Number of items that exist in both directories: 11 (Src: 11 Dest: 11)
+                    Number of items that exist only in one directory: N/A (Src: 0 Dest: 1)
+                    Number of items that exist in both directories and have the same type: 10 (Src: 10 Dest: 10)
+                    Number of items that exist in both directories and have different types: 1 (Src: 1 Dest: 1)
+                    Number of items that exist in both directories and have the same content: 9 (Src: 9 Dest: 9)
+                    Number of items that exist in both directories and have different contents: 2 (Src: 2 Dest: 2)
+                """
+            ),
+        )
+
+
     def test_dcmp_different_content(self):
         self.run_dsync()
         # change content of file1 in destination
