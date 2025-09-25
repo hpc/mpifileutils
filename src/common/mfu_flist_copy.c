@@ -3571,6 +3571,9 @@ mfu_copy_opts_t* mfu_copy_opts_new(void)
     /* By default, don't use O_NOATIME. */
     opts->open_noatime = false;
 
+    /* By default, compare atime. */
+    opts->ignore_atime = false;
+
     /* By default, don't use sparse file. */
     opts->sparse = false;
 
