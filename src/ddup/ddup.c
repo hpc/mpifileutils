@@ -13,6 +13,10 @@
 #include "mfu.h"
 #include "list.h"
 
+#ifndef O_NOATIME
+#define O_NOATIME 0
+#endif
+
 /* number of uint64_t values in our key
  * 1 for group ID + (SHA256_DIGEST_LENGTH / 8) */
 #define DDUP_KEY_SIZE 5
