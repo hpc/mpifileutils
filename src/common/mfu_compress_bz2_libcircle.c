@@ -5,7 +5,9 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#if defined(__linux__)
 #include <sys/sysinfo.h>
+#endif
 #include <string.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -23,6 +25,7 @@
 #include "mfu.h"
 #include "mfu_bz2.h"
 
+#if defined(__linux__)
 #define FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)
 
 struct block_info {
@@ -531,3 +534,11 @@ int mfu_compress_bz2_libcircle(const char* src, const char* dst, int b_size, ssi
 
     return rc;
 }
+#else
+int mfu_compress_bz2_libcircle(const char* src, const char* dst,
+                                int b_size, ssize_t opts_memory)
+{
+    (void)opts_memory;
+    return mfu_compress_bz2_static(src, dst, b_size);
+}
+#endif

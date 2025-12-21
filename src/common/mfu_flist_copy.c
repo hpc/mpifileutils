@@ -39,8 +39,15 @@
 #include <sys/ioctl.h>
 #include <sys/param.h>
 
+#ifdef __linux__
 #include <linux/fs.h>
 #include <linux/fiemap.h>
+typedef __u64 mfu_u64;
+typedef __u32 mfu_u32;
+#else
+typedef uint64_t mfu_u64;
+typedef uint32_t mfu_u32;
+#endif
 
 /* define PRI64 */
 #include <inttypes.h>
@@ -72,6 +79,10 @@
 #include <linux/hpssfs.h>
 #endif
 
+#ifndef O_NOATIME
+#define O_NOATIME 0
+#endif
+
 /****************************************
  * Define types
  ***************************************/
@@ -98,6 +109,47 @@ typedef struct {
     dfs_obj_t* obj; /* open object */
 #endif
 } mfu_copy_file_cache_t;
+
+#if DCOPY_USE_XATTRS && !defined(__linux__)
+
+#include <errno.h>
+#include <sys/types.h>
+
+static inline ssize_t
+llistxattr(const char *path, char *list, size_t size)
+{
+    (void)path;
+    (void)list;
+    (void)size;
+    errno = ENOTSUP;
+    return -1;
+}
+
+static inline ssize_t
+lgetxattr(const char *path, const char *name, void *value, size_t size)
+{
+    (void)path;
+    (void)name;
+    (void)value;
+    (void)size;
+    errno = ENOTSUP;
+    return -1;
+}
+
+static inline int
+lsetxattr(const char *path, const char *name,
+          const void *value, size_t size, int flags)
+{
+    (void)path;
+    (void)name;
+    (void)value;
+    (void)size;
+    (void)flags;
+    errno = ENOTSUP;
+    return -1;
+}
+
+#endif
 
 /****************************************
  * Define globals
@@ -1889,13 +1941,13 @@ static int mfu_copy_file_normal(
 }
 
 struct mfu_extent {
-    __u64 me_logical;  /* logical offset in bytes for the start of the extent */
-    __u64 me_length;   /* length in bytes for this extent */
+    mfu_u64 me_logical;  /* logical offset in bytes for the start of the extent */
+    mfu_u64 me_length;   /* length in bytes for this extent */
 };
 
 struct mfu_extent_list {
-    __u32 mel_mapped_extents;/* number of extents that were mapped */
-    __u32 mel_extent_count;  /* size of fm_extents array */
+    mfu_u32 mel_mapped_extents;/* number of extents that were mapped */
+    mfu_u32 mel_extent_count;  /* size of fm_extents array */
     struct mfu_extent mel_extents[0]; /* array of mapped extents */
 };
 
@@ -1926,6 +1978,7 @@ struct mfu_extent_list *mfu_extent_list_realloc(struct mfu_extent_list *orig, si
     return extent_list;
 }
 
+#ifdef __linux__
 static struct mfu_extent_list * mfu_fiemap_get_extents(
     const char* src,
     const char* dest,
@@ -2026,6 +2079,7 @@ fail_free_fiemap:
 fail_no_fiemap:
     return NULL;
 }
+#endif
 
 /*
  * if returned extent_list * is non-NULL, and normal_copy_required == false,
@@ -2175,6 +2229,7 @@ static int mfu_copy_file_extents(
             free(extent_list);
         }
 
+#ifdef __linux__
         /* extents acquired by fiemap ioctl */
         extent_list = mfu_fiemap_get_extents( src, dest,
             offset, length, file_size, normal_copy_required, copy_opts,
@@ -2183,6 +2238,9 @@ static int mfu_copy_file_extents(
         if (!extent_list || *normal_copy_required == true) {
             goto fail_fiemap;
         }
+#else
+        goto fail_normal_copy;
+#endif
     }
 
     /* seek to offset in source file */

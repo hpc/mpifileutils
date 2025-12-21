@@ -5,13 +5,14 @@
 #include <string.h>
 #include <errno.h>
 
-/* for statfs */
-#include <sys/vfs.h>
+#if defined(__linux__)
+#include <sys/vfs.h>  /* for statfs */
+#endif
 
+#if defined(__linux__) && LUSTRE_SUPPORT
 /* for LL_SUPER_MAGIC */
-#if LUSTRE_SUPPORT
 #include <lustre/lustre_user.h>
-#endif /* LUSTRE_SUPPORT */
+#endif /* __linux__ && LUSTRE_SUPPORT */
 
 #include "mpi.h"
 #include "mfu.h"

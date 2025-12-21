@@ -40,6 +40,14 @@
 #include <lustre/lustreapi.h>
 #endif
 
+#ifndef O_NOATIME
+#define O_NOATIME 0
+#endif
+
+#ifndef O_LARGEFILE
+#define O_LARGEFILE 0
+#endif
+
 /* for magic value we use "DTAR_IDX" in ASCII (8-bit) */
 #define DTAR_MAGIC (0x445441525F494458)
 
@@ -5265,7 +5273,12 @@ static int extract_xattrs(
                 r = archive_entry_xattr_next(entry, &xname, &xval, &xsize);
                 if (r == ARCHIVE_OK) {
                     /* successfully extracted xattr, now try to set it */
+#ifdef __linux__
                     int set_rc = setxattr(path, xname, xval, xsize, 0);
+#else
+                    int set_rc = -1;
+                    errno = ENOTSUP;
+#endif
                     if (set_rc == -1) {
                         MFU_LOG(MFU_LOG_ERR, "failed to setxattr '%s' on '%s' errno=%d %s",
                             xname, path, errno, strerror(errno) 
