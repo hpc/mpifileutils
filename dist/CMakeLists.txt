@@ -263,6 +263,7 @@ LIST(APPEND libmfu_install_headers
   mpifileutils/src/common/mfu_param_path.h
   mpifileutils/src/common/mfu_path.h
   mpifileutils/src/common/mfu_pred.h
+  mpifileutils/src/common/mfu_proc.h
   mpifileutils/src/common/mfu_progress.h
   mpifileutils/src/common/mfu_util.h
   )
