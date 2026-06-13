@@ -317,7 +317,8 @@ static void print_usage(void)
     printf("  -l, --lite              - walk file system without stat\n");
     printf("  -s, --sort <fields>     - sort output by comma-delimited fields\n");
     printf("  -d, --distribution <field>:<separators> \n                          - print distribution by field\n");
-    printf("  -f, --file_histogram    - print default size distribution of items\n");
+    printf("  -f, --file_histogram, --file-histogram\n");
+    printf("                          - print default size distribution of items\n");
     printf("  -p, --print             - print files to screen\n");
     printf("      --no-atime          - use with -l; do not update the file last access time\n");
     printf("  -L, --dereference       - follow symbolic links\n");
@@ -390,6 +391,7 @@ int main(int argc, char** argv)
         {"sort",           1, 0, 's'},
         {"distribution",   1, 0, 'd'},
         {"file_histogram", 0, 0, 'f'},
+        {"file-histogram", 0, 0, 'f'},
         {"print",          0, 0, 'p'},
         {"no-atime",       0, 0, 'n'},
         {"dereference",    0, 0, 'L'},

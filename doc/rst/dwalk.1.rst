@@ -54,7 +54,7 @@ OPTIONS
    bytes, between 1-80 bytes, between 81-99 bytes, and 100 bytes or
    greater.
 
-.. option:: -f, --file-histogram
+.. option:: -f, --file_histogram, --file-histogram
 
    Creates a file histogram without requiring the user to provide
    the bin sizes. The bins are created dynamically based on the
