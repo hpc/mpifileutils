@@ -438,6 +438,11 @@ typedef int (*mfu_flist_map_fn)(mfu_flist flist, uint64_t index, int ranks, cons
  * exchange items among ranks and return new output list */
 mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args);
 
+/* maps each item in input list according to rank listed in dest array,
+ * dest should have one value for each entry in list,
+ * returns a newly allocated flist resulting after exchanging items */
+mfu_flist mfu_flist_map_byarray(mfu_flist list, const int* dest);
+
 /* takes a list, spreads it evenly among processes with respect to item count,
  * and then returns the newly created list to the caller */
 mfu_flist mfu_flist_spread(mfu_flist flist);
@@ -476,6 +481,19 @@ int mfu_flist_copy(
     int numpaths,                   /* IN - number of source paths */
     const mfu_param_path* paths,    /* IN - array of source pathts */
     const mfu_param_path* destpath, /* IN - destination path */
+    mfu_copy_opts_t* mfu_copy_opts, /* IN - options to be used during copy */
+    mfu_file_t* mfu_src_file,       /* IN - I/O filesystem functions to use for copy of src */
+    mfu_file_t* mfu_dst_file        /* IN - I/O filesystem functions to use for copy of dst */
+);
+
+/* copy items in list from source paths to destination,
+ * each item in source list must come from one of the
+ * given source paths, returns 0 on success -1 on error */
+int mfu_flist_copy_py(
+    mfu_flist src_cp_list,          /* IN - flist providing source items */
+    int numpaths,                   /* IN - number of source paths */
+    const char** paths,             /* IN - array of source pathts */
+    const char* destpath,           /* IN - destination path */
     mfu_copy_opts_t* mfu_copy_opts, /* IN - options to be used during copy */
     mfu_file_t* mfu_src_file,       /* IN - I/O filesystem functions to use for copy of src */
     mfu_file_t* mfu_dst_file        /* IN - I/O filesystem functions to use for copy of dst */
@@ -671,6 +689,19 @@ int mfu_flist_archive_extract(
     const char* filename,          /* name of archive file to be extracted */
     const mfu_param_path* cwdpath, /* current working dir used to construct absolute path of each item */
     mfu_archive_opts_t* opts       /* options to configure archive extraction operation */
+);
+
+int mfu_flist_archive_create_py(
+    mfu_flist flist,         /* list of items to be written to archive */
+    const char* filename,    /* name of target archive file */
+    const char* cwdpath,     /* current working directory used to construct relative path to each item in flist */
+    mfu_archive_opts_t* opts /* options to configure archive operation */
+);
+
+int mfu_flist_archive_extract_py(
+    const char* filename,
+    const char* cwd,
+    mfu_archive_opts_t* opts
 );
 
 #endif /* MFU_FLIST_H */
