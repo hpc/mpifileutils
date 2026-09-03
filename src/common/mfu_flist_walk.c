@@ -115,7 +115,7 @@ static int build_path(char* path, size_t path_len, const char* dir, const char* 
     } else {
         new_len = snprintf(path, path_len, "%s/%s", dir, name);
     }
-    if (new_len > path_len) {
+    if (new_len < 0 || (size_t) new_len >= path_len) {
         MFU_LOG(MFU_LOG_ERR, "Path name is too long, %lu chars exceeds limit %lu: '%s/%s'",
                 new_len, path_len, dir, name);
         WALK_RESULT = -1;
