@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <getopt.h>
-#include <openssl/sha.h>
 #include <assert.h>
 #include <inttypes.h>
 
@@ -12,9 +11,10 @@
 #include "dtcmp.h"
 #include "mfu.h"
 #include "list.h"
+#include "mfu_sha256.h"
 
 /* number of uint64_t values in our key
- * 1 for group ID + (SHA256_DIGEST_LENGTH / 8) */
+ * 1 for group ID + (MFU_SHA256_DIGEST_LEN / 8) */
 #define DDUP_KEY_SIZE 5
 
 /* amount of data to read in order to compute hash */
@@ -40,11 +40,11 @@ static void print_usage(void)
 /* create MPI datatypes for key and key and satellite data */
 static void mpi_type_init(MPI_Datatype* key, MPI_Datatype* keysat)
 {
-    assert(SHA256_DIGEST_LENGTH == (DDUP_KEY_SIZE - 1) * 8);
+    assert(MFU_SHA256_DIGEST_LEN == (DDUP_KEY_SIZE - 1) * 8);
 
     /*
      * Build MPI datatype for key.
-     * 1 for group ID + (SHA256_DIGEST_LENGTH / 8)
+     * 1 for group ID + (MFU_SHA256_DIGEST_LEN / 8)
      */
     MPI_Type_contiguous(DDUP_KEY_SIZE, MPI_UINT64_T, key);
     MPI_Type_commit(key);
@@ -155,14 +155,14 @@ out:
 }
 
 struct file_item {
-    SHA256_CTX ctx;
+    mfu_sha256_ctx ctx;
 };
 
 /* print SHA256 value to stdout */
 static void dump_sha256_digest(char* digest_string, unsigned char digest[])
 {
     int i;
-    for (i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+    for (i = 0; i < MFU_SHA256_DIGEST_LEN; i++) {
         sprintf(&digest_string[i * 2], "%02x", (unsigned int)digest[i]);
     }
 }
@@ -175,7 +175,7 @@ int main(int argc, char** argv)
 
     uint64_t chunk_size = DDUP_CHUNK_SIZE;
 
-    SHA256_CTX* ctx_ptr;
+    mfu_sha256_ctx* ctx_ptr;
 
     MPI_Init(NULL, NULL);
     mfu_init();
@@ -371,7 +371,7 @@ int main(int argc, char** argv)
         ptr[DDUP_KEY_SIZE] = i;
 
         /* initialize the SHA256 hash state for this file */
-        SHA256_Init(&file_items[i].ctx);
+        mfu_sha256_init(&file_items[i].ctx);
 
         /* increment our file count */
         new_checking_files++;
@@ -432,16 +432,17 @@ int main(int argc, char** argv)
 
             /* update the SHA256 context for this file */
             ctx_ptr = &file_items[idx].ctx;
-            SHA256_Update(ctx_ptr, chunk_buf, data_size);
+            mfu_sha256_update(ctx_ptr, chunk_buf, data_size);
 
             /*
              * Use SHA256 value as key.
-             * This is actually an hack, but SHA256_Final can't
-             * be called multiple times with out changing ctx
+             * This is actually an hack, but mfu_sha256_final can't
+             * be called multiple times with out changing ctx, so we
+             * finalize a copy of the running context instead.
              */
-            SHA256_CTX ctx_tmp;
+            mfu_sha256_ctx ctx_tmp;
             memcpy(&ctx_tmp, ctx_ptr, sizeof(ctx_tmp));
-            SHA256_Final((unsigned char*)(ptr + 1), &ctx_tmp);
+            mfu_sha256_final(&ctx_tmp, (unsigned char*)(ptr + 1));
 
             /* move on to next file in the list */
             ptr += DDUP_KEY_SIZE + 1;
@@ -488,10 +489,10 @@ int main(int argc, char** argv)
                  * duplicate with other files that also have
                  * matching group_id[i]
                  */
-                unsigned char digest[SHA256_DIGEST_LENGTH];
-                SHA256_Final(digest, ctx_ptr);
+                unsigned char digest[MFU_SHA256_DIGEST_LEN];
+                mfu_sha256_final(ctx_ptr, digest);
 
-                char digest_string[SHA256_DIGEST_LENGTH * 2 + 1];
+                char digest_string[MFU_SHA256_DIGEST_LEN * 2 + 1];
                 dump_sha256_digest(digest_string, digest);
                 printf("%s %s\n", fname, digest_string);
             } else {

@@ -153,9 +153,6 @@ IF(LibCap_FOUND)
   LIST(APPEND MFU_EXTERNAL_LIBS ${LibCap_LIBRARIES})
 ENDIF(LibCap_FOUND)
 
-## OPENSSL for ddup
-FIND_PACKAGE(OpenSSL)
-
 # Setup Installation
 
 INCLUDE(GNUInstallDirs)
@@ -202,5 +199,9 @@ INCLUDE(MFU_ADD_TOOL)
 INCLUDE_DIRECTORIES(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/src/common)
 
 ADD_SUBDIRECTORY(src)
+
+# enable CTest so tests registered under test/ run via `make test` / ctest
+ENABLE_TESTING()
 ADD_SUBDIRECTORY(test)
+
 ADD_SUBDIRECTORY(man)

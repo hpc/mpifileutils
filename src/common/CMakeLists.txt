@@ -17,6 +17,7 @@ LIST(APPEND libmfu_install_headers
   mfu_pred.h
   mfu_proc.h
   mfu_progress.h
+  mfu_sha256.h
   mfu_util.h
   )
 if(ENABLE_DAOS)
@@ -49,6 +50,7 @@ LIST(APPEND libmfu_srcs
   mfu_pred.c
   mfu_proc.c
   mfu_progress.c
+  mfu_sha256.c
   mfu_util.c
   strmap.c
   )

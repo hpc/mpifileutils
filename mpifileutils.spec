@@ -8,7 +8,7 @@ License:	Copyright and BSD License
 URL:		https://hpc.github.io/mpifileutils
 Source:		%{name}-%{version}.tar.gz
 BuildRoot:      %_topdir/BUILDROOT
-Requires: libcircle, lwgrp, dtcmp, libarchive, openssl, openssl-devel
+Requires: libcircle, lwgrp, dtcmp, libarchive
 
 %description
 File utilities designed for scalability and performance.

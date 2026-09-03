@@ -143,9 +143,6 @@ IF(LibCap_FOUND)
   LIST(APPEND MFU_EXTERNAL_LIBS ${LibCap_LIBRARIES})
 ENDIF(LibCap_FOUND)
 
-## OPENSSL for ddup
-FIND_PACKAGE(OpenSSL)
-
 # Setup Installation
 
 INCLUDE(GNUInstallDirs)
