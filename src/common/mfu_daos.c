@@ -1884,6 +1884,7 @@ int daos_cleanup(
  * returns -1 on error, 0 if same, 1 if different. */
 static int mfu_daos_obj_sync_recx_single(
     daos_key_t *dkey,
+    daos_handle_t th,
     daos_handle_t *src_oh,
     daos_handle_t *dst_oh,
     daos_iod_t *iod,
@@ -1905,7 +1906,7 @@ static int mfu_daos_obj_sync_recx_single(
     d_iov_set(&src_iov, src_buf, src_buf_len);
 
     /* Fetch the source */
-    rc = daos_obj_fetch(*src_oh, DAOS_TX_NONE, 0, dkey, 1, iod, &src_sgl, NULL, NULL);
+    rc = daos_obj_fetch(*src_oh, th, 0, dkey, 1, iod, &src_sgl, NULL, NULL);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "DAOS object fetch returned with errors "DF_RC, DP_RC(rc));
         goto out_err;
@@ -1967,55 +1968,17 @@ out_err:
     return -1;
 }
 
-/* Free a buffer created with alloc_iov_buf */
-static void free_iov_buf(
-    uint32_t    number, /* buffer length */
-    char**      buf)    /* pointer to static buffer */
-{
-    if (buf != NULL) {
-        for (uint32_t i = 0; i < number; i++) {
-            mfu_free(&buf[i]);
-        }
-    }
-}
-
-/* Create a buffer based on recxs and set iov for each index */
-static int alloc_iov_buf(
-    uint32_t        number, /* number of recxs, iovs, and buffer */
-    daos_size_t     size,   /* size of each record */
-    daos_recx_t*    recxs,  /* array of recxs */
-    d_iov_t*        iov,    /* array of iovs */
-    char**          buf,    /* pointer to static buffer */
-    uint64_t*       buf_len)/* pointer to static buffer lengths */
-{
-    for (uint32_t i = 0; i < number; i++) {
-        buf_len[i] = recxs[i].rx_nr * size;
-        buf[i] = calloc(buf_len[i], sizeof(void*));
-        if (buf[i] == NULL) {
-            free_iov_buf(number, buf);
-            return -1;
-        }
-        d_iov_set(&iov[i], buf[i], buf_len[i]);
-    }
-
-    return 0;
-}
-
-/* Sum an array of uint64_t */
-static uint64_t sum_uint64_t(uint32_t number, uint64_t* buf)
-{
-    uint64_t sum = 0;
-    for (uint32_t i = 0; i < number; i++) {
-        sum += buf[i];
-    }
-    return sum;
-}
-
 /* Copy all array recx from a src obj to dst obj for a given dkey/akey.
+ *
+ * The extents reported by daos_obj_list_recx() are only a superset of the data: for an EC object
+ * they are derived from the parity and are therefore stripe granular. The io map returned by the
+ * fetch is what actually holds data, so only that is compared and written.
+ *
  * returns -1 on error, 0 if same, 1 if different */
 static int mfu_daos_obj_sync_recx_array(
     daos_key_t *dkey,
     daos_key_t *akey,
+    daos_handle_t th,
     daos_handle_t *src_oh,
     daos_handle_t *dst_oh,
     daos_iod_t *iod,
@@ -2025,31 +1988,64 @@ static int mfu_daos_obj_sync_recx_array(
 {
     bool        all_dst_equal = true;   /* equal until found otherwise */
     uint32_t    max_number = 5;         /* max recxs per fetch */
-    char*       src_buf[max_number];    /* src buffer data */
-    uint64_t    src_buf_len[max_number];/* src buffer lengths */
-    d_sg_list_t src_sgl;
     daos_recx_t recxs[max_number];
-    daos_size_t size;
     daos_epoch_range_t eprs[max_number];
+    daos_size_t size;
+    uint32_t    number;
 
+    char*       src_buf = NULL;         /* every listed extent, packed */
+    uint64_t    src_buf_len = 0;        /* bytes the listed extents add up to */
+    uint64_t    src_buf_alloc = 0;
+    char*       dst_buf = NULL;         /* the io map extents of the dst, packed */
+    uint64_t    dst_buf_alloc = 0;
+    d_iov_t*    map_iov = NULL;         /* one iov per io map extent */
+    uint32_t    map_iov_alloc = 0;
+    uint64_t    map_bytes;              /* bytes the io map actually covers */
+    daos_iom_t  iom = {0};              /* extents that actually hold data */
+    uint32_t    iom_nr_alloc = 0;
+
+    d_sg_list_t src_sgl;
+    d_iov_t     src_iov;
     daos_anchor_t recx_anchor = {0};
-    int rc;
+    int         rc;
+    int         ret = -1;
+
     while (!daos_anchor_is_eof(&recx_anchor)) {
         /* list all recx for this dkey/akey */
-        uint32_t number = max_number;
-        rc = daos_obj_list_recx(*src_oh, DAOS_TX_NONE, dkey, akey,
+        number = max_number;
+        rc = daos_obj_list_recx(*src_oh, th, dkey, akey,
                                 &size, &number, recxs, eprs,
                                 &recx_anchor, true, NULL);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "DAOS daos_obj_list_recx returned with errors "DF_RC, DP_RC(rc));
-            goto out_err;
+            goto out;
         }
 
         /* if no recx is returned for this dkey/akey move on */
         if (number == 0) 
             continue;
 
-        d_iov_t src_iov[number];
+        /* the extents and the record size come from the source, so the buffer size they add up
+         * to has to be range checked before anything is derived from it */
+        uint64_t rec_nr = 0;
+        for (uint32_t i = 0; i < number; i++) {
+            if (__builtin_add_overflow(rec_nr, recxs[i].rx_nr, &rec_nr)) {
+                MFU_LOG(MFU_LOG_ERR, "DAOS source listed %u extents whose length overflows",
+                        number);
+                goto out;
+            }
+        }
+        if (__builtin_mul_overflow(rec_nr, size, &src_buf_len)) {
+            MFU_LOG(MFU_LOG_ERR, "DAOS source listed %llu records of size %llu, which overflows",
+                    (unsigned long long) rec_nr, (unsigned long long) size);
+            goto out;
+        }
+
+        if (src_buf_len > src_buf_alloc) {
+            mfu_free(&src_buf);
+            src_buf = (char*) MFU_CALLOC(src_buf_len, 1);
+            src_buf_alloc = src_buf_len;
+        }
 
         /* set iod values */
         (*iod).iod_type  = DAOS_IOD_ARRAY;
@@ -2057,104 +2053,174 @@ static int mfu_daos_obj_sync_recx_array(
         (*iod).iod_recxs = recxs;
         (*iod).iod_size  = size;
 
-        /* set src_sgl values */
+        /* set src_sgl values, the fetch packs every listed extent into the one buffer */
+        src_sgl.sg_nr     = 1;
         src_sgl.sg_nr_out = 0;
-        src_sgl.sg_iovs   = src_iov;
-        src_sgl.sg_nr     = number;
+        src_sgl.sg_iovs   = &src_iov;
+        d_iov_set(&src_iov, src_buf, src_buf_len);
 
-        /* allocate and setup src_buf */
-        if (alloc_iov_buf(number, size, recxs, src_iov, src_buf, src_buf_len) != 0) {
-            MFU_LOG(MFU_LOG_ERR, "DAOS failed to allocate source buffer.");
-            goto out_err;
+        /* a listed extent can be split by the fetch, overshoot so the refetch below is rare */
+        if (iom_nr_alloc < number * 2) {
+            mfu_free(&iom.iom_recxs);
+            iom.iom_recxs = (daos_recx_t*) MFU_CALLOC(number * 2, sizeof(daos_recx_t));
+            iom_nr_alloc = number * 2;
         }
-
-        bool recx_equal = false;
-        uint64_t total_bytes = sum_uint64_t(number, src_buf_len);
+        iom.iom_flags  = DAOS_IOMF_DETAIL;
+        iom.iom_nr     = iom_nr_alloc;
+        iom.iom_nr_out = 0;
 
         /* fetch recx values from source */
-        rc = daos_obj_fetch(*src_oh, DAOS_TX_NONE, 0, dkey, 1, iod,
-                            &src_sgl, NULL, NULL);
+        rc = daos_obj_fetch(*src_oh, th, 0, dkey, 1, iod, &src_sgl, &iom, NULL);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "DAOS object fetch returned with errors "DF_RC, DP_RC(rc));
-            goto out_err;
+            goto out;
         }
 
-        /* Sanity check */
-        if (src_sgl.sg_nr_out != number) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to fetch array recxs.");
-            goto out_err;
+        if (iom.iom_nr_out > iom.iom_nr) {
+            /* the map was truncated, iom_nr_out is the exact count needed */
+            mfu_free(&iom.iom_recxs);
+            iom.iom_recxs  = (daos_recx_t*) MFU_CALLOC(iom.iom_nr_out, sizeof(daos_recx_t));
+            iom_nr_alloc   = iom.iom_nr_out;
+            iom.iom_nr     = iom_nr_alloc;
+            iom.iom_nr_out = 0;
+            src_sgl.sg_nr_out = 0;
+
+            rc = daos_obj_fetch(*src_oh, th, 0, dkey, 1, iod, &src_sgl, &iom, NULL);
+            if (rc != 0) {
+                MFU_LOG(MFU_LOG_ERR, "DAOS object fetch returned with errors "DF_RC, DP_RC(rc));
+                goto out;
+            }
+            if (iom.iom_nr_out > iom.iom_nr) {
+                MFU_LOG(MFU_LOG_ERR, "DAOS source io map grew from %u to %u extents",
+                        iom.iom_nr, iom.iom_nr_out);
+                goto out;
+            }
         }
 
-        stats->bytes_read += total_bytes;
+        /* the listed extents hold no data at this epoch, nothing to copy */
+        if (iom.iom_nr_out == 0)
+            continue;
+
+        if (map_iov_alloc < iom.iom_nr_out) {
+            mfu_free(&map_iov);
+            map_iov = (d_iov_t*) MFU_CALLOC(iom.iom_nr_out, sizeof(d_iov_t));
+            map_iov_alloc = iom.iom_nr_out;
+        }
+
+        /* point each returned extent at its offset in the fetch buffer */
+        map_bytes = 0;
+        for (uint32_t m = 0; m < iom.iom_nr_out; m++) {
+            daos_recx_t* map = &iom.iom_recxs[m];
+            uint64_t     off = 0;
+            uint64_t     map_len = 0;
+            uint64_t     map_end = 0;
+            uint32_t     k;
+
+            /* the products below are all bounded by the rec_nr * size check above */
+            for (k = 0; k < number; k++) {
+                /* subtract rather than add, rx_idx + rx_nr can wrap */
+                if (map->rx_idx >= recxs[k].rx_idx &&
+                    map->rx_idx - recxs[k].rx_idx < recxs[k].rx_nr) {
+                    off += (map->rx_idx - recxs[k].rx_idx) * size;
+                    break;
+                }
+                off += recxs[k].rx_nr * size;
+            }
+            if (k == number || __builtin_mul_overflow(map->rx_nr, size, &map_len) ||
+                __builtin_add_overflow(off, map_len, &map_end) || map_end > src_buf_len) {
+                MFU_LOG(MFU_LOG_ERR,
+                        "DAOS source io map extent %llu/%llu is not within the listed extents",
+                        (unsigned long long) map->rx_idx, (unsigned long long) map->rx_nr);
+                goto out;
+            }
+            d_iov_set(&map_iov[m], src_buf + off, map_len);
+            map_bytes += map_len;
+        }
+
+        stats->bytes_read += map_bytes;
+
+        /* only the io map extents hold data, so the destination is compared and written
+         * against those rather than against everything that was listed */
+        (*iod).iod_nr    = iom.iom_nr_out;
+        (*iod).iod_recxs = iom.iom_recxs;
+        (*iod).iod_size  = size;
+
+        bool recx_equal = false;
 
         /* Conditionally compare the destination before writing */
         if (compare_dst) {
-            char*       dst_buf[number];
-            uint64_t    dst_buf_len[number];
             d_sg_list_t dst_sgl;
-            d_iov_t     dst_iov[number];
+            d_iov_t     dst_iov;
 
-            dst_sgl.sg_nr_out = 0;
-            dst_sgl.sg_iovs   = dst_iov;
-            dst_sgl.sg_nr     = number;
-
-            /* allocate and setup dst_buf */
-            if (alloc_iov_buf(number, size, recxs, dst_iov, dst_buf, dst_buf_len) != 0) {
-                MFU_LOG(MFU_LOG_ERR, "DAOS failed to allocate destination buffer.");
-                goto out_err;
+            if (map_bytes > dst_buf_alloc) {
+                mfu_free(&dst_buf);
+                dst_buf = (char*) MFU_CALLOC(map_bytes, 1);
+                dst_buf_alloc = map_bytes;
+            } else {
+                /* the fetch leaves holes in the dst untouched, so they have to read as zeros
+                 * rather than as whatever the previous extent left behind */
+                memset(dst_buf, 0, map_bytes);
             }
 
-            rc = daos_obj_fetch(*dst_oh, DAOS_TX_NONE, 0, dkey, 1, iod,
-                                &dst_sgl, NULL, NULL);
+            dst_sgl.sg_nr     = 1;
+            dst_sgl.sg_nr_out = 0;
+            dst_sgl.sg_iovs   = &dst_iov;
+            d_iov_set(&dst_iov, dst_buf, map_bytes);
+
+            /* the snapshot transaction belongs to the source container */
+            rc = daos_obj_fetch(*dst_oh, DAOS_TX_NONE, 0, dkey, 1, iod, &dst_sgl, NULL, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "DAOS object fetch returned with errors "DF_RC, DP_RC(rc));
-                free_iov_buf(number, dst_buf);
-                goto out_err;
+                goto out;
             }
 
             /* Reset iod values after fetching the destination */
-            (*iod).iod_nr    = number;
+            (*iod).iod_nr    = iom.iom_nr_out;
             (*iod).iod_size  = size;
 
             /* Determine whether all recxs in the dst are equal to the src.
              * If any recx is different, update all recxs in dst and flag
              * this akey as different. */
             if (dst_sgl.sg_nr_out > 0) {
-                stats->bytes_read += total_bytes;
+                uint64_t off = 0;
+
+                stats->bytes_read += map_bytes;
                 recx_equal = true;
-                for (uint32_t i = 0; i < number; i++) {
-                    if (memcmp(src_buf[i], dst_buf[i], src_buf_len[i]) != 0) {
+                for (uint32_t m = 0; m < iom.iom_nr_out; m++) {
+                    if (memcmp(map_iov[m].iov_buf, dst_buf + off, map_iov[m].iov_len) != 0) {
                         recx_equal = false;
                         all_dst_equal = false;
                         break;
                     }
+                    off += map_iov[m].iov_len;
                 }
             }
-            free_iov_buf(number, dst_buf);
         }
 
         /* Conditionally write to the destination */
         if (write_dst && !recx_equal) {
-            rc = daos_obj_update(*dst_oh, DAOS_TX_NONE, 0, dkey, 1, iod,
-                                 &src_sgl, NULL);
+            src_sgl.sg_nr     = iom.iom_nr_out;
+            src_sgl.sg_nr_out = 0;
+            src_sgl.sg_iovs   = map_iov;
+
+            rc = daos_obj_update(*dst_oh, DAOS_TX_NONE, 0, dkey, 1, iod, &src_sgl, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "DAOS object update returned with errors "DF_RC, DP_RC(rc));
-                goto out_err;
+                goto out;
             }
-            stats->bytes_written += total_bytes;
+            stats->bytes_written += map_bytes;
         }
-        free_iov_buf(number, src_buf);
     }
 
     /* return 0 if equal, 1 if different */
-    if (all_dst_equal) {
-        return 0;
-    }
-    return 1;
+    ret = all_dst_equal ? 0 : 1;
 
-out_err:
-    /* return -1 on true errors */
-    return -1;
+out:
+    mfu_free(&src_buf);
+    mfu_free(&dst_buf);
+    mfu_free(&map_iov);
+    mfu_free(&iom.iom_recxs);
+    return ret;
 }
 
 /* Copy all dkeys and akeys from a src obj to dst obj.
@@ -2162,6 +2228,7 @@ out_err:
 static int mfu_daos_obj_sync_keys(
   daos_handle_t* src_oh,
   daos_handle_t* dst_oh,
+  daos_handle_t th,
   bool compare_dst,
   bool write_dst,
   mfu_daos_stats_t* stats)
@@ -2187,7 +2254,7 @@ static int mfu_daos_obj_sync_keys(
         d_iov_set(&dkey_iov, dkey_enum_buf, ENUM_DESC_BUF);
 
         /* get dkeys */
-        rc = daos_obj_list_dkey(*src_oh, DAOS_TX_NONE, &dkey_number, dkey_kds,
+        rc = daos_obj_list_dkey(*src_oh, th, &dkey_number, dkey_kds,
                                 &dkey_sgl, &dkey_anchor, NULL);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "DAOS daos_obj_list_dkey returned with errors "DF_RC, DP_RC(rc));
@@ -2227,7 +2294,7 @@ static int mfu_daos_obj_sync_keys(
                 d_iov_set(&akey_iov, akey_enum_buf, ENUM_DESC_BUF);
 
                 /* get akeys */
-                rc = daos_obj_list_akey(*src_oh, DAOS_TX_NONE, &diov, &akey_number, akey_kds,
+                rc = daos_obj_list_akey(*src_oh, th, &diov, &akey_number, akey_kds,
                                         &akey_sgl, &akey_anchor, NULL);
                 if (rc != 0) {
                     MFU_LOG(MFU_LOG_ERR, "DAOS daos_obj_list_akey returned with errors "DF_RC, DP_RC(rc));
@@ -2257,7 +2324,7 @@ static int mfu_daos_obj_sync_keys(
 
                     /* Do a fetch (with NULL sgl) of single value type, and if that
                      * returns iod_size == 0, then a single value does not exist. */
-                    rc = daos_obj_fetch(*src_oh, DAOS_TX_NONE, 0, &diov, 1, &iod, NULL, NULL, NULL);
+                    rc = daos_obj_fetch(*src_oh, th, 0, &diov, 1, &iod, NULL, NULL, NULL);
                     if (rc != 0) {
                         MFU_LOG(MFU_LOG_ERR, "DAOS daos_obj_fetch returned with errors "DF_RC, DP_RC(rc));
                         goto out_err;
@@ -2265,7 +2332,7 @@ static int mfu_daos_obj_sync_keys(
 
                     /* if iod_size == 0 then this is a DAOS_IOD_ARRAY type */
                     if ((int)iod.iod_size == 0) {
-                        rc = mfu_daos_obj_sync_recx_array(&diov, &aiov, src_oh, dst_oh,
+                        rc = mfu_daos_obj_sync_recx_array(&diov, &aiov, th, src_oh, dst_oh,
                                                           &iod, compare_dst, write_dst, stats);
                         if (rc == -1) {
                             MFU_LOG(MFU_LOG_ERR, "DAOS mfu_daos_obj_sync_recx_array returned with errors: "
@@ -2275,7 +2342,7 @@ static int mfu_daos_obj_sync_keys(
                             all_dst_equal = false;
                         }
                     } else {
-                        rc = mfu_daos_obj_sync_recx_single(&diov, src_oh, dst_oh,
+                        rc = mfu_daos_obj_sync_recx_single(&diov, th, src_oh, dst_oh,
                                                            &iod, compare_dst, write_dst, stats);
                         if (rc == -1) {
                             MFU_LOG(MFU_LOG_ERR, "DAOS mfu_daos_obj_sync_recx_single returned with errors: "
@@ -2314,6 +2381,7 @@ static int mfu_daos_obj_sync(
     daos_args_t* da,
     daos_handle_t src_coh,
     daos_handle_t dst_coh,
+    daos_handle_t th,
     daos_obj_id_t oid,
     bool compare_dst,             /* Whether to compare the src and dst before writing */
     bool write_dst,               /* Whether to write to the dst */
@@ -2340,7 +2408,7 @@ static int mfu_daos_obj_sync(
         daos_obj_close(src_oh, NULL);
         goto out_err;
     }
-    int copy_rc = mfu_daos_obj_sync_keys(&src_oh, &dst_oh, compare_dst, write_dst, stats);
+    int copy_rc = mfu_daos_obj_sync_keys(&src_oh, &dst_oh, th, compare_dst, write_dst, stats);
     if (copy_rc == -1) {
         MFU_LOG(MFU_LOG_ERR, "DAOS copy list keys returned with errors: " MFU_ERRF,
                 MFU_ERRP(-MFU_ERR_DAOS));
@@ -2369,6 +2437,7 @@ static int mfu_daos_flist_obj_sync(
   mfu_flist bflist,
   daos_handle_t src_coh,
   daos_handle_t dst_coh,
+  daos_handle_t th,
   bool compare_dst,
   bool write_dst,
   mfu_daos_stats_t* stats)
@@ -2385,7 +2454,7 @@ static int mfu_daos_flist_obj_sync(
         oid.hi = p->obj_id_hi;
 
         /* Copy this object */
-        rc = mfu_daos_obj_sync(da, src_coh, dst_coh, oid,
+        rc = mfu_daos_obj_sync(da, src_coh, dst_coh, th, oid,
                                compare_dst, write_dst, stats);
         if (rc == -1) {
             MFU_LOG(MFU_LOG_ERR, "mfu_daos_obj_sync return with error");
@@ -2507,6 +2576,9 @@ out_broadcast:
     /* broadcast return code from rank 0 so everyone knows whether walk succeeded */
     MPI_Bcast(&rc, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
+    /* only rank 0 took the snapshot, but every rank reads the source at that epoch */
+    MPI_Bcast(epoch, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD);
+
     return rc;
 }
 
@@ -2531,9 +2603,24 @@ int mfu_daos_flist_sync(
     /* evenly spread the objects across all ranks */
     mfu_flist newflist = mfu_flist_spread(flist);
 
-    /* copy object ids listed in newflist to destination in daos args */
-    int rc = mfu_daos_flist_obj_sync(da, newflist, da->src_coh, da->dst_coh,
+    /* every read of the source must come from the snapshot, otherwise the enumeration and the
+     * fetch of what it returned can land on different epochs */
+    daos_handle_t th;
+    int rc = daos_tx_open_snap(da->src_coh, da->src_epc, &th, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "DAOS failed to open snapshot transaction "DF_RC, DP_RC(rc));
+        rc = -1;
+    } else {
+        /* copy object ids listed in newflist to destination in daos args */
+        rc = mfu_daos_flist_obj_sync(da, newflist, da->src_coh, da->dst_coh, th,
                                      compare_dst, write_dst, &stats);
+
+        int tmp_rc = daos_tx_close(th, NULL);
+        if (tmp_rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "DAOS failed to close snapshot transaction "DF_RC, DP_RC(tmp_rc));
+            rc = -1;
+        }
+    }
 
     /* wait until all procs are done copying,
      * and determine whether everyone succeeded. */
@@ -2599,6 +2686,7 @@ static inline void init_hdf5_args(struct hdf5_args *hdf5)
 
 static int serialize_kv_rec(struct hdf5_args *hdf5, 
                             daos_key_t dkey,
+                            daos_handle_t th,
                             daos_handle_t *oh,
                             uint64_t *dk_index,
                             char *dkey_val,
@@ -2610,7 +2698,7 @@ static int serialize_kv_rec(struct hdf5_args *hdf5,
     daos_size_t size = 0;
 
     /* get the size of the value */
-    rc = daos_kv_get(*oh, DAOS_TX_NONE, 0, dkey_val, &size, buf, NULL);
+    rc = daos_kv_get(*oh, th, 0, dkey_val, &size, buf, NULL);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to fetch object "DF_RC, DP_RC(rc));
         goto out;
@@ -2621,7 +2709,7 @@ static int serialize_kv_rec(struct hdf5_args *hdf5,
         goto out;
     }
 
-    rc = daos_kv_get(*oh, DAOS_TX_NONE, 0, dkey_val, &size, buf, NULL);
+    rc = daos_kv_get(*oh, th, 0, dkey_val, &size, buf, NULL);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to fetch object "DF_RC, DP_RC(rc));
         goto out;
@@ -2643,6 +2731,7 @@ out:
 
 static int serialize_recx_single(struct hdf5_args *hdf5, 
                                  daos_key_t *dkey,
+                                 daos_handle_t th,
                                  daos_handle_t *oh,
                                  daos_iod_t *iod,
                                  uint64_t *ak_index,
@@ -2650,7 +2739,7 @@ static int serialize_recx_single(struct hdf5_args *hdf5,
 {
     /* if iod_type is single value just fetch iod size from source
      * and update in destination object */
-    int         buf_len = (int)(*iod).iod_size;
+    uint64_t    buf_len = (*iod).iod_size;
     void        *buf;
     d_sg_list_t sgl;
     d_iov_t     iov;
@@ -2664,7 +2753,7 @@ static int serialize_recx_single(struct hdf5_args *hdf5,
     sgl.sg_nr_out = 0;
     sgl.sg_iovs   = &iov;
     d_iov_set(&iov, buf, buf_len);
-    rc = daos_obj_fetch(*oh, DAOS_TX_NONE, 0, dkey, 1, iod, &sgl,
+    rc = daos_obj_fetch(*oh, th, 0, dkey, 1, iod, &sgl,
                         NULL, NULL);
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to fetch object");
@@ -2694,11 +2783,189 @@ out:
     return rc;
 }
 
+/* Write one extent of an array record to the record dataset, and store the encoded dataspace of
+ * that extent in an attribute so deserialize can place it back at the right index. */
+static int serialize_recx_write(struct hdf5_args *hdf5,
+                                uint64_t *ak_index,
+                                int attr_num,
+                                uint64_t rx_idx,
+                                uint64_t rx_nr,
+                                void *buf)
+{
+    int             rc = 0;
+    int             path_len = 0;
+    size_t          nalloc = 0;
+    unsigned char   *encode_buf = NULL;
+    hid_t           status = 0;
+    uint64_t        rx_end = 0;
+    char            attr_name[ATTR_NAME_LEN] = {0};
+    char            number_str[ATTR_NAME_LEN] = {0};
+    char            attr_num_str[ATTR_NAME_LEN] = {0};
+
+    hdf5->rx_memspace = 0;
+    hdf5->attr_dspace = 0;
+    hdf5->attr_dtype = 0;
+    hdf5->selection_attr = 0;
+
+    /* write data to record dset */
+    hdf5->mem_dims[0] = rx_nr;
+    hdf5->rx_memspace = H5Screate_simple(1, hdf5->mem_dims, hdf5->mem_dims);
+    if (hdf5->rx_memspace < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to create rx_memspace");
+        rc = 1;
+        goto out;
+    }
+
+    /* the extents can be sparse, so the dataset has to reach the end of this one rather than
+     * just grow by its length */
+    if (__builtin_add_overflow(rx_idx, rx_nr, &rx_end)) {
+        MFU_LOG(MFU_LOG_ERR, "Source extent %llu/%llu overflows",
+                (unsigned long long) rx_idx, (unsigned long long) rx_nr);
+        rc = 1;
+        goto out;
+    }
+    if (rx_end > hdf5->rx_dims[0]) {
+        hdf5->rx_dims[0] = rx_end;
+    }
+    status = H5Dset_extent(hdf5->rx_dset, hdf5->rx_dims);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to extend rx_dset");
+        rc = 1;
+        goto out;
+    }
+    /* retrieve extended dataspace */
+    hdf5->rx_dspace = H5Dget_space(hdf5->rx_dset);
+    if (hdf5->rx_dspace < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to get rx_dspace");
+        rc = 1;
+        goto out;
+    }
+    hsize_t start = (hsize_t)rx_idx;
+    hsize_t count = (hsize_t)rx_nr;
+    status = H5Sselect_hyperslab(hdf5->rx_dspace,
+                                 H5S_SELECT_AND, &start,
+                                 NULL, &count, NULL);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to select hyperslab");
+        rc = 1;
+        goto out;
+    }
+
+    status = H5Dwrite(hdf5->rx_dset, hdf5->rx_dtype,
+                      hdf5->rx_memspace, hdf5->rx_dspace,
+                      H5P_DEFAULT, buf);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to write rx_dset");
+        rc = 1;
+        goto out;
+    }
+    /* get size of buffer needed
+     * from nalloc
+     */
+    status = H5Sencode1(hdf5->rx_dspace, NULL, &nalloc);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to get size of buffer needed");
+        rc = 1;
+        goto out;
+    }
+    /* encode dataspace description
+     * in buffer then store in
+     * attribute on dataset
+     */
+    encode_buf = MFU_CALLOC(nalloc, sizeof(unsigned char));
+    if (encode_buf == NULL) {
+        rc = ENOMEM;
+        goto out;
+    }
+    status = H5Sencode1(hdf5->rx_dspace, encode_buf, &nalloc);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "Failed to encode dataspace");
+        rc = 1;
+        goto out;
+    }
+    /* created attribute in HDF5 file with encoded
+     * dataspace for this record extent */
+    path_len = snprintf(number_str, ATTR_NAME_LEN, "%lu", (*ak_index));
+    if (path_len >= ATTR_NAME_LEN) {
+        MFU_LOG(MFU_LOG_ERR, "number_str is too long");
+        rc = 1;
+        goto out;
+    }
+    path_len = snprintf(attr_num_str, ATTR_NAME_LEN, "-%d", attr_num);
+    if (path_len >= ATTR_NAME_LEN) {
+        MFU_LOG(MFU_LOG_ERR, "attr number str is too long");
+        rc = 1;
+        goto out;
+    }
+    path_len = snprintf(attr_name, ATTR_NAME_LEN, "%s%lu%d", "A-",
+                        *ak_index, attr_num);
+    if (path_len >= ATTR_NAME_LEN) {
+        MFU_LOG(MFU_LOG_ERR, "attr name is too long");
+        rc = 1;
+        goto out;
+    }
+    hdf5->attr_dims[0] = 1;
+    hdf5->attr_dspace = H5Screate_simple(1, hdf5->attr_dims, NULL);
+    if (hdf5->attr_dspace < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create attr");
+        rc = 1;
+        goto out;
+    }
+    hdf5->attr_dtype = H5Tcreate(H5T_OPAQUE, nalloc);
+    if (hdf5->attr_dtype < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create attr dtype");
+        rc = 1;
+        goto out;
+    }
+    hdf5->selection_attr = H5Acreate2(hdf5->rx_dset,
+                                      attr_name,
+                                      hdf5->attr_dtype,
+                                      hdf5->attr_dspace,
+                                      H5P_DEFAULT,
+                                      H5P_DEFAULT);
+    if (hdf5->selection_attr < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to create selection attr");
+        rc = 1;
+        goto out;
+    }
+    status = H5Awrite(hdf5->selection_attr, hdf5->attr_dtype, encode_buf);
+    if (status < 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to write attr");
+        rc = 1;
+        goto out;
+    }
+out:
+    if (hdf5->selection_attr > 0) {
+        H5Aclose(hdf5->selection_attr);
+        hdf5->selection_attr = 0;
+    }
+    if (hdf5->attr_dtype > 0) {
+        H5Tclose(hdf5->attr_dtype);
+        hdf5->attr_dtype = 0;
+    }
+    if (hdf5->attr_dspace > 0) {
+        H5Sclose(hdf5->attr_dspace);
+        hdf5->attr_dspace = 0;
+    }
+    if (hdf5->rx_memspace > 0) {
+        H5Sclose(hdf5->rx_memspace);
+        hdf5->rx_memspace = 0;
+    }
+    mfu_free(&encode_buf);
+    return rc;
+}
+
+/* Serialize all array recx for a given dkey/akey.
+ *
+ * The extents reported by daos_obj_list_recx() are only a superset of the data: for an EC object
+ * they are derived from the parity and are therefore stripe granular. The io map returned by the
+ * fetch is what actually holds data, so only that is written out. */
 static int serialize_recx_array(struct hdf5_args *hdf5,
                                 daos_key_t *dkey,
                                 daos_key_t *akey,
                                 char *rec_name,
                                 uint64_t *ak_index,
+                                daos_handle_t th,
                                 daos_handle_t *oh,
                                 daos_iod_t *iod,
                                 mfu_daos_stats_t* stats)
@@ -2706,23 +2973,18 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
     int                 rc = 0;
     int                 i = 0;
     int                 attr_num = 0;
-    int                 buf_len = 0;
-    int                 path_len = 0;
+    uint64_t            buf_len = 0;
     uint32_t            number = 5;
-    size_t              nalloc = 0;
     daos_anchor_t       recx_anchor = {0}; 
     daos_anchor_t       fetch_anchor = {0}; 
     daos_epoch_range_t  eprs[5] = {0};
     daos_recx_t         recxs[5] = {0};
     daos_size_t         size = 0;
-    char                attr_name[ATTR_NAME_LEN] = {0};
-    char                number_str[ATTR_NAME_LEN] = {0};
-    char                attr_num_str[ATTR_NAME_LEN] = {0};
-    unsigned char       *encode_buf = NULL;
     d_sg_list_t         sgl = {0};
     d_iov_t             iov = {0};
-    hid_t               status = 0;
     char                *buf = NULL;
+    daos_iom_t          iom = {0};  /* extents that actually hold data */
+    uint32_t            iom_nr_alloc = 0;
 
     hdf5->rx_dset = 0;
     hdf5->selection_attr = 0;
@@ -2732,7 +2994,7 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
     /* need to do a fetch for size, so that we can
      * create the dataset with the correct datatype size */
     number = 1;
-    rc = daos_obj_list_recx(*oh, DAOS_TX_NONE, dkey,
+    rc = daos_obj_list_recx(*oh, th, dkey,
                             akey, &size, &number, NULL, eprs, &fetch_anchor,
                             true, NULL);
     if (rc != 0) {
@@ -2779,7 +3041,7 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
 
         /* list all recx for this dkey/akey */
         number = 5;
-        rc = daos_obj_list_recx(*oh, DAOS_TX_NONE, dkey,
+        rc = daos_obj_list_recx(*oh, th, dkey,
                                 akey, &size, &number, recxs, eprs, &recx_anchor,
                                 true, NULL);
         if (rc != 0) {
@@ -2791,7 +3053,13 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
         if (number == 0) 
             continue;
         for (i = 0; i < number; i++) {
-            buf_len = recxs[i].rx_nr * size;
+            /* the extent and the record size come from the source, so the buffer size they add
+             * up to has to be range checked before anything is derived from it */
+            if (__builtin_mul_overflow(recxs[i].rx_nr, size, &buf_len)) {
+                MFU_LOG(MFU_LOG_ERR, "Source listed an extent whose length overflows");
+                rc = 1;
+                goto out;
+            }
             buf = MFU_CALLOC(buf_len, 1);
 
             memset(&sgl, 0, sizeof(sgl));
@@ -2809,173 +3077,93 @@ static int serialize_recx_array(struct hdf5_args *hdf5,
             sgl.sg_iovs   = &iov;
 
             d_iov_set(&iov, buf, buf_len);  
+
+            /* a listed extent can be split by the fetch, overshoot so the refetch below is rare */
+            if (iom_nr_alloc < 2) {
+                mfu_free(&iom.iom_recxs);
+                iom.iom_recxs = (daos_recx_t*) MFU_CALLOC(2, sizeof(daos_recx_t));
+                iom_nr_alloc = 2;
+            }
+            iom.iom_flags  = DAOS_IOMF_DETAIL;
+            iom.iom_nr     = iom_nr_alloc;
+            iom.iom_nr_out = 0;
+
             /* fetch recx values from source */
-            rc = daos_obj_fetch(*oh, DAOS_TX_NONE, 0, dkey, 1, iod,
-                                &sgl, NULL, NULL);
+            rc = daos_obj_fetch(*oh, th, 0, dkey, 1, iod, &sgl, &iom, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to fetch object "DF_RC, DP_RC(rc));
                 goto out;
             }
 
-            /* Sanity check */
-            if (sgl.sg_nr_out != 1) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to fetch array recxs.");
-                rc = 1;
-                goto out;
+            if (iom.iom_nr_out > iom.iom_nr) {
+                /* the map was truncated, iom_nr_out is the exact count needed */
+                mfu_free(&iom.iom_recxs);
+                iom.iom_recxs  = (daos_recx_t*) MFU_CALLOC(iom.iom_nr_out, sizeof(daos_recx_t));
+                iom_nr_alloc   = iom.iom_nr_out;
+                iom.iom_nr     = iom_nr_alloc;
+                iom.iom_nr_out = 0;
+                sgl.sg_nr_out  = 0;
+
+                rc = daos_obj_fetch(*oh, th, 0, dkey, 1, iod, &sgl, &iom, NULL);
+                if (rc != 0) {
+                    MFU_LOG(MFU_LOG_ERR, "Failed to fetch object "DF_RC, DP_RC(rc));
+                    goto out;
+                }
+                if (iom.iom_nr_out > iom.iom_nr) {
+                    MFU_LOG(MFU_LOG_ERR, "Source io map grew from %u to %u extents",
+                            iom.iom_nr, iom.iom_nr_out);
+                    rc = 1;
+                    goto out;
+                }
             }
 
-            stats->bytes_read += buf_len;
+            /* write out only the parts of the listed extent that hold data */
+            for (uint32_t m = 0; m < iom.iom_nr_out; m++) {
+                daos_recx_t*    map = &iom.iom_recxs[m];
+                uint64_t        off = 0;
+                uint64_t        map_len = 0;
+                uint64_t        map_end = 0;
 
-            /* write data to record dset */
-            hdf5->mem_dims[0] = recxs[i].rx_nr;
-            hdf5->rx_memspace = H5Screate_simple(1, hdf5->mem_dims,
-                                                 hdf5->mem_dims);
-            if (hdf5->rx_memspace < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to create rx_memspace");
-                rc = 1;
-                goto out;
-            }
-            /* extend dataset */
-            hdf5->rx_dims[0] += recxs[i].rx_nr;
-            status = H5Dset_extent(hdf5->rx_dset, hdf5->rx_dims);
-            if (status < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to extend rx_dset");
-                rc = 1;
-                goto out;
-            }
-            /* retrieve extended dataspace */
-            hdf5->rx_dspace = H5Dget_space(hdf5->rx_dset);
-            if (hdf5->rx_dspace < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to get rx_dspace");
-                rc = 1;
-                goto out;
-            }
-            hsize_t start = (hsize_t)recxs[i].rx_idx;
-            hsize_t count = (hsize_t)recxs[i].rx_nr;
-            status = H5Sselect_hyperslab(hdf5->rx_dspace,
-                                         H5S_SELECT_AND, &start,
-                                         NULL, &count, NULL);
-            if (status < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to select hyperslab");
-                rc = 1;
-                goto out;
+                /* subtract rather than add, rx_idx + rx_nr can wrap */
+                if (map->rx_idx < recxs[i].rx_idx ||
+                    map->rx_idx - recxs[i].rx_idx >= recxs[i].rx_nr ||
+                    __builtin_mul_overflow(map->rx_nr, size, &map_len)) {
+                    MFU_LOG(MFU_LOG_ERR,
+                            "Source io map extent %llu/%llu is not within the listed extent",
+                            (unsigned long long) map->rx_idx, (unsigned long long) map->rx_nr);
+                    rc = 1;
+                    goto out;
+                }
+                off = (map->rx_idx - recxs[i].rx_idx) * size;
+                if (__builtin_add_overflow(off, map_len, &map_end) || map_end > buf_len) {
+                    MFU_LOG(MFU_LOG_ERR,
+                            "Source io map extent %llu/%llu is not within the listed extent",
+                            (unsigned long long) map->rx_idx, (unsigned long long) map->rx_nr);
+                    rc = 1;
+                    goto out;
+                }
+
+                stats->bytes_read += map_len;
+
+                rc = serialize_recx_write(hdf5, ak_index, attr_num,
+                                          map->rx_idx, map->rx_nr, buf + off);
+                if (rc != 0) {
+                    goto out;
+                }
+                attr_num++;
             }
 
-            status = H5Dwrite(hdf5->rx_dset, hdf5->rx_dtype,
-                              hdf5->rx_memspace, hdf5->rx_dspace,
-                              H5P_DEFAULT, sgl.sg_iovs[0].iov_buf);
-            if (status < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to write rx_dset");
-                rc = 1;
-                goto out;
-            }
-            /* get size of buffer needed
-             * from nalloc
-             */
-            status = H5Sencode1(hdf5->rx_dspace, NULL, &nalloc);
-            if (status < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to get size of buffer needed");
-                rc = 1;
-                goto out;
-            }
-            /* encode dataspace description
-             * in buffer then store in
-             * attribute on dataset
-             */
-            encode_buf = MFU_CALLOC(nalloc, sizeof(unsigned char));
-            if (encode_buf == NULL) {
-                rc = ENOMEM;
-                goto out;
-            }
-            status = H5Sencode1(hdf5->rx_dspace, encode_buf,
-                                &nalloc);
-            if (status < 0) {
-                MFU_LOG(MFU_LOG_ERR, "Failed to encode dataspace");
-                rc = 1;
-                goto out;
-            }
-            /* created attribute in HDF5 file with encoded
-             * dataspace for this record extent */
-            path_len = snprintf(number_str, ATTR_NAME_LEN, "%lu",
-                                (*ak_index));
-            if (path_len >= ATTR_NAME_LEN) {
-                MFU_LOG(MFU_LOG_ERR, "number_str is too long");
-                rc = 1;
-                goto out;
-            }
-            path_len = snprintf(attr_num_str, ATTR_NAME_LEN, "-%d", attr_num);
-            if (path_len >= ATTR_NAME_LEN) {
-                MFU_LOG(MFU_LOG_ERR, "attr number str is too long");
-                rc = 1;
-                goto out;
-            }
-            path_len = snprintf(attr_name, ATTR_NAME_LEN, "%s%lu%d", "A-",
-                                *ak_index, attr_num);
-            if (path_len >= ATTR_NAME_LEN) {
-                MFU_LOG(MFU_LOG_ERR, "attr name is too long");
-                rc = 1;
-                goto out;
-            }
-            hdf5->attr_dims[0] = 1;
-            hdf5->attr_dspace = H5Screate_simple(1, hdf5->attr_dims, NULL);
-            if (hdf5->attr_dspace < 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to create attr");
-                rc = 1;
-                goto out;
-            }
-            hdf5->attr_dtype = H5Tcreate(H5T_OPAQUE, nalloc);
-            if (hdf5->attr_dtype < 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to create attr dtype");
-                rc = 1;
-                goto out;
-            }
-            hdf5->selection_attr = H5Acreate2(hdf5->rx_dset,
-                                              attr_name,
-                                              hdf5->attr_dtype,
-                                              hdf5->attr_dspace,
-                                              H5P_DEFAULT,
-                                              H5P_DEFAULT);
-            if (hdf5->selection_attr < 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to create selection attr");
-                rc = 1;
-                goto out;
-            }
-            status = H5Awrite(hdf5->selection_attr, hdf5->attr_dtype,
-                              encode_buf);
-            if (status < 0) {
-                MFU_LOG(MFU_LOG_ERR, "failed to write attr");
-                rc = 1;
-                goto out;
-            }
-            if (hdf5->selection_attr > 0) {
-                H5Aclose(hdf5->selection_attr);
-            }
-            if (hdf5->rx_memspace > 0) {
-                H5Sclose(hdf5->rx_memspace);
-            }
-            if (hdf5->attr_dtype > 0) {
-                H5Tclose(hdf5->attr_dtype);
-            }
-            mfu_free(&encode_buf);
             mfu_free(&buf);
-            attr_num++;
         }
     }
 out:
+    mfu_free(&buf);
+    mfu_free(&iom.iom_recxs);
     if (hdf5->rx_dset > 0) {
         H5Dclose(hdf5->rx_dset);
     }
     if (hdf5->rx_dtype > 0) {
         H5Tclose(hdf5->rx_dtype);
-    }
-    if (rc != 0) {
-        if (hdf5->selection_attr > 0) {
-            H5Aclose(hdf5->selection_attr);
-        }
-        if (hdf5->rx_memspace > 0) {
-            H5Sclose(hdf5->rx_memspace);
-        }
-        mfu_free(&encode_buf);
     }
     return rc;
 }
@@ -3033,6 +3221,7 @@ static int serialize_akeys(struct hdf5_args *hdf5,
                            daos_key_t diov,
                            uint64_t *dk_index,
                            uint64_t *ak_index,
+                           daos_handle_t th,
                            daos_handle_t *oh,
                            mfu_daos_stats_t *stats)
 {
@@ -3068,7 +3257,7 @@ static int serialize_akeys(struct hdf5_args *hdf5,
         d_iov_set(&akey_iov, akey_enum_buf, ENUM_DESC_BUF);
 
         /* get akeys */
-        rc = daos_obj_list_akey(*oh, DAOS_TX_NONE, &diov,
+        rc = daos_obj_list_akey(*oh, th, &diov,
                                 &akey_number, akey_kds,
                                 &akey_sgl, &akey_anchor, NULL);
         if (rc != 0) {
@@ -3117,7 +3306,7 @@ static int serialize_akeys(struct hdf5_args *hdf5,
             * and if that returns iod_size == 0, then a single
             * value does not exist.
             */
-            rc = daos_obj_fetch(*oh, DAOS_TX_NONE, 0, &diov,
+            rc = daos_obj_fetch(*oh, th, 0, &diov,
                                 1, &iod, NULL, NULL, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to fetch object");
@@ -3143,14 +3332,14 @@ static int serialize_akeys(struct hdf5_args *hdf5,
                 }
 
                 rc = serialize_recx_array(hdf5, &diov, &aiov, rec_name,
-                                          ak_index, oh, &iod, stats);
+                                          ak_index, th, oh, &iod, stats);
                 if (rc != 0) {
                     MFU_LOG(MFU_LOG_ERR, "failed to serialize recx array: %d",
                             rc);
                     goto out;
                 }
             } else {
-                rc = serialize_recx_single(hdf5, &diov, oh,
+                rc = serialize_recx_single(hdf5, &diov, th, oh,
                                            &iod, ak_index, stats);
                 if (rc != 0) {
                     MFU_LOG(MFU_LOG_ERR, "failed to serialize recx single: %d",
@@ -3171,6 +3360,7 @@ out:
 static int serialize_dkeys(struct hdf5_args *hdf5,
                            uint64_t *dk_index,
                            uint64_t *ak_index,
+                           daos_handle_t th,
                            daos_handle_t *oh,
                            int *oid_index,
                            daos_args_t *da,
@@ -3213,14 +3403,14 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
         d_iov_set(&dkey_iov, dkey_enum_buf, ENUM_DESC_BUF);
 
         if (is_kv) {
-            rc = daos_kv_list(*oh, DAOS_TX_NONE, &dkey_number,
+            rc = daos_kv_list(*oh, th, &dkey_number,
                               dkey_kds, &dkey_sgl, &dkey_anchor, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to list dkeys: "DF_RC, DP_RC(rc));
                 goto out;
             }
         } else {
-            rc = daos_obj_list_dkey(*oh, DAOS_TX_NONE, &dkey_number,
+            rc = daos_obj_list_dkey(*oh, th, &dkey_number,
                                     dkey_kds, &dkey_sgl, &dkey_anchor, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to list dkeys: "DF_RC, DP_RC(rc));
@@ -3278,7 +3468,7 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
                 }
 
                 /* TODO: serialize the array that was read */
-                rc = serialize_kv_rec(hdf5, diov, oh, dk_index, key_val, stats);
+                rc = serialize_kv_rec(hdf5, diov, th, oh, dk_index, key_val, stats);
                 if (rc != 0) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to serialize kv record: "DF_RC, DP_RC(rc));
                     rc = 1;
@@ -3286,7 +3476,7 @@ static int serialize_dkeys(struct hdf5_args *hdf5,
                 }
             } else {
                 rc = serialize_akeys(hdf5, diov, dk_index, ak_index,
-                                     oh, stats); 
+                                     th, oh, stats); 
                 if (rc != 0) {
                     MFU_LOG(MFU_LOG_ERR, "failed to list akeys: %d", rc);
                     rc = 1;
@@ -4132,6 +4322,8 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
     uint64_t        dk_index = 0;
     uint64_t        ak_index = 0;
     daos_handle_t   oh;
+    daos_handle_t   th = DAOS_TX_NONE;
+    bool            th_open = false;
     float           version = 0.0;
     char            *filename = NULL;
     char            cont_str[FILENAME_LEN];
@@ -4183,6 +4375,16 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
     hdf5->ak = &(hdf5->akey_data);
     hdf5->oid = &(hdf5->oid_data);
 
+    /* every read of the source must come from the snapshot, otherwise the enumeration and the
+     * fetch of what it returned can land on different epochs */
+    rc = daos_tx_open_snap(da->src_coh, da->src_epc, &th, NULL);
+    if (rc != 0) {
+        MFU_LOG(MFU_LOG_ERR, "failed to open snapshot transaction: "DF_RC, DP_RC(rc));
+        rc = 1;
+        goto out;
+    }
+    th_open = true;
+
     /* size is total oids for this rank, loop over each oid and serialize */
     for (i = 0; i < num_oids; i++) {
         /* open DAOS object based on oid to get obj
@@ -4207,7 +4409,7 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
                 goto out;
             }
             rc = serialize_dkeys(hdf5, &dk_index, &ak_index,
-                                 &oh, &i, da, oid, is_kv, stats);
+                                 th, &oh, &i, da, oid, is_kv, stats);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to serialize keys: %d", rc);
                 goto out;
@@ -4225,7 +4427,7 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
                 goto out;
             }
             rc = serialize_dkeys(hdf5, &dk_index, &ak_index,
-                                 &oh, &i, da, oid, is_kv, stats);
+                                 th, &oh, &i, da, oid, is_kv, stats);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "failed to serialize keys: %d", rc);
                 goto out;
@@ -4333,6 +4535,13 @@ int daos_cont_serialize_hdlr(int rank, struct hdf5_args *hdf5, char *output_dir,
     }
 
 out:
+    if (th_open) {
+        int tmp_rc = daos_tx_close(th, NULL);
+        if (tmp_rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "failed to close snapshot transaction: "DF_RC, DP_RC(tmp_rc));
+            rc = 1;
+        }
+    }
     /* free dkey, akey values and single record values */
     for (i = 0; i < stats->total_dkeys; i++) {
         mfu_free(&((*hdf5->dk)[i].dkey_val.p));
