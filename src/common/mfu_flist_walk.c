@@ -39,6 +39,10 @@
 #include "mfu_flist_internal.h"
 #include "strmap.h"
 
+#ifndef O_NOATIME
+#define O_NOATIME 0
+#endif
+
 /****************************************
  * Globals
  ***************************************/
@@ -205,7 +209,13 @@ static void walk_getdents_process_dir(const char* dir, CIRCLE_handle* handle)
     /* Read all directory entries */
     while (1) {
         /* execute system call to get block of directory entries */
-        int nread = syscall(SYS_getdents, mfu_file->fd, buf, (int) BUF_SIZE);
+        int nread;
+
+#ifdef __linux__
+        nread = syscall(SYS_getdents, mfu_file->fd, buf, (int)BUF_SIZE);
+#else
+        nread = getdents(mfu_file->fd, buf, (size_t)BUF_SIZE);
+#endif
         if (nread == -1) {
             MFU_LOG(MFU_LOG_ERR, "syscall to getdents failed when reading `%s' (errno=%d %s)", dir, errno, strerror(errno));
             WALK_RESULT = -1;
@@ -767,7 +777,7 @@ void mfu_flist_stat(
         /* check whether we should skip this item */
         if (skip_fn != NULL && skip_fn(name, skip_args)) {
             /* skip this file, don't include it in new list */
-            MFU_LOG(MFU_LOG_INFO, "skip %s");
+            MFU_LOG(MFU_LOG_INFO, "skip %s", name);
             continue;
         }
 
