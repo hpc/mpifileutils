@@ -5738,7 +5738,7 @@ int daos_cont_deserialize_connect(daos_args_t *daos_args,
     if (label != NULL) {
         rc = daos_cont_create_with_label(daos_args->src_poh, label, prop, &daos_args->dst_cont_uuid, NULL);
     } else {
-        rc = daos_cont_create(daos_args->src_poh, daos_args->dst_cont_uuid, prop, NULL);
+        rc = daos_cont_create(daos_args->src_poh, &daos_args->dst_cont_uuid, prop, NULL);
     }
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "failed to create container: "DF_RC, DP_RC(rc));
