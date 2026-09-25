@@ -1,0 +1,59 @@
+FIND_PACKAGE(Python3 REQUIRED COMPONENTS Interpreter)
+
+SET(TEST_TMPDIR "${CMAKE_CURRENT_SOURCE_DIR}/test_tempdir" CACHE PATH
+  "Directory used for running executable tests"
+)
+
+SET(MFU_EXECUTABLE_TARGETS
+  daos-deserialize
+  daos-gen
+  daos-serialize
+  dbcast
+  dbz2
+  dchmod
+  dcmp
+  dcp
+  dcp1
+  ddup
+  dfilemaker
+  dfind
+  dgrep
+  dparallel
+  dreln
+  drm
+  dsh
+  dstripe
+  dsync
+  dtar
+  dwalk
+)
+
+SET(MFU_TEST_PATH "$ENV{PATH}")
+FOREACH(target ${MFU_EXECUTABLE_TARGETS})
+  IF(TARGET ${target})
+    SET(MFU_TEST_PATH "$<TARGET_FILE_DIR:${target}>:${MFU_TEST_PATH}")
+  ENDIF()
+ENDFOREACH()
+
+SET(MFU_EXECUTABLE_TEST_ENVIRONMENT
+  "MPIEXEC_EXECUTABLE=${MPIEXEC_EXECUTABLE}"
+  "MPIEXEC_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}"
+  "MPIEXEC_MAX_NUMPROCS=${MPIEXEC_MAX_NUMPROCS}"
+  "TEST_TMPDIR=${TEST_TMPDIR}"
+  "PATH=${MFU_TEST_PATH}"
+)
+
+FUNCTION(MFU_ADD_EXECUTABLE_TEST module)
+  ADD_TEST(
+    NAME "executable.${module}"
+    COMMAND "${Python3_EXECUTABLE}" -m unittest -v "tests/test_${module}.py"
+  )
+  SET_TESTS_PROPERTIES("executable.${module}" PROPERTIES
+    ENVIRONMENT "${MFU_EXECUTABLE_TEST_ENVIRONMENT}"
+    LABELS executable
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  )
+ENDFUNCTION()
+
+MFU_ADD_EXECUTABLE_TEST(dcmp)
+MFU_ADD_EXECUTABLE_TEST(dchmod)
