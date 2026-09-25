@@ -1,0 +1,260 @@
+# Build the mpiFileUtils runtime container and publish it to the GitHub
+# Container Registry (ghcr.io/<owner>/<repo>).
+#
+# Pull requests build and smoke test the image but do not publish.  Pushes to
+# the default branch and tags publish, using the tag scheme below:
+#
+#   main            -> :main, :latest, :sha-<short>
+#   v1.2.3          -> :1.2.3, :1.2, :latest, :sha-<short>
+#   feature/docker  -> :feature-docker, :sha-<short>
+#
+# Feature branches are published so a fork can exercise the image before it
+# reaches main; only main and release tags ever move the :latest tag.  Drop
+# the feature/** entry below to publish from main and tags alone.
+name: docker
+
+on:
+  push:
+    branches:
+      - main
+      - 'ci/**'
+      - 'feature/**'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    name: ${{ matrix.preset }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    # Two builds: the shipped defaults, which is what gets published, and a
+    # compile-only build with every optional feature that can be turned on
+    # without an out-of-tree dependency.  The rest cannot be covered here --
+    # ENABLE_LUSTRE needs lustre/lustre_user.h, ENABLE_HPSS needs
+    # linux/hpssfs.h, ENABLE_GPFS and ENABLE_DAOS need SDKs that are not
+    # packaged for Ubuntu, and the bundled cmake/FindHDF5.cmake expects a
+    # self-contained prefix rather than the distro's multiarch layout (and
+    # HDF5_SUPPORT is only reachable through DAOS anyway).  Add a row here as
+    # those become installable.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: default
+            extra_options: ''
+            publish: true
+          - preset: experimental
+            extra_options: set(ENABLE_EXPERIMENTAL ON CACHE BOOL "Build experimental tools" FORCE)
+            publish: false
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      # Uses the same override path the README documents for downstream
+      # pipelines: append to the initial-cache file the Dockerfile reads.
+      - name: Apply ${{ matrix.preset }} build options
+        if: matrix.extra_options != ''
+        env:
+          PRESET: ${{ matrix.preset }}
+          EXTRA_OPTIONS: ${{ matrix.extra_options }}
+        run: |
+          printf '\n# appended by CI for the %s build\n%s\n' \
+            "$PRESET" "$EXTRA_OPTIONS" >> cmake/build-options.cmake
+          tail -5 cmake/build-options.cmake
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # GITHUB_TOKEN can publish to the calling repository's own package
+      # namespace, so no additional secrets are needed in a fork.
+      - name: Log in to ${{ env.REGISTRY }}
+        if: matrix.publish && github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+          flavor: |
+            latest=auto
+
+      # Build into the local daemon first so the image can be exercised before
+      # anything is published.  The publish step below reuses this cache.
+      - name: Build the runtime image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: runtime
+          load: true
+          tags: mpifileutils:ci
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.preset }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.preset }}
+
+      # Copy a small tree with dcp, confirm it byte for byte with dcmp, then
+      # walk the result -- each under mpirun with two ranks.  The tools exit
+      # non-zero for --help, so only real work makes a usable assertion.
+      - name: Smoke test the runtime image
+        run: |
+          docker run --rm \
+            -e OMPI_ALLOW_RUN_AS_ROOT=1 \
+            -e OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
+            mpifileutils:ci bash -c '
+              set -eux
+              mkdir -p /tmp/src/sub
+              for i in 1 2 3 4 5 6 7 8; do
+                head -c 65536 /dev/urandom > /tmp/src/f$i
+              done
+              head -c 4096 /dev/urandom > /tmp/src/sub/nested
+              ln -s ../f1 /tmp/src/sub/link
+              mpirun -np 2 dcp /tmp/src /tmp/dst
+              mpirun -np 2 dcmp /tmp/src /tmp/dst
+              mpirun -np 2 dwalk /tmp/dst
+            '
+
+      - name: Publish the runtime image
+        if: matrix.publish && github.event_name != 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.preset }}
+
+  # Compile the LUSTRE_SUPPORT branches, which neither build above reaches.
+  # Only the headers are needed to compile, so this installs Whamcloud's
+  # lustre-dev and builds against it; it does not run anything.  That deb is
+  # published for Ubuntu 22.04 and amd64 only, which is fine here because
+  # GitHub's runners are amd64 and headers do not care about the distro.  It
+  # is also missing the uapi headers its own headers include, so those come
+  # from the matching source tag.
+  #
+  # The other gated features cannot be covered this way: linux/hpssfs.h and
+  # gpfs.h are not publicly distributed, and DAOS ships packages for EL and
+  # Leap only, against an API surface far too large to stand in for.
+  lustre:
+    name: compile lustre
+    runs-on: ubuntu-latest
+
+    env:
+      LUSTRE_VERSION: 2.15.8
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Reuses the Dockerfile's build stage so the dependency set stays defined
+      # in exactly one place, and shares the default build's layer cache.
+      - name: Build the toolchain image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: build
+          load: true
+          tags: mpifileutils:toolchain
+          cache-from: type=gha,scope=default
+
+      - name: Build with ENABLE_LUSTRE=ON
+        run: |
+          docker run --rm -v "$PWD":/src:ro -e LUSTRE_VERSION mpifileutils:toolchain \
+            bash -euo pipefail -c '
+              cd /tmp
+              # liblustreapi.so needs readline; lustre-dev ships the .so as a
+              # symlink whose target lives in lustre-client-utils, so both debs
+              # are required or every llapi probe fails.
+              apt-get update -qq
+              apt-get install -y --no-install-recommends libreadline8t64
+              base=https://downloads.whamcloud.com/public/lustre/lustre-"$LUSTRE_VERSION"/ubuntu2204/client
+              # Stage the extraction: lustre-client-utils carries a top-level
+              # ./lib, and unpacking that over the usr-merge /lib symlink
+              # replaces it with a directory and breaks the dynamic linker.
+              for pkg in lustre-dev lustre-client-utils; do
+                wget -q "$base/${pkg}_${LUSTRE_VERSION}-1_amd64.deb"
+                dpkg-deb -x "${pkg}_${LUSTRE_VERSION}-1_amd64.deb" /tmp/lustre-pkg
+              done
+              cp -a /tmp/lustre-pkg/usr/include/lustre /usr/include/
+              cp -a /tmp/lustre-pkg/usr/lib/liblustreapi.* /usr/lib/
+              git clone -q --depth 1 -b "$LUSTRE_VERSION" \
+                https://github.com/lustre/lustre-release.git /tmp/lustre-src
+              mkdir -p /usr/include/linux/lustre
+              cp /tmp/lustre-src/lustre/include/uapi/linux/lustre/*.h /usr/include/linux/lustre/
+              ldconfig
+              cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DENABLE_LUSTRE=ON
+              # Without liblustreapi the HAVE_LLAPI_* paths compile out and the
+              # build would pass while covering less than it claims, so require
+              # the probes to have succeeded before trusting the result.
+              grep -q "^LUSTREAPI:FILEPATH=/" /build/CMakeCache.txt
+              grep -q "^HAVE_LLAPI_LAYOUT:INTERNAL=1" /build/CMakeCache.txt
+              grep -q "^HAVE_LLAPI_FILE_CREATE:INTERNAL=1" /build/CMakeCache.txt
+              cmake --build /build -j"$(nproc)"
+            '
+
+  # Compile the HPSS_SUPPORT branches.  linux/hpssfs.h is not distributed
+  # publicly, so this builds against the stand-in under .github: it proves our
+  # own code still compiles, not that it agrees with HPSS.  The header is the
+  # whole dependency -- one ioctl constant -- and the build fails outright
+  # without it, so this cannot pass while skipping the gated code.
+  hpss:
+    name: compile hpss
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build the toolchain image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: build
+          load: true
+          tags: mpifileutils:toolchain
+          cache-from: type=gha,scope=default
+
+      - name: Build with ENABLE_HPSS=ON
+        run: |
+          docker run --rm -v "$PWD":/src:ro mpifileutils:toolchain \
+            bash -euo pipefail -c '
+              cp /src/.github/hpss-stub/linux/hpssfs.h /usr/include/linux/
+              cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DENABLE_HPSS=ON >/tmp/cfg.log
+              cat /tmp/cfg.log
+              grep -qE "^-- ENABLE_HPSS: ON$" /tmp/cfg.log
+              cmake --build /build -j"$(nproc)"
+            '
