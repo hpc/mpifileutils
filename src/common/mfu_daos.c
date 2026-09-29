@@ -438,10 +438,6 @@ static int daos_set_paths(
 
         int dst_cont_len = strlen(da->dst_cont);
         *dst_cont_passed = dst_cont_len > 0 ? true : false;
-        /* Generate a new container uuid if only a pool was given. */
-        if (!*dst_cont_passed) {
-            uuid_generate(da->dst_cont_uuid);
-        }
     }
 
 out:
@@ -5709,9 +5705,6 @@ int daos_cont_deserialize_connect(daos_args_t *daos_args,
     daos_prop_t                 *prop = NULL;
     struct daos_prop_co_roots   roots = {0};
 
-    /* generate container UUID */
-    uuid_generate(daos_args->dst_cont_uuid);
-
     daos_pool_info_t pool_info = {0};
     daos_cont_info_t co_info = {0};
 #if DAOS_API_VERSION_MAJOR < 1
@@ -5927,7 +5920,6 @@ int mfu_daos_hdf5_copy(char **argpaths,
     int                 size;
     char                src_path[FILENAME_LEN];
     char                dst_path[FILENAME_LEN];
-    char                dst_cont_str[UUID_LEN];
     struct duns_attr_t  src_dattr = {0};
     struct duns_attr_t  dst_dattr = {0};
     bool                src_daos = false;
@@ -5970,18 +5962,14 @@ int mfu_daos_hdf5_copy(char **argpaths,
         snprintf(daos_args->dst_pool, DAOS_PROP_LABEL_MAX_LEN + 1, "%s", dst_dattr.da_pool);
         snprintf(daos_args->dst_cont, DAOS_PROP_LABEL_MAX_LEN + 1, "%s", dst_dattr.da_cont);
         bool dst_cont_passed = strlen(daos_args->dst_cont) > 0 ? true : false;
-        if (!dst_cont_passed) {
-            uuid_generate(daos_args->dst_cont_uuid);
-            uuid_unparse(daos_args->dst_cont_uuid, dst_cont_str);
-        }
 
         /* build dst path for h5repack */
         if (dst_cont_passed) {
             len = snprintf(dst_path, FILENAME_LEN, "daos://%s/%s",
                            daos_args->dst_pool, daos_args->dst_cont);
         } else {
-            len = snprintf(dst_path, FILENAME_LEN, "daos://%s/%s",
-                           daos_args->dst_pool, dst_cont_str);
+            len = snprintf(dst_path, FILENAME_LEN, "daos://%s",
+                           daos_args->dst_pool);
         }
         if (len > FILENAME_LEN) {
             MFU_LOG(MFU_LOG_ERR, "destination path exceeds max length "
