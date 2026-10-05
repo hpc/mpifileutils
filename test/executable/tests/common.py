@@ -92,3 +92,28 @@ def get_tree_permissions(root_dir):
             permissions_map[fullpath] = f"{mode:o}"
 
     return permissions_map
+
+def write_bytes(filepath, data):
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, "wb") as file:
+        file.write(data)
+
+def read_bytes(filepath):
+    with open(filepath, "rb") as file:
+        return file.read()
+
+def get_tree_entries(root):
+    entries = set()
+    for dirpath, dirnames, filenames in os.walk(root):
+        for name in dirnames + filenames:
+            entries.add(os.path.relpath(os.path.join(dirpath, name), root))
+    return entries
+
+def filesystem_type(path):
+    result = run_local("df", "-T", path)
+    lines = result.stdout.strip().splitlines()
+
+    if len(lines) < 2:
+        raise RuntimeError(f"Unexpected df output: {result.stdout!r}")
+
+    return lines[1].split()[1]
