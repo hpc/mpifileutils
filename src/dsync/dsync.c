@@ -3361,6 +3361,7 @@ int main(int argc, char **argv)
                 dest_parent_str, errno, strerror(errno));
         if (!options.dry_run) {
             mfu_free(&dest_parent_str);
+			rc = errno;
             goto ERROR;
         }
     }
