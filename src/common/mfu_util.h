@@ -236,6 +236,14 @@ void mfu_pack_uint64(char** pptr, uint64_t value);
  * host order and advance pointer */
 void mfu_unpack_uint64(const char** pptr, uint64_t* value);
 
+/* given address of pointer to buffer, pack value into buffer in
+ * network order and advance pointer */
+ void mfu_pack_sized_str(char** pptr, char* value, uint64_t chars);
+
+ /* given address of pointer to buffer, unpack value into buffer in
+  * host order and advance pointer */
+ void mfu_unpack_sized_str(const char** pptr, char** value, uint64_t chars);
+ 
 /* Bob Jenkins one-at-a-time hash: http://en.wikipedia.org/wiki/Jenkins_hash_function */
 uint32_t mfu_hash_jenkins(const char* key, size_t len);
 
