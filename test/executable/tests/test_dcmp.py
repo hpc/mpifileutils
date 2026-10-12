@@ -96,7 +96,7 @@ class TestDCMP(common.TestCase):
         )
 
         # get output file contents
-        output = common.get_file_contents(self.output_filepath)
+        output = common.get_output_file_list(self.output_filepath)
 
         # CHECK: src/tempfile not reported
         self.assertNotIn(self.src_dirpath_tempfile_path, output, msg=output)
@@ -124,7 +124,7 @@ class TestDCMP(common.TestCase):
         )
 
         # get output file contents
-        output = common.get_file_contents(self.output_filepath)
+        output = common.get_output_file_list(self.output_filepath)
 
         # CHECK: src/tempfile is reported
         self.assertIn(self.src_dirpath_tempfile_path, output, msg=output)
@@ -152,7 +152,7 @@ class TestDCMP(common.TestCase):
         )
 
         # get output file contents
-        output = common.get_file_contents(self.output_filepath)
+        output = common.get_output_file_list(self.output_filepath)
 
         # CHECK: dest/tempdir not reported
         self.assertNotIn(self.dest_dirpath_tempdir_path, output, msg=output)
@@ -184,7 +184,7 @@ class TestDCMP(common.TestCase):
         )
 
         # get output file contents
-        output = common.get_file_contents(self.output_filepath)
+        output = common.get_output_file_list(self.output_filepath)
 
         # CHECK: src/tempfile is reported
         self.assertIn(self.src_dirpath_tempfile_path, output, msg=output)
@@ -219,7 +219,7 @@ class TestDCMP(common.TestCase):
         )
 
         # get output file contents
-        output = common.get_file_contents(self.output_filepath)
+        output = common.get_output_file_list(self.output_filepath)
 
         # CHECK: src/tempfile is reported
         self.assertIn(self.src_dirpath_tempfile_path, output, msg=output)
@@ -254,7 +254,7 @@ class TestDCMP(common.TestCase):
         )
 
         # get output file contents
-        output = common.get_file_contents(self.output_filepath)
+        output = common.get_output_file_list(self.output_filepath)
 
         # CHECK: src/tempfile is reported
         self.assertIn(self.src_dirpath_tempfile_path, output, msg=output)
@@ -289,7 +289,7 @@ class TestDCMP(common.TestCase):
         )
 
         # get output file contents
-        output = common.get_file_contents(self.output_filepath)
+        output = common.get_output_file_list(self.output_filepath)
 
         # CHECK: src/tempfile not reported
         self.assertNotIn(self.src_dirpath_tempfile_path, output, msg=output)
@@ -324,7 +324,7 @@ class TestDCMP(common.TestCase):
         )
 
         # get output file contents
-        output = common.get_file_contents(self.output_filepath)
+        output = common.get_output_file_list(self.output_filepath)
 
         # CHECK: src/tempfile not reported
         self.assertNotIn(self.src_dirpath_tempfile_path, output, msg=output)
@@ -358,7 +358,7 @@ class TestDCMP(common.TestCase):
         )
 
         # get output file contents
-        output = common.get_file_contents(self.output_filepath)
+        output = common.get_output_file_list(self.output_filepath)
 
         # CHECK: src/tempfile is reported
         self.assertIn(self.src_dirpath_tempfile_path, output, msg=output)
