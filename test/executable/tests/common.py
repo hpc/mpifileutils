@@ -73,10 +73,10 @@ def mount_basename(path):
 
     return os.path.basename(os.path.normpath(path))
 
-def get_file_contents(filepath):
+def get_output_file_list(filepath):
     with open(filepath, "r") as file:
-        output = file.read()
-    return output
+        lines = file.readlines() 
+    return [line.split()[-1].strip() for line in lines]
 
 def get_tree_permissions(root_dir):
     permissions_map = dict()
