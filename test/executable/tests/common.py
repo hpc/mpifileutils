@@ -19,12 +19,12 @@ class TestCase(unittest.TestCase):
 
     def run_local_with_failure(self, *command):
         result = run_local(*command)
-        self.assertNotEqual(result.returncode, 0, msg=result.stderr)
+        self.assertNotEqual(result.returncode, 0, msg="Unexpected success.")
         return result
 
     def run_distributed_with_failure(self, *command):
         result = run_distributed(*command)
-        self.assertNotEqual(result.returncode, 0, msg=result.stderr)
+        self.assertNotEqual(result.returncode, 0, msg="Unexpected success.")
         return result
 
 def run_local(*command):
