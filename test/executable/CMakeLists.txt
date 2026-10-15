@@ -5,23 +5,16 @@ SET(TEST_TMPDIR "${CMAKE_CURRENT_SOURCE_DIR}/test_tempdir" CACHE PATH
 )
 
 SET(MFU_EXECUTABLE_TARGETS
-  daos-deserialize
-  daos-gen
-  daos-serialize
   dbcast
   dbz2
   dchmod
   dcmp
   dcp
-  dcp1
   ddup
   dfilemaker
   dfind
-  dgrep
-  dparallel
   dreln
   drm
-  dsh
   dstripe
   dsync
   dtar
@@ -35,10 +28,15 @@ FOREACH(target ${MFU_EXECUTABLE_TARGETS})
   ENDIF()
 ENDFOREACH()
 
-ADD_EXECUTABLE(check_file_exists_on_all_ranks tests/check_file_exists_on_all_ranks.c)
+# check_file_exists_on_all_ranks is required for the dbcast test
+ADD_EXECUTABLE(
+  check_file_exists_on_all_ranks tests/check_file_exists_on_all_ranks.c
+)
 TARGET_LINK_LIBRARIES(check_file_exists_on_all_ranks PRIVATE ${MPI_C_LIBRARIES})
 SET_TARGET_PROPERTIES(check_file_exists_on_all_ranks PROPERTIES C_STANDARD 99)
-SET(MFU_TEST_PATH "$<TARGET_FILE_DIR:check_file_exists_on_all_ranks>:${MFU_TEST_PATH}")
+SET(MFU_TEST_PATH
+  "$<TARGET_FILE_DIR:check_file_exists_on_all_ranks>:${MFU_TEST_PATH}"
+)
 
 SET(MFU_EXECUTABLE_TEST_ENVIRONMENT
   "MPIEXEC_EXECUTABLE=${MPIEXEC_EXECUTABLE}"
@@ -49,29 +47,14 @@ SET(MFU_EXECUTABLE_TEST_ENVIRONMENT
   "PATH=${MFU_TEST_PATH}"
 )
 
-FUNCTION(MFU_ADD_EXECUTABLE_TEST module)
+FOREACH(target ${MFU_EXECUTABLE_TARGETS})
   ADD_TEST(
-    NAME "executable.${module}"
-    COMMAND "${Python3_EXECUTABLE}" -m unittest -v "tests/test_${module}.py"
+    NAME "executable.${target}"
+    COMMAND "${Python3_EXECUTABLE}" -m unittest -v "tests/test_${target}.py"
   )
-  SET_TESTS_PROPERTIES("executable.${module}" PROPERTIES
+  SET_TESTS_PROPERTIES("executable.${target}" PROPERTIES
     ENVIRONMENT "${MFU_EXECUTABLE_TEST_ENVIRONMENT}"
     LABELS executable
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
   )
-ENDFUNCTION()
-
-MFU_ADD_EXECUTABLE_TEST(dcmp)
-MFU_ADD_EXECUTABLE_TEST(dchmod)
-MFU_ADD_EXECUTABLE_TEST(dcp)
-MFU_ADD_EXECUTABLE_TEST(dsync)
-MFU_ADD_EXECUTABLE_TEST(dtar)
-MFU_ADD_EXECUTABLE_TEST(dwalk)
-MFU_ADD_EXECUTABLE_TEST(drm)
-MFU_ADD_EXECUTABLE_TEST(dreln)
-MFU_ADD_EXECUTABLE_TEST(dfilemaker)
-MFU_ADD_EXECUTABLE_TEST(ddup)
-MFU_ADD_EXECUTABLE_TEST(dbz2)
-MFU_ADD_EXECUTABLE_TEST(dfind)
-MFU_ADD_EXECUTABLE_TEST(dstripe)
-MFU_ADD_EXECUTABLE_TEST(dbcast)
+ENDFOREACH()
