@@ -3354,13 +3354,15 @@ int main(int argc, char **argv)
 
     /* check that destination parent is writable */
     if(mfu_file_access(dest_parent_str, W_OK, mfu_dst_file) < 0) {
+        int saved_errno = errno;
         mfu_loglevel log_level = MFU_LOG_ERR;
         if (options.dry_run)
             log_level = MFU_LOG_WARN;
         MFU_LOG(log_level, "Destination parent directory is not writable `%s' (errno=%d %s)",
-                dest_parent_str, errno, strerror(errno));
+                dest_parent_str, saved_errno, strerror(saved_errno));
         if (!options.dry_run) {
             mfu_free(&dest_parent_str);
+            rc = saved_errno;
             goto ERROR;
         }
     }
