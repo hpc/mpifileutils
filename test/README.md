@@ -39,6 +39,7 @@ cmake /path/to/mpifileutils \
 ```
 
 ## Run tests
+
 ### From `build`,
 Run the complete suite:
 
@@ -63,3 +64,22 @@ Run the tests for one executable, for example `dcp`:
 ```bash
 ctest --tests-regex '^executable\.dcp$' --output-on-failure
 ```
+
+### Root-required tests
+
+NOTE: CMake should not be configured as root.
+
+Tests requiring root privileges should be run individually from `ctest` with:
+```bash
+cd /path/to/mpifileutils/test/executable
+
+export PATH="/path/to/install/bin:$PATH"
+
+TEST_TMPDIR=/path/on/shared/filesystem/test-tmp \
+MPIEXEC_EXECUTABLE=/path/to/mpiexec \
+MPIEXEC_NUMPROC_FLAG=-n \
+MPIEXEC_MAX_NUMPROCS=4 \
+python3 -m unittest -v "tests/root_required_tests.py"
+```
+
+To run the full test suite, run the tests as a non-root user.
