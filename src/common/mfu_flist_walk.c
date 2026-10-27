@@ -51,7 +51,7 @@ static flist_t* CURRENT_LIST;
 static int SET_DIR_PERMS;
 static int REMOVE_FILES;
 static int DEREFERENCE;
-static int WALK_RESULT = 0;
+static int WALK_RESULT;
 static int NO_ATIME;
 static mfu_file_t** CURRENT_PFILE;
 
@@ -568,6 +568,9 @@ int mfu_flist_walk_paths(uint64_t num_paths, const char** paths,
 {
     /* report walk count, time, and rate */
     double start_walk = MPI_Wtime();
+
+    /* initially assume walk succeeds */
+    WALK_RESULT = 0;
 
     /* if dir_permission is set to 1 then set global variable */
     SET_DIR_PERMS = 0;
