@@ -254,5 +254,8 @@ int main(int argc, char** argv)
     mfu_finalize();
     MPI_Finalize();
 
+    if (rc != MFU_SUCCESS) {
+        return 1;    
+    }
     return 0;
 }
