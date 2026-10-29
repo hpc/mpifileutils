@@ -39,8 +39,16 @@ OPTIONS
 .. option:: -i, --seed=*integer*
 
    Specify the seed to use for random number generation. This can be
-   used to create reproducible test runs. The default is to generate a
-   random seed.
+   used to create reproducible test runs. The default is to use the
+   time as the seed.
+
+.. option:: -n, --nitems=*min*-*max*
+
+   Specify the total number of items to generate. Items include files,
+   directories, and links. The number of items will be selected at
+   random within the bounds of min and max. The value must be greater
+   than (depth * (depth + 1) / 2). The default number of items is set
+   from 3000 to 5000.
 
 .. option:: -s, --size=*min*-*max*
 

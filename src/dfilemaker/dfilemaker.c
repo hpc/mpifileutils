@@ -4,6 +4,7 @@
 #include <string.h>
 #include <getopt.h>
 #include <errno.h>
+#include <time.h>
 //#include "handle_args.h"
 #include "mfu.h"
 #include "strmap.h"
@@ -603,16 +604,15 @@ int main(int narg, char** arg)
     uint64_t i, j, ifst, ilst;
     int namlen;
     long int* ftypes, *flens;
-    long int maxflen = 2000L;
     int ifrac, *nfiles; // nfiles is number of files at levels from 0 top
-    int ntotal=3000;
+    int ntotal;
     int nfsum = 0;
-    int nlevels = 5, nsum, ilev; // number of levels with top (./)
+    int nlevels, nsum, ilev; // number of levels with top (./)
     int outlevels, outmin;
     mfu_flist* outlists;
     char* cp;
     char* dirname;
-    unsigned int iseed = 1;
+    unsigned int iseed = (unsigned int)time(NULL);
     unsigned int jseed = 0;
     int c;
     uint64_t idx;
@@ -647,11 +647,11 @@ int main(int narg, char** arg)
     int initsum, noff;
     static filltype_t filltype = ft_random; // what data to put into files
     unsigned long long sizeminl,sizemaxl;  // for mfu_abtoul
-    uint64_t sizemin=0,sizemax=0;
+    uint64_t sizemin=(1*1024*1024),sizemax=(5*1024*1024); // default: 1MB-5MB
     int longind=0;
     char *minterm,*maxterm;
-    int depmin=0,depmax=0;
-    int nmin=0,nmax=0;
+    int depmin=10,depmax=20;
+    int nmin=3000,nmax=5000;
     int rc=0;
 
     /*--------------------------
@@ -678,8 +678,10 @@ int main(int narg, char** arg)
         maxterm=(char*)MFU_MALLOC(10*sizeof(char));
         switch (c) {
            case 'i':
-             jseed = atoi(optarg);
-             if (jseed) iseed=jseed;
+             jseed = (unsigned int) strtoul(optarg, NULL, 10);
+             if (jseed) {
+                iseed = jseed;
+             }
              break;
            case 'f':
              for (filltype=0;filltype<ft_last;filltype++) {
@@ -700,15 +702,44 @@ int main(int narg, char** arg)
              mmparse(optarg,&minterm,&maxterm);
              depmin=atoi(minterm);
              depmax=atoi(maxterm);
+
+             if (depmin <= 0) {
+               if (rank == 0) {
+                 MFU_LOG(MFU_LOG_ERR,"Depth minimum must be greater than 0, got %d", depmin);
+               }
+               rc = EINVAL;
+               goto dfilemaker_cleanup_all;
+             }
+             if (depmax < depmin) {
+               if (rank == 0) {
+                 MFU_LOG(MFU_LOG_ERR,"Depth minimum (%d) must be <= maximum (%d)", depmin, depmax);
+               }
+               rc = EINVAL;
+               goto dfilemaker_cleanup_all;
+             }
              break;
            case 'n':
               // range for ntotal
               mmparse(optarg,&minterm,&maxterm);
               nmin=atoi(minterm);
               nmax=atoi(maxterm);
+              if (nmin <= 0) {
+                if (rank == 0) {
+                  MFU_LOG(MFU_LOG_ERR,"Number of items minimum must be greater than 0, got %d", nmin);
+                }
+                rc = EINVAL;
+                goto dfilemaker_cleanup_all;
+              }
+              if (nmax < nmin) {
+               if (rank == 0) {
+                 MFU_LOG(MFU_LOG_ERR,"Number of items minimum (%d) must be <= maximum (%d)", nmin, nmax);
+               }
+               rc = EINVAL;
+               goto dfilemaker_cleanup_all;
+              }
               break;
             case 's':
-              // range for maxflen
+              // range for file sizes
               mmparse(optarg,&minterm,&maxterm);
 
               /* read file size */
@@ -728,6 +759,14 @@ int main(int narg, char** arg)
                 goto dfilemaker_cleanup_all;
               }
               sizemax=(uint64_t)sizemaxl;
+
+              if (sizemax < sizemin) {
+                if (rank == 0) {
+                    MFU_LOG(MFU_LOG_ERR,"File size minimum must be <= maximum");
+                }
+                rc = EINVAL;
+                goto dfilemaker_cleanup_all;
+              }
               break;
             case 'v':
               if (mfu_debug_level < MFU_LOG_DBG) {
@@ -766,27 +805,19 @@ int main(int narg, char** arg)
 
     parent_path=arg[optind];
 
-     srand(iseed);
-     if (nmax > 0) {
-         ntotal=nmin+rand()%(1+nmax-nmin);
-     }
-     if (depmax > 0) {
-         nlevels=depmin+rand()%(1+depmax-depmin);
-     }
-     if (sizemax > 0) {
-         maxflen=sizemin+rand()%(1+sizemax-sizemin);
-     }
-
     /*-------------------------------------------------------
      * each level has nfiles[0] more than the one above
      * on this first pass
      *-------------------------------------------------------*/
+    srand(iseed);
+    ntotal=nmin+rand()%(1+nmax-nmin);
+    nlevels=depmin+rand()%(1+depmax-depmin);
     nsum = nlevels * (nlevels + 1) / 2;
     nfiles = (int*) MFU_MALLOC(nlevels * sizeof(int));
     nfiles[0] = ntotal / nsum;
     if (nfiles[0] < 1) {
         if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR,"ntotal must be greater than (levels * (nlevels + 1) /2)");
+            MFU_LOG(MFU_LOG_ERR,"ntotal must be greater than (nlevels * (nlevels + 1) / 2)");
         }
         rc = EINVAL;
         goto dfilemaker_cleanup_all;
@@ -796,7 +827,8 @@ int main(int narg, char** arg)
         MFU_LOG(MFU_LOG_VERBOSE, "parent_path = %s", parent_path);
         MFU_LOG(MFU_LOG_VERBOSE, "ntotal = %d",ntotal);
         MFU_LOG(MFU_LOG_VERBOSE, "nlevels = %d",nlevels);
-        MFU_LOG(MFU_LOG_VERBOSE, "maxflen = %d",maxflen);
+        MFU_LOG(MFU_LOG_VERBOSE, "sizemin = %d",sizemin);
+        MFU_LOG(MFU_LOG_VERBOSE, "sizemax = %d",sizemax);
     }
 
     for (ilev = 1; ilev < nlevels; ilev++) {
@@ -864,7 +896,7 @@ int main(int narg, char** arg)
     // set properties of elements and add to flist for proc
     //------------------------------------------------------
     ftypes = (long int*) MFU_MALLOC(nfiles[0] * sizeof(long int));
-    flens  = (long int*) MFU_MALLOC(nfiles[0] * sizeof(long int));
+    flens  = (uint64_t*) MFU_MALLOC(nfiles[0] * sizeof(uint64_t));
     for (i = 0; i < ifst; i++) {
         rand();
     }
@@ -876,7 +908,7 @@ int main(int narg, char** arg)
         rand();
     }
     for (i = ifst; i < ilst; i++) {
-        flens[i] = rand() % maxflen;
+        flens[i] = sizemin+rand()%(1+sizemax-sizemin);
     }
     cbuff = (char*) MFU_MALLOC(strlen(dirname) + 20 * sizeof(char));
 
@@ -998,7 +1030,7 @@ int main(int narg, char** arg)
         }
         randir = (uint64_t*)  MFU_MALLOC(nfiles[ilev] * sizeof(uint64_t));
         ftypes = (long int*) MFU_MALLOC(nfiles[ilev] * sizeof(long int));
-        flens  = (long int*) MFU_MALLOC(nfiles[ilev] * sizeof(long int));
+        flens  = (uint64_t*) MFU_MALLOC(nfiles[ilev] * sizeof(uint64_t));
 
         srand(iseed + 1);
         for (i = 0; i < nfiles[ilev]; i++) {
@@ -1012,7 +1044,7 @@ int main(int narg, char** arg)
 
         srand(iseed + 3);
         for (i = 0; i < nfiles[ilev]; i++) {
-            flens[i] = (long int)(rand() % maxflen);    // item length could be zero
+            flens[i] = sizemin+rand()%(1+sizemax-sizemin);    // item length could be zero
         }
         /*
                if (rank==0)
