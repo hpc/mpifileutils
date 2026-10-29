@@ -40,6 +40,7 @@ typedef struct list_elem {
     uint64_t ctime;         /* create time */
     uint64_t ctime_nsec;    /* create time nanoseconds */
     uint64_t size;          /* file size in bytes */
+    uint64_t blocks;        /* number of 512B blocks allocated */
     struct list_elem* next; /* pointer to next item */
     /* vars for a non-posix DAOS copy */
     uint64_t obj_id_lo;
