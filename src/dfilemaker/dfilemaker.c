@@ -901,7 +901,12 @@ int main(int narg, char** arg)
         rand();
     }
     for (i = ifst; i < ilst; i++) {
-        ftypes[i] = rand() % 3 + 2;
+        long int rand_type = rand() % 3 + 2;
+        if (i == 0) {
+            ftypes[i] = MFU_TYPE_DIR;  // at least 1 directory
+        } else {
+            ftypes[i] = rand_type;
+        }
     }
     srand(iseed + 100);
     for (i = 0; i < ifst; i++) {
@@ -1039,7 +1044,11 @@ int main(int narg, char** arg)
 
         srand(iseed + 2);
         for (i = 0; i < nfiles[ilev]; i++) {
-            ftypes[i] = (long int)(rand() % 3 + 2);    // item type f,d,l
+            if (i == 0) {
+                ftypes[i] = MFU_TYPE_DIR;   // at least 1 directory
+            } else {
+                ftypes[i] = (long int)(rand() % 3 + 2);    // item type f,d,l
+            }
         }
 
         srand(iseed + 3);
