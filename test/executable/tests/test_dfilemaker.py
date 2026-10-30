@@ -105,16 +105,16 @@ class TestDFILEMAKER(common.TestCase):
         # run dfilemaker with exact values
         self.run_distributed_successfully(
             "dfilemaker",
-            "--depth=3-3",
+            "--depth=5-5",
             "--size=4MB-4MB",
-            "--nitems=100-100",
+            "--nitems=15-15",
             self.destination_path,
         )
 
         # CHECK: generated tree depth matches the exact requested value
         tree_depth = get_tree_depth(self.destination_path)
         self.assertEqual(
-            tree_depth, 3, msg="Tree depth should match exact value."
+            tree_depth, 5, msg="Tree depth should match exact value."
         )
 
         # CHECK: generated regular file sizes match the exact requested value
@@ -133,9 +133,39 @@ class TestDFILEMAKER(common.TestCase):
         total_items = count_all_items(self.destination_path)
         self.assertEqual(
             total_items,
-            100,
+            15,
             msg="Total number of items should match exact value."
         )
+
+    def test_same_seed_produces_identical_trees(self):
+        """The same seed produces the same files."""
+
+        tree_1 = os.path.join(self.destination_path, "tree1")
+        tree_2 = os.path.join(self.destination_path, "tree2")
+        common.create_empty_directories(tree_1, tree_2)
+
+        shared_opts = [
+            "--depth=3-4",
+            "--size=5K-10K",
+            "--nitems=10-15",
+            "--seed=53471",
+        ]
+        self.run_distributed_successfully(
+            "dfilemaker",
+            *shared_opts,
+            tree_1
+        )
+        self.run_distributed_successfully(
+            "dfilemaker",
+            *shared_opts,
+            tree_2
+        )
+
+        # CHECK: the two trees are identical
+        result = common.run_local(
+            "rsync", "-cnr", "--delete", "--no-links", tree_1, tree_2
+        )
+        self.assertEqual(result.returncode, 0, msg="File trees do not match")
 
 
 def get_tree_depth(root_dir):
@@ -161,14 +191,8 @@ def get_regular_file_sizes(root_dir):
 
 def count_all_items(root_dir):
     total_count = 0
-    for dirpath, dirnames, filenames in os.walk(root_dir):
-        # count all directories, files, and links
-        if dirpath != root_dir:
-            total_count += len(dirnames)
-        for filename in filenames:
-            path = os.path.join(dirpath, filename)
-            if os.path.islink(path) or os.path.isfile(path):
-                total_count += 1
+    for _, dirnames, filenames in os.walk(root_dir):
+        total_count += len(dirnames) + len(filenames)
     return total_count
 
 
