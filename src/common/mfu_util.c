@@ -1,6 +1,11 @@
 /* to get nsec fields in stat structure */
 #define _GNU_SOURCE
 
+#if defined(__FreeBSD__)
+#include <sys/param.h>
+#include <sys/mount.h>
+#endif
+
 #include "mfu.h"
 #include "mpi.h"
 #include "dtcmp.h"
@@ -16,9 +21,22 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
 
+#if defined(__linux__)
 #include <sys/vfs.h>
+#endif
+
+#ifndef POSIX_FADV_SEQUENTIAL
+#define POSIX_FADV_SEQUENTIAL 2
+#endif
+#ifndef O_NOATIME
+#define O_NOATIME 0
+#endif
+#ifndef O_DIRECT
+#define O_DIRECT 0
+#endif
 
 #ifndef ULLONG_MAX
 #define ULLONG_MAX (__LONG_LONG_MAX__ * 2UL + 1UL)
@@ -939,7 +957,7 @@ int mfu_compare_contents(
                 /* check for write error */
                 if (bytes_written < 0) {
                     MFU_LOG(MFU_LOG_ERR, "Failed to write `%s' at offset %llx (errno=%d %s)", 
-                        dst_name, (unsigned long long)off + n, strerror(errno));
+                        dst_name, (unsigned long long)off + n, errno, strerror(errno));
                     rc = -1;
                     break;
                 }
