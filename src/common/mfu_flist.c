@@ -12,6 +12,9 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#if !defined(__linux__)
+#undef DCOPY_USE_XATTRS
+#endif
 #include <string.h>
 #include <unistd.h>
 #include <getopt.h>
@@ -35,8 +38,10 @@
 #include <sys/ioctl.h>
 #include <sys/param.h>
 
+#ifdef __linux__
 #include <linux/fs.h>
 #include <linux/fiemap.h>
+#endif
 
 #include <libgen.h> /* dirname */
 #include "libcircle.h"

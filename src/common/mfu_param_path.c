@@ -1,5 +1,10 @@
 #define _GNU_SOURCE
 
+#if defined(__FreeBSD__)
+#include <sys/types.h>
+#include <sys/stat.h>
+#endif
+
 #include "mfu.h"
 #include "mpi.h"
 
@@ -522,7 +527,7 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
                 /* dest is a file */
                 dest_is_file = true;
             }
-            else if(S_ISLNK(destpath->path_stat.st_mode)) {
+            else if (S_ISLNK(destpath->path_stat.st_mode)) {
                 /* dest is a symlink, but to what? */
                 if (destpath->target_stat_valid) {
                     /* target of the symlink exists, determine what it is */

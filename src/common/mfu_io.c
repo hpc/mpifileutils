@@ -21,6 +21,11 @@
 #include "mfu.h"
 #include "mfu_errors.h"
 
+#ifdef __FreeBSD__
+#undef lstat64
+#define lstat64(path, buf) lstat((path), (struct stat *)(buf))
+#endif
+
 #define MFU_IO_TRIES  (5)
 #define MFU_IO_USLEEP (100)
 
