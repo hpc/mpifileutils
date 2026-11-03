@@ -1,6 +1,6 @@
 .\" Man page generated from reStructuredText.
 .
-.TH "MPIFILEUTILS" "1" "Jan 29, 2025" "0.12" "mpiFileUtils"
+.TH "MPIFILEUTILS" "1" "Nov 02, 2026" "0.12.1" "mpiFileUtils"
 .SH NAME
 mpifileutils \- mpiFileUtils Documentation
 .
@@ -79,7 +79,7 @@ mpiFileUtils release packages are available as attachments from their respective
 mpiFileUtils optionally depends on libarchive, version 3.5.1.
 If new enough, the system install of libarchive may be sufficient,
 though even newer versions may be incompatible with the required version.
-To be certain of compatibility, it is recommended that one install libarchive\-3.5.1 with commands like the following
+To be certain of compatibility, it is recommended that one install libarchive\-3.7.7 with commands like the following
 .INDENT 0.0
 .INDENT 3.5
 .sp
@@ -90,8 +90,8 @@ mkdir install
 installdir=\(gapwd\(ga/install
 
 wget https://github.com/libarchive/libarchive/releases/download/v3.7.7/libarchive\-3.7.7.tar.gz
-tar \-zxf libarchive\-3.5.1.tar.gz
-cd libarchive\-3.5.1
+tar \-zxf libarchive\-3.7.7.tar.gz
+cd libarchive\-3.7.7
   ./configure \-\-prefix=$installdir
   make install
 cd ..
@@ -103,15 +103,15 @@ cd ..
 To build on PowerPC, one may need to add \fB\-\-build=powerpc64le\-redhat\-linux\-gnu\fP to the configure command.
 .sp
 Assuming libarchive has been installed to an \fIinstall\fP directory as shown above,
-one can then build mpiFileUtils from a release like v0.12 with commands like the following:
+one can then build mpiFileUtils from a release like v0.12.1 with commands like the following:
 .INDENT 0.0
 .INDENT 3.5
 .sp
 .nf
 .ft C
-wget https://github.com/hpc/mpifileutils/releases/download/v0.12/mpifileutils\-v0.12.tgz
-tar \-zxf mpifileutils\-v0.12.tgz
-cd mpifileutils\-v0.12
+wget https://github.com/hpc/mpifileutils/releases/download/v0.12.1/mpifileutils\-v0.12.1.tgz
+tar \-zxf mpifileutils\-v0.12.1.tgz
+cd mpifileutils\-v0.12.1
   mkdir build
   cd build
     cmake .. \e
@@ -224,9 +224,9 @@ mkdir deps
 cd deps
 
   urls=(     https://github.com/hpc/libcircle/releases/download/v0.3/libcircle\-0.3.0.tar.gz
-             https://github.com/llnl/lwgrp/releases/download/v1.0.4/lwgrp\-1.0.6.tar.gz
+             https://github.com/llnl/lwgrp/releases/download/v1.0.6/lwgrp\-1.0.6.tar.gz
              https://github.com/llnl/dtcmp/releases/download/v1.1.5/dtcmp\-1.1.5.tar.gz
-             https://github.com/libarchive/libarchive/releases/download/3.7.7/libarchive\-3.7.7.tar.gz
+             https://github.com/libarchive/libarchive/releases/download/v3.7.7/libarchive\-3.7.7.tar.gz
   )
 
   rc=0
