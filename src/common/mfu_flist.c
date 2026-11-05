@@ -125,7 +125,7 @@ static size_t list_elem_pack2_size(int detail, uint64_t chars, const elem_t* ele
 {
     size_t size;
     if (detail) {
-        size = 2 * 4 + chars + 0 * 4 + 10 * 8;
+        size = 2 * 4 + chars + 0 * 4 + 11 * 8;
     }
     else {
         size = 2 * 4 + chars + 1 * 4;
@@ -178,6 +178,7 @@ static size_t list_elem_pack2(void* buf, int detail, uint64_t chars, const elem_
         mfu_pack_uint64(&ptr, elem->ctime);
         mfu_pack_uint64(&ptr, elem->ctime_nsec);
         mfu_pack_uint64(&ptr, elem->size);
+        mfu_pack_uint64(&ptr, elem->blocks);
     }
     else {
         /* just have the file type */
@@ -233,6 +234,7 @@ static size_t list_elem_unpack2(const void* buf, elem_t* elem)
         mfu_unpack_uint64(&ptr, &elem->ctime);
         mfu_unpack_uint64(&ptr, &elem->ctime_nsec);
         mfu_unpack_uint64(&ptr, &elem->size);
+        mfu_unpack_uint64(&ptr, &elem->blocks);
         /* use mode to set file type */
         elem->type = mfu_flist_mode_to_filetype((mode_t)elem->mode);
     }
@@ -346,6 +348,7 @@ static void list_insert_copy(flist_t* flist, elem_t* src)
     elem->ctime      = src->ctime;
     elem->ctime_nsec = src->ctime_nsec;
     elem->size       = src->size;
+    elem->blocks      = src->blocks;   
 
     /* append element to tail of linked list */
     mfu_flist_insert_elem(flist, elem);
@@ -389,6 +392,7 @@ void mfu_flist_insert_stat(flist_t* flist, const char* fpath, mode_t mode, const
         elem->ctime_nsec = nsecs;
 
         elem->size  = (uint64_t) sb->st_size;
+        elem->blocks = (uint64_t) sb->st_blocks;
 
         /* TODO: link to user and group names? */
     }
@@ -987,6 +991,17 @@ uint64_t mfu_flist_file_get_size(mfu_flist bflist, uint64_t idx)
     return ret;
 }
 
+uint64_t mfu_flist_file_get_blocks(mfu_flist bflist, uint64_t idx)
+{
+    uint64_t ret = (uint64_t) - 1;
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL && flist->detail) {
+        ret = elem->blocks;
+    }
+    return ret;
+}
+
 const char* mfu_flist_file_get_username(mfu_flist bflist, uint64_t idx)
 {
     const char* ret = NULL;
@@ -1167,6 +1182,16 @@ void mfu_flist_file_set_size(mfu_flist bflist, uint64_t idx, uint64_t size)
     elem_t* elem = list_get_elem(flist, idx);
     if (elem != NULL) {
         elem->size = size;
+    }
+    return;
+}
+
+void mfu_flist_file_set_blocks(mfu_flist bflist, uint64_t idx, uint64_t blocks)
+{
+    flist_t* flist = (flist_t*) bflist;
+    elem_t* elem = list_get_elem(flist, idx);
+    if (elem != NULL) {
+        elem->blocks = blocks;
     }
     return;
 }
@@ -1612,7 +1637,7 @@ mfu_flist mfu_flist_spread(mfu_flist flist)
     return newlist;
 }
 
-/* print information about a file given the index and rank (used in print_files) */
+/* print information about a file given the index and rank (used in print_flist) */
 static void print_file(mfu_flist flist, uint64_t idx)
 {
     /* store types as strings for print_file */
@@ -1696,8 +1721,25 @@ static void print_file(mfu_flist flist, uint64_t idx)
     }
 }
 
-/* given a list of files print from the start to end of the list */
-void mfu_flist_print(mfu_flist flist)
+/* print disk usage of a file given the index and rank (used in print_flist) */
+static void print_disk_usage(mfu_flist flist, uint64_t idx)
+{
+    /* get filename */
+    const char* file = mfu_flist_file_get_name(flist, idx);
+
+    if (mfu_flist_have_detail(flist)) {
+        uint64_t usage = mfu_flist_file_get_blocks(flist, idx) * 512;
+        double usage_tmp;
+        const char* usage_units;
+        mfu_format_bytes(usage, &usage_tmp, &usage_units);
+
+        printf("%7.3f %3s %s\n", usage_tmp, usage_units, file);
+    }
+}
+
+/* given a list of files print long listing or disk usage from the
+ * start to end of the list */
+static void print_flist(mfu_flist flist, int disk_usage)
 {
     /* number of items to print from start and end of list */
     uint64_t range = 10;
@@ -1786,7 +1828,12 @@ void mfu_flist_print(mfu_flist flist)
         uint64_t tmpidx = 0;
         uint64_t tmpsize = mfu_flist_size(tmplist);
         while (tmpidx < tmpsize) {
-            print_file(tmplist, tmpidx);
+            if (disk_usage) {
+                print_disk_usage(tmplist, tmpidx);
+            }
+            else {
+                print_file(tmplist, tmpidx);
+            }
             tmpidx++;
             if (tmpidx == range && total > 2 * range) {
                 /* going to have to leave some out */
@@ -1807,6 +1854,322 @@ void mfu_flist_print(mfu_flist flist)
     mfu_free(&recvbuf);
 
     return;
+}
+
+/* for sorting and adding blocks of flist entries based on path */
+typedef struct {
+    char* path;
+    uint64_t blocks;
+} entry_blocks;
+
+/* for sorting entry blocks array */
+static int entry_blocks_compare(const void* a, const void* b)
+{
+    const entry_blocks* left = (const entry_blocks*) a;
+    const entry_blocks* right = (const entry_blocks*) b;
+    return strcmp(left->path, right->path);
+}
+
+/* Find the first entry at or after key */
+static uint64_t path_lower_bound(const entry_blocks* entries, uint64_t size,
+                                 const char* key)
+{
+    uint64_t low = 0;
+    uint64_t high = size;
+    while (low < high) {
+        uint64_t mid = low + (high - low) / 2;
+        if (strcmp(entries[mid].path, key) < 0) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    return low;
+}
+
+/* Find the range of paths exactly match path */
+static void exact_match_bounds(const entry_blocks* entries, uint64_t size,
+                               const char* path, uint64_t* ret_first_idx,
+                               uint64_t* ret_end_idx)
+{
+    uint64_t low = path_lower_bound(entries, size, path);
+    uint64_t high = size;
+
+    *ret_first_idx = low;
+    while (low < high) {
+        uint64_t mid = low + (high - low) / 2;
+        if (strcmp(entries[mid].path, path) == 0) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    *ret_end_idx = low;
+}
+
+/* Find the range of paths starting with prefix */
+static void prefix_match_bounds(const entry_blocks* entries, uint64_t size,
+                                const char* prefix, uint64_t* ret_first_idx,
+                                uint64_t* ret_end_idx)
+{
+    uint64_t low = path_lower_bound(entries, size, prefix);
+    uint64_t high = size;
+    size_t prefix_len = strlen(prefix);
+
+    *ret_first_idx = low;
+    while (low < high) {
+        uint64_t mid = low + (high - low) / 2;
+        if (strncmp(entries[mid].path, prefix, prefix_len) == 0) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    *ret_end_idx = low;
+}
+
+/* Sum local entry blocks for paths that match a directory or are a
+ * descendant of the directory */
+static uint64_t dir_block_sum(const entry_blocks* entries, const uint64_t* prefix_block_sums,
+                              uint64_t size, const char* dir)
+{
+    uint64_t first, end;
+
+    /* edge case for / */
+    if (strcmp(dir, "/") == 0) {
+        prefix_match_bounds(entries, size, dir, &first, &end);
+        return prefix_block_sums[end] - prefix_block_sums[first];
+    }
+
+    /* sum the blocks of exact path matches */
+    exact_match_bounds(entries, size, dir, &first, &end);
+    uint64_t total = prefix_block_sums[end] - prefix_block_sums[first];
+
+    /* add a seperator so the prefix matches only descendants */
+    size_t len = strlen(dir);
+    char* child_prefix = (char*) MFU_MALLOC(len + 2);
+    memcpy(child_prefix, dir, len);
+    child_prefix[len] = '/';
+    child_prefix[len + 1] = '\0';
+
+    /* sum the blocks of all descendant paths */
+    prefix_match_bounds(entries, size, child_prefix, &first, &end);
+    total += prefix_block_sums[end] - prefix_block_sums[first];
+
+    free(child_prefix);
+
+    return total;
+}
+
+/* Return a copy with directory block totals including descendants blocks */
+static mfu_flist flist_update_dir_blocks(mfu_flist flist)
+{
+    int local_error = !mfu_flist_have_detail(flist);
+    int any_error = 0;
+    MPI_Allreduce(&local_error, &any_error, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+    if (any_error) {
+        return MFU_FLIST_NULL;
+    }
+
+    /* get the number of directories */
+    uint64_t size = mfu_flist_size(flist);
+    uint64_t dir_count = 0;
+    uint64_t idx;
+    for (idx = 0; idx < size; idx++) {
+        if (mfu_flist_file_get_type(flist, idx) == MFU_TYPE_DIR) {
+            dir_count++;
+        }
+    }
+
+    /* initialize arrays */
+    const char** dir_names = (const char**) MFU_MALLOC(dir_count * sizeof(char*));
+    uint64_t* dir_indexes = (uint64_t*) MFU_MALLOC(dir_count * sizeof(uint64_t));
+    uint64_t* dir_block_totals = (uint64_t*) MFU_CALLOC(dir_count, sizeof(uint64_t));
+    entry_blocks* entries = (entry_blocks*) MFU_MALLOC(size * sizeof(entry_blocks));
+
+    uint64_t dir_idx = 0;
+    for (idx = 0; idx < size; idx++) {
+        /* use absolute paths for sorting */
+        entries[idx].path = mfu_path_strdup_abs_reduce_str(mfu_flist_file_get_name(flist, idx));
+        entries[idx].blocks = mfu_flist_file_get_blocks(flist, idx);
+        if (mfu_flist_file_get_type(flist, idx) == MFU_TYPE_DIR) {
+            dir_names[dir_idx] = entries[idx].path;
+            dir_indexes[dir_idx] = idx;
+            dir_idx++;
+        }
+    }
+
+    /* sort local entries by absolute path */
+    qsort(entries, size, sizeof(entry_blocks), entry_blocks_compare);
+
+    /* precalculate the sums of the sorted entries */
+    uint64_t* prefix_block_sums = (uint64_t*) MFU_MALLOC((size + 1) * sizeof(uint64_t));
+    prefix_block_sums[0] = 0;
+    for (idx = 0; idx < size; idx++) {
+        prefix_block_sums[idx + 1] = prefix_block_sums[idx] + entries[idx].blocks;
+    }
+
+    int rank, ranks;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ranks);
+
+    /* check if the packed directory names can be sent with MPI_Sendrecv */
+    uint64_t send_bytes = 0;
+    if (dir_count > INT_MAX) {
+        local_error = 1;
+    }
+    else {
+        for (idx = 0; idx < dir_count; idx++) {
+            uint64_t len = strlen(dir_names[idx]) + 1;
+            if (len > INT_MAX || send_bytes > INT_MAX - len) {
+                local_error = 1;
+            } else {
+                send_bytes += len;
+            }
+        }
+    }
+    MPI_Allreduce(&local_error, &any_error, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+    if (any_error) {
+        for (idx = 0; idx < size; idx++) {
+            free(entries[idx].path);
+        }
+        free(entries);
+        free(prefix_block_sums);
+        free(dir_names);
+        free(dir_indexes);
+        free(dir_block_totals);
+        return MFU_FLIST_NULL;
+    }
+
+    /* pack the directory names */
+    char* sendbuf = (char*) MFU_MALLOC(send_bytes);
+    uint64_t offset = 0;
+    for (idx = 0; idx < dir_count; idx++) {
+        uint64_t len = strlen(dir_names[idx]) + 1;
+        memcpy(sendbuf + offset, dir_names[idx], len);
+        offset += len;
+    }
+
+    /* count total blocks of directory descendants in a ring */
+    for (idx = 0; idx < ranks; idx++) {
+        int src = rank - idx;
+        if (src < 0) {
+            src += ranks;
+        }
+        int dst = rank + idx;
+        if (dst >= ranks) {
+            dst -= ranks;
+        }
+
+        /* exchange packed strings */
+        int recv_bytes;
+        MPI_Sendrecv(
+            &send_bytes, 1, MPI_INT, dst, 0,
+            &recv_bytes, 1, MPI_INT, src, 0,
+            MPI_COMM_WORLD, MPI_STATUS_IGNORE
+        );
+
+        char* recvbuf = (char*) MFU_MALLOC(recv_bytes);
+        MPI_Sendrecv(
+            sendbuf, (int) send_bytes, MPI_BYTE, dst, 1,
+            recvbuf, recv_bytes, MPI_BYTE, src, 1,
+            MPI_COMM_WORLD, MPI_STATUS_IGNORE
+        );
+
+        /* exchange block totals */
+        int recv_count;
+        MPI_Sendrecv(
+            &dir_count, 1, MPI_INT, dst, 2,
+            &recv_count, 1, MPI_INT, src, 2,
+            MPI_COMM_WORLD, MPI_STATUS_IGNORE
+        );
+
+        uint64_t* recv_block_totals = (uint64_t*) MFU_MALLOC(recv_count * sizeof(uint64_t));
+        MPI_Sendrecv(
+            dir_block_totals, (int) dir_count, MPI_UINT64_T, dst, 3,
+            recv_block_totals, recv_count, MPI_UINT64_T, src, 3,
+            MPI_COMM_WORLD, MPI_STATUS_IGNORE
+        );
+
+        /* do not contribute total if error occured */
+        if (!local_error) {
+            uint64_t name_idx = 0;
+            uint64_t name_offset = 0;
+            /* loop through each directory name */
+            while (name_offset < recv_bytes) {
+                if (name_idx >= recv_count) {
+                    local_error = 1;
+                    break;
+                }
+                size_t remaining = (size_t) (recv_bytes - name_offset);
+                size_t len = strnlen(recvbuf + name_offset, remaining);
+                if (len == remaining) {
+                    local_error = 1;
+                    break;
+                }
+                const char* dir = recvbuf + name_offset;
+                
+                /* add the total block sum of the decendants on this rank */
+                recv_block_totals[name_idx] += dir_block_sum(entries, prefix_block_sums, size, dir);
+
+                name_offset += len + 1;
+                name_idx++;
+            }
+            if (name_idx != recv_count) {
+                local_error = 1;
+            }
+        }
+
+        /* exchange totals back*/
+        MPI_Sendrecv(
+            recv_block_totals, (int) recv_count, MPI_UINT64_T, src, 4,
+            dir_block_totals, (int) dir_count, MPI_UINT64_T, dst, 4,
+            MPI_COMM_WORLD, MPI_STATUS_IGNORE
+        );
+        free(recvbuf);
+        free(recv_block_totals);
+    }
+
+    MPI_Allreduce(&local_error, &any_error, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+    mfu_flist updated_flist = MFU_FLIST_NULL;
+    if (!any_error) {
+        /* Apply updated directory blocks to a copy of flist */
+        updated_flist = mfu_flist_subset(flist);
+        for (idx = 0; idx < size; idx++) {
+            mfu_flist_file_copy(flist, idx, updated_flist);
+        }
+        mfu_flist_summarize(updated_flist);
+        for (idx = 0; idx < dir_count; idx++) {
+            mfu_flist_file_set_blocks(updated_flist, dir_indexes[idx], dir_block_totals[idx]);
+        }
+    }
+
+    free(sendbuf);
+    for (idx = 0; idx < size; idx++) {
+        free(entries[idx].path);
+    }
+    free(entries);
+    free(prefix_block_sums);
+    free(dir_names);
+    free(dir_indexes);
+    free(dir_block_totals);
+    return updated_flist;
+}
+
+/* given a list of files print from the start to end of the list */
+void mfu_flist_print_disk_usage(mfu_flist flist)
+{
+    mfu_flist updated_flist = flist_update_dir_blocks(flist);
+    if (updated_flist != MFU_FLIST_NULL) {
+        print_flist(updated_flist, 1);
+        mfu_flist_free(&updated_flist);
+    }
+}
+
+/* given a list of files print from the start to end of the list */
+void mfu_flist_print(mfu_flist flist)
+{
+    print_flist(flist, 0);
 }
 
 void mfu_flist_print_summary(mfu_flist flist)
