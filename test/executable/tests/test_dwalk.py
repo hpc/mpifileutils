@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import os
+import re
+import logging
 import unittest
 
 from tests import common, config
@@ -49,10 +51,17 @@ class TestDWALK(common.TestCase):
                 "if=/dev/urandom",
                 f"of={file}",
                 f"bs={byte_size}",
+                "oflag=direct",
                 "count=1",
             )
 
         self.output_file = os.path.join(self.basepath, "output")
+
+        self.paths = {self.basepath}
+        for directory, dirnames, filenames in os.walk(self.basepath):
+            self.paths.update(
+                os.path.join(directory, name) for name in dirnames + filenames
+            )
 
     def test_print_summary(self):
         """Print summary information of a directory"""
@@ -63,22 +72,7 @@ class TestDWALK(common.TestCase):
         )
 
         # CHECK: all files and directories printed
-        paths = [
-            self.basepath,
-            self.dir1,
-            self.subdir1,
-            self.dir2,
-            self.subdir2,
-            self.subdir3,
-            self.dir3,
-            self.subdir4,
-            self.file1,
-            self.file2,
-            self.file3,
-            self.file4,
-            self.file5,
-        ]
-        for file in paths:
+        for file in self.paths:
             self.assertIn(
                 file, dwalk_result.stdout, msg="Entry was not printed."
             )
@@ -147,6 +141,57 @@ class TestDWALK(common.TestCase):
             r"\[\s*10\.000\s+MiB\s+-\s*MAX\s+\)\s+1",
             msg="Large range differs.",
         )
+
+    def test_disk_usage(self):
+        """Compare each printed disk usage with du"""
+
+        # run dwalk
+        result = self.run_distributed_successfully(
+            "dwalk", "--disk-usage", self.basepath
+        )
+
+        # Get the usage output of each path
+        usage = {}
+        for line in result.stdout.splitlines():
+            match = re.fullmatch(
+                r"\s*(\d+\.\d{3})\s+(B|KiB|MiB|GiB|TiB|PiB|EiB)\s+(/.*)",
+                line,
+            )
+            if match and match.group(3) in self.paths:
+                path = match.group(3)
+                self.assertNotIn(path, usage)
+                usage[path] = f"{match.group(1)} {match.group(2)}"
+
+        # CHECK: Usage printed for each expected path
+        self.assertEqual(
+            set(usage),
+            self.paths,
+            msg="Missing disk usage entries.",
+        )
+
+        # CHECK: The usage output matches du
+        for path in self.paths:
+            du_result = self.run_local_successfully("du", "-sB1", path)
+            du_bytes = int(du_result.stdout.split()[0])
+            self.assertEqual(
+                usage[path],
+                format_bytes(du_bytes),
+                msg=f"Disk usage output for {path} does not match du",
+            )
+
+
+def format_bytes(num_bytes):
+    units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"]
+
+    size = float(num_bytes)
+    unit_idx = 0
+    while size / 1024 > 1 and unit_idx < len(units) - 1:
+        size /= 1024
+        unit_idx += 1
+    if size > 1000 and unit_idx < len(units) - 1:
+        size /= 1024
+        unit_idx += 1
+    return f"{size:.3f} {units[unit_idx]}"
 
 
 if __name__ == "__main__":
