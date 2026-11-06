@@ -16,6 +16,7 @@
 #include <mpi.h>
 #include <string.h>
 #include <getopt.h>
+#include <locale.h>
 
 #include "mfu.h"
 
@@ -161,6 +162,10 @@ static void print_usage(void)
 
 int main(int argc, char** argv)
 {
+    /* Set the locale for character handling to the user's environment settings
+     * to ensure that file names are handled correctly by libarchive */
+    setlocale(LC_CTYPE, "");
+
     MPI_Init(&argc, &argv);
     mfu_init();
 
