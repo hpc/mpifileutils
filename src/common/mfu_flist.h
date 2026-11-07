@@ -288,6 +288,9 @@ void mfu_flist_write_text(
     mfu_flist flist
 );
 
+/* given a list of files print from the start to end of the list */
+void mfu_flist_print_disk_usage(mfu_flist flist);
+
 /* given a list of files print from start and end of the list */
 void mfu_flist_print(mfu_flist flist);
 
@@ -395,6 +398,7 @@ uint64_t mfu_flist_file_get_mtime_nsec(mfu_flist flist, uint64_t index);
 uint64_t mfu_flist_file_get_ctime(mfu_flist flist, uint64_t index);
 uint64_t mfu_flist_file_get_ctime_nsec(mfu_flist flist, uint64_t index);
 uint64_t mfu_flist_file_get_size(mfu_flist flist, uint64_t index);
+uint64_t mfu_flist_file_get_blocks(mfu_flist flist, uint64_t index);
 uint64_t mfu_flist_file_get_perm(mfu_flist flist, uint64_t index);
 #if DCOPY_USE_XATTRS
 void *mfu_flist_file_get_acl(mfu_flist bflist, uint64_t idx, ssize_t *acl_size, char *type);
@@ -420,6 +424,7 @@ void mfu_flist_file_set_mtime_nsec(mfu_flist flist, uint64_t index, uint64_t mti
 void mfu_flist_file_set_ctime(mfu_flist flist, uint64_t index, uint64_t ctime);
 void mfu_flist_file_set_ctime_nsec(mfu_flist flist, uint64_t index, uint64_t ctime_nsec);
 void mfu_flist_file_set_size(mfu_flist flist, uint64_t index, uint64_t size);
+void mfu_flist_file_set_blocks(mfu_flist flist, uint64_t index, uint64_t blocks);
 #if DCOPY_USE_XATTRS
 //void *mfu_flist_file_set_acl(mfu_flist bflist, uint64_t idx, ssize_t *acl_size, char *type);
 #endif

@@ -66,6 +66,11 @@ OPTIONS
    within the 2^20 - 2^30 range. The histogram also includes both
    files and directories.
 
+.. option:: -u, --disk-usage
+
+   Print the disk usage of files to the screen, recursively for
+   directories.
+
 .. option:: -p, --print
 
    Print files to the screen.
