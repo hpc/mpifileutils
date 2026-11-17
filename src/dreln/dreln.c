@@ -227,7 +227,7 @@ int main (int argc, char* argv[])
         (void) mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_file);
     } else {
         /* read cache file */
-        mfu_flist_read_cache(inputname, flist);
+        (void) mfu_flist_read_cache(inputname, flist);
     }
 
     /* create path objects of old and new prefix */

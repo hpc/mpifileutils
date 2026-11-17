@@ -1768,7 +1768,7 @@ int main(int argc, char** argv)
     }
     else {
         /* read list from file */
-        mfu_flist_read_cache(inputname, flist);
+        (void) mfu_flist_read_cache(inputname, flist);
     }
 
     /* start process from the root directory */
