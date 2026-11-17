@@ -86,6 +86,8 @@ extern "C" {
 #define MAX_ARGS _POSIX_ARG_MAX
 #endif
 
+#define CACHE_VER 5
+
 /****************************************
  * Define types
  ***************************************/
@@ -270,8 +272,8 @@ void mfu_flist_array_free(int levels, mfu_flist** outlists);
  * Functions to read/write list to file or print to screen
  ****************************************/
 
-/* read file list from file */
-void mfu_flist_read_cache(
+/* read file list from file, and get back the version (-1 if unknown) */
+int mfu_flist_read_cache(
     const char* name,
     mfu_flist flist
 );
