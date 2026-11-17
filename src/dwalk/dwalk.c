@@ -566,14 +566,6 @@ daos_setup_done:
         }
     }
 
-    if (inputname && print_disk_usage) {
-        if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "--input is not supported with --disk-usage."
-                    MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
-        }
-        usage = 1;
-    }
-
     /* if user is trying to sort, verify the sort fields are valid */
     if (sortfields != NULL) {
         int maxfields;
@@ -673,13 +665,15 @@ daos_setup_done:
     /* create an empty file list with default values */
     mfu_flist flist = mfu_flist_new();
 
+    uint64_t cache_ver = CACHE_VER;
+
     if (walk) {
         /* walk list of input paths */
         (void) mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_file);
     }
     else {
         /* read data from cache file */
-        (void) mfu_flist_read_cache(inputname, flist);
+        cache_ver = mfu_flist_read_cache(inputname, flist);
     }
 
     /* TODO: filter files */
@@ -700,7 +694,12 @@ daos_setup_done:
 
     /* print disk usage if user specified this option */
     if (print_disk_usage) {
-        mfu_flist_print_disk_usage(flist);
+        if (cache_ver >= 5) {
+            mfu_flist_print_disk_usage(flist);
+        } else {
+            MFU_LOG(MFU_LOG_ERR, "--disk-usage only supports --input that includes blocks."
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+        }
     }
 
     /* print summary statistics of flist */
