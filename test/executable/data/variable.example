@@ -1,0 +1,5 @@
+/tmp/example/tree|D
+/tmp/example/tree/file1|F
+/tmp/example/tree/dir2|D
+/tmp/example/tree/dir1|D
+/tmp/example/tree/dir1/file2|F
