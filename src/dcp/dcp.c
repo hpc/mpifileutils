@@ -533,7 +533,7 @@ int main(int argc, char** argv)
 
             /* otherwise, read list of files from input, but then stat each one */
             mfu_flist input_flist = mfu_flist_new();
-            mfu_flist_read_cache(inputname, input_flist);
+            (void) mfu_flist_read_cache(inputname, input_flist);
 
             skip_args.numpaths = numpaths_src;
             skip_args.paths = paths;

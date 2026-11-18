@@ -226,11 +226,14 @@ static void list_elem_decode(char* buf, elem_t* elem)
 
 /* create a datatype to hold file name and stat info */
 /* return number of bytes needed to pack element */
-static size_t list_elem_pack_size(int detail, uint64_t chars, const elem_t* elem)
+static size_t list_elem_pack_size(uint64_t version, int detail, int64_t chars)
 {
     size_t size;
     if (detail) {
         size = chars + 0 * 4 + 10 * 8;
+        if (version == 5) {
+            size += 8;
+        }
     }
     else {
         size = chars + 1 * 4;
@@ -261,6 +264,7 @@ static size_t list_elem_pack(void* buf, int detail, uint64_t chars, const elem_t
         mfu_pack_io_uint64(&ptr, elem->ctime);
         mfu_pack_io_uint64(&ptr, elem->ctime_nsec);
         mfu_pack_io_uint64(&ptr, elem->size);
+        mfu_pack_io_uint64(&ptr, elem->blocks);
     }
     else {
         /* just have the file type */
@@ -272,7 +276,7 @@ static size_t list_elem_pack(void* buf, int detail, uint64_t chars, const elem_t
 }
 
 /* unpack element from buffer and return number of bytes read */
-static size_t list_elem_unpack(const void* buf, int detail, uint64_t chars, elem_t* elem)
+static size_t list_elem_unpack(const void* buf, uint64_t version, int detail, uint64_t chars, elem_t* elem)
 {
     const char* start = (const char*) buf;
     const char* ptr = start;
@@ -301,6 +305,10 @@ static size_t list_elem_unpack(const void* buf, int detail, uint64_t chars, elem
         mfu_unpack_io_uint64(&ptr, &elem->ctime);
         mfu_unpack_io_uint64(&ptr, &elem->ctime_nsec);
         mfu_unpack_io_uint64(&ptr, &elem->size);
+        elem->blocks = 0;
+        if (version == 5) {
+            mfu_unpack_io_uint64(&ptr, &elem->blocks);
+        }
 
         /* use mode to set file type */
         elem->type = mfu_flist_mode_to_filetype((mode_t)elem->mode);
@@ -329,13 +337,13 @@ static void list_insert_decode(flist_t* flist, char* buf)
 }
 
 /* insert a file given a pointer to packed data */
-static size_t list_insert_ptr(flist_t* flist, char* ptr, int detail, uint64_t chars)
+static size_t list_insert_ptr(flist_t* flist, char* ptr, uint64_t version, int detail, uint64_t chars)
 {
     /* create new element to record file path, file type, and stat info */
     elem_t* elem = (elem_t*) MFU_MALLOC(sizeof(elem_t));
 
     /* get name and advance pointer */
-    size_t bytes = list_elem_unpack(ptr, detail, chars, elem);
+    size_t bytes = list_elem_unpack(ptr, version, detail, chars, elem);
 
     /* append element to tail of linked list */
     mfu_flist_insert_elem(flist, elem);
@@ -803,7 +811,7 @@ static void read_cache_v3(
             uint64_t packcount = 0;
             while (packcount < (uint64_t) read_count) {
                 /* unpack item from buffer and advance pointer */
-                list_insert_ptr(flist, ptr, 1, chars);
+                list_insert_ptr(flist, ptr, 3, 1, chars);
                 ptr += extent_file;
                 packcount++;
             }
@@ -841,7 +849,8 @@ static void read_cache_v3(
  *   list of <groupname(str), groupid(uint64_t)>
  *   list of <files(str)>
  *   */
-static void read_cache_v4(
+static void read_cache_binary(
+    uint64_t version,
     const char* name,
     MPI_Offset* outdisp,
     MPI_File fh,
@@ -991,7 +1000,7 @@ static void read_cache_v4(
     /* read files, if any */
     if (all_count > 0 && chars > 0) {
         /* get size of file element */
-        size_t elem_size = list_elem_pack_size(flist->detail, (int)chars, NULL);
+        size_t elem_size = list_elem_pack_size(version, flist->detail, (int)chars);
 
         /* in order to avoid blowing out memory, we'll pack into a smaller
          * buffer and iteratively make many collective reads */
@@ -1059,7 +1068,7 @@ static void read_cache_v4(
             uint64_t packcount = 0;
             while (packcount < (uint64_t) read_count) {
                 /* unpack item from buffer and advance pointer */
-                list_insert_ptr(flist, ptr, 1, chars);
+                list_insert_ptr(flist, ptr, version, 1, chars);
                 ptr += elem_size;
                 packcount++;
             }
@@ -1080,10 +1089,12 @@ static void read_cache_v4(
     return;
 }
 
-void mfu_flist_read_cache(
+uint64_t mfu_flist_read_cache(
     const char* name,
     mfu_flist bflist)
 {
+    uint64_t ret_version;
+
     /* convert handle to flist_t */
     flist_t* flist = (flist_t*) bflist;
 
@@ -1109,7 +1120,7 @@ void mfu_flist_read_cache(
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to open file %s", name);
         }
-        return;
+        return 0;
     }
 
     /* set file view */
@@ -1139,8 +1150,9 @@ void mfu_flist_read_cache(
     disp += 1 * 8; /* 9 consecutive uint64_t types in external32 */
 
     /* read data from file */
-    if (version == 4) {
-        read_cache_v4(name, &disp, fh, datarep, flist);
+    ret_version = version;
+    if (version == 4 || version == 5) {
+        read_cache_binary(version, name, &disp, fh, datarep, flist);
     } else if (version == 3) {
         /* need a couple of dummy params to record walk start and end times */
         uint64_t outstart = 0;
@@ -1150,6 +1162,7 @@ void mfu_flist_read_cache(
     else {
         /* TODO: unknown file format */
         read_cache_variable(name, fh, datarep, flist);
+        ret_version = 0;
     }
 
     /* close file */
@@ -1181,19 +1194,23 @@ void mfu_flist_read_cache(
     /* wait for summary to be printed */
     MPI_Barrier(MPI_COMM_WORLD);
 
-    return;
+    return ret_version;
 }
 
 /****************************************
  * Write file list to file
  ***************************************/
 
-/* file version
+/* file formats
  * 1: version, start, end, files, file chars, list (file)
  * 2: version, start, end, files, file chars, list (file, type)
  * 3: version, start, end, files, users, user chars, groups, group chars,
  *    files, file chars, list (user, userid), list (group, groupid),
- *    list (stat) */
+ *    list (stat)
+ * 4: version, users, user chars, groups, group chars, files, file chars,
+ *    list (user, userid), list (group, groupid), list (file, stat)
+ * 5: same as 4, with allocated block count in each file stat record
+ * unknown: variable-length ASCII <file>|<type> records, one per line */
 
 /* write each record in ASCII format, terminated with newlines */
 static void write_cache_readdir_variable(
@@ -1326,7 +1343,7 @@ static void write_cache_readdir_variable(
     return;
 }
 
-static void write_cache_stat_v4(
+static void write_cache_stat(
     const char* name,
     flist_t* flist)
 {
@@ -1357,7 +1374,7 @@ static void write_cache_stat_v4(
     chars *= 8;
 
     /* compute size of each element */
-    size_t elem_size = list_elem_pack_size(flist->detail, chars, NULL);
+    size_t elem_size = list_elem_pack_size(CACHE_VER, flist->detail, chars);
 
     /* open file */
     MPI_Status status;
@@ -1389,7 +1406,7 @@ static void write_cache_stat_v4(
     int header_bytes = 7 * 8;
     uint64_t header[7];
     char* ptr = (char*) header;
-    mfu_pack_io_uint64(&ptr, 4);               /* file version */
+    mfu_pack_io_uint64(&ptr, CACHE_VER);       /* file version */
     mfu_pack_io_uint64(&ptr, users->count);    /* number of user records */
     mfu_pack_io_uint64(&ptr, users->chars);    /* number of chars in user name */
     mfu_pack_io_uint64(&ptr, groups->count);   /* number of group records */
@@ -1563,7 +1580,7 @@ void mfu_flist_write_cache(
 
     if (all_count > 0) {
         if (flist->detail) {
-            write_cache_stat_v4(name, flist);
+            write_cache_stat(name, flist);
         }
         else {
             write_cache_readdir_variable(name, flist);

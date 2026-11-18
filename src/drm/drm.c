@@ -342,7 +342,7 @@ daos_setup_done:
     }
     else {
         /* read list from file */
-        mfu_flist_read_cache(inputname, flist);
+        (void) mfu_flist_read_cache(inputname, flist);
     }
 
     /* assume we'll use the full list */
