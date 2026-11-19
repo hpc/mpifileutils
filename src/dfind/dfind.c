@@ -22,6 +22,7 @@
 
 int MFU_PRED_EXEC  (mfu_flist flist, uint64_t idx, void* arg);
 int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg);
+int MFU_PRED_PRINT0 (mfu_flist flist, uint64_t idx, void* arg);
 
 int MFU_PRED_EXEC (mfu_flist flist, uint64_t idx, void* arg)
 {
@@ -146,6 +147,13 @@ int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg)
     return 1;
 }
 
+int MFU_PRED_PRINT0 (mfu_flist flist, uint64_t idx, void* arg)
+{
+    const char* name = mfu_flist_file_get_name(flist, idx);
+    printf("%s%c", name, '\0');
+    return 1;
+}
+
 static void print_usage(void)
 {
     printf("\n");
@@ -191,6 +199,7 @@ static void print_usage(void)
     printf("\n");
     printf("Actions:\n");
     printf("  --print        - print item name to stdout\n");
+    printf("  --print0       - print item name to stdout with null terminator\n");
     printf("  --exec CMD ;   - execute CMD on item\n");
     printf("\n");
     fflush(stdout);
@@ -347,6 +356,7 @@ int main (int argc, char** argv)
         { "type",     required_argument, NULL, 'T' },
 
         { "print",    no_argument,       NULL, 'p' },
+        { "print0",    no_argument,       NULL, '0' },
         { "exec",     required_argument, NULL, 'e' },
         { NULL, 0, NULL, 0 },
     };
@@ -524,6 +534,10 @@ int main (int argc, char** argv)
     	case 'p':
     	    mfu_pred_add(pred_head, MFU_PRED_PRINT, NULL);
     	    break;
+
+        case '0':
+            mfu_pred_add(pred_head, MFU_PRED_PRINT0, NULL);
+            break;
 
     	case 'T':
             ret = add_type(pred_head, *optarg);
