@@ -76,6 +76,7 @@ static void print_usage(void)
     printf("  -P, --no-dereference    - don't follow links in source\n"); 
     printf("  -s, --direct            - open files with O_DIRECT\n");
     printf("      --open-noatime      - open files with O_NOATIME\n");
+    printf("      --ignore-atime      - don't compare atime for metadata updates\n");
     printf("      --link-dest <DIR>   - hardlink to files in DIR when unchanged\n");
     printf("  -S, --sparse            - create sparse files when possible\n");
     printf("      --progress <N>      - print progress every N seconds\n");
@@ -1696,8 +1697,14 @@ static int dsync_strmap_compare(
         assert(tmp_rc == 0);
         tmp_rc = dsync_strmap_item_state(src_map, key, DCMPF_PERM, &perm_state);
         assert(tmp_rc == 0);
-        tmp_rc = dsync_strmap_item_state(src_map, key, DCMPF_ATIME, &atime_state);
-        assert(tmp_rc == 0);
+        if (copy_opts->ignore_atime == true) {
+            /* override the state so we don't update things */
+            tmp_rc = dsync_state_from_string("COMMON", &atime_state);
+            assert(tmp_rc == 0);
+        } else {
+            tmp_rc = dsync_strmap_item_state(src_map, key, DCMPF_ATIME, &atime_state);
+            assert(tmp_rc == 0);
+        }
         tmp_rc = dsync_strmap_item_state(src_map, key, DCMPF_MTIME, &mtime_state);
         assert(tmp_rc == 0);
         if ((uid_state == DCMPS_DIFFER) || (gid_state == DCMPS_DIFFER) ||
@@ -3082,6 +3089,7 @@ int main(int argc, char **argv)
         {"no-dereference", 0, 0, 'P'},
         {"direct",         0, 0, 's'},
         {"open-noatime",   0, 0, 'U'},
+        {"ignore-atime",   0, 0, 'T'},
         {"output",         1, 0, 'o'}, // undocumented
         {"debug",          0, 0, 'd'}, // undocumented
         {"link-dest",      1, 0, 'l'},
@@ -3189,6 +3197,12 @@ int main(int argc, char **argv)
             copy_opts->open_noatime = true;
             if(rank == 0) {
                 MFU_LOG(MFU_LOG_INFO, "Using O_NOATIME");
+            }
+            break;
+        case 'T':
+            copy_opts->ignore_atime = true;
+            if(rank == 0) {
+                MFU_LOG(MFU_LOG_INFO, "Ignoring atime differences between files");
             }
             break;
         case 'l':
