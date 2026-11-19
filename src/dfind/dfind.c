@@ -22,6 +22,7 @@
 
 int MFU_PRED_EXEC  (mfu_flist flist, uint64_t idx, void* arg);
 int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg);
+int MFU_PRED_PRINTF (mfu_flist flist, uint64_t idx, void* arg);
 
 int MFU_PRED_EXEC (mfu_flist flist, uint64_t idx, void* arg)
 {
@@ -146,6 +147,55 @@ int MFU_PRED_PRINT (mfu_flist flist, uint64_t idx, void* arg)
     return 1;
 }
 
+void do_print_fn(mfu_flist flist, uint64_t idx, char spec)
+{
+    char* name;
+    uint64_t blocks;
+    uint64_t size;
+
+    switch (spec) {
+        case 'b':
+            blocks = mfu_flist_file_get_blocks(flist, idx);
+            printf("%llu", blocks);
+            break;
+        case 'p':
+            name = mfu_flist_file_get_name(flist, idx);
+            printf("%s", name);
+            break;
+        case 's':
+            size = mfu_flist_file_get_size(flist, idx);
+            printf("%llu", size);
+            break;
+        default:
+            printf("UNSUPPORTED FORMAT SPEC '%c'", spec);
+    }
+}
+
+int MFU_PRED_PRINTF (mfu_flist flist, uint64_t idx, void* arg)
+{
+    char *ptr = (char *) arg;
+
+    while (*ptr) {
+        if (*ptr == '%') {
+            ptr++;
+            if (*ptr == '\0')
+                break;
+            else if (*ptr == '%')
+                continue;
+            else {
+                do_print_fn(flist, idx, *ptr);
+                ptr++;
+            }
+        } else {
+            putc(*ptr, stdout);
+            ptr++;
+        }
+    }
+    printf("\n");
+
+    return 1;
+}
+
 static void print_usage(void)
 {
     printf("\n");
@@ -191,7 +241,13 @@ static void print_usage(void)
     printf("\n");
     printf("Actions:\n");
     printf("  --print        - print item name to stdout\n");
+    printf("  --printf FMT   - print to stdout for each item based on printf-style format\n");
     printf("  --exec CMD ;   - execute CMD on item\n");
+    printf("\n");
+    printf("Supported format string specifiers:\n");
+    printf("  %b             allocated space in 512-byte blocks\n");
+    printf("  %p             path name of file\n");
+    printf("  %s             size of file in bytes\n");
     printf("\n");
     fflush(stdout);
     return;
@@ -347,6 +403,7 @@ int main (int argc, char** argv)
         { "type",     required_argument, NULL, 'T' },
 
         { "print",    no_argument,       NULL, 'p' },
+        { "printf",   required_argument, NULL, 'f' },
         { "exec",     required_argument, NULL, 'e' },
         { NULL, 0, NULL, 0 },
     };
@@ -420,6 +477,12 @@ int main (int argc, char** argv)
 
     	case 'd':
     	    options.maxdepth = atoi(optarg);
+    	    break;
+
+    	case 'f':
+            /* TODO: error check argument */
+    	    buf = MFU_STRDUP(optarg);
+    	    mfu_pred_add(pred_head, MFU_PRED_PRINTF, (void *)buf);
     	    break;
 
     	case 'g':
