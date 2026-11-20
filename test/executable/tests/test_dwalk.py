@@ -148,6 +148,57 @@ class TestDWALK(common.TestCase):
             msg="Large range differs.",
         )
 
+    def validate_file_compatibility_output(self, output):
+        self.assertIn(
+            "/tmp/example/tree",
+            output,
+            msg="Missing an entry from the input file.",
+        )
+        self.assertIn(
+            "/tmp/example/tree/dir1",
+            output,
+            msg="Missing an entry from the input file.",
+        )
+        self.assertIn(
+            "/tmp/example/tree/dir2",
+            output,
+            msg="Missing an entry from the input file.",
+        )
+        self.assertIn(
+            "/tmp/example/tree/file1",
+            output,
+            msg="Missing an entry from the input file.",
+        )
+        self.assertIn(
+            "/tmp/example/tree/dir1/file2",
+            output,
+            msg="Missing an entry from the input file.",
+        )
+
+    def test_file_compatibility(self):
+        """Expected input file versions are compatible."""
+
+        # CHECK: variable/ASCII is compatible
+        variable_file = os.path.join(config.data_dir, "variable.example")
+        dwalk_result = self.run_distributed_successfully(
+            "dwalk", "--input", variable_file, "--print"
+        )
+        self.validate_file_compatibility_output(dwalk_result.stdout)
+
+        # CHECK: v3 is compatible
+        v3_file = os.path.join(config.data_dir, "v3.example")
+        dwalk_result = self.run_distributed_successfully(
+            "dwalk", "--input", v3_file, "--print"
+        )
+        self.validate_file_compatibility_output(dwalk_result.stdout)
+
+        # CHECK: v4 is compatible
+        v4_file = os.path.join(config.data_dir, "v4.example")
+        dwalk_result = self.run_distributed_successfully(
+            "dwalk", "--input", v4_file, "--print"
+        )
+        self.validate_file_compatibility_output(dwalk_result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

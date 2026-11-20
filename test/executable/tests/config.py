@@ -8,3 +8,4 @@ run_cmd = [
     os.environ["MPIEXEC_MAX_NUMPROCS"],
 ]
 test_dir = os.environ["TEST_TMPDIR"]
+data_dir = os.environ["TEST_DATA_DIR"]
