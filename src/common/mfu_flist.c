@@ -1566,6 +1566,23 @@ mfu_flist mfu_flist_remap(mfu_flist list, mfu_flist_map_fn map, const void* args
     return newlist;
 }
 
+/* map function to assign item to rank according to a destination list */
+static int map_byarray(mfu_flist flist, uint64_t idx, int ranks, const void* args)
+{
+    const int* dest = (const int*)args;
+    int rank = dest[idx];
+    return rank;
+}
+
+/* maps each item in input list according to rank listed in dest array,
+ * dest should have one value for each entry in list,
+ * returns a newly allocated flist resulting after exchanging items */
+mfu_flist mfu_flist_map_byarray(mfu_flist list, const int* dest)
+{
+    mfu_flist flist = mfu_flist_remap(list, map_byarray, (const void*)dest);
+    return flist;
+}
+
 /* map function to evenly spread list among ranks, using block allocation */
 static int map_spread(mfu_flist flist, uint64_t idx, int ranks, const void* args)
 {

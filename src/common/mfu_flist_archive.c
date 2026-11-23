@@ -282,6 +282,14 @@ char* mfu_param_path_relative(
     /* create path of item */
     mfu_path* item = mfu_path_from_str(name);
 
+    /* if we're given a relative path, just keep it */
+    if (! mfu_path_is_absolute(item)) {
+        /* TODO: strip any leading .. and . components */
+        char* dest = mfu_path_strdup(item);
+        mfu_path_delete(&item);
+        return dest;
+    }
+
     /* get current working directory */
     mfu_path* cwd = mfu_path_from_str(cwdpath->path);
 
@@ -2786,6 +2794,33 @@ int mfu_flist_archive_create(
     mfu_free(&entry_offsets);
     mfu_free(&entry_sizes);
     mfu_free(&header_sizes);
+
+    return rc;
+}
+
+int mfu_flist_archive_create_py(
+    mfu_flist flist,
+    const char* filename,
+    const char* cwd,
+    mfu_archive_opts_t* opts)
+{
+    /* pointer to mfu_file src object */
+    mfu_file_t* mfu_src_file = mfu_file_new();
+
+    /* standardize destination path */
+    mfu_param_path cwdparam;
+    mfu_param_path_set(cwd, &cwdparam, mfu_src_file, false);
+
+    /* spread elements evenly among ranks */
+    mfu_flist flist2 = mfu_flist_spread(flist);
+
+    /* create the archive file */
+    int rc = mfu_flist_archive_create(flist2, filename, 0, NULL, &cwdparam, opts);
+
+    /* free the file list */
+    mfu_flist_free(&flist2);
+    mfu_param_path_free(&cwdparam);
+    mfu_file_delete(&mfu_src_file);
 
     return rc;
 }
@@ -5751,6 +5786,28 @@ int mfu_flist_archive_extract(
             agg_bw_val, agg_bw_units, agg_bytes, secs
         );
     }
+
+    return rc;
+}
+
+int mfu_flist_archive_extract_py(
+    const char* filename,
+    const char* cwd,
+    mfu_archive_opts_t* opts)
+{
+    /* pointer to mfu_file src object */
+    mfu_file_t* mfu_src_file = mfu_file_new();
+
+    /* standardize destination path */
+    mfu_param_path cwdparam;
+    mfu_param_path_set(cwd, &cwdparam, mfu_src_file, false);
+
+    /* create the archive file */
+    int rc = mfu_flist_archive_extract(filename, &cwdparam, opts);
+
+    /* free the file list */
+    mfu_param_path_free(&cwdparam);
+    mfu_file_delete(&mfu_src_file);
 
     return rc;
 }
