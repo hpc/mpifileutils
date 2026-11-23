@@ -1,0 +1,7 @@
+.git
+.github
+build
+install
+spack
+*.swp
+*.swo
