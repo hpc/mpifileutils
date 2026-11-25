@@ -44,7 +44,7 @@ extern "C" {
 #include <stdbool.h>
 #include "mpi.h"
 
-#if DCOPY_USE_XATTRS
+#if defined(__linux__) && DCOPY_USE_XATTRS
 #include <sys/xattr.h>
 /*
  * Newer versions of attr deprecated attr/xattr.h which defines ENOATTR as a
