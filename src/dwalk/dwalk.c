@@ -319,6 +319,7 @@ static void print_usage(void)
     printf("  -d, --distribution <field>:<separators> \n                          - print distribution by field\n");
     printf("  -f, --file_histogram, --file-histogram\n");
     printf("                          - print default size distribution of items\n");
+    printf("  -u, --disk-usage        - print disk usage to screen\n");
     printf("  -p, --print             - print files to screen\n");
     printf("      --no-atime          - use with -l; do not update the file last access time\n");
     printf("  -L, --dereference       - follow symbolic links\n");
@@ -373,6 +374,7 @@ int main(int argc, char** argv)
     char* distribution   = NULL;
 
     int file_histogram       = 0;
+    int print_disk_usage     = 0;
     int walk                 = 0;
     int print                = 0;
     int text                 = 0;
@@ -392,6 +394,7 @@ int main(int argc, char** argv)
         {"distribution",   1, 0, 'd'},
         {"file_histogram", 0, 0, 'f'},
         {"file-histogram", 0, 0, 'f'},
+        {"disk-usage",     0, 0, 'u'},
         {"print",          0, 0, 'p'},
         {"no-atime",       0, 0, 'n'},
         {"dereference",    0, 0, 'L'},
@@ -405,7 +408,7 @@ int main(int argc, char** argv)
     int usage = 0;
     while (1) {
         int c = getopt_long(
-                    argc, argv, "i:o:tls:d:fpLvqhn",
+                    argc, argv, "i:o:tls:d:fupLvqhn",
                     long_options, &option_index
                 );
 
@@ -432,6 +435,9 @@ int main(int argc, char** argv)
                 break;
             case 'f':
                 file_histogram = 1;
+                break;
+            case 'u':
+                print_disk_usage = 1;
                 break;
             case 'p':
                 print = 1;
@@ -659,13 +665,15 @@ daos_setup_done:
     /* create an empty file list with default values */
     mfu_flist flist = mfu_flist_new();
 
+    uint64_t cache_ver = CACHE_VER;
+
     if (walk) {
         /* walk list of input paths */
         (void) mfu_flist_walk_param_paths(numpaths, paths, walk_opts, flist, mfu_file);
     }
     else {
         /* read data from cache file */
-        mfu_flist_read_cache(inputname, flist);
+        cache_ver = mfu_flist_read_cache(inputname, flist);
     }
 
     /* TODO: filter files */
@@ -682,6 +690,16 @@ daos_setup_done:
     /* print details for individual files */
     if (print) {
         mfu_flist_print(flist);
+    }
+
+    /* print disk usage if user specified this option */
+    if (print_disk_usage) {
+        if (cache_ver >= 5) {
+            mfu_flist_print_disk_usage(flist);
+        } else {
+            MFU_LOG(MFU_LOG_ERR, "--disk-usage only supports --input that includes blocks."
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
+        }
     }
 
     /* print summary statistics of flist */

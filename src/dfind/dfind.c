@@ -673,7 +673,7 @@ daos_setup_done:
     }
     else {
         /* read data from cache file */
-        mfu_flist_read_cache(inputname, flist);
+        (void) mfu_flist_read_cache(inputname, flist);
     }
 
     /* apply predicates to each item in list */
