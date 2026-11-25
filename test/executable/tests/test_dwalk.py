@@ -193,6 +193,13 @@ class TestDWALK(common.TestCase):
         )
         self.validate_file_compatibility_output(dwalk_result.stdout)
 
+        # CHECK: v5 is compatible
+        v5_file = os.path.join(config.data_dir, "v5.example")
+        dwalk_result = self.run_distributed_successfully(
+            "dwalk", "--input", v5_file, "--print"
+        )
+        self.validate_file_compatibility_output(dwalk_result.stdout)
+
     def test_disk_usage(self):
         """Compare each printed disk usage with du"""
 
