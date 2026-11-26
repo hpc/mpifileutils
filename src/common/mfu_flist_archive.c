@@ -5148,6 +5148,7 @@ static int extract_symlinks(
     return rc;
 }
 
+#if DCOPY_USE_XATTRS
 /* Extract xattrs from archive file and copy to item.
  * This uses libarchive to actually read the entry from the archive */
 static int extract_xattrs(
@@ -5343,6 +5344,7 @@ static int extract_xattrs(
 
     return rc;
 }
+#endif /* DCOPY_USE_XATTRS */
 
 typedef enum {
     DEFAULT,        /* attempt to dynamically choose best option */
@@ -5624,6 +5626,7 @@ int mfu_flist_archive_extract(
                 ret = tmp_rc;
             }
 
+#if DCOPY_USE_XATTRS
             /* copy xattrs if needed, we do this before writing file data
              * since some file systems encode data layout properties in xattrs
              * and those must be defined before writing any data */
@@ -5636,6 +5639,7 @@ int mfu_flist_archive_extract(
                     ret = tmp_rc;
                 }
             }
+#endif /* DCOPY_USE_XATTRS */
 
             /* extract file data from archive */
             if (algo == CHUNK) {
